@@ -8,9 +8,10 @@ namespace TitanOrbit.UI
     /// Client-only HUD coordination. The full Netcode-for-GameObjects HUD was removed; this class
     /// keeps shared visibility flags so gameplay chrome can hide together.
     /// <para>
-    /// Three hide reasons: the ship upgrade tree overlay, the expanded full-map minimap, and
-    /// local-player death (so the explosion and <see cref="DeathScreenController"/> plaque stay
-    /// unobstructed). Widgets read the static properties each frame — they do not write ship state.
+    /// Hide reasons: the ship upgrade tree overlay, the expanded full-map minimap, the
+    /// hold-S comms matrix, and local-player death (so the explosion and
+    /// <see cref="DeathScreenController"/> plaque stay unobstructed). Widgets read the
+    /// static properties each frame — they do not write ship state.
     /// </para>
     /// </summary>
     public class HUDController : MonoBehaviour
@@ -20,6 +21,9 @@ namespace TitanOrbit.UI
 
         // [TITAN-ORBIT] When true, gameplay chrome defers to the expanded full-map minimap.
         static bool s_minimapExpandedObscuresHud;
+
+        // [TITAN-ORBIT] When true, gameplay chrome defers to the hold-S comms matrix.
+        static bool s_commsMatrixObscuresHud;
 
         /// <summary>
         /// Frame stamp for the cached death-hide answer. <see cref="Time.frameCount"/> so every
@@ -39,6 +43,7 @@ namespace TitanOrbit.UI
         {
             s_shipUpgradeTreeObscuresHud = false;
             s_minimapExpandedObscuresHud = false;
+            s_commsMatrixObscuresHud = false;
             s_deathGateFrame = -1;
             s_deathHidesHud = false;
         }
@@ -61,6 +66,17 @@ namespace TitanOrbit.UI
 
         /// <summary>True while the expanded minimap should hide the rest of the gameplay HUD.</summary>
         public static bool MinimapExpandedObscuresHud => s_minimapExpandedObscuresHud;
+
+        /// <summary>Called from <see cref="ShipCommsPanel"/> while S is held.</summary>
+        public static void SetCommsMatrixObscuresHud(bool obscures) =>
+            s_commsMatrixObscuresHud = obscures;
+
+        /// <summary>True while the comms matrix should hide the rest of the gameplay HUD.</summary>
+        public static bool CommsMatrixObscuresHud => s_commsMatrixObscuresHud;
+
+        /// <summary>True when any full-screen overlay should hide gameplay chrome.</summary>
+        public static bool GameplayChromeObscured =>
+            s_shipUpgradeTreeObscuresHud || s_minimapExpandedObscuresHud || s_commsMatrixObscuresHud;
 
         /// <summary>
         /// True while the local ship is destroyed and waiting to respawn. Gameplay HUD

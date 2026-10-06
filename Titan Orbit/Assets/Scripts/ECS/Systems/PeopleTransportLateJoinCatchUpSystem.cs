@@ -52,8 +52,8 @@ namespace TitanOrbit.ECS
                         continue;
 
                     float3 pos = xf[t].Position;
-                    pos.y = 0f;
-                    float3 target = pos + s.Velocity;
+                    pos.y = s.SeatId + 1f;
+                    float3 target = xf[t].Position + s.Velocity;
                     target.y = 0f;
 
                     Entity rpcEntity = ecb.CreateEntity();
@@ -69,7 +69,8 @@ namespace TitanOrbit.ECS
                             ? s.TargetShipNetworkId
                             : s.SourceShipNetworkId,
                         SourcePlanetId = s.SourcePlanetId,
-                        TargetPlanetId = s.TargetPlanetId,
+                        // Returning unloads hide the dest planet so the client flies to the ship.
+                        TargetPlanetId = s.Returning != 0 && s.IsLoad == 0 ? 0 : s.TargetPlanetId,
                         IsLoad = s.IsLoad,
                         Team = s.Team,
                     });

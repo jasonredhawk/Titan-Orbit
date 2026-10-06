@@ -24,8 +24,11 @@ namespace TitanOrbit.ECS
     /// <para>
     /// [NETCODE] Ghost Health may seed a pad the first time you see it (no HitRpc yet). After
     /// any HitRpc for that planet×slot, this store is HP truth and is never replaced by a
-    /// higher ghost value (that is a stale spawn snapshot, not a heal). Regen is the one
-    /// exception: ghost HP that is already below max and rising is a real out-of-combat heal.
+    /// higher ghost value (that is a stale spawn snapshot, not a heal). Out-of-combat regen is
+    /// drawn on the client with the same delay and HP/s as
+    /// <c>PlanetaryDefenseCombatSystem</c> — planet ghosts are static and only send Health a
+    /// few times a second, so waiting on that field left the bar frozen until the next shot.
+    /// A ghost sample that is still below max and rising ahead of that prediction replaces it.
     /// Empty slots, capture wipes, and MaxHealth upgrades drop the entry so the next gun seeds
     /// from ghost again.
     /// </para>
@@ -38,10 +41,25 @@ namespace TitanOrbit.ECS
         public const float HitFlashSeconds = 0.22f;
 
         /// <summary>
-        /// Match window vs quantized ghost Health (GhostField Quantization = 100 → 0.01).
-        /// Used for regen / upgrade detection — not a timeout.
+        /// MaxHealth jump that means upgrade / rebuild (not regen noise).
+        /// GhostField Quantization = 100 is 0.01; turret max HP steps are much larger.
         /// </summary>
         const float HealthEpsilon = 0.75f;
+
+        /// <summary>
+        /// Smallest ghost Health rise that counts as a real snapshot step.
+        /// Above quantization (0.01) and below one frame of regen (~0.05 at 3 HP/s).
+        /// </summary>
+        const float GhostRiseEpsilon = 0.02f;
+
+        /// <summary>
+        /// Hits that land in this window keep the lowest remaining HP so a reordered
+        /// RPC cannot paint a heal. A later shot, after regen, replaces HP outright.
+        /// </summary>
+        const float RapidFireReorderSeconds = 0.35f;
+
+        /// <summary>Cap on one presentation regen step so a hitch cannot fill the bar.</summary>
+        const float MaxRegenStepSeconds = 0.1f;
 
         /// <summary>planetId×slot → last HitRpc remaining HP.</summary>
         static readonly Dictionary<long, SlotHp> HpBySlot = new Dictionary<long, SlotHp>(64);
@@ -70,9 +88,19 @@ namespace TitanOrbit.ECS
             public float FlashUntil;
 
             /// <summary>
-            /// Ghost Health last time presentation sampled it — rising while below max is regen.
+            /// Ghost Health last time presentation sampled it — a rise while below max
+            /// means the server snapshot is ahead of local regen.
             /// </summary>
             public float LastSeenGhostHealth;
+
+            /// <summary>Unity <c>Time.time</c> of the last HitRpc (reorder window).</summary>
+            public float LastRpcClientTime;
+
+            /// <summary>
+            /// Unity <c>Time.time</c> of the last HitRpc that reduced HP.
+            /// Presentation regen waits <c>healthRegenDelayAfterDamage</c> from here.
+            /// </summary>
+            public float LastDamageClientTime;
         }
 
         /// <summary>
@@ -102,11 +130,18 @@ namespace TitanOrbit.ECS
             float rpcHp = math.max(0f, healthAfter);
             float now = Time.time;
 
-            // --- Lowest remaining HP wins when several hits land in one tick ---
-            // [TITAN-ORBIT] Same idea as asteroid ApplyAuthoritativeHealth: never heal from an
-            // older RPC that was processed after a later, more damaged one.
-            if (HpBySlot.TryGetValue(key, out var existing))
+            // --- Lowest remaining HP wins inside one burst ---
+            // [TITAN-ORBIT] Same idea as asteroid ApplyAuthoritativeHealth: a reordered RPC
+            // must not heal. After the burst, remaining HP is the new sample — regen may
+            // have raised the bar, and this shot's healthAfter is the server value.
+            bool had = HpBySlot.TryGetValue(key, out var existing);
+            float previous = had ? existing.Health : rpcHp;
+            if (had && (now - existing.LastRpcClientTime) <= RapidFireReorderSeconds)
                 rpcHp = math.min(rpcHp, existing.Health);
+
+            float lastDamage = had ? existing.LastDamageClientTime : now;
+            if (!had || rpcHp < previous - GhostRiseEpsilon)
+                lastDamage = now;
 
             HpBySlot[key] = new SlotHp
             {
@@ -114,6 +149,8 @@ namespace TitanOrbit.ECS
                 MaxHealthAtApply = existing.MaxHealthAtApply,
                 FlashUntil = now + HitFlashSeconds,
                 LastSeenGhostHealth = existing.LastSeenGhostHealth,
+                LastRpcClientTime = now,
+                LastDamageClientTime = lastDamage,
             };
 
             // --- Best-effort write onto the client planet buffer ---
@@ -144,8 +181,9 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// HP the bar should show this frame. After the first HitRpc this store is truth.
-        /// Ghost Health is only a seed before any shot, a regen sample (rising while below max),
-        /// or a rebuilt gun (empty slot / MaxHealth change).
+        /// Ghost Health seeds a pad before any shot, and a rising below-max sample can pull
+        /// the bar forward. Between shots, <paramref name="regenPerSecond"/> fills the bar
+        /// after <paramref name="regenDelaySeconds"/> — same contract as server combat.
         /// </summary>
         /// <param name="planetId">Stable planet id.</param>
         /// <param name="slotIndex">Defense slot index.</param>
@@ -156,6 +194,9 @@ namespace TitanOrbit.ECS
         /// <param name="overlayDestroyed">
         /// True when HitRpc said HP 0 but the ghost still shows a live turret (drain the bar).
         /// </param>
+        /// <param name="regenPerSecond">HP per second after the delay. 0 disables presentation regen.</param>
+        /// <param name="regenDelaySeconds">Seconds after the last damaging hit before the bar climbs.</param>
+        /// <param name="deltaTime">Frame dt used for one regen step.</param>
         /// <returns>Health to draw (0..MaxHealth).</returns>
         public static float ResolveDisplayHealth(
             int planetId,
@@ -164,7 +205,10 @@ namespace TitanOrbit.ECS
             float now,
             out bool hitFlash,
             out float flashT,
-            out bool overlayDestroyed)
+            out bool overlayDestroyed,
+            float regenPerSecond,
+            float regenDelaySeconds,
+            float deltaTime)
         {
             hitFlash = false;
             flashT = 0f;
@@ -197,16 +241,40 @@ namespace TitanOrbit.ECS
             }
 
             // --- Regen ---
-            // Ghost HP already below max AND rising is out-of-combat heal
-            // (PlanetaryDefenseCombatSystem). Ghost still at MaxHealth is the spawn snapshot.
+            // [TITAN-ORBIT] Same pause as PlanetaryDefenseCombatSystem: the bar stays on the
+            // hit until healthRegenDelayAfterDamage, then climbs. Ghost still at MaxHealth is
+            // the spawn snapshot — do not copy it. A below-max rise ahead of the bar is a
+            // fresher server sample; otherwise tick locally. Planet ghosts are Static /
+            // importance 40 / 15 Hz, and the old 0.75 rise test never saw one interpolated
+            // frame of ~3 HP/s, so the strip stayed on the last hit until the next shot.
             // Keep the store entry — dropping it would let a later full-HP snapshot paint 100%.
-            bool ghostBelowMax = ghostHealth < ghostMax - HealthEpsilon;
-            bool ghostRising = ghostHealth > stored.LastSeenGhostHealth + HealthEpsilon;
-            if (ghostBelowMax &&
-                ghostRising &&
-                ghostHealth > stored.Health + HealthEpsilon)
+            float delay = math.max(0f, regenDelaySeconds);
+            bool regenUnlocked = stored.LastDamageClientTime > 0f &&
+                                 now >= stored.LastDamageClientTime + delay;
+            bool followGhost = false;
+            if (regenUnlocked && stored.LastSeenGhostHealth > GhostRiseEpsilon)
             {
-                stored.Health = ghostHealth;
+                bool ghostBelowMax = ghostHealth < ghostMax - GhostRiseEpsilon;
+                bool ghostRising = ghostHealth > stored.LastSeenGhostHealth + GhostRiseEpsilon;
+                if (ghostBelowMax &&
+                    ghostRising &&
+                    ghostHealth > stored.Health + GhostRiseEpsilon)
+                {
+                    stored.Health = ghostHealth;
+                    followGhost = true;
+                }
+            }
+
+            if (!followGhost &&
+                regenUnlocked &&
+                regenPerSecond > 0f &&
+                stored.Health > 0.01f &&
+                stored.Health < ghostMax - GhostRiseEpsilon)
+            {
+                float step = math.clamp(deltaTime, 0f, MaxRegenStepSeconds);
+                stored.Health = math.min(
+                    ghostMax,
+                    stored.Health + regenPerSecond * step);
             }
 
             stored.LastSeenGhostHealth = ghostHealth;

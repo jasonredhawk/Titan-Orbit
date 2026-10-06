@@ -9,13 +9,22 @@ namespace TitanOrbit.UI
     /// Temporary wrap-test overlay on the minimap: the canonical map rectangle
     /// (four seams). Uses player-relative Euclidean offsets plus 3×3 tile copies
     /// so a nearby wrap edge still reads when you sit on the opposite side.
+    /// The stroke is a solid core plus a one-pixel alpha ramp. A hard strip
+    /// changes how many pixels it covers as the ship moves, so the whole edge
+    /// looks thicker and thinner; the ramp keeps the same ink on the pixel grid.
     /// Turn off with <see cref="TitanOrbitDebugFlags.ShowMapSeamLines"/>.
     /// </summary>
     [RequireComponent(typeof(RectTransform))]
     public class MinimapSeamDebugUI : RawImage
     {
-        /// <summary>Seam stroke in UI pixels.</summary>
-        const float Thickness = 2.4f;
+        /// <summary>Full-alpha width of each seam, in the same units as the minimap rect.</summary>
+        const float Thickness = 1.2f;
+
+        /// <summary>
+        /// Soft edge past each side of the stroke, in screen pixels.
+        /// One pixel is enough to stop the thickness pulse without turning the seam into a glow.
+        /// </summary>
+        const float FeatherScreenPixels = 1f;
 
         /// <summary>Cyan — matches the world seam overlay.</summary>
         static readonly Color SeamColor = new Color(0.15f, 0.95f, 1f, 0.95f);
@@ -97,6 +106,13 @@ namespace TitanOrbit.UI
             float halfW = mapW * 0.5f;
             float halfH = mapH * 0.5f;
 
+            // [UNITY] OnPopulateMesh positions are canvas units. Divide by the canvas
+            // scale so the falloff stays one screen pixel when the HUD is scaled up.
+            float feather = FeatherScreenPixels;
+            Canvas hostCanvas = canvas;
+            if (hostCanvas != null && hostCanvas.scaleFactor > 0.01f)
+                feather /= hostCanvas.scaleFactor;
+
             // --- Player-relative Euclidean box (do not shortest-path the long edges) ---
             float left = -halfW - playerPos.x;
             float right = halfW - playerPos.x;
@@ -114,10 +130,10 @@ namespace TitanOrbit.UI
                     Vector2 se = ToPanel(rect, (right + dx) * scale, (south + dz) * scale);
                     Vector2 ne = ToPanel(rect, (right + dx) * scale, (north + dz) * scale);
                     Vector2 nw = ToPanel(rect, (left + dx) * scale, (north + dz) * scale);
-                    AddLine(vh, sw, se);
-                    AddLine(vh, se, ne);
-                    AddLine(vh, ne, nw);
-                    AddLine(vh, nw, sw);
+                    AddLine(vh, sw, se, feather);
+                    AddLine(vh, se, ne, feather);
+                    AddLine(vh, ne, nw, feather);
+                    AddLine(vh, nw, sw, feather);
                 }
             }
         }
@@ -126,23 +142,56 @@ namespace TitanOrbit.UI
         static Vector2 ToPanel(Rect rect, float x, float z) =>
             rect.center + new Vector2(x, z);
 
-        /// <summary>One seam segment as a screen-aligned quad.</summary>
-        static void AddLine(VertexHelper vh, Vector2 a, Vector2 b)
+        /// <summary>
+        /// One seam segment: a solid core with a transparent ramp on each side.
+        /// Map edges are horizontal or vertical, so a hard quad covers either one
+        /// pixel or two as it slides, and the whole border appears to change thickness.
+        /// Diagonal territory lines hide that, because their coverage varies along the stroke.
+        /// </summary>
+        /// <param name="vh">Minimap mesh being filled this rebuild.</param>
+        /// <param name="a">Segment start in panel pixels.</param>
+        /// <param name="b">Segment end in panel pixels.</param>
+        /// <param name="feather">Falloff width on each side, in the same units as <paramref name="a"/>.</param>
+        static void AddLine(VertexHelper vh, Vector2 a, Vector2 b, float feather)
         {
             Vector2 delta = b - a;
             float len = delta.magnitude;
             if (len < 0.01f)
                 return;
 
+            // Unit direction along the seam, then a perpendicular for the stroke width.
             Vector2 dir = delta / len;
-            Vector2 n = new Vector2(-dir.y, dir.x) * (Thickness * 0.5f);
+            Vector2 n = new Vector2(-dir.y, dir.x);
+            float half = Thickness * 0.5f;
+            Vector2 inner = n * half;
+            Vector2 outer = n * (half + Mathf.Max(0.01f, feather));
+
+            // Outer verts fade out; inner verts hold the cyan. Sliding the line
+            // moves that ramp across the pixel grid instead of adding or dropping a full pixel.
+            Color clear = SeamColor;
+            clear.a = 0f;
+
             int i = vh.currentVertCount;
-            vh.AddVert(a - n, SeamColor, Vector2.zero);
-            vh.AddVert(a + n, SeamColor, Vector2.zero);
-            vh.AddVert(b + n, SeamColor, Vector2.zero);
-            vh.AddVert(b - n, SeamColor, Vector2.zero);
-            vh.AddTriangle(i, i + 1, i + 2);
-            vh.AddTriangle(i, i + 2, i + 3);
+            vh.AddVert(a - outer, clear, Vector2.zero);
+            vh.AddVert(a - inner, SeamColor, Vector2.zero);
+            vh.AddVert(a + inner, SeamColor, Vector2.zero);
+            vh.AddVert(a + outer, clear, Vector2.zero);
+            vh.AddVert(b - outer, clear, Vector2.zero);
+            vh.AddVert(b - inner, SeamColor, Vector2.zero);
+            vh.AddVert(b + inner, SeamColor, Vector2.zero);
+            vh.AddVert(b + outer, clear, Vector2.zero);
+
+            // Fade-in, solid core, fade-out. UI does not cull back faces.
+            AddQuad(vh, i + 0, i + 1, i + 5, i + 4);
+            AddQuad(vh, i + 1, i + 2, i + 6, i + 5);
+            AddQuad(vh, i + 2, i + 3, i + 7, i + 6);
+        }
+
+        /// <summary>Two triangles for one strip of the seam (core or one feather).</summary>
+        static void AddQuad(VertexHelper vh, int a, int b, int c, int d)
+        {
+            vh.AddTriangle(a, b, c);
+            vh.AddTriangle(a, c, d);
         }
     }
 }

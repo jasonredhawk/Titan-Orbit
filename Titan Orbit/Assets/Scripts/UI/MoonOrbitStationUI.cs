@@ -87,6 +87,10 @@ namespace TitanOrbit.UI
                 canvas = canvasGo.AddComponent<Canvas>();
                 canvas.renderMode = RenderMode.ScreenSpaceOverlay;
                 canvas.sortingOrder = 200;
+                canvas.additionalShaderChannels =
+                    AdditionalCanvasShaderChannels.TexCoord1
+                    | AdditionalCanvasShaderChannels.Normal
+                    | AdditionalCanvasShaderChannels.Tangent;
                 var scaler = canvasGo.AddComponent<CanvasScaler>();
                 scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
                 scaler.referenceResolution = new Vector2(1920f, 1080f);
@@ -639,11 +643,24 @@ namespace TitanOrbit.UI
             MoonOrbitRpcClient.SetWantDepositGems(enabled);
         }
 
+        /// <summary>
+        /// Rebuilds the moon-dock hull ladder. Paints FAMILY BONUSES first so
+        /// <see cref="ShipUpgradeTreeUI.RebuildIfNeeded"/> can reserve matrix height
+        /// before it sizes L1–L7 cards.
+        /// </summary>
         void RefreshShipTree()
         {
             if (_shipTree == null || upgradeTree == null)
                 return;
 
+            // --- Lineage matrix then cards ---
+            // [TITAN-ORBIT] ApplyFamilyIdentity writes the complete bonus board
+            // (including 1× baseline dots). RebuildIfNeeded subtracts that height
+            // from the node canvas so Cosmic Shark's four live fields do not cover hulls.
+            _shipTree.ApplyFamilyIdentity(
+                ResolveUpgradeTreeFamily(),
+                ShipLevel,
+                EcsGameBridge.ResolvePlanetFamilyBulletBankIndex(_storePlanetId));
             _shipTree.RebuildIfNeeded(true, MoonOrbitStationTreeKeys.MoonDockStructureKey);
             _shipTree.RefreshVisualState();
         }
@@ -728,7 +745,8 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Updates the upgrade-tree subtitle under the title. Debug mode explains that every node is free.
+        /// Paints family + bullet type on the identity rail and keeps the old
+        /// path-legend / debug subtitle hidden so it cannot sit under those labels.
         /// </summary>
         void UpdateShipTreeHintText()
         {
@@ -736,18 +754,15 @@ namespace TitanOrbit.UI
                 return;
 
             _shipTree.EnsurePanelHeader();
-            if (_shipTree.Title != null)
-                _shipTree.Title.text = ShipUpgradeTreeUI.PanelTitleText;
-            _shipTree.ApplyFamilyIdentity(ResolveUpgradeTreeFamily());
+            _shipTree.HidePanelTitle();
+            _shipTree.ApplyFamilyIdentity(
+                ResolveUpgradeTreeFamily(),
+                ShipLevel,
+                EcsGameBridge.ResolvePlanetFamilyBulletBankIndex(_storePlanetId));
 
-            if (_shipTree.Hint == null)
-                return;
-
-            // [TITAN-ORBIT] Debug still unlocks family hulls, but unique MEGAs stay claimed.
-            if (IsDebugFreeShipUpgradeTree())
-                _shipTree.Hint.text = "Debug: click any ship for free. Claimed Titans stay with their owner.";
-            else
-                _shipTree.Hint.text = ShipUpgradeTreeUI.PanelDefaultSubtitle;
+            // Identity rail (family + bullet type) owns the top-left. Do not
+            // put the path-legend / debug subtitle back underneath it.
+            _shipTree.HideHint();
         }
 
         /// <summary>
@@ -812,21 +827,43 @@ namespace TitanOrbit.UI
             bool clickable = !megaOccupied && (canPurchase || isCurrent);
 
             view.SetInteractable(clickable);
-            view.SetButtonBackgroundColor(isCurrent
-                ? new Color(0.26f, 0.62f, 0.36f, 0.98f)
-                : canPurchase
-                    ? new Color(0.28f, 0.45f, 0.82f, 0.98f)
-                    : new Color(0.2f, 0.22f, 0.28f, 0.92f));
+            // Fill + ink stay paired. Available blue tiles need cream captions —
+            // ice-blue type disappears into the mid-blue fill.
+            ShipUpgradeTreeNodeUI.RegularCardInk ink;
+            if (isCurrent)
+            {
+                view.SetButtonBackgroundColor(new Color(0.26f, 0.62f, 0.36f, 0.98f));
+                ink = ShipUpgradeTreeNodeUI.RegularCardInk.Current;
+            }
+            else if (canPurchase)
+            {
+                view.SetButtonBackgroundColor(new Color(0.28f, 0.45f, 0.82f, 0.98f));
+                ink = ShipUpgradeTreeNodeUI.RegularCardInk.Available;
+            }
+            else if (tierBlocked)
+            {
+                view.SetButtonBackgroundColor(new Color(0.2f, 0.22f, 0.28f, 0.92f));
+                ink = ShipUpgradeTreeNodeUI.RegularCardInk.Blocked;
+            }
+            else
+            {
+                view.SetButtonBackgroundColor(new Color(0.2f, 0.22f, 0.28f, 0.92f));
+                ink = ShipUpgradeTreeNodeUI.RegularCardInk.Idle;
+            }
 
             view.SetLevelLabel(ShipUpgradeTreeNodeUI.FormatTreeLevelCaption(view.Level, true));
             TryGetChassisIdForTreeSlot(view.Level, view.BranchIndex, out string chassisId);
             view.SetShipName(GetShipDisplayNameForSlot(view.Level, view.BranchIndex, chassisId));
             view.SetFamilyName(GetFamilyDisplayNameForSlot(chassisId));
             view.SetPreview(GetMenuPreviewForChassis(chassisId));
+            // Gun / laser / missile / sniper counts — family cards and Titans share this row.
+            view.ApplyWeaponLoadoutFromChassis(
+                chassisId,
+                EcsGameBridge.ResolvePlanetFamilyBulletBankIndex(_storePlanetId));
             if (view.Level == 7)
                 view.ApplyMegaShipCardStyle(isCurrent, canPurchase, megaOccupied, tierBlocked);
             else
-                view.ClearMegaShipCardStyle();
+                view.ApplyRegularCardInk(ink);
 
             if (megaOccupied)
             {
@@ -882,20 +919,36 @@ namespace TitanOrbit.UI
 
             bool clickable = hasChassis && !megaOccupied;
             view.SetInteractable(clickable);
-            view.SetButtonBackgroundColor(!hasChassis || megaOccupied
-                ? new Color(0.15f, 0.16f, 0.18f, 0.92f)
-                : isCurrent
-                    ? new Color(0.26f, 0.62f, 0.36f, 0.98f)
-                    : new Color(0.28f, 0.68f, 0.82f, 0.98f));
+            // Debug-free paints every regular hull cyan + "Free". Cream captions
+            // keep Lv / family / weapons readable on that fill.
+            ShipUpgradeTreeNodeUI.RegularCardInk ink;
+            if (!hasChassis || megaOccupied)
+            {
+                view.SetButtonBackgroundColor(new Color(0.15f, 0.16f, 0.18f, 0.92f));
+                ink = ShipUpgradeTreeNodeUI.RegularCardInk.Blocked;
+            }
+            else if (isCurrent)
+            {
+                view.SetButtonBackgroundColor(new Color(0.26f, 0.62f, 0.36f, 0.98f));
+                ink = ShipUpgradeTreeNodeUI.RegularCardInk.Current;
+            }
+            else
+            {
+                view.SetButtonBackgroundColor(new Color(0.28f, 0.68f, 0.82f, 0.98f));
+                ink = ShipUpgradeTreeNodeUI.RegularCardInk.Available;
+            }
 
             view.SetLevelLabel(ShipUpgradeTreeNodeUI.FormatTreeLevelCaption(level, true));
             view.SetShipName(GetShipDisplayNameForSlot(level, branch, chassisId));
             view.SetFamilyName(GetFamilyDisplayNameForSlot(chassisId));
             view.SetPreview(GetMenuPreviewForChassis(chassisId));
+            view.ApplyWeaponLoadoutFromChassis(
+                chassisId,
+                EcsGameBridge.ResolvePlanetFamilyBulletBankIndex(_storePlanetId));
             if (level == 7)
                 view.ApplyMegaShipCardStyle(isCurrent, clickable && !isCurrent, megaOccupied, !hasChassis);
             else
-                view.ClearMegaShipCardStyle();
+                view.ApplyRegularCardInk(ink);
             if (megaOccupied)
             {
                 view.SetPrice(FormatMegaOwnerPriceLabel(megaOccupiedBy));

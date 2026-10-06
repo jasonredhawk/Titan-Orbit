@@ -522,6 +522,143 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
+        /// Point-in-triangle ownership from a side's baked runtime verts. False when that
+        /// side has no triangles or map size is unset (caller keeps any stored asteroid mask).
+        /// </summary>
+        public static bool TryGetPublishedOwnershipAtPosition(
+            PlanetConnectionGraphSide sideKind,
+            float3 worldPos,
+            float mapW,
+            float mapH,
+            out byte mask,
+            out TeamId primaryTeam)
+        {
+            mask = 0;
+            primaryTeam = TeamId.None;
+            if (!ToroidalMapEcs.IsValidMapSize(mapW, mapH))
+                return false;
+            if (!TryGetPublishedRuntimeNative(sideKind, out var runtime) ||
+                !runtime.IsCreated ||
+                runtime.Length == 0)
+                return false;
+
+            float3 wrapped = ToroidalMapEcs.Wrap(worldPos, mapW, mapH);
+            PlanetConnectionGraphLogic.GetTerritoryOwnershipAtPosition(
+                wrapped, runtime, mapW, mapH, out mask, out primaryTeam);
+            return true;
+        }
+
+        /// <summary>
+        /// Mining / destroy yellow extras. Unions every ownership source so a rock the
+        /// player sees as team-colored still pays the bonus when one bake is late:
+        /// stored mask, stored primary team, live server PIT, and the client presentation
+        /// bake (empty on a dedicated server — no-op there).
+        /// A live mask used to replace the stored mask, so a stale non-zero bake could
+        /// drop the owning team and skip yellow gems.
+        /// </summary>
+        public static byte ResolveAsteroidTerritoryMask(
+            byte storedMask,
+            float3 worldPos,
+            float mapW,
+            float mapH) =>
+            ResolveAsteroidTerritoryMask(storedMask, TeamId.None, worldPos, mapW, mapH);
+
+        /// <summary>
+        /// Same as <see cref="ResolveAsteroidTerritoryMask(byte, float3, float, float)"/>
+        /// and also ORs <paramref name="storedTeam"/> when the mask byte was never written.
+        /// </summary>
+        public static byte ResolveAsteroidTerritoryMask(
+            byte storedMask,
+            TeamId storedTeam,
+            float3 worldPos,
+            float mapW,
+            float mapH)
+        {
+            byte mask = storedMask;
+            if (storedTeam != TeamId.None)
+                mask |= PlanetConnectionGraphLogic.TeamToMaskBit(storedTeam);
+
+            mask |= ReadLiveTerritoryMask(PlanetConnectionGraphSide.Server, worldPos, mapW, mapH);
+            // Host paints rocks from the client bake. Dedicated servers never publish that side.
+            mask |= ReadLiveTerritoryMask(PlanetConnectionGraphSide.Client, worldPos, mapW, mapH);
+            return mask;
+        }
+
+        /// <summary>Live point-in-triangle mask, or 0 when that side has no published verts.</summary>
+        static byte ReadLiveTerritoryMask(
+            PlanetConnectionGraphSide side,
+            float3 worldPos,
+            float mapW,
+            float mapH)
+        {
+            if (!TryGetPublishedOwnershipAtPosition(side, worldPos, mapW, mapH, out byte liveMask, out _))
+                return 0;
+            return liveMask;
+        }
+
+        /// <summary>
+        /// Stamps <see cref="AsteroidState.TerritoryTeamsMask"/> / <c>TerritoryTeam</c> from
+        /// published triangles. Safe at spawn / respawn — no-op when map size or graph is missing.
+        /// Prefers the server bake; listen-server client hydrate can use the client bake.
+        /// </summary>
+        public static void TryStampAsteroidTerritory(float3 worldPos, ref AsteroidState state)
+        {
+            if (!ToroidalMapEcs.TryGetMapSize(out float mapW, out float mapH))
+                return;
+
+            if (!TryGetPublishedOwnershipAtPosition(
+                    PlanetConnectionGraphSide.Server,
+                    worldPos,
+                    mapW,
+                    mapH,
+                    out byte mask,
+                    out TeamId primary) ||
+                mask == 0)
+            {
+                if (!TryGetPublishedOwnershipAtPosition(
+                        PlanetConnectionGraphSide.Client,
+                        worldPos,
+                        mapW,
+                        mapH,
+                        out mask,
+                        out primary) ||
+                    mask == 0)
+                    return;
+            }
+
+            state.TerritoryTeamsMask = mask;
+            state.TerritoryTeam = primary;
+        }
+
+        /// <summary>
+        /// Last baked Persistent runtime-triangle array for <paramref name="sideKind"/>
+        /// without collecting planet snapshots. Do <b>not</b> Dispose.
+        /// <para>
+        /// [TITAN-ORBIT] Comms jam and other RPC-time checks must not rebuild the graph.
+        /// Drive already baked verts on the last publish / motor collect. Missing array
+        /// means this side has never published — caller should fail open (not jammed).
+        /// An empty created array still returns true: zero triangles means open space.
+        /// </para>
+        /// </summary>
+        /// <param name="sideKind">Server authority or client presentation list.</param>
+        /// <param name="triangles">Persistent native (empty when the graph has no faces).</param>
+        /// <returns>False only when this side has never allocated a runtime array.</returns>
+        public static bool TryGetPublishedRuntimeNative(
+            PlanetConnectionGraphSide sideKind,
+            out NativeArray<PlanetConnectionGraphLogic.RuntimeTriangle> triangles)
+        {
+            Side side = sideKind == PlanetConnectionGraphSide.Server ? Server : Client;
+            if (!side.RuntimeNative.IsCreated)
+            {
+                triangles = default;
+                return false;
+            }
+
+            triangles = side.RuntimeNative;
+            return true;
+        }
+
+        /// <summary>
         /// Returns a job-readable Persistent runtime-triangle array (do <b>not</b> Dispose).
         /// Primary path: verts already baked at publish from graph PlanetInput.
         /// Fallback: rebuild from motor planet snapshots only when the bake was incomplete
@@ -558,10 +695,18 @@ namespace TitanOrbit.ECS
             if (!cacheComplete)
             {
                 int prevResolved = side.RuntimeCache.Count;
+                int prevNative = side.RuntimeNative.IsCreated ? side.RuntimeNative.Length : 0;
                 RebuildRuntimeCache(side, planets);
-                if (side.RuntimeCache.Count != prevResolved ||
-                    !side.RuntimeNative.IsCreated ||
-                    side.RuntimeNative.Length != side.RuntimeCache.Count)
+                // An empty planet snapshot used to sync a 0-length native over a good bake.
+                // AsteroidTerritorySystem then wrote mask 0 and yellow territory gems stopped.
+                bool keepLastBake =
+                    side.RuntimeCache.Count == 0 &&
+                    side.Triangles.Count > 0 &&
+                    prevNative > 0;
+                if (!keepLastBake &&
+                    (side.RuntimeCache.Count != prevResolved ||
+                     !side.RuntimeNative.IsCreated ||
+                     side.RuntimeNative.Length != side.RuntimeCache.Count))
                 {
                     side.SyncRuntimeNativeFromCache();
                 }

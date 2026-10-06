@@ -131,7 +131,7 @@ namespace TitanOrbit.Core
         [SerializeField] bool debugCycleAllBulletBanks;
 
         [Header("Debug — Thruster VFX")]
-        [Tooltip("ON (Test): T-key walks every family in Resources/ThrusterVfxBank and rebuilds live ship jets so you can compare flames. OFF (Production): purchased / host-family jets only. Dedicated server always stays Production.")]
+        [Tooltip("ON (Test): T-key walks V1, V2, V3, and Soft in Resources/ThrusterVfxBank and rebuilds live ship jets so you can compare flames. OFF (Production): the player's chosen thruster type, colored for their team. Dedicated server always stays Production.")]
         [SerializeField] bool debugCycleAllThrusterVfx;
 
         [Header("Debug — Rockets")]
@@ -147,7 +147,7 @@ namespace TitanOrbit.Core
         [SerializeField] bool debugSelfHarmRocketsAndMines;
 
         [Header("Debug — Titan Ships")]
-        [Tooltip("When enabled, Titan guns can auto-aim asteroids in damage mode — lowest priority after ships, planetary defense turrets, and moon shields. Heal mode is unchanged. Local Editor / MPPM host only.")]
+        [Tooltip("When enabled, Titan projectile guns auto-aim living asteroids in damage mode — lowest priority after ships, planetary defense turrets, and moon shields. Heal mode is unchanged. Honored on the dedicated server (WebGL clients do not run this aim locally). Cannon lasers always acquire rocks.")]
         [SerializeField] bool debugMegaShipsAutoFireAsteroids;
 
         [Tooltip("Temporary isolate: skip MegaShipAutoFireSystem (no Titan auto-aim / turret slew). Leave OFF for normal play. Shift+Fire still aims at the mouse in BulletSimulationSystem. Honored on dedicated after rebuild.")]
@@ -211,8 +211,8 @@ namespace TitanOrbit.Core
         public bool DebugCycleAllBulletBanks => debugCycleAllBulletBanks;
 
         /// <summary>
-        /// True when T-key walks every <c>ThrusterVfxBank</c> family (Test).
-        /// False is Production: purchased / host-family jets only.
+        /// True when T-key walks every <c>ThrusterVfxBank</c> type (Test).
+        /// False is Production: the player's chosen thruster, in their team color.
         /// </summary>
         public bool DebugCycleAllThrusterVfx => debugCycleAllThrusterVfx;
 
@@ -381,15 +381,17 @@ namespace TitanOrbit.Core
             TitanOrbitDebugFlags.InfiniteRockets = false;
             TitanOrbitDebugFlags.InfiniteMines = false;
             TitanOrbitDebugFlags.SelfHarmRocketsAndMines = false;
-            TitanOrbitDebugFlags.MegaShipsAutoFireAsteroids = false;
 #else
             TitanOrbitDebugFlags.CycleAllBulletBanks = debugCycleAllBulletBanks;
             TitanOrbitDebugFlags.CycleAllThrusterVfx = debugCycleAllThrusterVfx;
             TitanOrbitDebugFlags.InfiniteRockets = debugInfiniteRockets;
             TitanOrbitDebugFlags.InfiniteMines = debugInfiniteMines;
             TitanOrbitDebugFlags.SelfHarmRocketsAndMines = debugSelfHarmRocketsAndMines;
-            TitanOrbitDebugFlags.MegaShipsAutoFireAsteroids = debugMegaShipsAutoFireAsteroids;
 #endif
+            // [TITAN-ORBIT] Asteroid auto-aim is gameplay, not a local cheat. SampleScene
+            // leaves this on. WebGL never runs MegaShipAutoFireSystem — the dedicated
+            // server must publish the same toggle the Editor host uses.
+            TitanOrbitDebugFlags.MegaShipsAutoFireAsteroids = debugMegaShipsAutoFireAsteroids;
             // Isolate MEGA auto-aim in the Editor only. Dedicated Docker / Edgegap must
             // keep turret slew — a baked-on isolate left MEGA Phase B hull-forward with
             // client tracers at the mouse (no damage).

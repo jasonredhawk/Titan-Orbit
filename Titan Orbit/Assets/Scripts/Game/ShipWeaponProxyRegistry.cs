@@ -1,4 +1,6 @@
 using System.Collections.Generic;
+using TitanOrbit.Core;
+using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
 using UnityEngine;
 
@@ -20,11 +22,13 @@ namespace TitanOrbit.Game
             public Transform Hull;
             public float LiftFromPivot;
             public float XzRadius;
+            public Vector3 LocalXzCenter;
             public bool Measured;
             public bool DeferredRetryDone;
         }
 
         static readonly Dictionary<int, Transform> s_HullByNetworkId = new Dictionary<int, Transform>();
+        static readonly float[] s_ClosestDistScratch = new float[16];
         static readonly Dictionary<int, HullClearance> s_ClearanceByNetworkId = new Dictionary<int, HullClearance>();
         static readonly Dictionary<Transform, int> s_NetworkIdByHull = new Dictionary<Transform, int>();
 
@@ -83,6 +87,161 @@ namespace TitanOrbit.Game
                 s_NetworkIdByHull.Remove(hullRoot);
         }
 
+        /// <summary>
+        /// Closest registered hull to <paramref name="aim"/> within <paramref name="maxRange"/>
+        /// on the torus. Excludes <paramref name="excludeNetworkId"/> (usually the speaker).
+        /// One-shot comms resolve — not a per-frame gather. Map size from <see cref="ToroidalMap"/>.
+        /// </summary>
+        public static bool TryGetClosestHull(
+            Vector3 aim,
+            float maxRange,
+            int excludeNetworkId,
+            out int networkId,
+            out Vector3 worldPos)
+        {
+            networkId = 0;
+            worldPos = default;
+            float best = float.MaxValue;
+            bool found = false;
+            float cap = maxRange > 0f ? maxRange : float.MaxValue;
+
+            foreach (var kv in s_HullByNetworkId)
+            {
+                if (kv.Key <= 0 || kv.Key == excludeNetworkId || kv.Value == null)
+                    continue;
+
+                Vector3 pos = kv.Value.position;
+                float d = ToroidalMap.ToroidalDistance(aim, pos);
+                if (d > cap || d >= best)
+                    continue;
+
+                best = d;
+                networkId = kv.Key;
+                worldPos = pos;
+                found = true;
+            }
+
+            return found;
+        }
+
+        /// <summary>
+        /// Closest hulls to <paramref name="aim"/> within <paramref name="maxRange"/>,
+        /// nearest first. Optional same-team / other-team / troop-carrier filter.
+        /// One-shot comms resolve. Map size from <see cref="ToroidalMap"/>.
+        /// </summary>
+        public static int CollectClosestHulls(
+            Vector3 aim,
+            float maxRange,
+            int excludeNetworkId,
+            TeamId speakerTeam,
+            bool teammatesOnly,
+            bool enemiesOnly,
+            int[] ids,
+            int max,
+            bool troopCarriersOnly = false)
+        {
+            if (ids == null || max <= 0)
+                return 0;
+
+            int cap = Mathf.Min(max, Mathf.Min(ids.Length, s_ClosestDistScratch.Length));
+            int count = 0;
+            float capRange = maxRange > 0f ? maxRange : float.MaxValue;
+            // Insertion into a tiny sorted list — ship count is small, no LINQ / no heap.
+
+            foreach (var kv in s_HullByNetworkId)
+            {
+                if (kv.Key <= 0 || kv.Key == excludeNetworkId || kv.Value == null)
+                    continue;
+
+                TeamId team = ReadPresentationTeam(kv.Value);
+                if (teammatesOnly && (speakerTeam == TeamId.None || team != speakerTeam))
+                    continue;
+                if (enemiesOnly && (team == TeamId.None || team == speakerTeam))
+                    continue;
+                if (troopCarriersOnly && ReadPresentationPeople(kv.Value) <= 0)
+                    continue;
+
+                float d = ToroidalMap.ToroidalDistance(aim, kv.Value.position);
+                if (d > capRange)
+                    continue;
+
+                int slot = count;
+                if (count < cap)
+                    count++;
+                else if (d >= s_ClosestDistScratch[count - 1])
+                    continue;
+                else
+                    slot = count - 1;
+
+                while (slot > 0 && d < s_ClosestDistScratch[slot - 1])
+                {
+                    ids[slot] = ids[slot - 1];
+                    s_ClosestDistScratch[slot] = s_ClosestDistScratch[slot - 1];
+                    slot--;
+                }
+
+                ids[slot] = kv.Key;
+                s_ClosestDistScratch[slot] = d;
+            }
+
+            return count;
+        }
+
+        /// <summary>
+        /// Fills teammate hulls for "Everyone" comms lines. Caps at <paramref name="max"/>.
+        /// Reads nameplate presentation team — no ECS ship gather.
+        /// </summary>
+        public static int CollectHullsOnTeam(
+            TeamId team,
+            int[] ids,
+            Vector3[] positions,
+            int max)
+        {
+            if (ids == null || positions == null || max <= 0)
+                return 0;
+
+            int count = 0;
+            int cap = Mathf.Min(max, Mathf.Min(ids.Length, positions.Length));
+            foreach (var kv in s_HullByNetworkId)
+            {
+                if (count >= cap)
+                    break;
+                if (kv.Key <= 0 || kv.Value == null)
+                    continue;
+                if (team != TeamId.None && ReadPresentationTeam(kv.Value) != team)
+                    continue;
+
+                ids[count] = kv.Key;
+                positions[count] = kv.Value.position;
+                count++;
+            }
+
+            return count;
+        }
+
+        /// <summary>Nameplate team already painted by the visualizer, or None.</summary>
+        public static TeamId ReadPresentationTeam(Transform hull)
+        {
+            if (hull == null)
+                return TeamId.None;
+
+            var plate = hull.GetComponent<ShipWorldNameplate>();
+            return plate != null ? plate.PresentationTeam : TeamId.None;
+        }
+
+        /// <summary>
+        /// Troops aboard from the last nameplate paint, or 0 when unknown.
+        /// [HYBRID] Presentation cache — not an ECS <c>ShipState</c> gather.
+        /// </summary>
+        public static int ReadPresentationPeople(Transform hull)
+        {
+            if (hull == null)
+                return 0;
+
+            var plate = hull.GetComponent<ShipWorldNameplate>();
+            return plate != null ? plate.PresentationPeople : 0;
+        }
+
         /// <summary>Returns the registered hull root for a ship network id, or false when unknown.</summary>
         public static bool TryGetHull(int networkId, out Transform hullRoot)
         {
@@ -128,6 +287,29 @@ namespace TitanOrbit.Game
             return TryGetCachedHullClearance(networkId, out liftFromPivot, out xzRadius);
         }
 
+        /// <summary>
+        /// Cached XZ radius and mesh-center offset (hull local, y = 0). Measured once at spawn.
+        /// Own-ship and other hull popups park aft of this center, opposite the nose.
+        /// </summary>
+        public static bool TryGetCachedHullFootprint(
+            Transform hullRoot,
+            out float xzRadius,
+            out Vector3 localXzCenter)
+        {
+            xzRadius = 0f;
+            localXzCenter = Vector3.zero;
+            if (hullRoot == null || !s_NetworkIdByHull.TryGetValue(hullRoot, out int networkId))
+                return false;
+            if (!s_ClearanceByNetworkId.TryGetValue(networkId, out HullClearance clearance) ||
+                clearance.Hull == null)
+                return false;
+
+            EnsureMeasured(networkId, ref clearance);
+            xzRadius = clearance.XzRadius;
+            localXzCenter = clearance.LocalXzCenter;
+            return xzRadius > 0.001f;
+        }
+
         static void EnsureMeasured(int networkId, ref HullClearance clearance)
         {
             if (clearance.Measured)
@@ -150,11 +332,12 @@ namespace TitanOrbit.Game
 
             float fallback = ResolveFallbackRadius(clearance.Hull);
             if (WorldBodyLabelLayout.TryMeasureBodyClearance(
-                    clearance.Hull, out float lift, out float xz) &&
+                    clearance.Hull, out float lift, out float xz, out Vector3 localCenter) &&
                 (lift > 0.001f || xz > 0.001f))
             {
                 clearance.LiftFromPivot = Mathf.Max(fallback, lift);
                 clearance.XzRadius = Mathf.Max(fallback, xz);
+                clearance.LocalXzCenter = localCenter;
                 clearance.Measured = true;
                 return;
             }

@@ -27,6 +27,8 @@ namespace TitanOrbit.ECS
                 return;
 
             double now = SystemAPI.Time.ElapsedTime;
+            // One read per tick — Inspector edits on ShipVitalsSettings apply on the next tick.
+            float hullRegenDelay = ShipVitalsSettingsCache.HealthRegenDelayAfterDamage;
 
             foreach (var (ship, vitals, vitalsState, entity) in SystemAPI
                          .Query<RefRW<ShipState>, RefRO<ShipVitalsConfig>, RefRW<ShipVitalsState>>()
@@ -62,14 +64,15 @@ namespace TitanOrbit.ECS
                 }
 
                 // --- Health regen (delayed after last hull damage) ---
-                // Allowed while cargo remains even if hull is briefly 0 — ship can recover hull
-                // before gems are fully stripped. Docked-hull card add bypasses the delay.
+                // Delay lives on Resources/ShipVitalsSettings so designers can retune it
+                // without a code change. Allowed while cargo remains even if hull is briefly 0.
+                // Docked-hull card add bypasses the delay.
                 float dockRegen = 0f;
                 if (ShipMoonDockState.IsFullyLandedOnMoon(state.EntityManager, entity))
                     dockRegen = CardEffectQuery.GetValue(state.EntityManager, entity, CardEffectKind.DockedHullRegenAdd);
                 if (s.Health < s.MaxHealth && (cfg.HealthRegenPerSecond > 0f || dockRegen > 0f))
                 {
-                    float delay = UnityEngine.Mathf.Max(0f, cfg.HealthRegenDelayAfterDamage);
+                    float delay = hullRegenDelay;
                     float regen = 0f;
                     if (cfg.HealthRegenPerSecond > 0f && now >= vitalsState.ValueRO.LastHullDamageTime + delay)
                         regen += cfg.HealthRegenPerSecond;

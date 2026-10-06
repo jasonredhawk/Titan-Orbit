@@ -1,3 +1,4 @@
+using TitanOrbit.Core;
 using TitanOrbit.ECS;
 using Unity.Entities;
 using Unity.NetCode;
@@ -6,7 +7,7 @@ using UnityEngine;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// Client glue that sends a 1–3 keyword comms sentence to the server.
+    /// Client glue that sends a 1–5 keyword comms sentence to the server.
     /// <para>
     /// [NETCODE] Dedicated / Relay clients send <see cref="ShipCommsCommand"/> from ClientWorld.
     /// Local Host injects the same command onto ServerWorld with
@@ -14,36 +15,118 @@ namespace TitanOrbit.Game
     /// as <see cref="PlayerNameRpcClient"/>. Under join load, SendRpc can vanish and the
     /// callout would never leave this machine.
     /// </para>
+    /// <c>TeamOnly</c> is a channel request (All / Team; Commander is a send-time upgrade). The server looks up
+    /// the speaker's <c>ShipState.Team</c> and commander rank and targets those
+    /// connections — the client cannot pick another team's inbox or spoof command rank.
     /// The panel also paints an optimistic local bubble so the speaker does not wait on RTT.
     /// Server validation / rate-limit still decide whether everyone else sees it.
+    /// Enemy-territory jam is checked here first so a jammed hull never enqueues a command.
     /// </summary>
     public static class ShipCommsRpcClient
     {
+        /// <summary>Remembered <see cref="Time.frameCount"/> for <see cref="IsLocalShipJammed"/>.</summary>
+        static int s_JamFrame = -1;
+
+        /// <summary>Jam result computed on <see cref="s_JamFrame"/>.</summary>
+        static bool s_JamCached;
+
+        /// <summary>
+        /// True when the local living hull is flying inside a non-friendly triangle.
+        /// HUD, optimistic chips, and this send path share the same test so a jammed
+        /// player cannot compose a sentence the server would reject.
+        /// Cached once per frame — panel, presenter, and minimap dests all ask.
+        /// </summary>
+        public static bool IsLocalShipJammed()
+        {
+            int frame = Time.frameCount;
+            if (s_JamFrame == frame)
+                return s_JamCached;
+
+            s_JamFrame = frame;
+            s_JamCached = EvaluateLocalJam();
+            return s_JamCached;
+        }
+
+        /// <summary>
+        /// Live PIT against the client territory graph. Dead / join-plaque / missing
+        /// hulls are not jammed so the death screen can still hear team callouts.
+        /// </summary>
+        static bool EvaluateLocalJam()
+        {
+            if (!EcsGameBridge.TryGetLocalShipState(out ShipState ship))
+                return false;
+            if (ship.IsDead || ship.AwaitingTeamSelection)
+                return false;
+            if (!EcsGameBridge.TryGetLocalShipPosition(out var pos))
+                return false;
+
+            return ShipCommsJam.IsPositionJammed(pos, ship.Team, PlanetConnectionGraphSide.Client);
+        }
+
         /// <summary>
         /// Enqueues the command on Local Host ServerWorld or ClientWorld. Returns true when
         /// an RPC entity was created (not when the server has accepted it).
         /// </summary>
-        /// <param name="count">Live keyword count (1–3).</param>
-        /// <param name="k0">First catalog index.</param>
-        /// <param name="k1">Second catalog index (ignored when count is 1).</param>
-        /// <param name="k2">Third catalog index (ignored when count is under 3).</param>
-        public static bool TrySend(byte count, byte k0, byte k1, byte k2)
+        public static bool TrySend(in ShipCommsInbox.Callout payload)
         {
-            if (count < 1 || count > 3)
+            if (payload.Count < 1 || payload.Count > 5)
                 return false;
 
+            // --- Enemy-territory jam ---
+            // [TITAN-ORBIT] Server rejects this too. Dropping here skips the optimistic
+            // local bubble and the rate-limit burn from a doomed command.
+            if (IsLocalShipJammed())
+                return false;
+
+            // Preserve Commander (2). Collapsing to 0/1 would drop command chrome on the echo.
+            byte channel = (byte)TeamCommanderRules.Sanitize(payload.TeamOnly);
+            var command = new ShipCommsCommand
+            {
+                Count = payload.Count,
+                K0 = payload.K0,
+                K1 = payload.K1,
+                K2 = payload.K2,
+                K3 = payload.K3,
+                K4 = payload.K4,
+                TeamOnly = channel,
+                HasWaypoint = payload.HasWaypoint != 0 ? (byte)1 : (byte)0,
+                WaypointX = payload.WaypointX,
+                WaypointZ = payload.WaypointZ,
+                FocusKind = payload.FocusKind,
+                YouNetworkId = payload.YouNetworkId,
+                PlanetId = payload.PlanetId,
+                Everyone = payload.Everyone,
+                Us0 = payload.Us0,
+                Us1 = payload.Us1,
+                Us2 = payload.Us2,
+                Us3 = payload.Us3,
+                MeX = payload.MeX,
+                MeZ = payload.MeZ,
+                YouX = payload.YouX,
+                YouZ = payload.YouZ,
+                GroupCount = payload.GroupCount,
+                G0X = payload.G0X, G0Z = payload.G0Z,
+                G1X = payload.G1X, G1Z = payload.G1Z,
+                G2X = payload.G2X, G2Z = payload.G2Z,
+                G3X = payload.G3X, G3Z = payload.G3Z,
+                G4X = payload.G4X, G4Z = payload.G4Z,
+                G5X = payload.G5X, G5Z = payload.G5Z,
+                G6X = payload.G6X, G6Z = payload.G6Z,
+                G7X = payload.G7X, G7Z = payload.G7Z,
+            };
+
             int localId = EcsGameBridge.GetLocalNetworkId();
-            if (TryEnqueueLocalHost(count, k0, k1, k2, localId))
+            if (TryEnqueueLocalHost(command, localId))
                 return true;
 
-            return TrySendDedicatedRpc(count, k0, k1, k2);
+            return TrySendDedicatedRpc(command);
         }
 
         /// <summary>
         /// [TITAN-ORBIT] Local Host: create the RPC entity on ServerWorld so
         /// <see cref="ShipCommsServerSystem"/> sees it next tick without IPC.
         /// </summary>
-        static bool TryEnqueueLocalHost(byte count, byte k0, byte k1, byte k2, int networkId)
+        static bool TryEnqueueLocalHost(in ShipCommsCommand command, int networkId)
         {
             if (!EcsGameBridge.IsLocalHost())
                 return false;
@@ -60,13 +143,7 @@ namespace TitanOrbit.Game
                 return false;
 
             var rpcEntity = em.CreateEntity();
-            em.AddComponentData(rpcEntity, new ShipCommsCommand
-            {
-                Count = count,
-                K0 = k0,
-                K1 = k1,
-                K2 = k2,
-            });
+            em.AddComponentData(rpcEntity, command);
             em.AddComponentData(rpcEntity, new ReceiveRpcCommandRequest { SourceConnection = connection });
             return true;
         }
@@ -75,7 +152,7 @@ namespace TitanOrbit.Game
         /// [NETCODE] Dedicated / Relay: SendRpc from ClientWorld. TargetConnection Null = "the
         /// server that owns this client connection."
         /// </summary>
-        static bool TrySendDedicatedRpc(byte count, byte k0, byte k1, byte k2)
+        static bool TrySendDedicatedRpc(in ShipCommsCommand command)
         {
             var world = EcsGameBridge.ClientWorld;
             if (world == null || !world.IsCreated)
@@ -83,13 +160,7 @@ namespace TitanOrbit.Game
 
             var em = world.EntityManager;
             var entity = em.CreateEntity();
-            em.AddComponentData(entity, new ShipCommsCommand
-            {
-                Count = count,
-                K0 = k0,
-                K1 = k1,
-                K2 = k2,
-            });
+            em.AddComponentData(entity, command);
             em.AddComponentData(entity, new SendRpcCommandRequest { TargetConnection = Entity.Null });
             return true;
         }

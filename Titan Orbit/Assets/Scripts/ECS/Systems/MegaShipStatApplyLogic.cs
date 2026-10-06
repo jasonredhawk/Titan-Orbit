@@ -11,10 +11,15 @@ using UnityEngine;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Writes static MEGA motor / weapon / vitals onto a ship. No Extra Level, no attribute
-    /// upgrades, gem cap forced to 0. Each mount fires the catalog unique-component (or
-    /// type-table) bullet bank — not the store planet's gameplay family. Fire mode is
-    /// Energy Hybrid; Phase B uses <see cref="ShipWeaponFireLogic.TryPlanMegaFire"/>.
+    /// Writes MEGA / Titan motor / weapon / vitals onto a ship. Hull parts stay frozen
+    /// (no Extra Level, no attribute upgrades). Equipped moon-store ship components in
+    /// LOADOUT slots add PerExtra × shipLevel only (no Base) onto those frozen totals.
+    /// Gem cap stays 0. Cannon / missile / sniper mounts fire the catalog unique-component
+    /// (or type-table) bank. Titan Bullet mounts follow the B-key hull cycle
+    /// (<see cref="ShipLoadoutState.RuntimeBulletIndex"/>): original catalog
+    /// "Bullets" first, then the ship-family weapon (Laserbolt on Astro Eagle).
+    /// Fire mode is Energy Hybrid;
+    /// Phase B uses <see cref="ShipWeaponFireLogic.TryPlanMegaFire"/>.
     /// Paired with <see cref="ShipStatApplyLogic.ApplyToShip"/> which routes here when
     /// <see cref="MegaShipState.IsMega"/> is true.
     /// </summary>
@@ -26,7 +31,8 @@ namespace TitanOrbit.ECS
         static bool s_LoggedDedicatedWeaponFallback;
 
         /// <summary>
-        /// Applies frozen MEGA stats and resizes the ghosted aim-slot buffer to match weapon mounts.
+        /// Applies frozen MEGA hull stats plus PerExtra-only moon-store gear, then resizes
+        /// the ghosted aim-slot buffer to match weapon mounts.
         /// </summary>
         public static void ApplyToShip(
             EntityManager em,
@@ -41,7 +47,18 @@ namespace TitanOrbit.ECS
                 return;
 
             string chassisId = MegaShipCatalog.FormatChassisId(mega.CatalogIndex);
-            MegaShipStatsCalculator.SumFromEntry(entry, catalog, out ShipComponentAbilityStats effective);
+
+            // --- Frozen hull + PerExtra-only LOADOUT gear ---
+            // [TITAN-ORBIT] Catalog unique-parts keep Base. Moon-store ShipComponent rows
+            // add PerExtra × shipLevel only (no second Base) so a purchased cockpit raises
+            // Titan health by Extra Level steps, not by copying another catalog Base.
+            int shipLevel = 7;
+            if (em.HasComponent<ShipState>(shipEntity))
+                shipLevel = math.max(1, em.GetComponentData<ShipState>(shipEntity).ShipLevel);
+            ShipComponentStoreVisualScaleLogic.CollectExtraComponentIds(
+                em, shipEntity, out List<string> extraIds);
+            MegaShipStatsCalculator.SumFromEntry(
+                entry, catalog, extraIds, shipLevel, out ShipComponentAbilityStats effective);
             effective.maxGems = 0f;
 
             // --- Caps (server / authoritative only) ---
@@ -57,9 +74,9 @@ namespace TitanOrbit.ECS
                     effective.energyCap > 0.01f ? effective.energyCap : MegaShipCatalog.DefaultHullEnergy,
                     MegaShipCatalog.MinHullEnergy,
                     MegaShipCatalog.MaxHullEnergy);
-                ship.PeopleCapacity = Mathf.Max(
-                    Mathf.RoundToInt(MegaShipCatalog.MinHullPeople),
-                    Mathf.RoundToInt(effective.maxPeople));
+                // SumFromEntry already resolved catalog defaults/mins. Do not clamp
+                // to MinHullPeople (400) — that hid cockpit+wing sums of 40–300.
+                ship.PeopleCapacity = Mathf.Max(0, Mathf.RoundToInt(effective.maxPeople));
                 ship.ShipLevel = 7;
                 ship.BranchIndex = mega.MegaSlotIndex;
                 ship.Health = ship.AwaitingTeamSelection || ship.Health <= 0.01f
@@ -87,13 +104,13 @@ namespace TitanOrbit.ECS
                 weapon.BulletSpeed = bulletSpeed;
                 weapon.BulletDamage = firePower;
                 weapon.EnergyCostPerShot = firePower;
-                weapon.BulletMaxDistance = Mathf.Min(
-                    MegaShipCatalog.MaxBulletTravelDistance,
-                    Mathf.Max(
-                        1f,
-                        effective.bulletRange > 0.01f
-                            ? effective.bulletRange
-                            : MegaShipCatalog.DefaultBulletAcquireRange));
+                // Hull display range is the longest barrel. Do not clamp to
+                // MaxBulletTravelDistance — that cap is only extra lead on short guns.
+                weapon.BulletMaxDistance = Mathf.Max(
+                    1f,
+                    effective.bulletRange > 0.01f
+                        ? effective.bulletRange
+                        : MegaShipCatalog.DefaultBulletAcquireRange);
                 weapon.BulletLifetime = Mathf.Max(0.25f, weapon.BulletMaxDistance / Mathf.Max(1f, bulletSpeed));
                 weapon.ReferenceBulletDamage = firePower;
                 weapon.ReferenceBulletSpeed = bulletSpeed;
@@ -102,12 +119,48 @@ namespace TitanOrbit.ECS
                 em.SetComponentData(shipEntity, weapon);
             }
 
-            // --- Loadout display bank (first catalog weapon) — live shots use per-mount banks ---
+            // --- Loadout cycle bank (Titan Bullet mounts only) ---
+            // [TITAN-ORBIT] Spawn on the original catalog Bullets type. B-key / HUD
+            // then reach the ship-family weapon, then purchases. Only
+            // WeaponKind.Gun barrels adopt RuntimeBulletIndex. Cannons, missiles,
+            // and snipers keep the catalog banks written on each mount. Reset the
+            // index on chassis / slot change; keep B-key across extra-part applies.
             if (writeGhostedShipState && em.HasComponent<ShipLoadoutState>(shipEntity))
             {
                 var loadout = em.GetComponentData<ShipLoadoutState>(shipEntity);
-                if (catalog.TryGetFirstWeaponBankIndex(entry, out int firstBank))
-                    loadout.RuntimeBulletIndex = firstBank;
+                int defaultBank = BulletBankOwnership.ResolveDefaultSelectedBank(em, shipEntity);
+
+                bool adoptMegaGunDefault = true;
+                if (em.HasComponent<ShipChassisState>(shipEntity))
+                {
+                    var prevForBank = em.GetComponentData<ShipChassisState>(shipEntity);
+                    var chassisKeyForBank = new FixedString64Bytes(chassisId);
+                    adoptMegaGunDefault = !prevForBank.ChassisId.Equals(chassisKeyForBank)
+                        || prevForBank.AppliedBranchIndex != mega.MegaSlotIndex;
+                }
+
+                if (adoptMegaGunDefault)
+                {
+                    loadout.RuntimeBulletIndex = defaultBank;
+                }
+                else
+                {
+                    int[] owned = new int[16];
+                    int ownedCount = BulletBankOwnership.CollectOwnedDamageBanks(em, shipEntity, owned);
+                    bool stillOwned = false;
+                    for (int i = 0; i < ownedCount; i++)
+                    {
+                        if (owned[i] == loadout.RuntimeBulletIndex)
+                        {
+                            stillOwned = true;
+                            break;
+                        }
+                    }
+
+                    if (!stillOwned)
+                        loadout.RuntimeBulletIndex = defaultBank;
+                }
+
                 loadout.BranchIndex = mega.MegaSlotIndex;
                 loadout.ChassisIndex = mega.MegaSlotIndex;
                 em.SetComponentData(shipEntity, loadout);
@@ -117,7 +170,8 @@ namespace TitanOrbit.ECS
             if (em.HasComponent<ShipMotorConfig>(shipEntity))
             {
                 float moveVal = Mathf.Max(0.1f, effective.moveSpeed);
-                float turnVal = ShipPropulsionAggregation.ConvertTurnDefinitionToDegreesPerSecond(effective.turnSpeed);
+                // turnSpeed is already degrees per second (same unit as regular hulls).
+                float turnVal = Mathf.Max(0f, effective.turnSpeed);
                 float accel = Mathf.Max(0.1f, effective.accelerationCap > 0f
                     ? effective.accelerationCap
                     : moveVal * 0.25f);
@@ -148,11 +202,10 @@ namespace TitanOrbit.ECS
             var vitals = new ShipVitalsConfig
             {
                 HealthRegenPerSecond = Mathf.Max(0f, effective.healthRegen),
-                EnergyRegenPerSecond = Mathf.Clamp(
-                    effective.energyRegen > 0.01f ? effective.energyRegen : MegaShipCatalog.DefaultHullEnergyRegen,
-                    MegaShipCatalog.MinHullEnergyRegen,
-                    MegaShipCatalog.MaxHullEnergyRegen),
-                HealthRegenDelayAfterDamage = 0.35f,
+                // SumFromEntry already resolved catalog defaults/mins. Do not clamp to the
+                // old 22–50 band — that made every Titan read 22/s.
+                EnergyRegenPerSecond = Mathf.Max(0f, effective.energyRegen),
+                HealthRegenDelayAfterDamage = ShipVitalsSettingsCache.HealthRegenDelayAfterDamage,
             };
             if (em.HasComponent<ShipVitalsConfig>(shipEntity))
                 em.SetComponentData(shipEntity, vitals);
@@ -195,9 +248,10 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Overwrites each MEGA mount's firePower / fireRate / bulletRange / bulletSpeed from
-        /// the unique component named like that prefab child. Family combat apply runs first
-        /// and would otherwise stamp regular-ship numbers onto MEGA barrels.
+        /// Overwrites each MEGA mount's firePower / fireRate / bulletRange / bulletSpeed /
+        /// bank / tracer scale from the unique component named like that prefab child.
+        /// Family combat apply runs first and would otherwise stamp regular-ship numbers
+        /// onto MEGA barrels.
         /// <para>
         /// Dedicated IL2CPP (Docker / Edgegap) cannot use Editor PrefabUtility names. If the
         /// unique-row lookup misses, type-table stats (or <c>componentCounts</c> when the
@@ -243,9 +297,7 @@ namespace TitanOrbit.ECS
                 var mount = mounts[m];
                 if (mount.BulletRange > 0.5f)
                     continue;
-                mount.BulletRange = math.min(
-                    MegaShipCatalog.MaxBulletTravelDistance,
-                    MegaShipCatalog.DefaultBulletAcquireRange);
+                mount.BulletRange = MegaShipCatalog.DefaultBulletAcquireRange;
                 mounts[m] = mount;
             }
         }
@@ -280,7 +332,9 @@ namespace TitanOrbit.ECS
                 if (row == null)
                     usedTypeTableFallback = true;
 
-                WriteMountCombat(catalog, em, shipEntity, mounts, w, row, raw, partType);
+                WriteMountCombat(
+                    catalog, em, shipEntity, mounts, w, row, raw, partType,
+                    MegaShipPartClassifier.GetPrefabAssetName(t));
                 w++;
             }
 
@@ -334,7 +388,8 @@ namespace TitanOrbit.ECS
             int mountIndex,
             MegaShipComponentEntry row,
             in MegaShipPartStats raw,
-            string partType)
+            string partType,
+            string instanceName = null)
         {
             // Unique-row firePower stays raw (0 = authored unarmed). Type-table fallback
             // uses the resolved type numbers so dedicated barrels are never mute.
@@ -342,26 +397,59 @@ namespace TitanOrbit.ECS
             var mount = mounts[mountIndex];
             mount.FirePower = math.max(0f, raw.firePower);
             mount.FireRate = math.max(0.15f, resolved.fireRate > 0.01f ? resolved.fireRate : raw.fireRate);
-            mount.BulletRange = math.min(
-                MegaShipCatalog.MaxBulletTravelDistance,
-                math.max(4f, resolved.bulletRange > 0.5f ? resolved.bulletRange : raw.bulletRange));
+            mount.BulletRange = math.max(
+                4f, resolved.bulletRange > 0.5f ? resolved.bulletRange : raw.bulletRange);
             float partSpeed = resolved.bulletSpeed > 0.01f ? resolved.bulletSpeed : raw.bulletSpeed;
+            // Weapon Missile Stats (type table / unique row) stay as authored.
+            // ResolveRuntimeStats would raise 6 → runtimeMinimumStats.bulletSpeed (8).
+            if (string.Equals(partType, ShipFamilyPartTypes.WeaponMissile, System.StringComparison.OrdinalIgnoreCase))
+            {
+                float missileSpeed = raw.bulletSpeed > 0.01f
+                    ? raw.bulletSpeed
+                    : catalog.weaponMissileStats.bulletSpeed;
+                if (missileSpeed > 0.01f)
+                    partSpeed = missileSpeed;
+            }
             mount.BulletSpeed = math.max(0.1f, partSpeed);
             mount.ReferenceFirePower = math.max(0f, raw.firePower);
+            mount.FirePowerPerExtraLevel = 0f;
             mount.WeaponRotationSpeed = 0f;
             mount.BulletBankIndex = row != null
                 ? catalog.ResolveWeaponBankIndex(row)
                 : catalog.GetTypeTableBankIndex(partType);
+            mount.BulletScale = row != null
+                ? catalog.ResolveWeaponBankScale(row)
+                : catalog.GetTypeTableBankScale(partType);
+            mount.WeaponKind = ShipWeaponKind.Resolve(
+                row,
+                partType,
+                row != null ? row.displayName : null,
+                instanceName);
             mounts[mountIndex] = mount;
             if (em.HasBuffer<MegaShipGunnerSlotElement>(shipEntity))
             {
                 var gunners = em.GetBuffer<MegaShipGunnerSlotElement>(shipEntity);
+                if (mountIndex < 0 || mountIndex >= gunners.Length)
+                    return;
+
                 // Combat apply only refreshes barrel stats. Do not park a live auto-aim
                 // lock — the owner-predicted client has no MegaShipAutoFireSystem to
                 // write it back, so a wipe left tracers on hull forward.
-                if (mountIndex < 0 || mountIndex >= gunners.Length
-                    || !MegaShipWeaponAim.IsTrackingAim(gunners[mountIndex]))
+                // WriteGhostedYaw also skips WeaponKind 0 (Gun) so a prediction rollback
+                // cannot wipe a live cannon. This apply is the chassis stamp, so Gun
+                // must still overwrite the previous Titan's cannon / missile / sniper.
+                if (!MegaShipWeaponAim.IsTrackingAim(gunners[mountIndex]))
                     MegaShipWeaponAim.WriteGhostedYaw(gunners, mountIndex, mount);
+
+                var slot = gunners[mountIndex];
+                if (slot.WeaponKind == mount.WeaponKind
+                    && (mount.WeaponKind == ShipWeaponKind.Cannon || slot.CannonLaserRampSeconds == 0f))
+                    return;
+
+                if (mount.WeaponKind != ShipWeaponKind.Cannon)
+                    slot.CannonLaserRampSeconds = 0f;
+                slot.WeaponKind = mount.WeaponKind;
+                gunners[mountIndex] = slot;
             }
         }
 
@@ -478,12 +566,33 @@ namespace TitanOrbit.ECS
                 mountCount = em.GetBuffer<ShipWeaponMountElement>(shipEntity).Length;
 
             var gunners = em.GetBuffer<MegaShipGunnerSlotElement>(shipEntity);
-            if (gunners.Length == mountCount)
-                return;
-
             var mounts = em.HasBuffer<ShipWeaponMountElement>(shipEntity)
                 ? em.GetBuffer<ShipWeaponMountElement>(shipEntity)
                 : default;
+
+            // Same barrel count still needs a kind refresh. A laser Titan swapped for a
+            // bullet Titan keeps the old slot count, and Gun is 0, so the ghosted slot
+            // would otherwise stay Cannon. RestoreMountKindsFromGhostedSlots then paints
+            // the previous lasers back onto the new hull.
+            if (gunners.Length == mountCount)
+            {
+                if (!mounts.IsCreated)
+                    return;
+
+                for (int i = 0; i < mountCount; i++)
+                {
+                    byte kind = mounts[i].WeaponKind;
+                    var slot = gunners[i];
+                    if (slot.WeaponKind == kind)
+                        continue;
+                    if (kind != ShipWeaponKind.Cannon)
+                        slot.CannonLaserRampSeconds = 0f;
+                    slot.WeaponKind = kind;
+                    gunners[i] = slot;
+                }
+
+                return;
+            }
             gunners.Clear();
             for (int i = 0; i < mountCount; i++)
             {
@@ -498,6 +607,10 @@ namespace TitanOrbit.ECS
                     AimWorldX = 0f,
                     AimWorldZ = 0f,
                     TargetGhostId = 0,
+                    CannonLaserRampSeconds = 0f,
+                    WeaponKind = mounts.IsCreated && i < mounts.Length
+                        ? mounts[i].WeaponKind
+                        : (byte)0,
                 });
             }
         }

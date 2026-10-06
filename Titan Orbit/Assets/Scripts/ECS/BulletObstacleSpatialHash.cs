@@ -153,7 +153,7 @@ namespace TitanOrbit.ECS
             for (int i = 0; i < asteroids.Length; i++)
             {
                 var asteroid = asteroidStates[i];
-                if (asteroid.IsDestroyed || asteroid.Health <= 0f)
+                if (!asteroid.IsAliveForCombat)
                     continue;
 
                 float3 pos = asteroidXf[i].Position;

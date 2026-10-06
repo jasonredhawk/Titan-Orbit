@@ -103,7 +103,7 @@ namespace TitanOrbit.ECS
                     _familyConfig, planet.ShipFamilyConfigIndex);
                 ShipFamilyDefinition familyDef = PlanetaryDefenseConfig.ResolveFamilyDefinition(
                     _familyConfig, planet.ShipFamilyConfigIndex);
-                int bankIndex = config.ResolveBulletBankIndex(familyDef);
+                int bankIndex = config.ResolveBulletBankIndex(familyDef, planet.BulletBankIndex);
 
                 // --- Recipe defaults × bank profile (same as AI combat) ---
                 var stats = config.GetCombatLevelStats(slot.TurretLevel, bankIndex);
@@ -175,6 +175,11 @@ namespace TitanOrbit.ECS
                     ScaleMultiplier = math.max(0.1f, visualScale),
                     DamageFilter = BulletDamageFilter.ShipsAndTransports,
                     FirePowerExtraLevels = firePowerExtras,
+                    SourceGhostId = EntityManager.HasComponent<GhostInstance>(planetEntity)
+                        ? EntityManager.GetComponentData<GhostInstance>(planetEntity).ghostId
+                        : 0,
+                    SourceKind = (byte)DeathVfxSourceKind.Turret,
+                    SourceOriginXZ = new float2(muzzle.x, muzzle.z),
                 };
 
                 spawnEvents.Add(new BulletSpawnEventElement

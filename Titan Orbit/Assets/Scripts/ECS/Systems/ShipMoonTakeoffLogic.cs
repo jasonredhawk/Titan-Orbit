@@ -22,20 +22,32 @@ namespace TitanOrbit.ECS
     /// </summary>
     public static class ShipMoonTakeoffLogic
     {
-        /// <summary>Smoothstep ease so takeoff starts and finishes without a pop.</summary>
-        static float EaseInOut(float t)
+        /// <summary>
+        /// Gentle leave, unit slope at the end. Smoothstep (end slope 0) parked the hull
+        /// then thrust had to restart from moon-orbit tangent — a hitch at full size.
+        /// p(t) = t²(2−t); p'(0)=0, p'(1)=1.
+        /// </summary>
+        public static float EaseLeave(float t)
         {
             t = math.saturate(t);
-            return t * t * (3f - 2f * t);
+            return t * t * (2f - t);
+        }
+
+        /// <summary>d/dt of <see cref="EaseLeave"/> on 0–1 (4t − 3t²).</summary>
+        public static float EaseLeaveDerivative(float t)
+        {
+            t = math.saturate(t);
+            return t * (4f - 3f * t);
         }
 
         /// <summary>
-        /// Advances takeoff and writes planar pose. Velocity stays matched to the moon
-        /// (no extra radial launch). MEGA and regular hulls use the same presentation
-        /// radius and exit pad. Clears
-        /// <see cref="ShipMoonDockState.TakeoffPlanetId"/> on the tick after the lerp
-        /// finishes (so AfterPhysics can still restore a PhysX yeet) or when the planet
-        /// snapshot is missing.
+        /// Advances takeoff and writes planar pose. Velocity is moon orbit plus the
+        /// leave-curve radial speed so free flight continues outward. Start and exit
+        /// radii use the same covering hull as dock attach so MEGA boxes do not snap
+        /// inward then get PhysX-yeeted out again.
+        /// Clears <see cref="ShipMoonDockState.TakeoffPlanetId"/> on the tick after the
+        /// lerp finishes (so AfterPhysics can still restore a PhysX yeet) or when the
+        /// planet snapshot is missing.
         /// </summary>
         /// <param name="moonDock">Dock/takeoff state (takeoff fields are written here).</param>
         /// <param name="transform">Ship pose — position and yaw are overwritten while taking off.</param>
@@ -45,6 +57,10 @@ namespace TitanOrbit.ECS
         /// <param name="mapW">Toroidal map width from <c>MapStateSingleton</c>.</param>
         /// <param name="mapH">Toroidal map height from <c>MapStateSingleton</c>.</param>
         /// <param name="elapsedSeconds">Shared moon orbit clock (ServerTick seconds).</param>
+        /// <param name="shipPhysicsRadius">
+        /// Live PhysX covering radius (same sentinel as dock attach). Presentation
+        /// fallback when unset or smaller than the visual sphere.
+        /// </param>
         /// <returns>True while takeoff still owns the motor this tick (including the finish tick).</returns>
         public static bool TryApply(
             ref ShipMoonDockState moonDock,
@@ -54,7 +70,8 @@ namespace TitanOrbit.ECS
             float dt,
             float mapW,
             float mapH,
-            double elapsedSeconds)
+            double elapsedSeconds,
+            float shipPhysicsRadius = -1f)
         {
             int planetId = moonDock.TakeoffPlanetId;
             if (planetId == 0)
@@ -92,33 +109,24 @@ namespace TitanOrbit.ECS
                 mapH);
 
             // Planet copy on the same tile as the moon so planet→moon is the short outward ray.
-            float3 planetNear = moonPos + ToroidalMapEcs.ShortestOffsetXZ(
-                moonPos, planetXform.Position, mapW, mapH);
-            planetNear.y = 0f;
-            float3 outward = moonPos - planetNear;
-            outward.y = 0f;
-            float outwardLen = math.length(outward);
-            if (outwardLen < 1e-4f)
-                outward = new float3(1f, 0f, 0f);
-            else
-                outward /= outwardLen;
+            ComputeOutward(moonPos, planetXform.Position, mapW, mapH, out float3 outward);
 
-            // Presentation hull — same radius regular ships use. MEGA compound AABB was
-            // added on top of this and shoved the center a full extra hull length past the zone.
-            float shipRadius = BodyCollisionMath.GetShipHullRadiusWorld(transform.Scale);
-            float exitPad = GemEconomyConstants.MoonTakeoffExitPadWorld;
-
-            // Drawn moon orbit shell (same radius collected for shield / zone visuals).
+            // Same covering hull as dock attach. Presentation-only start used to snap MEGA
+            // centers inward, then the short exit left the box in the zone so AfterPhysics
+            // yeeted them out — two hops off the moon.
+            float shipRadius = ShipPhysicsDriveLogic.ResolveMoonAttachHullRadius(
+                shipPhysicsRadius, transform);
             float zoneRadius = math.max(snapshot.MoonBodyRadiusWorld, snapshot.ShieldOuterRadiusWorld);
-            float startRadius = snapshot.MoonBodyRadiusWorld + shipRadius
-                + GemEconomyConstants.MoonTakeoffSurfaceStandoffWorld;
-            float exitRadius = zoneRadius + shipRadius + exitPad;
-            if (exitRadius < startRadius + 0.25f)
-                exitRadius = startRadius + 0.25f;
+            ComputeRadii(
+                snapshot.MoonBodyRadiusWorld,
+                zoneRadius,
+                shipRadius,
+                out float startRadius,
+                out float exitRadius);
 
             float duration = math.max(0.2f, GemEconomyConstants.MoonTakeoffDurationSeconds);
             moonDock.TakeoffProgress = math.min(1f, moonDock.TakeoffProgress + dt / duration);
-            float eased = EaseInOut(moonDock.TakeoffProgress);
+            float eased = EaseLeave(moonDock.TakeoffProgress);
 
             float radius = math.lerp(startRadius, exitRadius, eased);
             float3 pos = moonPos + outward * radius;
@@ -132,14 +140,14 @@ namespace TitanOrbit.ECS
                 planet.PlanetId,
                 elapsedSeconds);
             moonVel.y = 0f;
-            // [TITAN-ORBIT] Pose is authored along the exit ray. Do not also write cruise-speed
-            // radial velocity — Physics would integrate that on top of the lerp, and the finish
-            // tick used to fall through into thrust with max(8, MaxSpeed) leftover. That was the
-            // double shove past the already-padded exit shell. Keep moon orbital velocity only
-            // so the hull tracks the moving pad; player thrust owns flight next tick.
+            // Authored pose still owns position this tick (AfterPhysics restores). Write the
+            // leave-curve radial speed so the first free-flight tick continues outward
+            // instead of inheriting only moon tangent and hitching when thrust rebuilds.
+            float radialSpeed = (exitRadius - startRadius)
+                * EaseLeaveDerivative(moonDock.TakeoffProgress) / duration;
             physicsVelocity = new PhysicsVelocity
             {
-                Linear = moonVel,
+                Linear = moonVel + outward * radialSpeed,
                 Angular = float3.zero,
             };
 
@@ -169,6 +177,63 @@ namespace TitanOrbit.ECS
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// Contact and exit distances from the moon center. Start matches dock attach
+        /// (body + covering hull + standoff). Exit clears the drawn orbit shell by the
+        /// same hull plus <see cref="GemEconomyConstants.MoonTakeoffExitPadWorld"/>.
+        /// </summary>
+        public static void ComputeRadii(
+            float moonBodyRadiusWorld,
+            float zoneRadiusWorld,
+            float shipRadius,
+            out float startRadius,
+            out float exitRadius)
+        {
+            float hull = math.max(0.05f, shipRadius);
+            startRadius = moonBodyRadiusWorld + hull
+                + GemEconomyConstants.MoonTakeoffSurfaceStandoffWorld;
+            exitRadius = math.max(zoneRadiusWorld, moonBodyRadiusWorld) + hull
+                + GemEconomyConstants.MoonTakeoffExitPadWorld;
+            if (exitRadius < startRadius + 0.25f)
+                exitRadius = startRadius + 0.25f;
+        }
+
+        /// <summary>
+        /// Unit XZ planet→moon ray on the near tile (takeoff always leaves on the far side).
+        /// </summary>
+        public static void ComputeOutward(
+            float3 moonPos,
+            float3 planetPos,
+            float mapW,
+            float mapH,
+            out float3 outward)
+        {
+            float3 planetNear = moonPos + ToroidalMapEcs.ShortestOffsetXZ(
+                moonPos, planetPos, mapW, mapH);
+            planetNear.y = 0f;
+            outward = moonPos - planetNear;
+            outward.y = 0f;
+            float outwardLen = math.length(outward);
+            if (outwardLen < 1e-4f)
+                outward = new float3(1f, 0f, 0f);
+            else
+                outward /= outwardLen;
+        }
+
+        /// <summary>
+        /// Planar pose at takeoff progress 1 — moon + outward × exit radius, Y = 0.
+        /// Client cinematic aims here so it does not chase the mid-lerp ECS pose.
+        /// </summary>
+        public static float3 EvaluateExitPosition(
+            float3 moonPos,
+            float3 outward,
+            float exitRadius)
+        {
+            float3 pos = moonPos + outward * exitRadius;
+            pos.y = 0f;
+            return pos;
         }
     }
 }

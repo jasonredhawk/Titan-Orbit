@@ -26,6 +26,9 @@ namespace TitanOrbit.ECS
         /// <summary>Maximum teams spawned for this match (2–5).</summary>
         public int MaxTeamsPerMatch;
 
+        /// <summary>Hard cap on players who can join each team.</summary>
+        public int MaxPlayersPerTeam;
+
         /// <summary>Collider/visual radius for home planet bodies.</summary>
         public float HomePlanetSize;
 
@@ -50,13 +53,15 @@ namespace TitanOrbit.ECS
         /// <summary>
         /// How many non-home planets each team starts owning (0 = all stay neutral).
         /// Applied round-robin after spawn (one claim per tick) so sticky connections rebuild
-        /// between captures. Capped/evened against available neutrals.
+        /// between captures. Each pick is lowest level, then smallest size, and never above
+        /// home-planet level. Capped/evened against eligible neutrals.
         /// </summary>
         public int StartingOwnedNeutralPlanetsPerTeam;
 
         /// <summary>
-        /// Per home planet and starting owned neutral: randomly place 0..N defense turrets at
-        /// random levels 1..N (0 = seed none). Also capped by planet slot count / max turret level.
+        /// Per starting owned neutral: randomly place 0..N defense turrets at random levels 1..N
+        /// (0 = seed none). Also capped by planet slot count / max turret level. Home worlds
+        /// ignore this and start every pad at <see cref="HomePlanetLevel"/> turret level.
         /// </summary>
         public int StartingRandomDefenseTurretsMax;
 

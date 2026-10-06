@@ -13,7 +13,12 @@ namespace TitanOrbit.ECS
     /// Adding this buffer only at runtime does <b>not</b> replicate GhostFields.
     /// </para>
     /// Paired with <see cref="ShipMineDeploySystem"/> (append) and <see cref="MineSimulationSystem"/> (explode).
+    /// <para>
+    /// [NETCODE] Default buffer capacity for a large element can drop to 1, which made
+    /// snapshots keep only the latest mine. 32 covers several x4 packs.
+    /// </para>
     /// </summary>
+    [InternalBufferCapacity(32)]
     public struct DeployedMineElement : IBufferElementData
     {
         /// <summary>Logical world position (flight-plane Y). Display unwraps per local ship.</summary>
@@ -31,11 +36,17 @@ namespace TitanOrbit.ECS
         /// <summary>Monotonic id for VFX dedupe (visual driver + <see cref="MineExplodeRpc"/>).</summary>
         [GhostField] public uint Sequence;
 
-        /// <summary>Server <c>ElapsedTime</c> when the mine self-destructs.</summary>
+        /// <summary>
+        /// NetworkTime server-tick seconds when the fuse hits 0 (self-destruct).
+        /// Client bar derives remaining HP from this and <see cref="PlaceTime"/> — no per-tick Health field.
+        /// </summary>
         [GhostField] public double ExpireTime;
 
-        /// <summary>Server <c>ElapsedTime</c> when the mine was placed (self-harm debug arm).</summary>
+        /// <summary>NetworkTime server-tick seconds when the mine was placed (fuse + self-harm debug arm).</summary>
         [GhostField] public double PlaceTime;
+
+        /// <summary>Fuse HP at place (catalog default 100). Remaining = this × lifetime fraction.</summary>
+        [GhostField] public int MaxHealth;
 
         /// <summary>Center damage on the contact target and at the blast origin.</summary>
         [GhostField(Quantization = 100)] public float Damage;

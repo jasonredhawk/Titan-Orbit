@@ -19,11 +19,13 @@ namespace TitanOrbit.Game
     /// [TITAN-ORBIT] Local ship wraps onto the canonical chart; camera follows that pose.
     /// A ±map-size jump hard-snaps display (no long lerp / H73 coast across the rectangle).
     /// Soft-track on NetCode storms; H73 cruise for reconcile pops. Death→alive hard-snaps to
-    /// the home orbit ring so the hull does not crawl across the map. Asteroid grind and hull
-    /// contacts coast bounce nibbles (camera follows display — hard-snapping every PhysX shove
-    /// felt like a snap-back). After contact ends, hitch-sized 0.22–0.30u sim steps still
-    /// coast. Wrap / death / respawn / 50u abandon still hard-snap. GhostPredictionSmoothing
-    /// is left off so this system alone owns local presentation (avoids double-smooth jitter).
+    /// the home orbit ring so the hull does not crawl across the map. While dead, display stays
+    /// on the wreck — a one-frame LocalTransform hop to the home-ring spawn (asteroid death)
+    /// must not drag the camera there and back. Asteroid grind and hull contacts coast bounce
+    /// nibbles (camera follows display — hard-snapping every PhysX shove felt like a snap-back).
+    /// After contact ends, hitch-sized 0.22–0.30u sim steps still coast. Wrap / respawn / 50u
+    /// abandon still hard-snap. GhostPredictionSmoothing is left off so this system alone owns
+    /// local presentation (avoids double-smooth jitter).
     /// </para>
     /// <para>
     /// Evidence: H71 absorbed pops (maxDelta max 0.25). H72 deadzone rejected — correctFrames
@@ -55,6 +57,13 @@ namespace TitanOrbit.Game
         /// to the home ring looks like the hull flying home instead of respawning.
         /// </summary>
         const float DisplayRespawnSnapDistance = 50f;
+
+        /// <summary>
+        /// While <see cref="ShipState.IsDead"/>, ignore sim poses farther than this from the
+        /// wreck. Asteroid death can present one frame at the home-ring spawn, then the
+        /// ghost returns to the field — following that frame cuts the camera there and back.
+        /// </summary>
+        const float DeathWreckHoldDistance = 40f;
 
         /// <summary>
         /// When |ServerCommandAge| exceeds this, soft-track (join / catch-up storms).
@@ -358,31 +367,38 @@ namespace TitanOrbit.Game
                                 || _postContactCoastFrames > 0;
 
             // --- Death / respawn edge ---
-            // [TITAN-ORBIT] Server teleports LocalTransform to the home orbit ring. Display
-            // _smoothPos stays at the wreck for the 10s countdown. Soft-track then crawled
-            // the visible hull (and camera) across the map at 22 u/s — worse when catchingUp
-            // skipped the snap-distance check. Snap on alive-again; stay glued while dead.
+            // [TITAN-ORBIT] Respawn teleports LocalTransform to the home orbit ring. Display
+            // stays on the wreck for the countdown. A one-frame hop to that spawn (asteroid
+            // death) used to hard-snap the camera home, then the next frame snapped back to
+            // the field. Hold the wreck across that spike. Snap on alive-again.
             bool isDead = EntityManager.HasComponent<ShipState>(localShip) &&
                           EntityManager.GetComponentData<ShipState>(localShip).IsDead;
             bool justRespawned = _localShipWasDead && !isDead;
             _localShipWasDead = isDead;
 
             float displayErr = _smoothInitialized ? math.distance(_smoothPos, targetPos) : 0f;
-            bool wrapJump = _smoothInitialized && ToroidalMapEcs.IsWrapJump(_smoothPos, targetPos);
+            bool holdWreck = isDead
+                             && _smoothInitialized
+                             && !shipChanged
+                             && displayErr > DeathWreckHoldDistance;
+            bool wrapJump = _smoothInitialized
+                            && !holdWreck
+                            && ToroidalMapEcs.IsWrapJump(_smoothPos, targetPos);
             if (wrapJump)
                 MapWrapTransition.NotifyWrap();
             bool hardSnap = TitanOrbitDebugFlags.IsolateDisableShipSoftTrack
                             || !_smoothInitialized
                             || shipChanged
-                            || isDead
+                            || (isDead && !holdWreck)
                             || justRespawned
                             || wrapJump
-                            || displayErr > DisplayRespawnSnapDistance;
+                            || (!isDead && displayErr > DisplayRespawnSnapDistance);
 
             // --- Step display state ---
             // [TITAN-ORBIT] Isolation F4: raw sim pose only — if destroy stutter vanishes, soft-track
             // was amplifying physics reconcile pops from phantom asteroid hulls.
-            if (hardSnap)
+            // holdWreck leaves _smoothPos on the death pose (published below).
+            if (!holdWreck && hardSnap)
             {
                 if (shipChanged)
                     ToroidalDisplay.ResetSession("ShipVisualSync.shipChanged");
@@ -392,11 +408,11 @@ namespace TitanOrbit.Game
                 _smoothRot = targetRot;
                 _smoothInitialized = true;
             }
-            else if (catchingUp || displayErr > 2f)
+            else if (!holdWreck && (catchingUp || displayErr > 2f))
             {
                 StepDisplayToward(targetPos, targetRot, dt, CatchUpDisplayMaxSpeed);
             }
-            else
+            else if (!holdWreck)
             {
                 StepCruiseRawOrCoast(targetPos, targetRot, simVel, dt, contactCoast);
             }

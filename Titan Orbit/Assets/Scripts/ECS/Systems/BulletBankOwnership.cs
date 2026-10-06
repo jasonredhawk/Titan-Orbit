@@ -1,7 +1,10 @@
 using System.Collections.Generic;
 using TitanOrbit;
 using TitanOrbit.Data;
+using Unity.Collections;
 using Unity.Entities;
+using Unity.NetCode;
+using UnityEngine;
 
 namespace TitanOrbit.ECS
 {
@@ -18,24 +21,38 @@ namespace TitanOrbit.ECS
         public bool IsOwned;
 
         /// <summary>
-        /// True for the hull family's default gun (always the first owned row).
-        /// The HUD labels this tile with the local ship family, not "whoever authored the bank first".
+        /// True for the hull family's fleet gun. Regular hulls: the first owned
+        /// row (planet-stamped type). Titans: the second row, after the original
+        /// catalog gun. The HUD labels this tile with the local ship family, not
+        /// "whoever authored the bank first". When the Titan gun and the family
+        /// gun are the same bank, the row is the original type instead.
         /// </summary>
         public bool IsHullDefault;
+
+        /// <summary>
+        /// True for a Titan's authored Gun-class bank (usually "Bullets").
+        /// First owned row so a Titan spawns on that catalog type, then B-key
+        /// reaches the ship-family weapon (Laserbolt on Astro Eagle).
+        /// </summary>
+        public bool IsTitanOriginal;
     }
 
     /// <summary>
-    /// Owned damage banks: hull family default first, then each purchased weapon's bank.
-    /// Heal / EnergySpheres is never in the production set. Cycle-all (GameManager Test)
-    /// walks every non-reserved catalog category so B and the HUD stay on the same list.
+    /// Owned damage banks. Regular hulls: family fleet gun, then each purchased
+    /// weapon. Titans: original catalog Gun bank (Bullets) first, then the
+    /// ship-family fleet gun when that type is different, then purchases.
+    /// Heal / EnergySpheres is never in the production set. Cycle-all
+    /// (GameManager Test) walks every non-reserved catalog category so B and
+    /// the HUD stay on the same list.
     /// </summary>
     public static class BulletBankOwnership
     {
         static readonly List<int> s_Scratch = new List<int>(8);
 
         /// <summary>
-        /// Fills <paramref name="dest"/> with unique owned damage bank indices
-        /// (hull default first, then purchases). Returns how many were written.
+        /// Fills <paramref name="dest"/> with unique owned damage bank indices.
+        /// Titans: original catalog gun, then the family fleet gun, then purchases.
+        /// Regular hulls: family fleet, then purchases. Returns how many were written.
         /// </summary>
         public static int CollectOwnedDamageBanks(
             EntityManager em,
@@ -47,13 +64,19 @@ namespace TitanOrbit.ECS
 
             s_Scratch.Clear();
             var config = PlanetShipFamilyConfig.LoadDefault();
-            ShipFamilyDefinition hullFamily = ResolveHullFamily(em, shipEntity, config);
+            ResolveHullDefault(em, shipEntity, config, out _, out int hullBank);
 
-            // --- Hull default first ---
-            // [TITAN-ORBIT] Do not sort. The HUD and B-key walk hull, then purchases.
-            // ResolveBankIndexForFamily remaps heal / rocket authors to 0 so this always
-            // yields a damage bank. Force-add 0 if the unique filter still rejects it.
-            int hullBank = BulletBankProfileUtility.ResolveBankIndexForFamily(hullFamily);
+            // --- Titan original gun first ---
+            // [TITAN-ORBIT] Do not sort. Spawn and B-key start on catalog "Bullets",
+            // then the ship-family weapon, then purchases. Skipped when it matches
+            // the family fleet (one row, not a duplicate). Regular hulls skip this.
+            if (TryResolveMegaOriginalGunBank(em, shipEntity, out int titanGun))
+                AddUniqueDamageBank(s_Scratch, titanGun);
+
+            // --- Family fleet ---
+            // Planet-stamped HullBulletBankIndex wins; family Laserbolt is the
+            // fallback. Sanitize remaps heal / rocket authors to 0 so this always
+            // yields a damage bank. On a Titan this is the second owned row.
             AddUniqueDamageBank(s_Scratch, hullBank);
             if (s_Scratch.Count == 0)
                 s_Scratch.Add(0);
@@ -70,7 +93,9 @@ namespace TitanOrbit.ECS
                     string id = item.ComponentId.ToString();
                     if (!IsPurchasedWeaponComponent(id))
                         continue;
-                    AddUniqueDamageBank(s_Scratch, BulletBankProfileUtility.ResolveBankIndexForComponent(id, config));
+                    AddUniqueDamageBank(
+                        s_Scratch,
+                        ResolvePurchasedWeaponBank(em, id, config, hullBank));
                 }
             }
 
@@ -81,8 +106,10 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Banks the HUD lists right now. Production = hull default + purchased weapons.
-        /// Cycle-all = every non-reserved catalog category (same walk as B).
+        /// Banks the HUD lists right now. Production = a Titan's original catalog
+        /// gun (when this hull is a Titan), then the family fleet gun, then
+        /// purchased weapons. Cycle-all = every non-reserved catalog category
+        /// (same walk as B).
         /// </summary>
         /// <param name="em">World that owns <paramref name="shipEntity"/> (client ghost or server).</param>
         /// <param name="shipEntity">Local ship whose loadout we read.</param>
@@ -98,19 +125,14 @@ namespace TitanOrbit.ECS
 
             int[] owned = s_OwnedScratch;
             int ownedCount = CollectOwnedDamageBanks(em, shipEntity, owned);
+            int hullBank = ResolveHullDefaultBank(em, shipEntity);
+            bool hasTitanGun = TryResolveMegaOriginalGunBank(em, shipEntity, out int titanGun);
 
             if (!TitanOrbitDebugFlags.CycleAllBulletBanks)
             {
                 int count = 0;
                 for (int i = 0; i < ownedCount && count < dest.Length; i++)
-                {
-                    dest[count++] = new VisibleBankRow
-                    {
-                        BankIndex = owned[i],
-                        IsOwned = true,
-                        IsHullDefault = i == 0
-                    };
-                }
+                    dest[count++] = MakeVisibleRow(owned[i], true, hullBank, hasTitanGun, titanGun);
 
                 return count;
             }
@@ -137,12 +159,7 @@ namespace TitanOrbit.ECS
                     }
                 }
 
-                dest[written++] = new VisibleBankRow
-                {
-                    BankIndex = i,
-                    IsOwned = isOwned,
-                    IsHullDefault = ownedCount > 0 && owned[0] == i
-                };
+                dest[written++] = MakeVisibleRow(i, isOwned, hullBank, hasTitanGun, titanGun);
             }
 
             return written;
@@ -200,7 +217,53 @@ namespace TitanOrbit.ECS
             return dest[(idx + 1) % count];
         }
 
+        /// <summary>
+        /// Next bank on the same list the Weapons HUD paints. Production walks a
+        /// Titan's original gun, then the family fleet gun, then purchases.
+        /// Cycle-all walks every non-reserved catalog row.
+        /// When <paramref name="current"/> is missing from that list, treat the caret
+        /// as parked on the first row (same as the HUD) and step to the second.
+        /// </summary>
+        /// <param name="em">World that owns <paramref name="shipEntity"/>.</param>
+        /// <param name="shipEntity">Ship whose visible banks we walk.</param>
+        /// <param name="current">Bank the player is on (runtime index or optimistic HUD caret).</param>
+        /// <returns>The next visible bank, or <paramref name="current"/> when the list is empty.</returns>
+        public static int NextVisibleBank(EntityManager em, Entity shipEntity, int current)
+        {
+            // --- Same rows as BulletTypeHUD ---
+            // [TITAN-ORBIT] B and the left-side WEAPONS strip must share this walk.
+            // NextOwnedDamageBank is production-only; cycle-all used a catalog increment
+            // that could land on a row the 16-tile HUD never painted.
+            int count = CollectVisibleBankRows(em, shipEntity, s_VisibleScratch);
+            if (count <= 0)
+                return current < 0 ? 0 : current;
+            if (count == 1)
+                return s_VisibleScratch[0].BankIndex;
+
+            // --- Find the live row ---
+            // Missing current → idx 0. HUD already parks the caret there, so B
+            // advances to row 1 instead of snapping to a type the player thinks
+            // they already have selected.
+            int idx = 0;
+            for (int i = 0; i < count; i++)
+            {
+                if (s_VisibleScratch[i].BankIndex == current)
+                {
+                    idx = i;
+                    break;
+                }
+            }
+
+            return s_VisibleScratch[(idx + 1) % count].BankIndex;
+        }
+
         static readonly int[] s_NextScratch = new int[16];
+
+        /// <summary>
+        /// Scratch for <see cref="NextVisibleBank"/>. Length matches
+        /// <c>BulletTypeHUD</c> MaxRows so B cannot pick a bank the strip never shows.
+        /// </summary>
+        static readonly VisibleBankRow[] s_VisibleScratch = new VisibleBankRow[16];
 
         /// <summary>Scratch for ownership checks shared by visible-row and selectable helpers.</summary>
         static readonly int[] s_OwnedScratch = new int[16];
@@ -221,6 +284,120 @@ namespace TitanOrbit.ECS
             return ShipFamilyPartTypes.IsWeapon(partType);
         }
 
+        /// <summary>
+        /// Purchased inherit guns use the planet that rolled their source family,
+        /// not the current hull stamp. Buying a Cosmic Shark gun at a Fireballs world
+        /// while flying a Laserbolt home hull must add Fireballs to B-key.
+        /// </summary>
+        static int ResolvePurchasedWeaponBank(
+            EntityManager em,
+            string componentId,
+            PlanetShipFamilyConfig config,
+            int hullFallback)
+        {
+            if (!BulletBankProfileUtility.TryFindComponentInAnyFamily(
+                    componentId, out ShipFamilyComponentEntry entry, out ShipFamilyDefinition family,
+                    out int familyIndex, config))
+            {
+                return BulletBankProfileUtility.ResolveBankIndexForComponent(
+                    componentId, config, hullFallback);
+            }
+
+            int sourceBank = ResolvePlanetBankForFamilyIndex(em, familyIndex, hullFallback);
+            return BulletBankProfileUtility.ResolveBankIndexForComponentEntry(entry, family, sourceBank);
+        }
+
+        static int s_FamilyPlanetBankFrame = -1;
+        static World s_FamilyPlanetBankWorld;
+        static int[] s_FamilyPlanetBanks;
+
+        /// <summary>
+        /// One planet walk per frame: family config index → that world's rolled gun.
+        /// Home family (0) is always Laserbolt. Missing neutrals fall back to
+        /// <paramref name="hullFallback"/>.
+        /// </summary>
+        static int ResolvePlanetBankForFamilyIndex(EntityManager em, int familyIndex, int hullFallback)
+        {
+            if (familyIndex <= PlanetShipFamilyAssignment.HomeFamilyConfigIndex)
+                return PlanetShipFamilyAssignment.DefaultBulletBankIndex;
+
+            EnsureFamilyPlanetBanks(em);
+            if (s_FamilyPlanetBanks != null
+                && familyIndex >= 0
+                && familyIndex < s_FamilyPlanetBanks.Length
+                && s_FamilyPlanetBanks[familyIndex] >= 0)
+            {
+                return PlanetShipFamilyAssignment.SanitizeSelectableDamageBank(
+                    s_FamilyPlanetBanks[familyIndex]);
+            }
+
+            return hullFallback >= 0
+                ? PlanetShipFamilyAssignment.SanitizeSelectableDamageBank(hullFallback)
+                : PlanetShipFamilyAssignment.DefaultBulletBankIndex;
+        }
+
+        static void EnsureFamilyPlanetBanks(EntityManager em)
+        {
+            World world = em.World;
+            int frame = Time.frameCount;
+            if (s_FamilyPlanetBankFrame == frame
+                && s_FamilyPlanetBankWorld == world
+                && s_FamilyPlanetBanks != null)
+                return;
+
+            // Client Instantiates window: do not gather planets (and do not replace
+            // a good server snapshot with an empty client query).
+            if (world != null && world.IsClient() && ClientJoinSettleCache.ShouldSkipMapBodyQueries)
+                return;
+
+            s_FamilyPlanetBankFrame = frame;
+            s_FamilyPlanetBankWorld = world;
+            if (s_FamilyPlanetBanks == null)
+                s_FamilyPlanetBanks = new int[16];
+            for (int i = 0; i < s_FamilyPlanetBanks.Length; i++)
+                s_FamilyPlanetBanks[i] = -1;
+            s_FamilyPlanetBanks[PlanetShipFamilyAssignment.HomeFamilyConfigIndex] =
+                PlanetShipFamilyAssignment.DefaultBulletBankIndex;
+
+            using var query = em.CreateEntityQuery(ComponentType.ReadOnly<PlanetState>());
+            using var states = query.ToComponentDataArray<PlanetState>(Allocator.Temp);
+            for (int i = 0; i < states.Length; i++)
+            {
+                var planet = states[i];
+                int idx = planet.IsHomePlanet
+                    ? PlanetShipFamilyAssignment.HomeFamilyConfigIndex
+                    : planet.ShipFamilyConfigIndex;
+                if (idx < 0 || idx >= s_FamilyPlanetBanks.Length)
+                    continue;
+                if (s_FamilyPlanetBanks[idx] >= 0)
+                    continue;
+                s_FamilyPlanetBanks[idx] = planet.IsHomePlanet
+                    ? PlanetShipFamilyAssignment.DefaultBulletBankIndex
+                    : PlanetShipFamilyAssignment.SanitizeSelectableDamageBank(planet.BulletBankIndex);
+            }
+        }
+
+        /// <summary>
+        /// One HUD row. A Titan's catalog gun wins the original flag even when it
+        /// shares an index with the family stamp, so that single tile stays Bullets.
+        /// </summary>
+        static VisibleBankRow MakeVisibleRow(
+            int bankIndex,
+            bool isOwned,
+            int hullBank,
+            bool hasTitanGun,
+            int titanGun)
+        {
+            bool isTitanOriginal = hasTitanGun && bankIndex == titanGun;
+            return new VisibleBankRow
+            {
+                BankIndex = bankIndex,
+                IsOwned = isOwned,
+                IsTitanOriginal = isTitanOriginal,
+                IsHullDefault = bankIndex == hullBank && !isTitanOriginal
+            };
+        }
+
         static void AddUniqueDamageBank(List<int> list, int bankIndex)
         {
             if (bankIndex < 0 ||
@@ -236,18 +413,170 @@ namespace TitanOrbit.ECS
             list.Add(bankIndex);
         }
 
-        static ShipFamilyDefinition ResolveHullFamily(
+        /// <summary>
+        /// Family fleet gun stamped on this hull (planet roll, or Laserbolt when
+        /// the stamp is missing). Titans also own this bank as the second B-key
+        /// row; they spawn on the original catalog gun
+        /// (<see cref="ResolveDefaultSelectedBank"/>).
+        /// </summary>
+        /// <param name="em">World that owns <paramref name="shipEntity"/>.</param>
+        /// <param name="shipEntity">Ship whose <c>ShipState</c> stamp we read.</param>
+        /// <returns>Sanitized <c>BulletVfxBank</c> index (Laserbolt when the stamp is missing).</returns>
+        public static int ResolveHullDefaultBank(EntityManager em, Entity shipEntity)
+        {
+            var config = PlanetShipFamilyConfig.LoadDefault();
+            ResolveHullDefault(em, shipEntity, config, out _, out int hullBank);
+            return hullBank;
+        }
+
+        /// <summary>
+        /// Bank written onto <c>RuntimeBulletIndex</c> when a hull is first applied.
+        /// Titans start on the original catalog Bullets type. Regular hulls start
+        /// on the family fleet gun.
+        /// </summary>
+        /// <param name="em">World that owns <paramref name="shipEntity"/>.</param>
+        /// <param name="shipEntity">Ship whose spawn fire type we resolve.</param>
+        /// <returns>Sanitized <c>BulletVfxBank</c> index.</returns>
+        public static int ResolveDefaultSelectedBank(EntityManager em, Entity shipEntity)
+        {
+            if (TryResolveMegaOriginalGunBank(em, shipEntity, out int titanGun))
+                return titanGun;
+            return ResolveHullDefaultBank(em, shipEntity);
+        }
+
+        /// <summary>
+        /// Family whose weapon meshes belong on this B-key / HUD bank.
+        /// Hull default → this ship's family. Purchased foreign guns → that extra's
+        /// family. Cycle-all then walks the planet that rolled the bank, then the
+        /// rare unique authored default (Laserbolt is shared, so it never wins there).
+        /// </summary>
+        public static bool TryResolveFamilyForBank(
             EntityManager em,
             Entity shipEntity,
-            PlanetShipFamilyConfig config)
+            int bankIndex,
+            out ShipFamilyDefinition family)
         {
-            if (config == null)
-                return null;
+            family = null;
+            if (shipEntity == Entity.Null || em == default || !em.Exists(shipEntity))
+                return false;
+
+            var config = PlanetShipFamilyConfig.LoadDefault();
+            ResolveHullDefault(em, shipEntity, config, out ShipFamilyDefinition hullFamily, out int hullBank);
+
+            // --- Hull fleet gun ---
+            // [TITAN-ORBIT] Same bank as spawn keeps host guns. A purchased Laserbolt
+            // on a Fireballs hull is a different row and must not land here.
+            if (bankIndex == hullBank && hullFamily != null)
+            {
+                family = hullFamily;
+                return true;
+            }
+
+            // --- Purchased weapon extras ---
+            // Buying CosmicShark_Weapon_2 at a Fireballs world adds Fireballs to B-key;
+            // cycling there restyles every barrel to that family's catalog guns.
+            if (em.HasBuffer<EquippedEquipmentElement>(shipEntity))
+            {
+                var equipment = em.GetBuffer<EquippedEquipmentElement>(shipEntity);
+                for (int i = 0; i < equipment.Length; i++)
+                {
+                    EquippedEquipmentElement item = equipment[i];
+                    if ((StoreItemType)item.ItemType != StoreItemType.ShipComponent)
+                        continue;
+
+                    string id = item.ComponentId.ToString();
+                    if (!IsPurchasedWeaponComponent(id))
+                        continue;
+                    if (ResolvePurchasedWeaponBank(em, id, config, hullBank) != bankIndex)
+                        continue;
+                    if (!BulletBankProfileUtility.TryFindComponentInAnyFamily(
+                            id, out _, out ShipFamilyDefinition extraFamily, out _, config)
+                        || extraFamily == null)
+                        continue;
+
+                    family = extraFamily;
+                    return true;
+                }
+            }
+
+            // Cycle-all banks with no purchased extra keep the current meshes.
+            // A planet gather from presentation LateUpdate used to overwrite the
+            // shared per-frame cache and made the server think only the hull gun
+            // was owned — B then snapped back to the default type.
+            return false;
+        }
+
+        /// <summary>
+        /// Authored Titan Gun-class bank (usually "Bullets") for this MEGA hull.
+        /// False on regular family ships or when the catalog row is missing.
+        /// </summary>
+        /// <param name="em">World that owns <paramref name="shipEntity"/>.</param>
+        /// <param name="shipEntity">MEGA ship whose catalog entry we read.</param>
+        /// <param name="bankIndex">Sanitized catalog Gun bank, or −1 when this is not a Titan.</param>
+        /// <returns>True when <paramref name="shipEntity"/> is a live Titan with a gun bank.</returns>
+        public static bool TryResolveMegaOriginalGunBank(
+            EntityManager em,
+            Entity shipEntity,
+            out int bankIndex)
+        {
+            bankIndex = -1;
+            if (!em.HasComponent<MegaShipState>(shipEntity)
+                || !em.GetComponentData<MegaShipState>(shipEntity).IsMega)
+                return false;
+
+            var catalog = MegaShipCatalog.Load();
+            if (catalog == null)
+                return false;
+
+            var mega = em.GetComponentData<MegaShipState>(shipEntity);
+            if (catalog.TryGetEntry(mega.CatalogIndex, out MegaShipCatalogEntry entry)
+                && catalog.TryGetFirstGunBankIndex(entry, out int gunBank))
+            {
+                bankIndex = PlanetShipFamilyAssignment.SanitizeSelectableDamageBank(gunBank);
+                return true;
+            }
+
+            bankIndex = PlanetShipFamilyAssignment.SanitizeSelectableDamageBank(
+                catalog.GetTypeTableBankIndex(ShipFamilyPartTypes.WeaponBullet));
+            return true;
+        }
+
+        /// <summary>
+        /// Family fleet gun for this hull. Planet roll on
+        /// <c>ShipState.HullBulletBankIndex</c> wins; missing stamp uses the
+        /// family's Laserbolt fallback. Titans keep this as the second owned type;
+        /// <see cref="ResolveDefaultSelectedBank"/> is the catalog Bullets they spawn on.
+        /// </summary>
+        static void ResolveHullDefault(
+            EntityManager em,
+            Entity shipEntity,
+            PlanetShipFamilyConfig config,
+            out ShipFamilyDefinition family,
+            out int hullBank)
+        {
+            family = null;
+            hullBank = PlanetShipFamilyAssignment.DefaultBulletBankIndex;
+
             int familyIndex = 0;
+            byte stampedBank = PlanetShipFamilyAssignment.DefaultBulletBankIndex;
+            bool hasStamp = false;
             if (em.HasComponent<ShipState>(shipEntity))
-                familyIndex = em.GetComponentData<ShipState>(shipEntity).ShipFamilyConfigIndex;
-            var entry = config.GetFamilyByConfigIndex(familyIndex);
-            return entry != null ? entry.shipFamilyDefinition : null;
+            {
+                var ship = em.GetComponentData<ShipState>(shipEntity);
+                familyIndex = ship.ShipFamilyConfigIndex;
+                stampedBank = ship.HullBulletBankIndex;
+                hasStamp = true;
+            }
+
+            if (config != null)
+            {
+                var entry = config.GetFamilyByConfigIndex(familyIndex);
+                family = entry != null ? entry.shipFamilyDefinition : null;
+            }
+
+            hullBank = hasStamp
+                ? PlanetShipFamilyAssignment.SanitizeSelectableDamageBank(stampedBank)
+                : BulletBankProfileUtility.ResolveBankIndexForFamily(family);
         }
     }
 }

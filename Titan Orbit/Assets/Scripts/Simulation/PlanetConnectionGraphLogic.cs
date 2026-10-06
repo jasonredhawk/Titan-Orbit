@@ -22,8 +22,8 @@ namespace TitanOrbit.Simulation
     /// </para>
     /// Point-in-triangle tests short-embed charts (same geodesic disk the fill draws), not a
     /// VertexA-only Euclidean unwrap that can disagree across seams.
-    /// Shared by server authority (asteroid tint, mining, pop bonuses) and client prediction
-    /// (friendly speed). Burst-safe — no managed allocations inside hot helpers.
+    /// Shared by server authority (asteroid tint, mining, pop bonuses, comms jam) and
+    /// client prediction (friendly speed). Burst-safe — no managed allocations inside hot helpers.
     /// </summary>
     [BurstCompile]
     public static class PlanetConnectionGraphLogic
@@ -463,6 +463,47 @@ namespace TitanOrbit.Simulation
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// True when the ship is inside at least one territory triangle and none of those
+        /// triangles belong to <paramref name="shipTeam"/>. Open space is not jammed.
+        /// A friendly overlap still counts as friendly even if a stronger enemy triangle
+        /// shares the point — same rule as <see cref="FriendlyTerritoryMovementMultiplier"/>.
+        /// <para>
+        /// [TITAN-ORBIT] Hold-S comms lock while flying through enemy-owned fill. Used by
+        /// <c>ShipCommsServerSystem</c> (reject send / skip delivery) and the compose overlay.
+        /// </para>
+        /// </summary>
+        /// <param name="worldPos">Ship world pose (Y ignored; need not be wrapped).</param>
+        /// <param name="shipTeam">Speaker or listener faction. None treats every triangle as hostile.</param>
+        /// <param name="runtime">Live planet-center triangles (do not Dispose here).</param>
+        /// <param name="mapW">Toroidal map width from MapStateSingleton / ToroidalMapEcs.</param>
+        /// <param name="mapH">Toroidal map height.</param>
+        /// <returns>True when comms should jam at this pose.</returns>
+        public static bool IsInNonFriendlyTriangle(
+            float3 worldPos,
+            TeamId shipTeam,
+            in NativeArray<RuntimeTriangle> runtime,
+            float mapW,
+            float mapH)
+        {
+            // --- One PIT pass: every owning team bit ---
+            // [TITAN-ORBIT] Strongest-wins (GetTeamAtPosition) would jam a friendly overlap
+            // just because the enemy triangle is a higher level. Mask keeps own-team bits.
+            GetTerritoryOwnershipAtPosition(
+                worldPos, runtime, mapW, mapH, out byte mask, out _);
+
+            // --- Open space / no graph ---
+            // Neutral XZ is not "enemy territory" — only a painted triangle jams.
+            if (mask == 0)
+                return false;
+
+            // --- Own triangle anywhere in the overlap → still friendly ---
+            if (shipTeam != TeamId.None && TeamMaskContains(mask, shipTeam))
+                return false;
+
+            return true;
         }
 
         /// <summary>

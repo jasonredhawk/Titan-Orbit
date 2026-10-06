@@ -34,7 +34,10 @@ namespace TitanOrbit.ECS
         /// <summary>[TITAN-ORBIT] Bitmask of teams eliminated from the match (no home planet left).</summary>
         [GhostField] public int EliminatedTeamsMask;
 
-        /// <summary>[TITAN-ORBIT] Server cap per team from bootstrap config (not ghost-serialized default).</summary>
+        /// <summary>
+        /// [TITAN-ORBIT] Server cap per team from <see cref="TitanOrbit.Data.MapGenerationSettings.maxPlayersPerTeam"/>
+        /// (not a GhostField — dedicated clients read the same Resources asset).
+        /// </summary>
         public int MaxPlayersPerTeam;
     }
 
@@ -51,8 +54,8 @@ namespace TitanOrbit.ECS
         [GhostField] public float MatchTimer;
 
         /// <summary>
-        /// [TITAN-ORBIT] Non-<see cref="TeamId.None"/> when <see cref="CaptureSystem"/> detects all
-        /// planets owned by one team.
+        /// [TITAN-ORBIT] Non-<see cref="TeamId.None"/> when <see cref="CaptureSystem"/> sees only
+        /// one team color still owning planets. Neutral worlds may remain uncaptured.
         /// </summary>
         [GhostField] public TeamId WinningTeam;
 

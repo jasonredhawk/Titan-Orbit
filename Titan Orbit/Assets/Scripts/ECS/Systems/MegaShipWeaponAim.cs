@@ -1,4 +1,5 @@
 using TitanOrbit.Generation;
+using TitanOrbit.Simulation;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.NetCode;
@@ -128,11 +129,17 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// True when this slot is tracking — <see cref="MegaShipGunnerSlotElement.CurrentYawDeg"/>
-        /// is a world fire heading, not a hull-local park yaw.
+        /// is a world fire heading, not a hull-local park yaw. GhostId stays set
+        /// on a sticky lock even when quantized <c>TargetDistance</c> interpolates
+        /// through 0 between snapshots. Asteroids and defense pads have GhostId 0,
+        /// so AimWorld also counts (otherwise the client never sees a rock lock).
         /// </summary>
         public static bool IsTrackingAim(in MegaShipGunnerSlotElement slot)
         {
-            return slot.TargetDistance > 0.05f;
+            return slot.TargetDistance > 0.05f
+                   || slot.TargetGhostId != 0
+                   || math.abs(slot.AimWorldX) > 0.05f
+                   || math.abs(slot.AimWorldZ) > 0.05f;
         }
 
         /// <summary>World-planar yaw in degrees from a flattened XZ direction (0 = world +Z).</summary>
@@ -245,14 +252,24 @@ namespace TitanOrbit.ECS
                 return;
 
             var slot = gunners[mountIndex];
-            bool tracking = targetDistance > 0.05f;
+            bool tracking = targetDistance > 0.05f || targetGhostId != 0;
             slot.CurrentYawDeg = tracking
                 ? GetWorldYawDeg(desiredWorldDir)
                 : GetLocalYawDeg(mount.LocalRotation);
-            slot.TargetDistance = math.max(0f, targetDistance);
-            slot.AimWorldX = aimPoint.x;
-            slot.AimWorldZ = aimPoint.z;
+            // Floor so a near-muzzle surface hit cannot publish 0 and hide the beam.
+            slot.TargetDistance = tracking
+                ? math.max(CannonLaserMath.MinTrackingDistance, targetDistance)
+                : 0f;
+            // Parked slots must publish 0. Writing hull XZ made IsTrackingAim stay
+            // true (and client AimWorld interpolate toward the ship) after a lock died.
+            slot.AimWorldX = tracking ? aimPoint.x : 0f;
+            slot.AimWorldZ = tracking ? aimPoint.z : 0f;
             slot.TargetGhostId = tracking ? targetGhostId : 0;
+            // Combat owns CannonLaserRampSeconds. Parking / one-tick hide
+            // used to zero it here and restart the 50%→300% lock ramp
+            // even when the next tick locked the same entity.
+            if (mount.WeaponKind != 0)
+                slot.WeaponKind = mount.WeaponKind;
             gunners[mountIndex] = slot;
         }
 
@@ -282,6 +299,8 @@ namespace TitanOrbit.ECS
                 slot.AimWorldX = 0f;
                 slot.AimWorldZ = 0f;
                 slot.TargetGhostId = 0;
+                // Keep CannonLaserRampSeconds. Same lock entity must not
+                // restart at 50% just because Fire was released for a moment.
                 if (mounts.IsCreated && i < mounts.Length)
                     slot.CurrentYawDeg = GetLocalYawDeg(mounts[i].LocalRotation);
                 gunners[i] = slot;

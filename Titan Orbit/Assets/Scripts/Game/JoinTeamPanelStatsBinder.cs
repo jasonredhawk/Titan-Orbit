@@ -1,6 +1,8 @@
+using System.Text;
 using TitanOrbit.Core;
 using TMPro;
 using UnityEngine;
+using UnityEngine.UI;
 
 namespace TitanOrbit.Game
 {
@@ -9,9 +11,9 @@ namespace TitanOrbit.Game
     /// (Title / Stats / Players under each TeamAPanel…TeamEPanel).
     /// <para>
     /// The SampleScene panels ship with placeholder text ("Team A (0/20)", "Home Lv.0 | …",
-    /// "No players"). <see cref="NceGameFlowController"/> only used to show/hide those panels —
-    /// this binder is the missing wire-up. Data comes from <see cref="EcsGameBridge.FillJoinTeamSlotStats"/>
-    /// (roster singleton + quarantine-safe planet cache + gated ship list).
+    /// "No players"). <see cref="NceGameFlowController"/> shows those panels; this binder
+    /// paints them. Data comes from <see cref="EcsGameBridge.FillJoinTeamSlotStats"/>:
+    /// roster singleton, planet ghosts (worlds, gem bars, crew), and ship match stats (score).
     /// </para>
     /// Client UI only — never drives sim or sends RPCs.
     /// </summary>
@@ -23,7 +25,7 @@ namespace TitanOrbit.Game
             /// <summary>TitleBar/Title — "Team A (2/20)".</summary>
             public TextMeshProUGUI Title;
 
-            /// <summary>StatsBar/Stats — "Home Lv.1 | Gems 0/100 | Planets 1".</summary>
+            /// <summary>StatsBar/Stats — worlds, gem bars, crew, home level, team score.</summary>
             public TextMeshProUGUI Stats;
 
             /// <summary>PlayersQuota/Players — multi-line roster or "No players".</summary>
@@ -42,6 +44,29 @@ namespace TitanOrbit.Game
         /// <summary>Scratch stats array reused every refresh (avoids GC on the Join Team screen).</summary>
         static readonly EcsGameBridge.JoinTeamSlotStats[] s_StatsScratch =
             new EcsGameBridge.JoinTeamSlotStats[5];
+
+        /// <summary>
+        /// Last numbers painted into each Stats label. Join Team refreshes every frame;
+        /// rewriting TMP when nothing changed rebuilds the mesh for no reason.
+        /// </summary>
+        static readonly PaintedMapLine[] s_Painted = new PaintedMapLine[5];
+
+        /// <summary>One builder for the stats line. Reused so a refresh does not allocate a builder.</summary>
+        static readonly StringBuilder s_StatsLine = new StringBuilder(128);
+
+        /// <summary>Last map line written to a team card. Compared so we skip identical TMP updates.</summary>
+        struct PaintedMapLine
+        {
+            public int Worlds;
+            public int Capturable;
+            public int Gems;
+            public int MaxGems;
+            public int Crew;
+            public int HomeLevel;
+            public int Score;
+            public bool ScoreKnown;
+            public bool HasPaint;
+        }
 
         /// <summary>
         /// Updates Title / Stats / Players on each active team panel from live ECS state.
@@ -63,7 +88,7 @@ namespace TitanOrbit.Game
             EcsGameBridge.FillJoinTeamSlotStats(s_StatsScratch, slots);
 
             for (int i = 0; i < slots; i++)
-                ApplySlot((TeamId)(i + 1), in s_Panels[i], in s_StatsScratch[i]);
+                ApplySlot(i, (TeamId)(i + 1), in s_Panels[i], in s_StatsScratch[i]);
         }
 
         /// <summary>
@@ -80,6 +105,7 @@ namespace TitanOrbit.Game
                 {
                     s_CachedPanelRoots[i] = null;
                     s_Panels[i] = default;
+                    s_Painted[i] = default;
                     continue;
                 }
 
@@ -89,6 +115,7 @@ namespace TitanOrbit.Game
 
                 s_CachedPanelRoots[i] = root;
                 s_Panels[i] = ResolvePanelTexts(root.transform);
+                s_Painted[i] = default;
             }
         }
 
@@ -100,9 +127,12 @@ namespace TitanOrbit.Game
                 return texts;
 
             // --- Preferred SampleScene paths ---
+            // Players live under PlayersPanel (older comments said PlayersQuota).
             texts.Title = FindTmp(panelRoot, "Content/TitleBar/Title");
             texts.Stats = FindTmp(panelRoot, "Content/StatsBar/Stats");
-            texts.Players = FindTmp(panelRoot, "Content/PlayersQuota/Players");
+            texts.Players = FindTmp(panelRoot, "Content/PlayersPanel/Players");
+            if (texts.Players == null)
+                texts.Players = FindTmp(panelRoot, "Content/PlayersQuota/Players");
 
             // --- Fallbacks if hierarchy was renamed lightly ---
             if (texts.Title == null)
@@ -113,7 +143,32 @@ namespace TitanOrbit.Game
                 texts.Players = FindTmpByName(panelRoot, "Players");
 
             texts.HasAny = texts.Title != null || texts.Stats != null || texts.Players != null;
+            ConfigureStatsLine(texts.Stats);
             return texts;
+        }
+
+        /// <summary>
+        /// Makes the stats bar tall enough for two telemetry lines.
+        /// The scene bar is 18px (one placeholder line). Worlds, gems, crew, and score
+        /// need a second line or they draw on top of the player list.
+        /// </summary>
+        static void ConfigureStatsLine(TextMeshProUGUI stats)
+        {
+            if (stats == null)
+                return;
+
+            // [UNITY] Centered, wrapping, so a narrow 5-team row can break instead of clipping.
+            stats.enableWordWrapping = true;
+            stats.overflowMode = TextOverflowModes.Overflow;
+            stats.alignment = TextAlignmentOptions.Center;
+
+            var bar = stats.transform.parent;
+            if (bar != null && bar.TryGetComponent<LayoutElement>(out var layout) &&
+                layout.preferredHeight < 52f)
+            {
+                // Two lines at 11px, plus room if a narrow card wraps to a third.
+                layout.preferredHeight = 52f;
+            }
         }
 
         /// <summary>TMP at a relative hierarchy path, or null.</summary>
@@ -137,7 +192,7 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>Writes one slot's numbers into its cached TMP fields.</summary>
-        static void ApplySlot(TeamId team, in PanelTexts texts, in EcsGameBridge.JoinTeamSlotStats stats)
+        static void ApplySlot(int slot, TeamId team, in PanelTexts texts, in EcsGameBridge.JoinTeamSlotStats stats)
         {
             if (!texts.HasAny)
                 return;
@@ -149,22 +204,97 @@ namespace TitanOrbit.Game
                                    stats.MaxPlayers + ")";
             }
 
-            // --- Stats: home level, gem bar, owned planet count ---
-            // Matches the scene placeholder format so layout/font stay familiar.
+            // --- Stats: live map slice + team score ---
+            // Worlds and gem bars are what is on the map right now. Score is the
+            // leaderboard total (kills, deposited gems, delivered people).
             if (texts.Stats != null)
-            {
-                int gems = Mathf.RoundToInt(stats.HomeGems);
-                int maxGems = Mathf.RoundToInt(stats.HomeMaxGems);
-                texts.Stats.text = "Home Lv." + stats.HomeLevel +
-                                   " | Gems " + gems + "/" + maxGems +
-                                   " | Planets " + stats.PlanetCount;
-            }
+                PaintMapLine(slot, texts.Stats, in stats);
 
             // --- Players list ---
             if (texts.Players != null)
                 texts.Players.text = string.IsNullOrEmpty(stats.PlayersLabel)
                     ? "No players"
                     : stats.PlayersLabel;
+        }
+
+        /// <summary>
+        /// Paints worlds, gem banks, crew, home level, and team score.
+        /// Skips the TMP write when those integers match the previous refresh.
+        /// </summary>
+        static void PaintMapLine(int slot, TextMeshProUGUI statsLabel, in EcsGameBridge.JoinTeamSlotStats stats)
+        {
+            int gems = Mathf.RoundToInt(stats.TeamGems);
+            int maxGems = Mathf.RoundToInt(stats.TeamMaxGems);
+            int capturable = stats.CapturableWorldCount;
+            if (capturable < stats.PlanetCount)
+                capturable = stats.PlanetCount;
+
+            if (slot >= 0 && slot < s_Painted.Length)
+            {
+                PaintedMapLine prev = s_Painted[slot];
+                if (prev.HasPaint &&
+                    prev.Worlds == stats.PlanetCount &&
+                    prev.Capturable == capturable &&
+                    prev.Gems == gems &&
+                    prev.MaxGems == maxGems &&
+                    prev.Crew == stats.TeamPopulation &&
+                    prev.HomeLevel == stats.HomeLevel &&
+                    prev.Score == stats.TeamScore &&
+                    prev.ScoreKnown == stats.TeamScoreKnown)
+                {
+                    return;
+                }
+
+                s_Painted[slot] = new PaintedMapLine
+                {
+                    Worlds = stats.PlanetCount,
+                    Capturable = capturable,
+                    Gems = gems,
+                    MaxGems = maxGems,
+                    Crew = stats.TeamPopulation,
+                    HomeLevel = stats.HomeLevel,
+                    Score = stats.TeamScore,
+                    ScoreKnown = stats.TeamScoreKnown,
+                    HasPaint = true,
+                };
+            }
+
+            // --- Two lines, dark-cockpit captions ---
+            // [TITAN-ORBIT] Ice labels, near-white numbers (the TMP color), gold score
+            // so it matches the in-game leaderboard total.
+            s_StatsLine.Clear();
+            s_StatsLine.Append(stats.PlanetCount);
+            if (capturable > 0)
+            {
+                s_StatsLine.Append('/');
+                s_StatsLine.Append(capturable);
+            }
+
+            s_StatsLine.Append(" <color=#9EB6D8>WORLDS</color>  |  ");
+            s_StatsLine.Append(gems);
+            s_StatsLine.Append('/');
+            s_StatsLine.Append(maxGems);
+            s_StatsLine.Append(" <color=#9EB6D8>GEMS</color>\n");
+            s_StatsLine.Append(stats.TeamPopulation);
+            s_StatsLine.Append(" <color=#9EB6D8>CREW</color>  |  ");
+            if (stats.HomeLevel > 0)
+            {
+                s_StatsLine.Append("<color=#9EB6D8>HOME LV.</color>");
+                s_StatsLine.Append(stats.HomeLevel);
+            }
+            else
+            {
+                s_StatsLine.Append("<color=#9EB6D8>HOME</color> -");
+            }
+
+            s_StatsLine.Append("  |  <color=#F2DB8C>SCORE ");
+            if (stats.TeamScoreKnown)
+                s_StatsLine.Append(stats.TeamScore);
+            else
+                s_StatsLine.Append('-');
+            s_StatsLine.Append("</color>");
+
+            statsLabel.text = s_StatsLine.ToString();
         }
     }
 }

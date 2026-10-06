@@ -56,6 +56,12 @@ namespace TitanOrbit.ECS
         /// </summary>
         public static int SessionGeneration { get; private set; }
 
+        /// <summary>
+        /// Bumped only by <see cref="NotifySessionLeave"/>. Presentation watches this so a dropped
+        /// WebGL session clears the "map already loaded" latch before the next Join.
+        /// </summary>
+        public static int LeaveGeneration { get; private set; }
+
         /// <summary>0–1 local asteroid build progress. 0 until hydrate actually starts.</summary>
         public static float Progress01
         {
@@ -149,6 +155,16 @@ namespace TitanOrbit.ECS
                 BuiltBodies = ExpectedBodies;
         }
 
+        /// <summary>
+        /// Dropped connection or a new Join. Bumps <see cref="LeaveGeneration"/> so the game
+        /// layer tears down the previous map latch even if the menu never polled loading.
+        /// </summary>
+        public static void NotifySessionLeave()
+        {
+            LeaveGeneration++;
+            Clear();
+        }
+
         /// <summary>Clears session state (disconnect / Play Mode) and bumps generation.</summary>
         public static void Clear()
         {
@@ -167,7 +183,11 @@ namespace TitanOrbit.ECS
 
 #if UNITY_EDITOR
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-        static void ResetStatics() => Clear();
+        static void ResetStatics()
+        {
+            LeaveGeneration = 0;
+            Clear();
+        }
 #endif
     }
 }

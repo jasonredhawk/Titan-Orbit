@@ -2,19 +2,18 @@ namespace TitanOrbit.Data
 {
     /// <summary>
     /// Hull-wide multi-mount fire policy for a <see cref="ShipFamilyDefinition"/>.
-    /// Authored on the family asset (Bullets header), copied into
-    /// <c>ShipWeaponConfig.FireMode</c> by <c>ShipStatApplyLogic</c>, and consumed by
-    /// <c>ShipWeaponFireLogic.TryPlanFire</c> on both server bullets and client tracers.
+    /// Authored on the family asset (Bullets header) and copied into
+    /// <c>ShipWeaponConfig.FireMode</c> by <c>ShipStatApplyLogic</c>.
     /// <para>
-    /// [TITAN-ORBIT] Sequencing is ship-level (shared energy pool + mount cursor), not per-weapon
-    /// component row — multi-barrel hulls share one policy for every mount.
+    /// [TITAN-ORBIT] Live fire does not branch on this enum. Every barrel waits
+    /// <c>1 / fireRate</c>, then fires if the hull pool can pay that shot.
+    /// The values stay so existing family assets keep a stable serialized byte.
     /// </para>
     /// </summary>
     public enum ShipWeaponFireMode : byte
     {
         /// <summary>
-        /// [TITAN-ORBIT] Default / legacy feel: full volley when energy covers every ready barrel;
-        /// otherwise round-robin on <c>ShipWeaponState.NextMountIndex</c>.
+        /// Default serialized value. Ready delay plus a per-shot energy check.
         /// </summary>
         EnergyHybrid = 0,
 

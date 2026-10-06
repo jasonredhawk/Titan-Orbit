@@ -13,6 +13,7 @@ namespace TitanOrbit.Data
     /// particles. Fin merges into <see cref="Tail"/>. Weapons split into rapid small-shot
     /// <see cref="WeaponBullet"/> vs slow heavy <see cref="WeaponCannon"/> — offense plus
     /// Energy Cap (extra storage); engines alone produce Regen.
+    /// Titan cargo / hold / storage parts use <see cref="Cargo"/>.
     /// Everything else maps to <see cref="Hull"/>.
     /// </para>
     /// </summary>
@@ -26,6 +27,8 @@ namespace TitanOrbit.Data
         /// <summary>MEGA sniper — high damage, high speed, very slow cadence.</summary>
         public const string WeaponSniper = "Weapon Sniper";
         public const string Wing = "Wing";
+        /// <summary>Cargo hold / storage — Titan type-table plus family capacity parts.</summary>
+        public const string Cargo = "Cargo";
         /// <summary>Power-plant profile — Move Speed + Energy Cap/Regen.</summary>
         public const string Engine = "Engine";
         /// <summary>Maneuver-jet profile — Acceleration + turn; thrust energy drain source.</summary>
@@ -55,7 +58,7 @@ namespace TitanOrbit.Data
 
         /// <summary>
         /// Inspector popup for Name Mapping / suggestion Part Type:
-        /// Unmapped, eight core groups, Ignore.
+        /// Unmapped, eight core groups, Cargo, Ignore.
         /// </summary>
         public static readonly string[] InspectorChoices =
         {
@@ -64,6 +67,7 @@ namespace TitanOrbit.Data
             WeaponBullet,
             WeaponCannon,
             Wing,
+            Cargo,
             Engine,
             Thruster,
             Tail,
@@ -119,6 +123,30 @@ namespace TitanOrbit.Data
             if (string.IsNullOrWhiteSpace(partType))
                 return false;
             return string.Equals(partType, WeaponCannon, StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>True for the Cargo / hold / storage Part Profile.</summary>
+        public static bool IsCargoProfile(string partType)
+        {
+            if (string.IsNullOrWhiteSpace(partType))
+                return false;
+            return string.Equals(partType, Cargo, StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// Cargo-hold name heuristic: Cargo, Storage, or an isolated Hold token
+        /// (not Holder / Threshold).
+        /// </summary>
+        public static bool IsCargoLikeName(string componentId)
+        {
+            if (string.IsNullOrWhiteSpace(componentId))
+                return false;
+
+            string id = componentId.ToLowerInvariant();
+            if (id.IndexOf("cargo", StringComparison.Ordinal) >= 0
+                || id.IndexOf("storage", StringComparison.Ordinal) >= 0)
+                return true;
+            return ContainsIsolatedKeyword(id, "hold");
         }
 
         /// <summary>True for Tail (and legacy Fin).</summary>
@@ -227,6 +255,10 @@ namespace TitanOrbit.Data
                 return Cockpit;
             if (string.Equals(t, Wing, StringComparison.OrdinalIgnoreCase))
                 return Wing;
+            if (string.Equals(t, Cargo, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(t, "Hold", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(t, "Storage", StringComparison.OrdinalIgnoreCase))
+                return Cargo;
 
             // Unknown non-empty type → Hull so Scan still has a profile.
             return Hull;
@@ -273,6 +305,8 @@ namespace TitanOrbit.Data
                 return Cockpit;
             if (id.IndexOf("wing", StringComparison.Ordinal) >= 0)
                 return Wing;
+            if (IsCargoLikeName(componentId))
+                return Cargo;
             if (id.IndexOf("cannon", StringComparison.Ordinal) >= 0
                 || id.IndexOf("missile", StringComparison.Ordinal) >= 0
                 || id.IndexOf("rocket", StringComparison.Ordinal) >= 0

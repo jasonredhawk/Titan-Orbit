@@ -161,7 +161,11 @@ namespace TitanOrbit.ECS
             float mapH,
             bool syncShipSummary)
         {
-            var instance = CreateBurnInstance(hitPoint, bodyPos, burn, in bullet, serverElapsed, mapW, mapH);
+            quaternion bodyRotation = quaternion.identity;
+            if (em.HasComponent<LocalTransform>(entity))
+                bodyRotation = em.GetComponentData<LocalTransform>(entity).Rotation;
+            var instance = CreateBurnInstance(
+                hitPoint, bodyPos, bodyRotation, burn, in bullet, serverElapsed, mapW, mapH);
             if (!em.HasBuffer<BurnOverTimeElement>(entity))
             {
                 ecb.AddBuffer<BurnOverTimeElement>(entity);
@@ -221,6 +225,7 @@ namespace TitanOrbit.ECS
         public static BurnOverTimeElement CreateBurnInstance(
             float3 hitPoint,
             float3 bodyPos,
+            quaternion bodyRotation,
             BulletBankAbility burn,
             in BulletElement bullet,
             double serverElapsed,
@@ -232,14 +237,17 @@ namespace TitanOrbit.ECS
             float dps = (burn.magnitude > 0f ? burn.magnitude : 1f) * ResolveStrengthScale(bullet.StrengthScale);
             hitPoint.y = 0f;
             bodyPos.y = 0f;
-            float3 offset = ToroidalMapEcs.IsValidMapSize(mapW, mapH)
+            float3 worldOffset = ToroidalMapEcs.IsValidMapSize(mapW, mapH)
                 ? ToroidalMapEcs.ShortestOffsetXZ(bodyPos, hitPoint, mapW, mapH)
                 : hitPoint - bodyPos;
-            offset.y = 0f;
+            worldOffset.y = 0f;
+            // Local axes so a turning hull keeps the fire on the face that was hit.
+            float3 localOffset = math.rotate(math.inverse(bodyRotation), worldOffset);
+            localOffset.y = 0f;
 
             return new BurnOverTimeElement
             {
-                HitOffset = offset,
+                HitOffset = localOffset,
                 ExpiresAt = (float)(serverElapsed + duration),
                 NextTickAt = serverElapsed + tick,
                 Dps = dps,
@@ -255,6 +263,7 @@ namespace TitanOrbit.ECS
             DynamicBuffer<BurnOverTimeElement> instances,
             float3 hitPoint,
             float3 bodyPos,
+            quaternion bodyRotation,
             BulletBankAbility burn,
             in BulletElement bullet,
             double serverElapsed,
@@ -262,7 +271,18 @@ namespace TitanOrbit.ECS
             float mapH)
         {
             AddBurnInstance(instances, CreateBurnInstance(
-                hitPoint, bodyPos, burn, in bullet, serverElapsed, mapW, mapH));
+                hitPoint, bodyPos, bodyRotation, burn, in bullet, serverElapsed, mapW, mapH));
+        }
+
+        /// <summary>
+        /// World XZ of a stored local hit. <paramref name="hitLocal"/> is world units along the
+        /// body's local axes (not divided by scale).
+        /// </summary>
+        public static float3 BurnTickWorldPosition(float3 bodyPosition, quaternion bodyRotation, float3 hitLocal)
+        {
+            float3 world = bodyPosition + math.rotate(bodyRotation, hitLocal);
+            world.y = 0f;
+            return world;
         }
 
         public static void AddBurnInstance(
@@ -301,6 +321,9 @@ namespace TitanOrbit.ECS
                 state.SourceNetworkId = inst.SourceNetworkId;
                 state.SourceTeam = inst.SourceTeam;
                 state.NextTickAt = inst.NextTickAt;
+                // Last instance is the newest hit — the looping impact follows that contact.
+                state.HitLocalX = inst.HitOffset.x;
+                state.HitLocalZ = inst.HitOffset.z;
             }
 
             em.SetComponentData(shipEntity, state);
@@ -395,7 +418,8 @@ namespace TitanOrbit.ECS
                     em, hitPoint, radius, centerDamage, skipEntity,
                     ownerTeam, ownerNetworkId, serverElapsed, mapW, mapH,
                     ecb, gemPrefab, ShipDamageLogic.ExcessDamageGemExpulsionPerHullDamage,
-                    allowOwnerHits);
+                    allowOwnerHits,
+                    (byte)DeathVfxSourceKind.Mine);
             }
 
             if (blastForce <= 0.01f)
@@ -482,9 +506,12 @@ namespace TitanOrbit.ECS
             byte ownerTeam = bullet.OwnerTeam;
             int ownerNet = bullet.OwnerNetworkId;
 
+            ShipMatchStatsLogic.ClassifyBulletSource(in bullet, out byte blastKind, out int blastGhost);
             ApplyBlastToShips(
                 em, hitPoint, radius, centerDamage, skipEntity, ownerTeam, ownerNet,
-                serverElapsed, mapW, mapH, ecb, gemPrefab, gemExpulsionPerHullDamage);
+                serverElapsed, mapW, mapH, ecb, gemPrefab, gemExpulsionPerHullDamage,
+                sourceKind: blastKind,
+                sourceGhostId: blastGhost);
             ApplyBlastToAsteroids(em, hitPoint, radius, centerDamage, skipEntity, mapW, mapH);
             ApplyBlastToTurrets(em, hitPoint, radius, centerDamage, skipEntity, ownerTeam, serverElapsed, defenseTargets, mapW, mapH);
             ApplyBlastToDrones(em, hitPoint, radius, centerDamage, ownerTeam, ownerNet, droneTargets, mapW, mapH);
@@ -508,7 +535,9 @@ namespace TitanOrbit.ECS
             EntityCommandBuffer ecb,
             Entity gemPrefab,
             float gemExpulsionPerHullDamage,
-            bool allowOwnerHits = false)
+            bool allowOwnerHits = false,
+            byte sourceKind = 0,
+            int sourceGhostId = 0)
         {
             using var query = em.CreateEntityQuery(
                 ComponentType.ReadOnly<ShipTag>(),
@@ -572,7 +601,12 @@ namespace TitanOrbit.ECS
                     float3 off = ToroidalMapEcs.ShortestOffsetXZ(center, pos, mapW, mapH);
                     ShipMatchStatsLogic.SetLastDamager(
                         em, shipEntity, ownerNet, (float)serverElapsed,
-                        new float2(off.x, off.z), splash);
+                        new float2(off.x, off.z), splash,
+                        sourceEntity: default,
+                        sourceKind: sourceKind,
+                        sourceGhostId: sourceGhostId,
+                        sourcePosXZ: new float2(center.x, center.z),
+                        hasSourcePos: sourceKind == (byte)DeathVfxSourceKind.Mine);
                 }
 
                 if (result.GemsToExpel > 0.0001f && gemPrefab != Entity.Null)
@@ -585,7 +619,7 @@ namespace TitanOrbit.ECS
                         result.GemsToExpel,
                         intensity: 0.5f,
                         salt: (uint)(shipEntity.Index * 19349663) ^ (uint)(serverElapsed * 1000.0),
-                        (float)serverElapsed,
+                        PlanetGemMoonOrbitClock.GetElapsedSecondsOrFallback(em, serverElapsed),
                         sourceNetworkId);
                 }
             }
@@ -679,7 +713,11 @@ namespace TitanOrbit.ECS
             }
         }
 
-        /// <summary>Damages enemy drones in the blast using this tick's derived hit spheres.</summary>
+        /// <summary>
+        /// Damages enemy drones in the blast using this tick's derived hit spheres.
+        /// Re-reads each sphere after earlier kills because a dead drone <c>RemoveAt</c>
+        /// shifts later equipment indices on the same ship.
+        /// </summary>
         static void ApplyBlastToDrones(
             EntityManager em,
             float3 center,
@@ -697,6 +735,9 @@ namespace TitanOrbit.ECS
             for (int i = 0; i < droneTargets.Count; i++)
             {
                 var drone = droneTargets[i];
+                // SlotIndex -1 = wreck already stripped this tick (see DroneSwarmHitScan).
+                if (drone.SlotIndex < 0)
+                    continue;
                 if (ownerNet > 0 && drone.OwnerNetworkId == ownerNet)
                     continue;
                 if (ownerTeam != 0 && drone.Team == ownerTeam)
@@ -711,7 +752,8 @@ namespace TitanOrbit.ECS
                 if (splash <= 0.01f)
                     continue;
 
-                DroneSwarmHitScan.ApplyDamageToDroneSlot(em, drone.ShipEntity, drone.SlotIndex, splash);
+                DroneSwarmHitScan.ApplyDamageToDroneSlot(
+                    em, drone.ShipEntity, drone.SlotIndex, splash, droneTargets);
             }
         }
 

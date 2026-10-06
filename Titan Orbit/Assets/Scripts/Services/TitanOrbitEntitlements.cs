@@ -36,6 +36,15 @@ namespace TitanOrbit.Services
         /// <summary>PlayerPrefs key for the master entitlement (0/1).</summary>
         const string OrbitUnlockedPlayerPrefsKey = "TitanOrbit_OrbitUnlockedOwned_v1";
 
+        /// <summary>Prefix for the per-Unity-player copy. Suffix is the UGS player id.</summary>
+        const string OrbitUnlockedPlayerKeyPrefix = "TitanOrbit_OrbitUnlockedOwned_v1_";
+
+        /// <summary>Set after the old device-wide flag is copied onto the first Unity account.</summary>
+        const string LegacyClaimedPrefsKey = "TitanOrbit_OrbitUnlockedLegacyClaimed_v1";
+
+        /// <summary>[EDITOR] Play Mode grant that is not tied to a Unity player.</summary>
+        const string EditorOverridePrefsKey = "TitanOrbit_OrbitUnlockedEditorOverride_v1";
+
         /// <summary>
         /// [LEGACY] Previous remove-ads key. Read on first launch so testers who
         /// already bought <c>remove_ads</c> are treated as Orbit Unlocked owners.
@@ -79,8 +88,8 @@ namespace TitanOrbit.Services
         public static string RemoveAdsProductId => OrbitUnlockedProductId;
 
         /// <summary>
-        /// True when this device owns Orbit Unlocked (purchase, restore, or migrated
-        /// remove-ads prefs). Source of truth for ads, cosmetics, and auto +1 slot.
+        /// True for the signed-in Unity player when that account owns Orbit Unlocked.
+        /// Guests stay false even if another account bought it on this browser.
         /// </summary>
         public static bool IsOrbitUnlockedOwned { get; private set; }
 
@@ -95,7 +104,54 @@ namespace TitanOrbit.Services
         /// </summary>
         static TitanOrbitEntitlements()
         {
-            IsOrbitUnlockedOwned = ReadOwnedFromPrefs();
+            // Player builds start locked. The Unity account load fills this in.
+            // Editor override survives domain reload so the Economy menu still works.
+#if UNITY_EDITOR
+            IsOrbitUnlockedOwned = PlayerPrefs.GetInt(EditorOverridePrefsKey, 0) != 0;
+#else
+            IsOrbitUnlockedOwned = false;
+#endif
+        }
+
+        /// <summary>
+        /// Loads the entitlement stored for the current Unity player.
+        /// Guests clear the session view so ads return after sign-out.
+        /// </summary>
+        public static void LoadSessionForCurrentPlayer()
+        {
+            // --- Load account entitlement ---
+            if (!UnityGameServicesBootstrap.HasUnityPlayerAccountLinked())
+            {
+#if UNITY_EDITOR
+                ApplySessionOwned(PlayerPrefs.GetInt(EditorOverridePrefsKey, 0) != 0);
+#else
+                ApplySessionOwned(false);
+#endif
+                return;
+            }
+
+            string playerId = UnityGameServicesBootstrap.PlayerId;
+            if (string.IsNullOrEmpty(playerId))
+            {
+                ApplySessionOwned(false);
+                return;
+            }
+
+            bool owned = PlayerPrefs.GetInt(PlayerKey(playerId), 0) != 0;
+            if (!owned)
+                owned = TryClaimLegacyDevicePurchase(playerId);
+            ApplySessionOwned(owned);
+        }
+
+        /// <summary>Hides Orbit Unlocked for this session without deleting the account record.</summary>
+        public static void ClearSessionView()
+        {
+            // --- Clear session view ---
+#if UNITY_EDITOR
+            if (PlayerPrefs.GetInt(EditorOverridePrefsKey, 0) != 0)
+                return;
+#endif
+            ApplySessionOwned(false);
         }
 
         /// <summary>
@@ -149,6 +205,9 @@ namespace TitanOrbit.Services
             // --- Restore from receipt ---
             if (!hasReceipt || string.IsNullOrEmpty(productId))
                 return;
+            // Store receipts attach to the signed-in Unity player, not a guest session.
+            if (!UnityGameServicesBootstrap.HasUnityPlayerAccountLinked())
+                return;
             if (ProductGrantsOrbitUnlocked(productId))
                 SetOrbitUnlockedOwned(true);
         }
@@ -175,24 +234,112 @@ namespace TitanOrbit.Services
         }
 
         /// <summary>
-        /// Writes the master flag and both PlayerPrefs keys (new + legacy) so older
-        /// readers and the new code stay in sync. No-ops when the value is unchanged.
+        /// Saves Orbit Unlocked on the signed-in Unity player (this browser and Cloud Save).
+        /// A player build ignores <paramref name="owned"/> true when nobody is signed in.
         /// </summary>
         /// <param name="owned">True after purchase / restore / Editor grant.</param>
         public static void SetOrbitUnlockedOwned(bool owned)
         {
             // --- Persist entitlement ---
-            if (IsOrbitUnlockedOwned == owned)
+            string playerId = null;
+            bool unityAccount = UnityGameServicesBootstrap.HasUnityPlayerAccountLinked();
+            if (unityAccount)
+                playerId = UnityGameServicesBootstrap.PlayerId;
+
+            if (owned && string.IsNullOrEmpty(playerId))
+            {
+#if UNITY_EDITOR
+                PlayerPrefs.SetInt(EditorOverridePrefsKey, 1);
+                PlayerPrefs.Save();
+                ApplySessionOwned(true);
+                return;
+#else
+                Debug.LogWarning(
+                    "[TitanOrbitEntitlements] Orbit Unlocked requires a signed-in Unity account.");
+                return;
+#endif
+            }
+
+            if (!string.IsNullOrEmpty(playerId))
+            {
+                PlayerPrefs.SetInt(PlayerKey(playerId), owned ? 1 : 0);
+                PlayerPrefs.Save();
+                TitanOrbitAccountEntitlementSync.PushAsync(playerId, owned);
+            }
+#if UNITY_EDITOR
+            else
+            {
+                PlayerPrefs.SetInt(EditorOverridePrefsKey, owned ? 1 : 0);
+                PlayerPrefs.Save();
+            }
+#endif
+
+            // Keep the old device keys in sync for the Editor Economy menu.
+            if (string.IsNullOrEmpty(playerId))
+            {
+                int bit = owned ? 1 : 0;
+                PlayerPrefs.SetInt(OrbitUnlockedPlayerPrefsKey, bit);
+                PlayerPrefs.SetInt(LegacyRemoveAdsPlayerPrefsKey, bit);
+                PlayerPrefs.Save();
+            }
+
+            ApplySessionOwned(owned);
+        }
+
+        /// <summary>Applies a Cloud Save result for <paramref name="playerId"/> when it grants ownership.</summary>
+        public static void ApplyCloudOwned(string playerId, bool owned)
+        {
+            // --- Apply cloud entitlement ---
+            if (string.IsNullOrEmpty(playerId) || !owned)
+                return;
+            if (!string.Equals(playerId, UnityGameServicesBootstrap.PlayerId, StringComparison.Ordinal))
+                return;
+            if (!UnityGameServicesBootstrap.HasUnityPlayerAccountLinked())
                 return;
 
+            if (PlayerPrefs.GetInt(PlayerKey(playerId), 0) == 0)
+            {
+                PlayerPrefs.SetInt(PlayerKey(playerId), 1);
+                PlayerPrefs.Save();
+            }
+
+            ApplySessionOwned(true);
+        }
+
+        static void ApplySessionOwned(bool owned)
+        {
+            // --- Session flag ---
+            if (IsOrbitUnlockedOwned == owned)
+                return;
             IsOrbitUnlockedOwned = owned;
-            int bit = owned ? 1 : 0;
-            // [TITAN-ORBIT] Services cannot reference NetCode MPPM key helpers. Same
-            // raw keys as the old remove-ads flag — one purchase per Editor process.
-            PlayerPrefs.SetInt(OrbitUnlockedPlayerPrefsKey, bit);
-            PlayerPrefs.SetInt(LegacyRemoveAdsPlayerPrefsKey, bit);
-            PlayerPrefs.Save();
             OrbitUnlockedOwnershipChanged?.Invoke();
+        }
+
+        static string PlayerKey(string playerId)
+        {
+            return OrbitUnlockedPlayerKeyPrefix + playerId;
+        }
+
+        /// <summary>
+        /// Copies a pre-account device purchase onto the first Unity player that signs in.
+        /// </summary>
+        static bool TryClaimLegacyDevicePurchase(string playerId)
+        {
+            // --- One-time legacy claim ---
+            if (PlayerPrefs.GetInt(LegacyClaimedPrefsKey, 0) != 0)
+                return false;
+
+            bool legacyOwned = ReadOwnedFromPrefs();
+            PlayerPrefs.SetInt(LegacyClaimedPrefsKey, 1);
+            PlayerPrefs.Save();
+            if (!legacyOwned)
+                return false;
+
+            PlayerPrefs.SetInt(PlayerKey(playerId), 1);
+            PlayerPrefs.Save();
+            TitanOrbitAccountEntitlementSync.PushAsync(playerId, true);
+            Debug.Log("[TitanOrbitEntitlements] Moved the device Orbit Unlocked flag onto player " + playerId);
+            return true;
         }
 
         /// <summary>

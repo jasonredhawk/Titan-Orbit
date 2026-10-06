@@ -1,9 +1,12 @@
 using System;
+using System.Text;
 using TitanOrbit.Core;
 using TitanOrbit.Data;
+using TitanOrbit.ECS;
 using TitanOrbit.Game;
 using TitanOrbit.Simulation;
 using TMPro;
+using Unity.Entities;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -356,36 +359,64 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Writes the uppercase family caption and optional FAMILY STATS rail.
-        /// Hides the rail when every special bonus is 1× (Astro Eagle today).
+        /// Writes the uppercase family caption and the FAMILY BONUSES list.
+        /// Hides the list when every special bonus is 1× (Astro Eagle today) —
+        /// the upgrade-tree matrix still shows the full baseline board.
         /// </summary>
-        public void RefreshFamilyIdentity(ShipFamilyDefinition family, int shipLevel = 1)
+        public void RefreshFamilyIdentity(
+            ShipFamilyDefinition family,
+            int shipLevel = 1,
+            int planetOrHullBankIndex = -1)
         {
             EnsureBuilt();
             if (_familyNameText != null)
                 _familyNameText.text = FamilyStatHudCopy.FormatFamilyCaption(family);
 
-            bool showStats = FamilyStatHudCopy.HasVisibleFamilyStats(family);
+            // Family lineage + this planet's bullet-type damage (Rockets +20% vs rocks).
+            int extras = BulletBankCombatLogic.CountFirePowerExtraLevels(Mathf.Max(1, shipLevel), 0);
+            BulletBankProfile bankProfile = ResolveBankProfile(family, planetOrHullBankIndex);
+            string familyLines = family != null
+                ? FamilyStatHudCopy.FormatListedBonusesRichText(family.specialBonuses)
+                : string.Empty;
+            string bankLines = FamilyStatHudCopy.FormatListedBankDamageRichText(bankProfile, extras);
+            bool showStats = !string.IsNullOrEmpty(familyLines) || !string.IsNullOrEmpty(bankLines);
             if (_familyStatsBlock != null)
                 _familyStatsBlock.SetActive(showStats);
             if (showStats && _familyStatsText != null)
-                _familyStatsText.text = FamilyStatHudCopy.FormatNonIdentityBonuses(family.specialBonuses);
+            {
+                if (!string.IsNullOrEmpty(familyLines) && !string.IsNullOrEmpty(bankLines))
+                    _familyStatsText.text = familyLines + "\n" + bankLines;
+                else
+                    _familyStatsText.text = !string.IsNullOrEmpty(familyLines) ? familyLines : bankLines;
+                ApplyFamilyStatsBlockHeight();
+            }
 
-            string bankName = BulletBankHudCopy.FormatFamilyTypeName(family);
-            bool showWeapon = !string.IsNullOrEmpty(bankName);
+            string bankName = BulletBankHudCopy.FormatFamilyTypeName(family, planetOrHullBankIndex);
+            bool listedOwned = TryFormatOwnedWeaponsGlance(shipLevel, out string ownedGlance, out string ownedTip);
+            bool showWeapon = listedOwned || !string.IsNullOrEmpty(bankName);
             if (_ordnanceBlock != null)
                 _ordnanceBlock.SetActive(showWeapon);
             if (showWeapon && _ordnanceText != null)
-                _ordnanceText.text = BulletBankHudCopy.FormatFamilyWeaponGlance(family, shipLevel);
+            {
+                _ordnanceText.text = listedOwned
+                    ? ownedGlance
+                    : BulletBankHudCopy.FormatFamilyWeaponGlance(family, shipLevel, planetOrHullBankIndex);
+            }
             if (_ordnanceTip != null)
             {
                 _ordnanceTip.Caption = BulletBankHudCopy.WeaponTypeCaption;
-                _ordnanceTip.Body = showWeapon
-                    ? BulletBankHudCopy.BuildFamilyOrdnanceTooltip(family, shipLevel)
-                    : string.Empty;
+                _ordnanceTip.Body = !showWeapon
+                    ? string.Empty
+                    : (listedOwned
+                        ? ownedTip
+                        : BulletBankHudCopy.BuildFamilyOrdnanceTooltip(family, shipLevel, planetOrHullBankIndex));
             }
         }
 
+        /// <summary>
+        /// Dark FAMILY BONUSES plate under Your Ship. Starts hidden; RefreshFamilyIdentity
+        /// turns it on when the docked family has any ≠1 multiplier.
+        /// </summary>
         void CreateFamilyStatsBlock(Transform parent)
         {
             _familyStatsBlock = new GameObject("FamilyStats");
@@ -408,7 +439,7 @@ namespace TitanOrbit.UI
             var capGo = new GameObject("Caption");
             capGo.transform.SetParent(_familyStatsBlock.transform, false);
             var cap = capGo.AddComponent<TextMeshProUGUI>();
-            cap.text = "FAMILY STATS";
+            cap.text = "FAMILY BONUSES";
             cap.fontSize = 9f;
             cap.fontStyle = FontStyles.Bold;
             cap.characterSpacing = 1.2f;
@@ -421,18 +452,102 @@ namespace TitanOrbit.UI
             _familyStatsText = bodyGo.AddComponent<TextMeshProUGUI>();
             _familyStatsText.fontSize = 10f;
             _familyStatsText.color = new Color(0.88f, 0.92f, 0.98f, 1f);
+            _familyStatsText.richText = true;
+            _familyStatsText.enableWordWrapping = true;
             _familyStatsText.raycastTarget = false;
             ApplyFont(_familyStatsText);
             _familyStatsBlock.SetActive(false);
         }
 
+        /// <summary>
+        /// Grows the sidebar FAMILY BONUSES plate to fit every ≠1 line.
+        /// Cosmic Shark has four live fields; Hyper Falcon has six — a fixed
+        /// 36px rail used to clip the rest.
+        /// </summary>
+        void ApplyFamilyStatsBlockHeight()
+        {
+            if (_familyStatsBlock == null || _familyStatsText == null)
+                return;
+
+            var le = _familyStatsBlock.GetComponent<LayoutElement>();
+            if (le == null)
+                return;
+
+            // Caption + padding + one 12px line per bonus. Clamp so a huge
+            // designer stack cannot shove LOADOUT off the dock.
+            // [STANDARD] Count newlines instead of Split — dock refresh is rare,
+            // but we still skip the string[] alloc.
+            string body = _familyStatsText.text;
+            int lines = 1;
+            for (int i = 0; i < body.Length; i++)
+            {
+                if (body[i] == '\n')
+                    lines++;
+            }
+
+            float h = 22f + lines * 13f;
+            le.minHeight = 36f;
+            le.preferredHeight = Mathf.Clamp(h, 36f, 160f);
+        }
+
+        static readonly VisibleBankRow[] s_OwnedWeaponRows = new VisibleBankRow[16];
+
+        /// <summary>
+        /// A Titan's original catalog gun, then the family fleet gun, plus each
+        /// purchased weapon type the local ship can B-key.
+        /// False when the ghost has not hydrated yet.
+        /// </summary>
+        static bool TryFormatOwnedWeaponsGlance(int shipLevel, out string glance, out string tip)
+        {
+            glance = string.Empty;
+            tip = string.Empty;
+            var world = EcsGameBridge.GetLocalPlayerShipWorld();
+            if (world == null || !world.IsCreated)
+                return false;
+            if (!EcsGameBridge.TryGetLocalShipEntityOnWorld(world, out Entity ship) || ship == Entity.Null)
+                return false;
+
+            int count = BulletBankOwnership.CollectVisibleBankRows(
+                world.EntityManager, ship, s_OwnedWeaponRows);
+            if (count <= 0)
+                return false;
+
+            var body = new StringBuilder(96);
+            var tipSb = new StringBuilder(256);
+            int listed = 0;
+            for (int i = 0; i < count; i++)
+            {
+                VisibleBankRow row = s_OwnedWeaponRows[i];
+                if (!row.IsOwned)
+                    continue;
+                string name = BulletBankProfileUtility.FormatBankCategoryName(row.BankIndex);
+                if (string.IsNullOrEmpty(name))
+                    continue;
+                if (body.Length > 0)
+                    body.Append('\n');
+                body.Append(name);
+                if (row.IsHullDefault)
+                    body.Append("  · hull");
+                if (tipSb.Length > 0)
+                    tipSb.Append("\n\n");
+                tipSb.Append(BulletBankHudCopy.BuildFamilyOrdnanceTooltip(null, shipLevel, row.BankIndex));
+                listed++;
+            }
+
+            if (listed <= 0)
+                return false;
+            glance = body.ToString();
+            tip = tipSb.ToString();
+            return true;
+        }
+
         void CreateOrdnanceBlock(Transform parent)
         {
-            _ordnanceBlock = new GameObject("Ordnance");
+            _ordnanceBlock = new GameObject("Weapons");
             _ordnanceBlock.transform.SetParent(parent, false);
             var le = _ordnanceBlock.AddComponent<LayoutElement>();
-            le.preferredHeight = 52f;
-            le.minHeight = 40f;
+            le.preferredHeight = 72f;
+            le.minHeight = 44f;
             le.flexibleHeight = 0f;
             var bg = _ordnanceBlock.AddComponent<Image>();
             bg.color = new Color(0.018f, 0.028f, 0.045f, 1f);
@@ -462,7 +577,7 @@ namespace TitanOrbit.UI
             _ordnanceText.color = new Color(0.88f, 0.92f, 0.98f, 1f);
             _ordnanceText.enableWordWrapping = true;
             _ordnanceText.overflowMode = TextOverflowModes.Ellipsis;
-            _ordnanceText.maxVisibleLines = 3;
+            _ordnanceText.maxVisibleLines = 8;
             _ordnanceText.raycastTarget = false;
             ApplyFont(_ordnanceText);
 
@@ -1254,6 +1369,19 @@ namespace TitanOrbit.UI
         {
             if (fontAsset != null)
                 tmp.font = fontAsset;
+        }
+
+        /// <summary>
+        /// Planet / family bank profile for the FAMILY BONUSES damage lines.
+        /// Null when the combat catalog has not loaded yet.
+        /// </summary>
+        static BulletBankProfile ResolveBankProfile(ShipFamilyDefinition family, int planetOrHullBankIndex)
+        {
+            int idx = BulletBankProfileUtility.ResolveBankIndexForFamily(family, planetOrHullBankIndex);
+            var bank = BulletBankCombatLogic.Bank;
+            if (bank == null || !bank.TryGetProfile(idx, out BulletBankProfile profile))
+                return null;
+            return profile;
         }
     }
 }

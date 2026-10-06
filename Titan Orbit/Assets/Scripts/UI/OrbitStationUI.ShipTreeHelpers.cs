@@ -118,19 +118,141 @@ namespace TitanOrbit.UI
             }
         }
 
+        /// <summary>
+        /// Repaints colors, prices, power bars, and screenshots on the existing tree
+        /// nodes. Does not Instantiate. Landing-delay prepare already did this for the
+        /// docked moon — Show skips this when <see cref="IsLandedMoonTreePreparedForCurrentPlanet"/>
+        /// is true so the first visible frame is not a 24-card hitch.
+        /// </summary>
         internal void RefreshShipTreeVisualStateOnly()
         {
+            // --- Paint existing cards ---
             if (shipUpgradeTree == null)
                 return;
 
             if (!IsTreeDataAvailable())
             {
-                if (shipUpgradeTree.Hint != null)
-                    shipUpgradeTree.Hint.text = "Upgrade tree unavailable.";
+                shipUpgradeTree.HideHint();
                 return;
             }
 
             shipUpgradeTree.RefreshVisualState();
+        }
+
+        /// <summary>
+        /// Paints a few upgrade-tree cards for the moon we just landed on, while the
+        /// overlay stays hidden. <see cref="MoonOrbitStationController"/> ticks this
+        /// during the 0.5s cinematic delay so <see cref="Show"/> does not swap every
+        /// hull screenshot on the first visible frame.
+        /// Same-moon re-docks skip the paint but still re-arm the backdrop once so
+        /// power-bar hover trays have real rects after <c>Hide</c> deactivated them.
+        /// </summary>
+        /// <param name="storePlanetId">Gem-moon planet whose family ladder fills the tree.</param>
+        /// <param name="homePlanetId">Team home planet id for Bank RPCs (0 if unknown).</param>
+        public void TickLandedMoonTreePrepare(int storePlanetId, int homePlanetId)
+        {
+            // --- Bind then stagger screenshots ---
+            // [TITAN-ORBIT] Join warmup already Instantiates the 24-node tree, but it
+            // paints the dummy / first-known family's thumbs. A Cosmic Shark moon then
+            // used to replace all 24 Image.sprite refs in one Show frame (GPU upload +
+            // canvas dirty). We do that swap here, a handful of cards per frame, at
+            // CanvasGroup alpha 0 so the player never sees the old family flash.
+            if (storePlanetId <= 0)
+                return;
+
+            BindEcsViews(storePlanetId, homePlanetId);
+            if (!IsMoonDockWarmForInstantShow)
+                return;
+
+            if (_landPrepareComplete && _landPreparePlanetId == storePlanetId)
+            {
+                // --- Same moon as last dock ---
+                // Screenshots are already assigned, so we skip the 24-card paint.
+                // Hide() still SetActive(false) the backdrop; after a long inactive
+                // stretch those power-bar trays are 0×0. Re-arm once at alpha 0 and
+                // flush layout so the second land's hover math has real rects.
+                if (moonDockCenterBackdrop == null || !moonDockCenterBackdrop.activeSelf)
+                {
+                    ArmHiddenLandPrepareHierarchy();
+                    Canvas.ForceUpdateCanvases();
+                }
+                return;
+            }
+
+            if (_landPreparePlanetId != storePlanetId)
+            {
+                _landPreparePlanetId = storePlanetId;
+                _landPrepareNodeIndex = 0;
+                _landPrepareComplete = false;
+            }
+
+            if (!IsTreeDataAvailable() || shipUpgradeTree == null)
+                return;
+
+            ArmHiddenLandPrepareHierarchy();
+
+            IReadOnlyList<ShipUpgradeTreeNodeUI> nodes = shipUpgradeTree.Nodes;
+            if (nodes == null || nodes.Count == 0)
+                return;
+
+            ShipPowerBarStatMaxes maxes = shipUpgradeTree.GetPowerBarStatMaxes();
+            int end = Mathf.Min(_landPrepareNodeIndex + LandPrepareNodesPerTick, nodes.Count);
+            for (int i = _landPrepareNodeIndex; i < end; i++)
+                PopulateTreeNode(nodes[i], maxes);
+            _landPrepareNodeIndex = end;
+
+            // [UNITY] Flush the batch so textures upload while the overlay is still invisible.
+            Canvas.ForceUpdateCanvases();
+
+            if (_landPrepareNodeIndex < nodes.Count)
+                return;
+
+            // --- Last batch: header + Your Ship hero ---
+            UpdateShipTreeHintText();
+            if (orbitDockSidebar != null)
+                orbitDockSidebar.RefreshCurrentShip(PopulateTreeNode, maxes);
+            Canvas.ForceUpdateCanvases();
+            _landPrepareComplete = true;
+        }
+
+        /// <summary>
+        /// True when the shared tree already shows this docked moon's family screenshots.
+        /// Warmed Show can skip a second full tree paint.
+        /// </summary>
+        bool IsLandedMoonTreePreparedForCurrentPlanet()
+        {
+            Planet storePlanet = GetShipUpgradeStorePlanet();
+            int planetId = storePlanet != null ? storePlanet.PlanetId : _ecsStorePlanetId;
+            return _landPrepareComplete && planetId > 0 && _landPreparePlanetId == planetId;
+        }
+
+        /// <summary>
+        /// Turns the moon-dock backdrop on at alpha 0 so Image.sprite assignments
+        /// upload to the GPU without the player seeing the menu.
+        /// Does not set <c>_moonDockLayoutActive</c> — that would start the 0.35s
+        /// store refresh in <see cref="Update"/> during the landing delay.
+        /// </summary>
+        void ArmHiddenLandPrepareHierarchy()
+        {
+            // --- Invisible but active ---
+            // [UNITY] Inactive Images skip GPU upload. CanvasGroup.alpha = 0 still
+            // rebuilds graphics; the player just cannot see them.
+            if (moonDockCenterBackdrop == null)
+                return;
+
+            EnsureMoonDockBackdropGroup();
+            _moonDockBackdropGroup.alpha = 0f;
+            _moonDockBackdropGroup.blocksRaycasts = false;
+            _moonDockBackdropGroup.interactable = false;
+            moonDockCenterBackdrop.SetActive(true);
+            if (moonDockCenterShipsHost != null)
+                moonDockCenterShipsHost.gameObject.SetActive(true);
+            if (shipsTabContent != null)
+                shipsTabContent.SetActive(true);
+            if (moonDockCardsScroll != null)
+                moonDockCardsScroll.gameObject.SetActive(false);
+            if (moonDockGearScroll != null)
+                moonDockGearScroll.gameObject.SetActive(false);
         }
 
         /// <summary>Called after a ship purchase/swap so tree highlights and labels match the new hull.</summary>
@@ -287,11 +409,34 @@ namespace TitanOrbit.UI
 
             view.SetInteractable(clickable);
             view.EnsureStableButtonRendering();
-            if (canSwapHull) view.SetButtonBackgroundColor(new Color(0.28f, 0.68f, 0.82f, 0.98f));
-            else if (isCurrent) view.SetButtonBackgroundColor(new Color(0.26f, 0.62f, 0.36f, 0.98f));
-            else if (tierBlocked) view.SetButtonBackgroundColor(new Color(0.1f, 0.11f, 0.14f, 0.92f));
-            else if (isNextChoice) view.SetButtonBackgroundColor(new Color(0.25f, 0.48f, 0.78f, 0.98f));
-            else view.SetButtonBackgroundColor(new Color(0.19f, 0.23f, 0.31f, 0.94f));
+            // Fill + ink stay paired. Cyan available tiles need cream captions —
+            // ice-blue type disappears into (0.28, 0.68, 0.82).
+            ShipUpgradeTreeNodeUI.RegularCardInk ink;
+            if (canSwapHull)
+            {
+                view.SetButtonBackgroundColor(new Color(0.28f, 0.68f, 0.82f, 0.98f));
+                ink = ShipUpgradeTreeNodeUI.RegularCardInk.Available;
+            }
+            else if (isCurrent)
+            {
+                view.SetButtonBackgroundColor(new Color(0.26f, 0.62f, 0.36f, 0.98f));
+                ink = ShipUpgradeTreeNodeUI.RegularCardInk.Current;
+            }
+            else if (tierBlocked)
+            {
+                view.SetButtonBackgroundColor(new Color(0.1f, 0.11f, 0.14f, 0.92f));
+                ink = ShipUpgradeTreeNodeUI.RegularCardInk.Blocked;
+            }
+            else if (isNextChoice)
+            {
+                view.SetButtonBackgroundColor(new Color(0.25f, 0.48f, 0.78f, 0.98f));
+                ink = ShipUpgradeTreeNodeUI.RegularCardInk.Available;
+            }
+            else
+            {
+                view.SetButtonBackgroundColor(new Color(0.19f, 0.23f, 0.31f, 0.94f));
+                ink = ShipUpgradeTreeNodeUI.RegularCardInk.Idle;
+            }
 
             Sprite sp = ResolveShipTreePreviewSprite(view.Level, view.BranchIndex);
             view.SetPreview(sp);
@@ -299,10 +444,14 @@ namespace TitanOrbit.UI
             view.SetLevelLabel(ShipUpgradeTreeNodeUI.FormatTreeLevelCaption(view.Level, view.UsesMoonHorizontalLayout));
             view.SetShipName(GetShipDisplayName(view.Node, view.Level, view.BranchIndex));
             view.SetFamilyName(GetShipFamilyDisplayName(view.Level, view.BranchIndex));
+            // Gun / laser / missile / sniper counts from the catalog or family prefab.
+            view.ApplyWeaponLoadoutFromChassis(
+                viewChassisId,
+                EcsGameBridge.ResolvePlanetFamilyBulletBankIndex(OrbitStationEcsContext.StorePlanetId));
             if (view.Level == 7)
                 view.ApplyMegaShipCardStyle(isCurrent, canPurchase, megaOccupied, tierBlocked);
             else
-                view.ClearMegaShipCardStyle();
+                view.ApplyRegularCardInk(ink);
 
             if (megaOccupied)
             {
@@ -357,21 +506,42 @@ namespace TitanOrbit.UI
             view.SetInteractable(clickable);
             view.EnsureStableButtonRendering();
             view.SetInteractable(clickable);
-            view.SetButtonBackgroundColor(megaOccupied
-                ? new Color(0.15f, 0.16f, 0.18f, 0.92f)
-                : isCurrent
-                    ? new Color(0.26f, 0.62f, 0.36f, 0.98f)
-                    : new Color(0.28f, 0.68f, 0.82f, 0.98f));
+            // Debug-free paints every regular hull cyan + "Free". Cream captions
+            // keep Lv / family / weapons readable on that fill.
+            ShipUpgradeTreeNodeUI.RegularCardInk ink;
+            if (megaOccupied)
+            {
+                view.SetButtonBackgroundColor(new Color(0.15f, 0.16f, 0.18f, 0.92f));
+                ink = ShipUpgradeTreeNodeUI.RegularCardInk.Blocked;
+            }
+            else if (isCurrent)
+            {
+                view.SetButtonBackgroundColor(new Color(0.26f, 0.62f, 0.36f, 0.98f));
+                ink = ShipUpgradeTreeNodeUI.RegularCardInk.Current;
+            }
+            else
+            {
+                view.SetButtonBackgroundColor(new Color(0.28f, 0.68f, 0.82f, 0.98f));
+                ink = ShipUpgradeTreeNodeUI.RegularCardInk.Available;
+            }
 
             view.SetPreview(ResolveShipTreePreviewSprite(view.Level, view.BranchIndex));
 
             view.SetLevelLabel(ShipUpgradeTreeNodeUI.FormatTreeLevelCaption(view.Level, view.UsesMoonHorizontalLayout));
             view.SetShipName(GetShipDisplayName(view.Node, view.Level, view.BranchIndex));
             view.SetFamilyName(GetShipFamilyDisplayName(view.Level, view.BranchIndex));
+            string debugChassisId = storePlanet != null
+                ? CardShopSystem.Instance.GetChassisIdForUpgradeLadderSlot(
+                    currentShip, storePlanet.PlanetId, nodeLevel, nodeBranch)
+                : null;
+            // Same roster as the live tree — debug-free still shows what the hull mounts.
+            view.ApplyWeaponLoadoutFromChassis(
+                debugChassisId,
+                EcsGameBridge.ResolvePlanetFamilyBulletBankIndex(OrbitStationEcsContext.StorePlanetId));
             if (view.Level == 7)
                 view.ApplyMegaShipCardStyle(isCurrent, clickable && !isCurrent, megaOccupied, false);
             else
-                view.ClearMegaShipCardStyle();
+                view.ApplyRegularCardInk(ink);
 
             if (megaOccupied)
             {
@@ -380,11 +550,6 @@ namespace TitanOrbit.UI
             }
             else
                 view.SetPrice("Free");
-
-            string debugChassisId = storePlanet != null
-                ? CardShopSystem.Instance.GetChassisIdForUpgradeLadderSlot(
-                    currentShip, storePlanet.PlanetId, nodeLevel, nodeBranch)
-                : null;
             view.ApplyPowerBreakdown(
                 GetPowerBreakdownForTreeNode(view.Level, view.BranchIndex),
                 ShipFamilyPowerBarNorm.ResolveForTreeLevel(view.Level, maxes, debugChassisId),
@@ -427,56 +592,25 @@ namespace TitanOrbit.UI
                 currentShip.CurrentChassisId);
         }
 
+        /// <summary>
+        /// Paints family + bullet type on the identity rail and keeps the old
+        /// path-legend / debug subtitle hidden so it cannot sit under those labels.
+        /// </summary>
         private void UpdateShipTreeHintText()
         {
             if (shipUpgradeTree == null)
                 return;
 
             shipUpgradeTree.EnsurePanelHeader();
-            if (shipUpgradeTree.Title != null)
-                shipUpgradeTree.Title.text = ShipUpgradeTreeUI.PanelTitleText;
-            shipUpgradeTree.ApplyFamilyIdentity(ResolveUpgradeTreeFamily());
+            shipUpgradeTree.HidePanelTitle();
+            shipUpgradeTree.ApplyFamilyIdentity(
+                ResolveUpgradeTreeFamily(),
+                currentShip != null ? currentShip.ShipLevel : 1,
+                ResolveStoreFamilyBulletBankIndex());
 
-            if (shipUpgradeTree.Hint == null || currentShip == null)
-                return;
-
-            UpgradeTree tree = UpgradeSystem.Instance != null ? UpgradeSystem.Instance.UpgradeTree : null;
-            Planet storePlanet = GetShipUpgradeStorePlanet();
-            if (tree == null || storePlanet == null || CardShopSystem.Instance == null)
-            {
-                shipUpgradeTree.Hint.text = "Upgrade tree unavailable.";
-                return;
-            }
-
-            int homeLevel = currentHomePlanet != null ? Mathf.Max(1, currentHomePlanet.HomePlanetLevel) : 1;
-            int currentLevel = currentShip.ShipLevel;
-            int currentBranch = currentShip.BranchIndex;
-            int nextLevel = currentLevel + 1;
-            bool canSwapHullAtCurrentSlot = CardShopSystem.Instance.CanSwapShipAtSameTreeSlot(
-                currentShip, storePlanet, currentLevel, currentBranch, out _);
-            string slotChassisId = CardShopSystem.Instance.GetChassisIdForUpgradeLadderSlot(
-                currentShip, storePlanet.PlanetId, currentLevel, currentBranch);
-            bool hasAlternateHullAtSlot = !string.IsNullOrEmpty(slotChassisId)
-                && !string.Equals(slotChassisId, currentShip.CurrentChassisId, StringComparison.OrdinalIgnoreCase);
-            int storePlanetLevel = Mathf.Max(1, storePlanet.PlanetLevel);
-            bool storePlanetLevelBlocksSwap = hasAlternateHullAtSlot && storePlanetLevel < currentLevel;
-            bool homeAllowsNextUpgrade = currentLevel < 7 && homeLevel >= nextLevel;
-            bool upgradeBlockedByStoreLevel = homeAllowsNextUpgrade && nextLevel > storePlanetLevel;
-
-            if (IsDebugFreeShipUpgradeTree())
-                shipUpgradeTree.Hint.text = "Debug: click any ship for free. Claimed Titans stay with their owner.";
-            else if (canSwapHullAtCurrentSlot)
-                shipUpgradeTree.Hint.text = "Click your ship in the left panel to swap to this moon's hull at your tier (free).";
-            else if (storePlanetLevelBlocksSwap)
-                shipUpgradeTree.Hint.text = $"This planet must reach level {currentLevel} to swap your level {currentLevel} ship.";
-            else if (upgradeBlockedByStoreLevel)
-                shipUpgradeTree.Hint.text = $"This planet must reach level {nextLevel} to purchase a level {nextLevel} ship.";
-            else if (nextLevel == 7)
-                shipUpgradeTree.Hint.text = "TITAN — planet level 6 and a full gem moon unlock these hulls. Each unique hull is in service on one ship at a time.";
-            else if (nextLevel <= 7 && homeLevel < nextLevel)
-                shipUpgradeTree.Hint.text = $"Locked — raise home planet to level {nextLevel}.";
-            else
-                shipUpgradeTree.Hint.text = ShipUpgradeTreeUI.PanelDefaultSubtitle;
+            // Hint copy used to sit under COSMIC SHARK / FIREBALLS. The
+            // identity rail owns that corner now — keep the line off.
+            shipUpgradeTree.HideHint();
         }
 
         /// <summary>

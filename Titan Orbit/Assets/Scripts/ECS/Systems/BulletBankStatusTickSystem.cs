@@ -12,8 +12,8 @@ using Unity.Transforms;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Server: ticks burn DoT on ships and asteroids, and applies gravity-well pull
-    /// to ships and loose gems.
+    /// Server: ticks burn DoT on ships and asteroids, clears expired electric shock,
+    /// and applies gravity-well pull to ships and loose gems.
     /// Map size from <see cref="MapStateSingleton"/>; pull uses toroidal shortest path.
     /// Does not wrap ship transforms.
     /// </summary>
@@ -40,6 +40,7 @@ namespace TitanOrbit.ECS
 
             TickBurns(ref state, ref ecb, elapsed, gemPrefab);
             TickAsteroidBurns(ref state, ref ecb, elapsed);
+            ClearExpiredElectricShocks(ref state, elapsed);
             TickGravityWells(ref state, dt, elapsed);
 
             ecb.Playback(state.EntityManager);
@@ -113,8 +114,8 @@ namespace TitanOrbit.ECS
                         ref var burn = ref burnRw.ValueRW;
                         burn.TickSequence += 1;
                         burn.LastTickDamage = tickDamage;
-                        float3 tickPos = bodyPos + inst.HitOffset;
-                        tickPos.y = 0f;
+                        float3 tickPos = BulletBankHitEffects.BurnTickWorldPosition(
+                            bodyPos, transform.ValueRO.Rotation, inst.HitOffset);
                         SendBurnTickHit(
                             ref ecb,
                             tickPos,
@@ -146,7 +147,8 @@ namespace TitanOrbit.ECS
                             result.GemsToExpel,
                             intensity: 0.5f,
                             salt: (uint)(entity.Index * 19349663) ^ (uint)(elapsed * 1000.0),
-                            (float)elapsed,
+                            PlanetGemMoonOrbitClock.GetElapsedSecondsOrFallback(
+                                state.EntityManager, elapsed),
                             sourceNetworkId);
                     }
 
@@ -155,6 +157,23 @@ namespace TitanOrbit.ECS
                 }
 
                 BulletBankHitEffects.SyncShipBurnSummary(state.EntityManager, entity, instances);
+            }
+        }
+
+        /// <summary>
+        /// Writes <see cref="ShipElectricShockState.ExpiresAt"/> back to 0 once the stun
+        /// window has passed. Leaving the absolute timestamp ghosted made late-join clients
+        /// treat the shock as still active (their world clock never reaches server elapsed),
+        /// so the lightning impact loop never stopped.
+        /// </summary>
+        void ClearExpiredElectricShocks(ref SystemState state, double elapsed)
+        {
+            foreach (var shock in SystemAPI.Query<RefRW<ShipElectricShockState>>())
+            {
+                if (shock.ValueRO.ExpiresAt <= 0.01f || elapsed < shock.ValueRO.ExpiresAt)
+                    continue;
+
+                shock.ValueRW = default;
             }
         }
 
@@ -197,6 +216,7 @@ namespace TitanOrbit.ECS
 
                     asteroid.Health -= damage;
                     asteroid.LastInteractTeam = (TeamId)inst.SourceTeam;
+                    asteroid.LastInteractNetworkId = inst.SourceNetworkId;
                     if (asteroid.Health <= 0f)
                     {
                         asteroid.Health = 0f;
@@ -204,8 +224,8 @@ namespace TitanOrbit.ECS
                         AsteroidDeathPhysics.QueueStripColliders(ecb, state.EntityManager, entity);
                     }
 
-                    float3 tickPos = bodyPos + inst.HitOffset;
-                    tickPos.y = 0f;
+                    float3 tickPos = BulletBankHitEffects.BurnTickWorldPosition(
+                        bodyPos, transform.ValueRO.Rotation, inst.HitOffset);
                     SendBurnTickHit(
                         ref ecb,
                         tickPos,

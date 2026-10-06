@@ -5,11 +5,12 @@ namespace TitanOrbit.ECS
 {
     /// <summary>
     /// Per-stat gem upgrade levels (0 through current ship level each). Players spend gems from
-    /// the bottom HUD to increment these. Counts feed <see cref="TitanOrbit.Data.ShipComponentExtraLevelMath"/>
+    /// the bottom HUD to increment these. A 3-second hold on RESET zeros one ability with no
+    /// gem refund. Counts feed <see cref="TitanOrbit.Data.ShipComponentExtraLevelMath"/>
     /// as <c>abilityLevel</c> in Extra Level math
     /// (each part: Base + its own PerExtra × (shipLevel + ability)),
     /// applied by <see cref="ShipStatApplyLogic"/>. Ghost-serialized for client upgrade UI.
-    /// Reset on ship level-up (chassis change).
+    /// All ten reset on ship level-up (chassis change).
     /// </summary>
     public struct ShipAttributeUpgradeState : IComponentData
     {

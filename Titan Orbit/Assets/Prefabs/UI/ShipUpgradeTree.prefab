@@ -34,10 +34,10 @@ RectTransform:
   m_Children: []
   m_Father: {fileID: 2487232588929701879}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0.5, y: 0.5}
-  m_AnchorMax: {x: 0.5, y: 0.5}
+  m_AnchorMin: {x: 0, y: 0}
+  m_AnchorMax: {x: 0, y: 0}
   m_AnchoredPosition: {x: 0, y: 0}
-  m_SizeDelta: {x: 880, y: 400}
+  m_SizeDelta: {x: 0, y: 0}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &174371325291423940
 MonoBehaviour:
@@ -129,7 +129,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!224 &2859022695298301899
 RectTransform:
   m_ObjectHideFlags: 0
@@ -302,10 +302,10 @@ RectTransform:
   - {fileID: 2044878096655382521}
   m_Father: {fileID: 743699395214024137}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0.5, y: 0.5}
-  m_AnchorMax: {x: 0.5, y: 0.5}
+  m_AnchorMin: {x: 0, y: 0}
+  m_AnchorMax: {x: 0, y: 0}
   m_AnchoredPosition: {x: 0, y: 0}
-  m_SizeDelta: {x: 100, y: 100}
+  m_SizeDelta: {x: 0, y: 0}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &73026469769806769
 MonoBehaviour:
@@ -453,7 +453,9 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.UI.ShipUpgradeTreeUI
   titleText: {fileID: 9156526798097552435}
+  familyText: {fileID: 0}
   hintText: {fileID: 7887108282385166323}
+  familyBonusList: {fileID: 0}
   centerRow: {fileID: 2487232588929701879}
   nodesCanvas: {fileID: 2044878096655382521}
   nodePrefab: {fileID: 4435603465762500142, guid: 5877240a0504ad843a0cdd9443192a52, type: 3}
@@ -477,7 +479,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!224 &7152661494442502468
 RectTransform:
   m_ObjectHideFlags: 0

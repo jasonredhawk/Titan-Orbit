@@ -37,9 +37,9 @@ namespace TitanOrbit.Data
 
         [Header("Sensitivity")]
         [Tooltip(
-            "How sensitive banking is to yaw rate. 1 = linear (old feel). " +
-            "Higher values lean harder at partial turn stick. " +
-            "Slow hulls (MEGAs) should also set Reference Turn so modest yaw still reaches peak roll.")]
+            "How sensitive banking is to yaw rate. 1 = linear with how hard this hull is turning. " +
+            "Higher values reach that hull's turn-speed lean sooner. " +
+            "Does not raise the peak — peak roll still follows turn speed vs Full-bank turn speed.")]
         [Range(0.01f, 8f)]
         public float bankSensitivity = 1.35f;
 
@@ -49,11 +49,12 @@ namespace TitanOrbit.Data
         [Range(0.01f, 24f)]
         public float bankSmoothing = 8f;
 
-        [Header("Slow-hull reference")]
+        [Header("Full-bank turn speed")]
         [Tooltip(
-            "Yaw rate (°/s) that reaches max bank when Sensitivity is 1. " +
-            "0 = use the fleet's global max turn (regular ships). " +
-            "Set a lower value for slow hulls so they bank hard without needing fighter turn speed.")]
+            "Turn speed (°/s) that earns Max Bank when Sensitivity is 1. " +
+            "Slower hulls lean less; faster hulls lean deeper, up to Max Bank. " +
+            "0 = the fleet's fastest regular-ship turn. " +
+            "Titans should set this near the fastest Titan turn so a slow Titan stays shallow.")]
         [Min(0f)]
         public float referenceTurnDegreesPerSecond = 0f;
 
@@ -108,7 +109,7 @@ namespace TitanOrbit.Data
         public float ClampedBankSmoothing => Mathf.Max(0.01f, bankSmoothing);
 
         /// <summary>
-        /// Denominator for the bank curve (°/s). Authored reference when set;
+        /// Turn speed (°/s) that earns max bank. Authored reference when set;
         /// otherwise the fleet's global max turn.
         /// </summary>
         public float ResolveReferenceTurnDegreesPerSecond()

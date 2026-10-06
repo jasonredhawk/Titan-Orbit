@@ -1,5 +1,6 @@
 using TitanOrbit.Data;
 using TitanOrbit.ECS;
+using TitanOrbit.Simulation;
 using Unity.Entities;
 using Unity.Mathematics;
 using UnityEngine;
@@ -44,6 +45,7 @@ namespace TitanOrbit.Game
         float _previewReferenceTurnDeg;
         ShipBankVisualSettings _settings;
         Transform _bankPivot;
+        Transform _prefabContainer;
         float _currentBankAngle;
         float _cachedBankAngularVelDegPerSec;
         float _prevBankYawDeg;
@@ -112,6 +114,7 @@ namespace TitanOrbit.Game
             if (existing != null)
             {
                 _bankPivot = existing;
+                _prefabContainer = existing.Find(PrefabContainerName);
                 return;
             }
 
@@ -126,6 +129,7 @@ namespace TitanOrbit.Game
             prefabContainer.localPosition = Vector3.zero;
             prefabContainer.localRotation = Quaternion.identity;
             prefabContainer.localScale = Vector3.one;
+            _prefabContainer = prefabContainer;
 
             var children = new Transform[transform.childCount];
             int childCount = 0;
@@ -163,6 +167,30 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// Slides the mesh so its bounds center sits on the bank pivot (the entity origin).
+        /// The sim bakes the same XZ shift out of the covering box, so yaw spins the hull
+        /// in place instead of around an off-center prefab root.
+        /// </summary>
+        void ApplyHullPivotShift(EntityManager em)
+        {
+            if (_prefabContainer == null && _bankPivot != null)
+                _prefabContainer = _bankPivot.Find(PrefabContainerName);
+            if (_prefabContainer == null)
+                return;
+
+            Vector3 offset = Vector3.zero;
+            if (em.HasComponent<ShipHullColliderState>(_shipEntity))
+            {
+                var hull = em.GetComponentData<ShipHullColliderState>(_shipEntity);
+                float inv = 1f / Mathf.Max(0.0001f, BodyCollisionMath.ShipPresentationScale);
+                offset = new Vector3(-hull.AppliedPivotShiftX * inv, 0f, -hull.AppliedPivotShiftZ * inv);
+            }
+
+            if (_prefabContainer.localPosition != offset)
+                _prefabContainer.localPosition = offset;
+        }
+
+        /// <summary>
         /// [UNITY] After presentation pose is written: sample yaw rate, compute target bank, lerp roll.
         /// </summary>
         void LateUpdate()
@@ -187,6 +215,8 @@ namespace TitanOrbit.Game
             var em = world.EntityManager;
             if (!em.Exists(_shipEntity))
                 return;
+
+            ApplyHullPivotShift(em);
 
             if (em.HasComponent<ShipState>(_shipEntity))
             {
@@ -220,7 +250,8 @@ namespace TitanOrbit.Game
             float dt = Time.deltaTime;
             float smoothing = ResolveSmoothing();
             SampleBankAngularVelocity(dt, smoothing);
-            ApplyVisualBanking(dt, smoothing);
+            float shipTurnDeg = ShipVisualBankTurnSpeed.ReadDegreesPerSecond(em, _shipEntity);
+            ApplyVisualBanking(dt, smoothing, shipTurnDeg);
             ApplyVisualPitch(em, dt);
         }
 
@@ -229,7 +260,8 @@ namespace TitanOrbit.Game
             float dt = Time.unscaledDeltaTime;
             float smoothing = ResolveSmoothing();
             SampleBankAngularVelocity(dt, smoothing);
-            ApplyVisualBanking(dt, smoothing);
+            // Studio hull has no motor — yaw vs the preview reference still varies the lean.
+            ApplyVisualBanking(dt, smoothing, shipTurnSpeedDegPerSec: 0f);
             // Speed-based pitch pulses the nozzles when studio speed retargets. Bank only.
         }
 
@@ -260,8 +292,8 @@ namespace TitanOrbit.Game
                 : ShipBankVisualSettingsCache.BankSensitivity;
 
         /// <summary>
-        /// Yaw rate (°/s) treated as full turn. MEGA assets author a low reference so
-        /// slow hulls still reach peak roll.
+        /// Turn speed (°/s) that earns peak roll. Slower hulls stay shallower.
+        /// Preview uses a studio yaw so the customize hull can still show a full lean.
         /// </summary>
         float ResolveReferenceTurn()
         {
@@ -334,9 +366,10 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Maps smoothed yaw rate → target bank (via propulsion helper + sensitivity) and lerps the pivot.
+        /// Maps this hull's turn speed and smoothed yaw → target bank, then lerps the pivot.
         /// </summary>
-        void ApplyVisualBanking(float dt, float smoothing)
+        /// <param name="shipTurnSpeedDegPerSec">Live turn speed (°/s). 0 for the customize preview.</param>
+        void ApplyVisualBanking(float dt, float smoothing, float shipTurnSpeedDegPerSec)
         {
             // --- Apply changes ---
             if (!_bankingInitialized)
@@ -353,12 +386,13 @@ namespace TitanOrbit.Game
             if (Mathf.Abs(signedAngularVelDegPerSec) < RestBankAngularVelDeadbandDegPerSec)
                 signedAngularVelDegPerSec = 0f;
 
-            // --- Target bank from turn rate + bound asset (MEGA catalog or family) ---
+            // --- Target bank: peak follows turn speed, yaw fades a partial turn ---
             float targetBankAngle = ShipPropulsionAggregation.ComputeVisualBankTargetAngle(
                 signedAngularVelDegPerSec,
                 ResolveMaxBankAngle(),
                 ResolveReferenceTurn(),
-                ResolveSensitivity());
+                ResolveSensitivity(),
+                shipTurnSpeedDegPerSec);
             if (_previewMode)
                 targetBankAngle *= 0.6f;
 

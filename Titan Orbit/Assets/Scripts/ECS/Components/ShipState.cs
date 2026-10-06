@@ -48,6 +48,15 @@ namespace TitanOrbit.ECS
         /// </summary>
         [GhostField] public byte ShipFamilyConfigIndex;
 
+        /// <summary>
+        /// [TITAN-ORBIT] Hull-default <c>BulletVfxBank</c> category copied from the planet where
+        /// this hull was bought (or the home world at team spawn). Family assets all default to
+        /// Laserbolt (0); the planet roll is what the guns actually start on. B-key may cycle
+        /// away via <c>ShipLoadoutState.RuntimeBulletIndex</c>, but ownership and chassis-swap
+        /// reset come back to this index. Ghosted so clients own the same default gun.
+        /// </summary>
+        [GhostField] public byte HullBulletBankIndex;
+
         /// <summary>[TITAN-ORBIT] Gems currently stored in the ship cargo hold.</summary>
         [GhostField] public float CurrentGems;
 
@@ -360,7 +369,11 @@ namespace TitanOrbit.ECS
         /// <summary>[TITAN-ORBIT] Energy regen per second.</summary>
         public float EnergyRegenPerSecond;
 
-        /// <summary>[TITAN-ORBIT] Seconds after hull damage before health regen resumes.</summary>
+        /// <summary>
+        /// [TITAN-ORBIT] Seconds after hull damage before health regen resumes.
+        /// Stamped from <see cref="TitanOrbit.Data.ShipVitalsSettings"/>; the regen system
+        /// reads that asset live so Inspector edits apply on the next tick.
+        /// </summary>
         public float HealthRegenDelayAfterDamage;
     }
 
@@ -381,16 +394,32 @@ namespace TitanOrbit.ECS
     /// </summary>
     public struct ShipWeaponState : IComponentData
     {
-        /// <summary>[LEGACY] Unused — prefer per-mount <see cref="ShipWeaponMountElement.FireCooldown"/>.</summary>
+        /// <summary>
+        /// Seconds left until the current arsenal square finishes energizing.
+        /// Counts down only while Fire is held. The shot waits for this and for
+        /// enough energy, then the cursor steps and this clock restarts on the next square.
+        /// </summary>
         public float FireCooldown;
 
         /// <summary>
-        /// [TITAN-ORBIT] Energy-queue index for round-robin drip. When
-        /// <see cref="ShipWeaponConfig.FireMode"/> allows drip and the shared pool cannot cover
-        /// every mount at once, only this barrel may fire; after it shoots the cursor advances
-        /// 0→1→2→…→0. Reset to 0 after a full same-tick volley.
+        /// Full energize time of the square now charging (<c>shot cost / regen</c>).
+        /// The arsenal bar is <c>1 - FireCooldown / ChargeDuration</c>. Zero means
+        /// this square has not started a charge yet.
+        /// </summary>
+        public float ChargeDuration;
+
+        /// <summary>
+        /// [TITAN-ORBIT] Which barrel’s square is energizing. After it fires, this
+        /// steps to the next armed square and wraps from the last weapon to the first.
         /// </summary>
         public int NextMountIndex;
+
+        /// <summary>
+        /// Mount that fired last. The energize cursor already stepped to the next
+        /// square when the shot was taken, so this is not used to skip a chip.
+        /// −1 means nobody has fired yet this hold.
+        /// </summary>
+        public int LastFiredMountIndex;
     }
 
     /// <summary>
@@ -402,6 +431,13 @@ namespace TitanOrbit.ECS
         /// <summary>[ECS/DOTS] Linear velocity; quantized for network bandwidth.</summary>
         [GhostField(Quantization = 1000)]
         public float3 Velocity;
+
+        /// <summary>
+        /// Planar escort-formation heading (unit XZ, y unused). Ghosted so parked troop
+        /// orbs lag ship yaw the same on every peer. Zero = use the ship's nose this tick.
+        /// </summary>
+        [GhostField(Quantization = 1000)]
+        public float3 FormationHeading;
     }
 
     /// <summary>[ECS/DOTS] Marker — entity is a player or AI starship (used in queries across all ship systems).</summary>

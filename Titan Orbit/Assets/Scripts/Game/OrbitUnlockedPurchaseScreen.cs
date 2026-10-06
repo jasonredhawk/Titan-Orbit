@@ -96,11 +96,13 @@ namespace TitanOrbit.Game
         void OnEnable()
         {
             TitanOrbitEntitlements.OrbitUnlockedOwnershipChanged += Refresh;
+            UnityGameServicesBootstrap.AuthStateChanged += Refresh;
         }
 
         void OnDisable()
         {
             TitanOrbitEntitlements.OrbitUnlockedOwnershipChanged -= Refresh;
+            UnityGameServicesBootstrap.AuthStateChanged -= Refresh;
         }
 
         /// <summary>
@@ -167,7 +169,7 @@ namespace TitanOrbit.Game
 
             string[] bullets =
             {
-                "NO ADS — keep-loadout without a video",
+                "NO ADS — gear stays when you die",
                 "FULL HANGAR — hull presets, badges, jets",
                 "+1 GEAR SLOT — every match, no tap"
             };
@@ -227,6 +229,7 @@ namespace TitanOrbit.Game
             EnsureChrome();
 
             bool owned = TitanOrbitEntitlements.IsOrbitUnlockedOwned;
+            bool unityAccount = UnityGameServicesBootstrap.HasUnityPlayerAccountLinked();
             var iap = Object.FindFirstObjectByType<TitanOrbitIapManager>();
             string productId = iap != null
                 ? iap.OrbitUnlockedProductId
@@ -234,12 +237,19 @@ namespace TitanOrbit.Game
             string price = iap != null ? iap.GetLocalizedPriceString(productId) : "";
 
             if (_price != null)
-                _price.text = owned ? "OWNED" : (string.IsNullOrEmpty(price) ? "" : price);
+            {
+                if (!owned && !unityAccount)
+                    _price.text = "";
+                else
+                    _price.text = owned ? "OWNED" : (string.IsNullOrEmpty(price) ? "" : price);
+            }
 
             if (_buyLabel != null)
             {
                 if (owned && AllowTestRevoke)
                     _buyLabel.text = "REMOVE (TEST)";
+                else if (!owned && !unityAccount)
+                    _buyLabel.text = "SIGN IN";
                 else
                     _buyLabel.text = owned ? "OWNED" : "UNLOCK";
             }
@@ -252,6 +262,8 @@ namespace TitanOrbit.Game
 
                 if (owned)
                     _buyButton.interactable = AllowTestRevoke;
+                else if (!unityAccount)
+                    _buyButton.interactable = true;
                 else
 #if UNITY_EDITOR
                     _buyButton.interactable = true;
@@ -262,6 +274,12 @@ namespace TitanOrbit.Game
 
             if (_status == null)
                 return;
+
+            if (!owned && !unityAccount)
+            {
+                _status.text = "Sign in with Unity to buy Orbit Unlocked. The purchase stays on that account.";
+                return;
+            }
 
             if (owned)
             {
@@ -302,9 +320,18 @@ namespace TitanOrbit.Game
                 return;
             }
 
+            if (!UnityGameServicesBootstrap.HasUnityPlayerAccountLinked())
+            {
+                // Same click turn as the button so WebGL can open the Unity login page.
+                _ = UnityGameServicesBootstrap.SignInOrLinkUnityPlayerAccountUsingBrowserAsync();
+                if (_status != null)
+                    _status.text = "Opening Unity sign-in…";
+                return;
+            }
+
             var iap = Object.FindFirstObjectByType<TitanOrbitIapManager>();
 #if UNITY_EDITOR
-            // [EDITOR] Fake store often has no catalog. Grant locally so hangar locks can be tested.
+            // [EDITOR] Fake store often has no catalog. Grant onto the signed-in Unity player.
             if (iap == null || !iap.CanInitiatePurchase(iap.OrbitUnlockedProductId))
             {
                 TitanOrbitEntitlements.SetOrbitUnlockedOwned(true);
@@ -327,6 +354,13 @@ namespace TitanOrbit.Game
         /// <summary>Apple restore on iOS; receipt re-read on other platforms.</summary>
         void OnRestoreClicked()
         {
+            if (!UnityGameServicesBootstrap.HasUnityPlayerAccountLinked())
+            {
+                if (_status != null)
+                    _status.text = "Sign in with Unity before restoring Orbit Unlocked.";
+                return;
+            }
+
             var iap = Object.FindFirstObjectByType<TitanOrbitIapManager>();
             if (iap == null)
             {

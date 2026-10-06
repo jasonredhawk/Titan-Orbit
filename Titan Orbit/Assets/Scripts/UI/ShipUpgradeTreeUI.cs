@@ -10,10 +10,14 @@ using UnityEditor;
 namespace TitanOrbit.UI
 {
     /// <summary>
-    /// Prefab-driven ship upgrade tree panel (title + family caption, hint line, node canvas, connectors).
+    /// Prefab-driven ship upgrade tree panel (title + family caption, family-bonus
+    /// wheel, hint line, node canvas, connectors).
     /// Assigned on a GameObject under the orbit station ships tab; <see cref="OrbitStationUI"/> binds
     /// runtime state via <see cref="IOrbitStationHost"/>. The header shows the docked planet's ship
     /// family (Astro Eagle, Cosmic Shark, …) so players can tell whose hull ladder they are buying.
+    /// The lineage wheel under the title shows every <see cref="ShipFamilySpecialBonuses"/>
+    /// field as a coloured spoke (ice ring = 1.00×, longer = boost, shorter = penalty)
+    /// so the family identity is not buried in the sidebar one-liner.
     /// Supports horizontal moon-dock layout and vertical fallback. Optional <see cref="previewFamily"/> fills editor preview.
     /// </summary>
     public class ShipUpgradeTreeUI : MonoBehaviour
@@ -22,14 +26,14 @@ namespace TitanOrbit.UI
         public const string PanelDefaultSubtitle = "Green: your path. Cyan: available next hulls. Dim: other routes. Your ship is in the left panel.";
 
         private const float CanvasInnerMargin = 8f;
-        private const float MoonNodeHeight = 100f;
+        private const float MoonNodeHeight = 124f;
         private const float MoonMinNodeWidth = 74f;
         private const float MoonMegaScale = 1.5f;
         private const float MoonLevelColGap = 20f;
         private const float MoonBranchGapY = 10f;
         private const float LayoutWidthBucketPixels = 32f;
         private const float MoonChromeHeightHint = 28f;
-        private const float VerticalNodeHeight = 188f;
+        private const float VerticalNodeHeight = 216f;
         private const float VerticalLevelSpacing = VerticalNodeHeight + 44f;
         private const float VerticalColGap = 6f;
         private static readonly Color ConnectorDim = new Color(0.28f, 0.42f, 0.62f, 0.40f);
@@ -42,6 +46,7 @@ namespace TitanOrbit.UI
         [SerializeField] private TextMeshProUGUI titleText;
         [SerializeField] private TextMeshProUGUI familyText;
         [SerializeField] private TextMeshProUGUI hintText;
+        [SerializeField] private ShipFamilyBonusListUI familyBonusList;
         [SerializeField] private RectTransform centerRow;
         [SerializeField] private RectTransform nodesCanvas;
         [SerializeField] private ShipUpgradeTreeNodeUI nodePrefab;
@@ -64,6 +69,7 @@ namespace TitanOrbit.UI
         public TextMeshProUGUI Title => titleText;
         public TextMeshProUGUI Family => familyText;
         public TextMeshProUGUI Hint => hintText;
+        public ShipFamilyBonusListUI FamilyBonusList => familyBonusList;
         public RectTransform CenterRow => centerRow;
         public RectTransform NodesCanvas => nodesCanvas;
         public IReadOnlyList<ShipUpgradeTreeNodeUI> Nodes => _nodes;
@@ -124,20 +130,69 @@ namespace TitanOrbit.UI
 
             // --- Family caption on the same header row ---
             EnsureFamilyHeader();
+
+            // --- Lineage wheel under the header ---
+            // [TITAN-ORBIT] Older ShipUpgradeTree prefabs have no child for this.
+            // We spawn it at runtime so a prefab rebuild is not required.
+            EnsureFamilyBonusList();
+            HideHint();
+            HidePanelTitle();
         }
 
         /// <summary>
-        /// Writes the uppercase family name on the tree header (right side of the title row).
+        /// Writes the uppercase family name on the tree header (right side of the title row)
+        /// and paints the FAMILY BONUSES wheel under it (lineage muls + bullet-type damage).
         /// Uses the same caption as the sidebar / gear rail so Cosmic Shark reads as COSMIC SHARK.
         /// Called from orbit hosts when the docked store planet (or editor preview family) is known.
+        /// Hosts should call this <b>before</b> <see cref="RebuildIfNeeded"/>. The wheel
+        /// overlays the bottom-left; family name sits top-left. Neither changes node geometry.
         /// </summary>
-        public void ApplyFamilyIdentity(ShipFamilyDefinition family)
+        public void ApplyFamilyIdentity(
+            ShipFamilyDefinition family,
+            int shipLevel = 1,
+            int planetOrHullBankIndex = -1)
         {
-            // --- Apply caption ---
+            // --- Header caption ---
             EnsurePanelHeader();
-            if (familyText == null)
+            // Family name + bullet type live on the top-left identity rail.
+            // Hide the old header-right caption and the path-legend hint so
+            // "Green: your path…" does not sit under COSMIC SHARK.
+            if (familyText != null)
+                familyText.gameObject.SetActive(false);
+            HideHint();
+
+            // --- Lineage wheel ---
+            // Family multipliers plus the planet's bullet-type damage board
+            // (BANK DMG / vs asteroids / ships / moons / gems).
+            if (familyBonusList != null)
+                familyBonusList.Paint(family, shipLevel, planetOrHullBankIndex);
+        }
+
+        /// <summary>
+        /// Finds or builds the FAMILY BONUSES wheel under the title/family header.
+        /// Presentation-only — no ECS. Safe on older prefabs that only had Title + Hint.
+        /// </summary>
+        void EnsureFamilyBonusList()
+        {
+            if (familyBonusList == null)
+            {
+                var existing = transform.Find("FamilyBonusMatrix");
+                if (existing != null)
+                    familyBonusList = existing.GetComponent<ShipFamilyBonusListUI>();
+            }
+
+            if (familyBonusList != null)
+            {
+                familyBonusList.EnsureBuilt();
                 return;
-            familyText.text = FamilyStatHudCopy.FormatFamilyCaption(family);
+            }
+
+            Transform header = transform.Find("HeaderRow");
+            if (header == null && titleText != null)
+                header = titleText.transform;
+
+            TMP_FontAsset font = titleText != null ? titleText.font : null;
+            familyBonusList = ShipFamilyBonusListUI.Create(transform, header, font);
         }
 
         /// <summary>
@@ -351,6 +406,9 @@ namespace TitanOrbit.UI
 
             const int maxLevel = 7;
             PrepareHorizontalContainerLayout();
+            // Paint the lineage wheel before node geometry so spoke titles exist
+            // when the overlay pins to the corners. It does not change card size.
+            ApplyFamilyIdentity(family);
             ComputeMoonHorizontalGeometry(out float nodeW, out float nodeH, out float megaH, out float canvasW, out float canvasH);
             ApplyHorizontalTreeCanvasLayout(canvasW, canvasH);
             float trackW = GetMoonPowerBarTrackWidth(nodeW);
@@ -388,6 +446,13 @@ namespace TitanOrbit.UI
                         shipName = $"Branch {b + 1}";
                     node.SetShipName(shipName);
                     node.SetFamilyName(FamilyStatHudCopy.FormatFamilyDisplayName(family));
+                    // Editor preview: same FIREBALLS / LASER roster the moon dock paints.
+                    if (tier != null && !string.IsNullOrEmpty(tier.chassisId))
+                        node.ApplyWeaponLoadoutFromChassis(tier.chassisId);
+                    else if (tier != null)
+                        node.SetWeaponLoadout(ShipWeaponLoadout.CountFromPrefab(tier.prefab, family));
+                    else
+                        node.SetWeaponLoadout(default);
                     if (mega)
                         node.ApplyMegaShipCardStyle(false, false, false, false);
                     else
@@ -426,13 +491,7 @@ namespace TitanOrbit.UI
             EnforceUniformNodeSizesExceptMega(nodeW, nodeH, trackW, megaW, megaH, megaTrackW);
             DrawConnectors(byLevel, null, moonHorizontal: true);
 
-            ApplyFamilyIdentity(family);
-            if (hintText != null)
-            {
-                hintText.text = family != null
-                    ? $"Editor preview: {family.name}. Runtime uses live planet/ship state."
-                    : "Assign Preview Family to fill names, previews, and power bars.";
-            }
+            HideHint();
         }
 
         private ShipUpgradeTreeNodeUI InstantiateNodeForPreview()
@@ -777,17 +836,24 @@ namespace TitanOrbit.UI
             }
         }
 
-        /// <summary>Vertical space for the tree row from the parent panel ΓÇö not from centerRow (which we resize).</summary>
+        /// <summary>
+        /// Vertical space for the hull-card row from the parent panel — not from
+        /// centerRow (which we resize). Subtracts the hint line only. The FAMILY
+        /// BONUSES wheel is a bottom-left overlay and must not shrink this row.
+        /// </summary>
         private float GetMoonRowAvailableHeight()
         {
-            // --- Compute value ---
+            // --- Remaining height after chrome ---
             var treeRt = transform as RectTransform;
             if (treeRt == null || treeRt.rect.height < 16f)
                 return 420f;
 
             float h = treeRt.rect.height;
-            if (hintText != null)
+            if (hintText != null && hintText.gameObject.activeSelf)
                 h -= MoonChromeHeightHint;
+
+            // [TITAN-ORBIT] The lineage wheel floats over the bottom-left. Do not
+            // subtract its disc height — that used to squash the L1–L7 cards.
             return Mathf.Max(160f, h - 12f);
         }
 
@@ -831,8 +897,8 @@ namespace TitanOrbit.UI
             nodeW = Mathf.Round(Mathf.Max(MoonMinNodeWidth, nodeW));
             canvasW = availableW;
 
-            // Halfway between the old compact cards (~prefab 100px) and a full-row stretch.
-            // Full-row height hid ship names under the silhouette.
+            // Compact floor is tall enough for name + family + weapon roster + buy chip
+            // above the power bar. Do not stretch to a full column — that hid ship names.
             float compactH = nodePrefab != null ? nodePrefab.LayoutHeight : MoonNodeHeight;
             compactH = Mathf.Max(MoonNodeHeight, compactH);
             int maxStack = 1;
@@ -842,7 +908,7 @@ namespace TitanOrbit.UI
             float maxCanvasH = Mathf.Max(160f, containerH - 4f);
             float targetStackH = Mathf.Max(72f, maxCanvasH - margin * 2f);
             float fillH = (targetStackH - (maxStack - 1) * gapY) / maxStack;
-            nodeH = Mathf.Max(72f, Mathf.Round(Mathf.Lerp(compactH, fillH, 0.5f) * 0.8f));
+            nodeH = Mathf.Max(MoonNodeHeight, Mathf.Round(Mathf.Lerp(compactH, fillH, 0.5f) * 0.88f));
 
             float maxColStackH = ComputeMaxColumnStackHeight(nodeH);
             canvasH = margin * 2f + maxColStackH;
@@ -947,10 +1013,69 @@ namespace TitanOrbit.UI
             _visuals.Add(go);
         }
 
+        /// <summary>
+        /// Drops the old path-legend / debug subtitle. Family name + bullet type
+        /// now live on the top-left identity rail; the hint sat underneath them.
+        /// </summary>
+        public void HideHint()
+        {
+            if (hintText == null)
+            {
+                var existing = transform.Find("Hint") ?? transform.Find("HeaderRow/Hint");
+                if (existing != null)
+                    hintText = existing.GetComponent<TextMeshProUGUI>();
+            }
+
+            if (hintText == null)
+                return;
+
+            hintText.text = string.Empty;
+            hintText.enabled = false;
+            var le = hintText.GetComponent<LayoutElement>();
+            if (le != null)
+                le.ignoreLayout = true;
+            hintText.gameObject.SetActive(false);
+        }
+
+        /// <summary>
+        /// Drops the "Ship Upgrade Tree" header. Family name lives on the
+        /// identity rail; the empty title row must not keep eating card height.
+        /// </summary>
+        public void HidePanelTitle()
+        {
+            if (titleText == null)
+            {
+                var existing = transform.Find("HeaderRow/Title") ?? transform.Find("Title");
+                if (existing != null)
+                    titleText = existing.GetComponent<TextMeshProUGUI>();
+            }
+
+            if (titleText != null)
+            {
+                titleText.text = string.Empty;
+                titleText.enabled = false;
+                var le = titleText.GetComponent<LayoutElement>();
+                if (le != null)
+                    le.ignoreLayout = true;
+                titleText.gameObject.SetActive(false);
+            }
+
+            if (familyText != null)
+                familyText.gameObject.SetActive(false);
+
+            Transform header = transform.Find("HeaderRow");
+            if (header != null)
+            {
+                var headerLe = header.GetComponent<LayoutElement>();
+                if (headerLe != null)
+                    headerLe.ignoreLayout = true;
+                header.gameObject.SetActive(false);
+            }
+        }
+
         private void SetUnavailable()
         {
-            if (hintText != null)
-                hintText.text = "Upgrade tree unavailable.";
+            HideHint();
         }
 
         private void ApplyCenterRowHeight(float h)

@@ -22,6 +22,9 @@ namespace TitanOrbit.ECS
             MaxMapSize = s.maxMapSize,
             MinTeamsPerMatch = s.minTeamsPerMatch,
             MaxTeamsPerMatch = s.maxTeamsPerMatch,
+            MaxPlayersPerTeam = s.maxPlayersPerTeam < 1
+                ? MapGenerationSettings.DefaultMaxPlayersPerTeam
+                : s.maxPlayersPerTeam,
             HomePlanetSize = s.homePlanetSize,
             HomePlanetLevel = s.homePlanetLevel,
             HomePlanetDistance = s.homePlanetDistance,

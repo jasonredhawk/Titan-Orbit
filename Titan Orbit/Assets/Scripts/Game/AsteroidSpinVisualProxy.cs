@@ -170,7 +170,8 @@ namespace TitanOrbit.Game
             var newSgt = bodyGo.AddComponent<SgtPlanet>();
             CopySgtPlanet(sgt, newSgt);
 
-            // Asteroids are dry rocks — still migrate water helpers if a prefab ever has them.
+            // Asteroids are dry rocks. A water gradient is a tiny lookup; a water texture is a
+            // full RenderTexture per body. On WebGL that texture is what filled ALLOC_GFX.
             var waterGradient = GetComponent<SgtPlanetWaterGradient>();
             if (waterGradient != null)
             {
@@ -195,17 +196,9 @@ namespace TitanOrbit.Game
         /// </summary>
         static void CopySgtPlanet(SgtPlanet source, SgtPlanet destination)
         {
-            destination.Mesh = source.Mesh;
-            destination.MeshCollider = source.MeshCollider;
-            destination.Radius = source.Radius;
-            destination.Material = source.Material;
-            destination.SharedMaterial = source.SharedMaterial;
-            destination.CastShadows = source.CastShadows;
-            destination.ReceiveShadows = source.ReceiveShadows;
-            destination.WaterLevel = source.WaterLevel;
-            destination.Displace = source.Displace;
-            destination.Displacement = source.Displacement;
-            destination.ClampWater = source.ClampWater;
+            // Property setters call DirtyMesh. On WebGL that LateUpdate would Instantiate
+            // a private mesh and drop the shared Geosphere.
+            destination.CopyAuthoredSettingsFrom(source);
         }
 
         /// <summary>Copies water-gradient tuning when present on an asteroid prefab.</summary>

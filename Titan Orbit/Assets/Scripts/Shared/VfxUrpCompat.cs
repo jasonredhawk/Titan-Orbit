@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 namespace TitanOrbit.Core
 {
@@ -17,6 +19,34 @@ namespace TitanOrbit.Core
         private static Shader s_allIn1SrpBatch;
         private static Shader s_urpParticlesUnlit;
         private static Shader s_legacyParticlesUnlit;
+        static Material s_UrpParticleTemplate;
+
+        /// <summary>
+        /// Resources material that already uses the additive transparent URP Particles/Unlit
+        /// variant. Shader.Find alone is stripped from the WebGL player when no asset
+        /// references that variant, so the retarget used to no-op and the built-in
+        /// soft-particle materials stayed invisible.
+        /// </summary>
+        const string UrpParticleTemplateResource = "WebGlParticleUnlit";
+
+        /// <summary>
+        /// URP Particles/Unlit reads Position, Normal, Color, UV. Sci-Fi mesh flames and
+        /// matrix shells ship custom streams (Position, Color, UV only). That mismatch
+        /// puts the UV in the wrong interpolator, so the additive sprite stays invisible.
+        /// </summary>
+        static readonly List<ParticleSystemVertexStream> s_UrpParticleStreams = new List<ParticleSystemVertexStream>(4)
+        {
+            ParticleSystemVertexStream.Position,
+            ParticleSystemVertexStream.Normal,
+            ParticleSystemVertexStream.Color,
+            ParticleSystemVertexStream.UV,
+        };
+
+        /// <summary>
+        /// One URP stand-in per source material. WebGL clones are session-lived;
+        /// thrusters and moon shields share the same Sci-Fi materials.
+        /// </summary>
+        static readonly Dictionary<int, Material> s_WebGlParticleMaterials = new Dictionary<int, Material>(16);
 
         /// <summary>
         /// Marks a pooled muzzle/impact shell that already paid FixAllIn1 + light strip +
@@ -76,6 +106,9 @@ namespace TitanOrbit.Core
 
                     // Clone once per unique shared material slot we must mutate — not Renderer.materials.
                     Material edit = new Material(mat);
+                    // #region agent log
+                    TitanOrbit.MaterialCloneProbe.NoteFixClone(edit);
+                    // #endregion
                     if (isGrab)
                     {
                         Shader replacement;
@@ -156,6 +189,54 @@ namespace TitanOrbit.Core
         }
 
         /// <summary>
+        /// Fires each system's authored time-0 burst again and keeps particles already in flight.
+        /// Sci-Fi impacts emit once, then sit out a multi-second duration, so setting
+        /// <c>main.loop</c> stays dark between burn ticks. <c>Emit</c> does not clear the system.
+        /// </summary>
+        public static void ReplayParticleBursts(GameObject root)
+        {
+            if (root == null)
+                return;
+
+            ParticleSystem[] systems = root.GetComponentsInChildren<ParticleSystem>(true);
+            for (int i = 0; i < systems.Length; i++)
+            {
+                ParticleSystem ps = systems[i];
+                if (ps == null || !ps.gameObject.activeInHierarchy)
+                    continue;
+
+                if (!ps.isPlaying)
+                    ps.Play(false);
+
+                int count = SumBurstCount(ps);
+                if (count > 0)
+                    ps.Emit(count);
+            }
+        }
+
+        /// <summary>Authored burst size (constant or the midpoint of a two-constant range).</summary>
+        static int SumBurstCount(ParticleSystem ps)
+        {
+            var emission = ps.emission;
+            if (!emission.enabled || emission.burstCount <= 0)
+                return 0;
+
+            int total = 0;
+            int bursts = emission.burstCount;
+            for (int i = 0; i < bursts; i++)
+            {
+                ParticleSystem.MinMaxCurve count = emission.GetBurst(i).count;
+                float n = count.mode == ParticleSystemCurveMode.TwoConstants
+                    ? (count.constantMin + count.constantMax) * 0.5f
+                    : count.constant;
+                if (n > 0.5f)
+                    total += Mathf.RoundToInt(n);
+            }
+
+            return total;
+        }
+
+        /// <summary>
         /// One-time material/light fix on first use, then restart particles every Rent.
         /// Pooled shells keep the marker so destroy frames skip GrabPass walks.
         /// Pass <paramref name="playParticles"/> false for thruster jets — those are
@@ -171,13 +252,216 @@ namespace TitanOrbit.Core
             var marker = root.GetComponent<VfxPreparedMarker>();
             if (marker == null)
             {
+                // #region agent log
+                TitanOrbit.MaterialCloneProbe.PrepareCold++;
+                // #endregion
                 FixAllIn1MaterialsForUrp(root);
+                RetargetBuiltInParticlesForWebGl(root);
                 StripSceneFlashLights(root);
                 marker = root.AddComponent<VfxPreparedMarker>();
             }
+            // #region agent log
+            else
+                TitanOrbit.MaterialCloneProbe.PrepareWarm++;
+            // #endregion
 
             if (playParticles)
                 PlayParticleSystemsInHierarchy(root);
+        }
+
+        /// <summary>
+        /// Sci-Fi Arsenal flames and matrix shields use built-in <c>Particles/Standard Unlit</c>
+        /// with soft-particle fading. That shader has no Universal Forward pass, and WebGL's
+        /// mobile URP asset has no camera depth texture, so the mesh flame and the shield
+        /// shell either never draw or multiply to zero alpha. Swap those materials to the
+        /// Resources URP Particles/Unlit additive template (so the player build keeps the
+        /// transparent variant) and align vertex streams with that shader.
+        /// </summary>
+        /// <param name="root">Spawned jet, shield, or other Sci-Fi VFX instance.</param>
+        public static void RetargetBuiltInParticlesForWebGl(GameObject root)
+        {
+            if (root == null || !ShouldRetargetBuiltInParticles())
+                return;
+            if (!EnsureUrpParticleUnlit())
+                return;
+
+            Renderer[] renderers = root.GetComponentsInChildren<Renderer>(true);
+            for (int r = 0; r < renderers.Length; r++)
+            {
+                Renderer renderer = renderers[r];
+                if (renderer == null)
+                    continue;
+
+                bool changed = RetargetSharedMaterials(renderer);
+                if (renderer is ParticleSystemRenderer particles)
+                {
+                    Material trail = particles.trailMaterial;
+                    // #region agent log
+                    TitanOrbit.MaterialCloneProbe.NoteTrailMaterial(trail);
+                    // #endregion
+                    if (trail != null && NeedsWebGlParticleRetarget(trail))
+                    {
+                        particles.trailMaterial = GetOrCreateUrpParticleMaterial(trail);
+                        changed = true;
+                    }
+
+                    if (changed)
+                        particles.SetActiveVertexStreams(s_UrpParticleStreams);
+                }
+            }
+        }
+
+        /// <summary>
+        /// URP projects cannot draw built-in particle shaders. WebGL always retargets;
+        /// any other player does too while a scriptable render pipeline is active.
+        /// </summary>
+        static bool ShouldRetargetBuiltInParticles()
+        {
+            if (Application.platform == RuntimePlatform.WebGLPlayer)
+                return true;
+            return GraphicsSettings.currentRenderPipeline != null;
+        }
+
+        /// <summary>
+        /// Prefer the Resources template so the additive transparent variant is in the build.
+        /// Shader.Find is the editor fallback before that asset has imported.
+        /// </summary>
+        static bool EnsureUrpParticleUnlit()
+        {
+            if (s_urpParticlesUnlit != null)
+                return true;
+
+            if (s_UrpParticleTemplate == null)
+                s_UrpParticleTemplate = Resources.Load<Material>(UrpParticleTemplateResource);
+            if (s_UrpParticleTemplate != null && s_UrpParticleTemplate.shader != null)
+                s_urpParticlesUnlit = s_UrpParticleTemplate.shader;
+
+            if (s_urpParticlesUnlit == null)
+                s_urpParticlesUnlit = Shader.Find("Universal Render Pipeline/Particles/Unlit");
+            return s_urpParticlesUnlit != null;
+        }
+
+        static bool RetargetSharedMaterials(Renderer renderer)
+        {
+            Material[] shared = renderer.sharedMaterials;
+            if (shared == null || shared.Length == 0)
+                return false;
+
+            bool changed = false;
+            for (int i = 0; i < shared.Length; i++)
+            {
+                Material src = shared[i];
+                if (src == null || src.shader == null)
+                    continue;
+                if (!NeedsWebGlParticleRetarget(src))
+                    continue;
+
+                shared[i] = GetOrCreateUrpParticleMaterial(src);
+                changed = true;
+            }
+
+            if (changed)
+                renderer.sharedMaterials = shared;
+            return changed;
+        }
+
+        static Material GetOrCreateUrpParticleMaterial(Material src)
+        {
+            int id = src.GetInstanceID();
+            if (!s_WebGlParticleMaterials.TryGetValue(id, out Material edit) || edit == null)
+            {
+                edit = CreateWebGlParticleMaterial(src, s_urpParticlesUnlit);
+                s_WebGlParticleMaterials[id] = edit;
+            }
+
+            return edit;
+        }
+
+        /// <summary>True for built-in / missing particle shaders. URP particle shaders stay.</summary>
+        static bool NeedsWebGlParticleRetarget(Material mat)
+        {
+            string name = mat.shader.name;
+            if (name.IndexOf("Universal Render Pipeline/Particles", StringComparison.Ordinal) >= 0)
+                return false;
+            if (!mat.shader.isSupported)
+                return true;
+            if (name.StartsWith("Particles/", StringComparison.Ordinal))
+                return true;
+            if (name.StartsWith("Legacy Shaders/Particles", StringComparison.Ordinal))
+                return true;
+            if (name.StartsWith("Mobile/Particles", StringComparison.Ordinal))
+                return true;
+            return name == "Hidden/InternalErrorShader";
+        }
+
+        /// <summary>
+        /// Additive transparent stand-in. Copies <c>_MainTex</c> onto <c>_BaseMap</c>.
+        /// Legacy Particles/Additive doubles <c>_TintColor</c> in the shader; Standard Unlit
+        /// already stores the multiply color in <c>_Color</c>.
+        /// </summary>
+        static Material CreateWebGlParticleMaterial(Material src, Shader urp)
+        {
+            // Clone the included template so keywords (_SURFACE_TYPE_TRANSPARENT) survive
+            // player shader stripping. A fresh Material(shader) plus runtime keywords does not.
+            Material edit = s_UrpParticleTemplate != null
+                ? new Material(s_UrpParticleTemplate)
+                : new Material(urp);
+            edit.name = src.name + "_WebGL";
+
+            Texture tex = src.HasProperty("_MainTex") ? src.GetTexture("_MainTex") : null;
+            if (tex == null)
+                tex = src.mainTexture;
+            if (tex != null)
+            {
+                edit.SetTexture("_BaseMap", tex);
+                if (src.HasProperty("_MainTex"))
+                {
+                    edit.SetTextureScale("_BaseMap", src.GetTextureScale("_MainTex"));
+                    edit.SetTextureOffset("_BaseMap", src.GetTextureOffset("_MainTex"));
+                }
+            }
+
+            Color tint = Color.white;
+            string shaderName = src.shader != null ? src.shader.name : string.Empty;
+            bool legacyAdditive = shaderName.IndexOf("Additive", StringComparison.Ordinal) >= 0
+                && shaderName.IndexOf("Standard", StringComparison.Ordinal) < 0;
+            if (legacyAdditive && src.HasProperty("_TintColor"))
+            {
+                Color doubled = src.GetColor("_TintColor") * 2f;
+                doubled.a = Mathf.Clamp01(src.GetColor("_TintColor").a * 2f);
+                tint = doubled;
+            }
+            else if (src.HasProperty("_Color"))
+            {
+                tint = src.GetColor("_Color");
+            }
+
+            edit.SetColor("_BaseColor", tint);
+            if (edit.HasProperty("_Color"))
+                edit.SetColor("_Color", tint);
+
+            edit.SetFloat("_Surface", 1f);
+            edit.SetFloat("_Blend", 2f);
+            edit.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            edit.DisableKeyword("_ALPHAPREMULTIPLY_ON");
+            edit.DisableKeyword("_ALPHAMODULATE_ON");
+            edit.DisableKeyword("_ALPHATEST_ON");
+            edit.SetOverrideTag("RenderType", "Transparent");
+            edit.SetFloat("_SrcBlend", (float)BlendMode.SrcAlpha);
+            edit.SetFloat("_DstBlend", (float)BlendMode.One);
+            edit.SetFloat("_SrcBlendAlpha", (float)BlendMode.SrcAlpha);
+            edit.SetFloat("_DstBlendAlpha", (float)BlendMode.One);
+            edit.SetFloat("_ZWrite", 0f);
+            edit.SetFloat("_AlphaClip", 0f);
+            edit.SetFloat("_Cull", src.HasProperty("_Cull") ? src.GetFloat("_Cull") : 0f);
+            edit.SetFloat("_ColorMode", 0f);
+            edit.SetFloat("_SoftParticlesEnabled", 0f);
+            edit.DisableKeyword("_SOFTPARTICLES_ON");
+            edit.DisableKeyword("_FADING_ON");
+            edit.SetFloat("_CameraFadingEnabled", 0f);
+            edit.DisableKeyword("_DISTORTION_ON");
+            edit.renderQueue = (int)RenderQueue.Transparent;
+            return edit;
         }
 
         /// <summary>

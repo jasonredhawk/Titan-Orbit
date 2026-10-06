@@ -73,15 +73,13 @@ namespace TitanOrbit.ECS
             // --- Find the ship ghost owned by this client ---
             // [TITAN-ORBIT] Prefer ToEntityArray on the tiny ship set — WithEntityAccess NRE'd during
             // post-team Instantiates (stale chunk entity ptr). Ships ≠ map bodies; count is small.
+            // When exit/rejoin left the old hull and a new one, bind the newest so input does not
+            // stay on the ship you already left.
             var entities = _shipQuery.ToEntityArray(Allocator.Temp);
             var owners = _shipQuery.ToComponentDataArray<GhostOwner>(Allocator.Temp);
-            for (int i = 0; i < entities.Length; i++)
-            {
-                if (owners[i].NetworkId != localNetworkId)
-                    continue;
-                shipEntity = entities[i];
-                break;
-            }
+            int newest = ShipGhostAge.IndexOfNewest(state.EntityManager, entities, owners, localNetworkId);
+            if (newest >= 0)
+                shipEntity = entities[newest];
 
             entities.Dispose();
             owners.Dispose();

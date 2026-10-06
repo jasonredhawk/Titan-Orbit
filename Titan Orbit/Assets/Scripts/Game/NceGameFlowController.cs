@@ -69,6 +69,18 @@ namespace TitanOrbit.Game
         Button[] _teamButtons;
         GameObject[] _teamPanels;
 
+        /// <summary>Join button captions (child TMP). Index matches <see cref="TeamOrder"/>.</summary>
+        TextMeshProUGUI[] _teamJoinLabels;
+
+        /// <summary>True once this frame's planet cache has at least one world (not an empty join-settle scan).</summary>
+        bool _joinPlanetSnapshotReady;
+
+        /// <summary>True when at least one on-screen team currently owns a planet.</summary>
+        bool _joinScreenHasJoinableTeam = true;
+
+        /// <summary>Per team slot: live cache says this match team owns zero planets.</summary>
+        readonly bool[] _teamHasNoPlanets = new bool[5];
+
         [Header("Dev")]
         [SerializeField] bool autoStartLocalPlayInEditor = false;
         [Tooltip("Editor-only: auto-join Team A after a delay. Leave off to pick a team manually.")]
@@ -1226,6 +1238,12 @@ namespace TitanOrbit.Game
             bool connecting = TitanOrbitSessionManager.IsJoinConnecting;
             bool connected = IsInGameFlow();
 
+            // Dropped WebGL sessions bump LeaveGeneration from the session manager. Apply it
+            // before this frame decides the map is already loaded.
+            EcsGameBridge.ConsumeSessionLeave();
+            if (!connected && !connecting)
+                EcsGameBridge.IsMapLoadingComplete();
+
             // --- Hidden Orbit Menu warmup while connecting / loading ---
             // [TITAN-ORBIT] Start as soon as Play begins so chrome Instantiates under the
             // overlay, not after Join Team. LoadingScreen also ticks; a frame stamp
@@ -1257,8 +1275,12 @@ namespace TitanOrbit.Game
             bool mapLoaded = connected && IsMapReadyForTeamSelection();
 
             ShipState rejoinShipState = default;
-            bool hasRejoinableShip = connected &&
+            bool hasLiveRejoinShip = connected &&
                                      EcsGameBridge.TryGetRejoinableShipForLocalPlayer(out rejoinShipState);
+            bool hasSessionOffer = connected && SessionShipOfferCache.HasOffer;
+            if (!hasLiveRejoinShip && hasSessionOffer)
+                rejoinShipState = SessionShipOfferCache.Summary;
+            bool hasRejoinableShip = hasLiveRejoinShip || hasSessionOffer;
             // Only evaluate rejoin once basic map readiness is met — stale ships during galaxy build must not block flow.
             if (mapLoaded)
                 ClientTeamFlowState.TryNotifyRejoinableShip(hasRejoinableShip);
@@ -1362,6 +1384,7 @@ namespace TitanOrbit.Game
             if (mainMenuPanel != null)
                 mainMenuPanel.SetActive(!connected && !connecting &&
                                       !showLoadingOverlay &&
+                                      !MatchCloseGate.SuppressMainMenu &&
                                       (_joinBrowser == null || !_joinBrowser.IsVisible));
 
             if (showRejoinChoice && hasRejoinableShip && _rejoinChoice != null)
@@ -1373,6 +1396,11 @@ namespace TitanOrbit.Game
 
             if (playButton != null && mainMenuPanel != null && mainMenuPanel.activeSelf)
                 playButton.gameObject.SetActive(true);
+
+            // --- Planet lock for Join Team (cards stay visible) ---
+            // [TITAN-ORBIT] Scan before the status line so "no planets" copy matches the buttons
+            // the same frame. Empty cache is not "every team is eliminated."
+            UpdateJoinPlanetLock(showTeam, activeTeamsForUi);
 
             if (statusText != null)
             {
@@ -1392,9 +1420,7 @@ namespace TitanOrbit.Game
                             : showTeamCountWait
                                 ? "Preparing teams..."
                             : showTeam
-                                ? (!string.IsNullOrEmpty(_teamPickTimeoutHint)
-                                    ? _teamPickTimeoutHint
-                                    : "Choose a team to spawn your ship.")
+                                ? ResolveTeamPickPrompt()
                             : showSpawnWait
                                 ? "Spawning your ship..."
                                 : "Choose a team.";
@@ -1430,7 +1456,7 @@ namespace TitanOrbit.Game
                 EnsureUniformTeamPanelWidths();
                 ApplyActiveTeamVisibility(activeTeamsForUi);
                 SetTeamButtonsInteractable(true, activeTeamsForUi);
-                // --- Live panel stats (roster / home gems / planets) ---
+                // --- Live panel stats (worlds, gem bars, crew, team score) ---
                 // [TITAN-ORBIT] Scene placeholders stay at 0 until this binder runs each frame.
                 JoinTeamPanelStatsBinder.Refresh(_teamPanels, activeTeamsForUi);
             }
@@ -1888,6 +1914,10 @@ namespace TitanOrbit.Game
             _teamPanelWidthsConfigured = true;
         }
 
+        /// <summary>
+        /// Shows every team rolled for this match. A team that owns no planets stays on screen;
+        /// <see cref="SetTeamButtonsInteractable"/> turns Join off for that card.
+        /// </summary>
         void ApplyActiveTeamVisibility(int activeTeamCount)
         {
             for (int i = 0; i < TeamOrder.Length; i++)
@@ -1915,6 +1945,55 @@ namespace TitanOrbit.Game
             }
         }
 
+        /// <summary>
+        /// Fills <see cref="_teamHasNoPlanets"/> from the quarantine-safe planet cache.
+        /// Call while Join Team is visible, before the status line and join buttons update.
+        /// </summary>
+        void UpdateJoinPlanetLock(bool showTeam, int activeTeamCount)
+        {
+            // --- Reset ---
+            _joinPlanetSnapshotReady = false;
+            _joinScreenHasJoinableTeam = !showTeam;
+            for (int i = 0; i < _teamHasNoPlanets.Length; i++)
+                _teamHasNoPlanets[i] = false;
+
+            if (!showTeam || activeTeamCount <= 0)
+                return;
+
+            // [TITAN-ORBIT] GetCachedPlanetCount is 0 while join settle has not filled the cache.
+            // Treating that as "no planets" would lock every Join button on a fresh match.
+            int cachedPlanets = EcsGameBridge.GetCachedPlanetCount();
+            _joinPlanetSnapshotReady = cachedPlanets > 0;
+            if (!_joinPlanetSnapshotReady)
+            {
+                _joinScreenHasJoinableTeam = true;
+                return;
+            }
+
+            for (int i = 0; i < TeamOrder.Length; i++)
+            {
+                if ((int)TeamOrder[i] > activeTeamCount)
+                    continue;
+
+                bool ownsPlanet = EcsGameBridge.TeamOwnsAnyPlanet(TeamOrder[i]);
+                _teamHasNoPlanets[i] = !ownsPlanet;
+                if (ownsPlanet)
+                    _joinScreenHasJoinableTeam = true;
+            }
+        }
+
+        /// <summary>Status line while the Join Team cards are up.</summary>
+        string ResolveTeamPickPrompt()
+        {
+            if (!string.IsNullOrEmpty(_teamPickTimeoutHint))
+                return _teamPickTimeoutHint;
+            if (!string.IsNullOrEmpty(ClientTeamFlowState.LastPickRejection))
+                return ClientTeamFlowState.LastPickRejection;
+            if (_joinPlanetSnapshotReady && !_joinScreenHasJoinableTeam)
+                return "No team has a planet left to join.";
+            return "Choose a team to spawn your ship.";
+        }
+
         void SetTeamButtonsInteractable(bool interactable, int activeTeamCount)
         {
             for (int i = 0; i < TeamOrder.Length; i++)
@@ -1923,8 +2002,32 @@ namespace TitanOrbit.Game
                     continue;
 
                 bool teamActive = activeTeamCount > 0 && (int)TeamOrder[i] <= activeTeamCount;
-                _teamButtons[i].interactable = interactable && teamActive;
+                // Planet-less teams stay visible. Join stays off until they own a world again.
+                bool noPlanets = interactable && teamActive && _teamHasNoPlanets[i];
+                _teamButtons[i].interactable = interactable && teamActive && !noPlanets;
+                ApplyJoinButtonLabel(i, TeamOrder[i], noPlanets);
             }
+        }
+
+        /// <summary>Sets the Join caption to "Join A" or "No planets" without rewriting unchanged TMP.</summary>
+        void ApplyJoinButtonLabel(int index, TeamId team, bool noPlanets)
+        {
+            if (_teamJoinLabels == null || _teamJoinLabels.Length != TeamOrder.Length)
+                _teamJoinLabels = new TextMeshProUGUI[TeamOrder.Length];
+
+            var label = _teamJoinLabels[index];
+            if (label == null && _teamButtons[index] != null)
+            {
+                label = _teamButtons[index].GetComponentInChildren<TextMeshProUGUI>(true);
+                _teamJoinLabels[index] = label;
+            }
+
+            if (label == null)
+                return;
+
+            string next = noPlanets ? "No planets" : "Join " + team.ToLetter();
+            if (!string.Equals(label.text, next, StringComparison.Ordinal))
+                label.text = next;
         }
     }
 }

@@ -137,6 +137,8 @@ namespace TitanOrbit.Game
         static readonly Dictionary<int, float3> DroneEnemyPos = new Dictionary<int, float3>(16);
         static readonly Dictionary<int, DroneSwarmPositioning.ShieldAssignment> DroneShieldAssign =
             new Dictionary<int, DroneSwarmPositioning.ShieldAssignment>(8);
+        static readonly List<PlanetaryDefenseHitTarget> DefenseScratch =
+            new List<PlanetaryDefenseHitTarget>(32);
 
         /// <summary>
         /// Toroidal XZ grid of asteroids / ships / transports / drones / PD pads.
@@ -208,6 +210,7 @@ namespace TitanOrbit.Game
             s_LastRefreshFrame = frame;
             Obstacles.Clear();
             ShipProxyScratch.Clear();
+            DefenseScratch.Clear();
 
             var world = EcsGameBridge.ClientWorld;
             if (world == null || !world.IsCreated)
@@ -290,15 +293,18 @@ namespace TitanOrbit.Game
                 if (em.HasComponent<AsteroidTag>(entity) && em.HasComponent<AsteroidState>(entity))
                 {
                     var asteroid = em.GetComponentData<AsteroidState>(entity);
-                    // Mirror server — Health<=0 is already a kill even if IsDestroyed lags.
-                    if (asteroid.IsDestroyed || asteroid.Health <= 0f)
+                    if (!asteroid.IsAliveForCombat)
                         continue;
-                    // HitRpc may have culled while ghost Health still looks alive.
+                    if (lt.Scale <= AsteroidDeathPhysics.CulledTransformScale * 2f)
+                        continue;
+                    // HitRpc may have culled / hidden the mesh while a leftover snapshot looks alive.
                     if (em.HasComponent<AsteroidClientCulledTag>(entity))
                         continue;
+                    if (visualizer.TryGetProxy(entity, out GameObject asteroidGo) &&
+                        (asteroidGo == null || !asteroidGo.activeInHierarchy))
+                        continue;
 
-                    float asteroidRadius = visualizer.TryGetProxy(entity, out GameObject asteroidGo) &&
-                                           asteroidGo != null
+                    float asteroidRadius = asteroidGo != null
                         ? BulletImpactAttach.GetAsteroidVisualRadiusWorld(asteroidGo.transform)
                         : BodyCollisionMath.GetAsteroidBodyRadiusWorld(lt.Scale)
                           + BodyCollisionMath.AsteroidVisualDisplacementLocal * math.max(0.1f, lt.Scale);
@@ -366,6 +372,7 @@ namespace TitanOrbit.Game
             }
 
             PeopleTransportVfxDriver.AppendBulletObstacles(Obstacles);
+            PeopleTransportEscortPresenter.AppendBulletObstacles(Obstacles);
             AppendDroneObstacles(em);
             RebuildObstacleGrid();
             RebuildSweepBodies(em);
@@ -402,7 +409,8 @@ namespace TitanOrbit.Game
                 DroneShieldScratch,
                 DroneEnemyIdsScratch,
                 DroneEnemyPos,
-                DroneShieldAssign);
+                DroneShieldAssign,
+                DefenseScratch);
             ships.Dispose();
 
             for (int i = 0; i < DroneScratch.Count; i++)
@@ -1195,18 +1203,20 @@ namespace TitanOrbit.Game
                 case BulletDamageFilter.Everything:
                     return true;
                 case BulletDamageFilter.AsteroidsOnly:
-                    // Mining: rocks only. Pass through ships, drones, and enemy turrets.
-                    return kind == ObstacleKind.Asteroid;
+                    // Mining: rocks + drones in the beam. Pass through ships and enemy turrets.
+                    return kind == ObstacleKind.Asteroid
+                           || kind == ObstacleKind.Drone;
                 case BulletDamageFilter.ShipsOnly:
                     // Fighter: enemy ships + their drones + enemy planetary turrets.
                     return kind == ObstacleKind.Ship
                            || kind == ObstacleKind.Drone
                            || kind == ObstacleKind.PlanetaryDefense;
                 case BulletDamageFilter.ShipsAndTransports:
-                    // PD: ships + people transports + asteroids (same as server AllowsHitKind).
+                    // PD: ships + transports + asteroids + drones in the beam (no drone acquire).
                     return kind == ObstacleKind.Ship
                            || kind == ObstacleKind.Transport
-                           || kind == ObstacleKind.Asteroid;
+                           || kind == ObstacleKind.Asteroid
+                           || kind == ObstacleKind.Drone;
                 default:
                     return true;
             }
@@ -1262,16 +1272,26 @@ namespace TitanOrbit.Game
                     planetPos, planetScale, planet.PlanetLevel, i, slotCount);
                 slotPos.y = PlanetaryDefenseMath.FixedY;
 
+                float hitRadius = PlanetaryDefenseHitScan.ComputeTurretHitRadius(config, slot.TurretLevel);
                 Obstacles.Add(new Obstacle
                 {
                     Kind = ObstacleKind.PlanetaryDefense,
                     SourceEntity = planetEntity,
                     LogicalCenter = slotPos,
-                    Radius = PlanetaryDefenseHitScan.ComputeTurretHitRadius(config, slot.TurretLevel),
+                    Radius = hitRadius,
                     Scale = planetScale,
                     TeamOrOwnership = (byte)planet.Ownership,
                     PlanetId = planet.PlanetId,
                     SlotIndex = i,
+                });
+                DefenseScratch.Add(new PlanetaryDefenseHitTarget
+                {
+                    PlanetEntity = planetEntity,
+                    PlanetId = planet.PlanetId,
+                    SlotIndex = i,
+                    Position = slotPos,
+                    Team = (byte)planet.Ownership,
+                    HitRadius = hitRadius,
                 });
             }
         }

@@ -9,8 +9,8 @@ namespace TitanOrbit.ECS
     /// <para>
     /// Asteroids are built locally from the match seed (<see cref="ClientMapHydrateSystem"/>),
     /// so the old Instantiates=1 / session-long TransformQuarantine workaround is no longer
-    /// required for map load. <see cref="TransformSystemGroup"/> stays <b>enabled</b> on desktop.
-    /// WebGL keeps it <b>disabled</b> — enabling it then ticking ClientWorld OOBs in Chrome.
+    /// required for map load. <see cref="TransformSystemGroup"/> stays <b>enabled</b> on desktop
+    /// and WebGL. Ghosts cannot replicate if LocalToWorld never runs.
     /// </para>
     /// <para>
     /// Settling tracks pre-InGame hydrate + short post-InGame dynamic ghost catch-up.
@@ -56,21 +56,16 @@ namespace TitanOrbit.ECS
             state.RequireForUpdate<ClientJoinSettleState>();
         }
 
-        /// <summary>Publishes Settling / backlog; Transform stays on in play except WebGL.</summary>
+        /// <summary>Publishes Settling / backlog. Transform stays on (desktop and WebGL).</summary>
         public void OnUpdate(ref SystemState state)
         {
             ref var settle = ref SystemAPI.GetSingletonRW<ClientJoinSettleState>().ValueRW;
             bool inGame = !_inGameQuery.IsEmptyIgnoreFilter;
 
             // --- Transform group ---
-            // Desktop: ON (seed-hydrate — no session quarantine).
-            // WebGL: OFF — enabling TransformSystemGroup then World.Update OOBs in Chrome
-            // (2026-08-13 join: last C# line was TransformSystemGroup ENABLED, then WASM OOB).
-#if UNITY_WEBGL && !UNITY_EDITOR
-            SetTransformGroupEnabled(ref state, enabled: false);
-#else
+            // Seed-hydrate join: TransformSystemGroup and LocalToWorld stay on so ghost
+            // positions replicate. WebGL uses the same path as desktop.
             SetTransformGroupEnabled(ref state, enabled: true);
-#endif
 
             if (!inGame)
             {
@@ -162,11 +157,7 @@ namespace TitanOrbit.ECS
                 {
                     UnityEngine.Debug.Log(
                         "[JoinSettle] Settling ON (seed-hydrate / dynamic catch-up). " +
-#if UNITY_WEBGL && !UNITY_EDITOR
-                        "TransformSystemGroup OFF (WebGL). " +
-#else
                         "TransformSystemGroup ON. " +
-#endif
                         "spawnBuf=" + spawnBufferLen +
                         " placeholders=" + placeholderCount +
                         " hydrate=" + ClientMapHydrateCache.BuiltBodies +
@@ -175,11 +166,7 @@ namespace TitanOrbit.ECS
                 else
                 {
                     UnityEngine.Debug.Log(
-#if UNITY_WEBGL && !UNITY_EDITOR
-                        "[JoinSettle] Settling OFF — TransformSystemGroup OFF (WebGL). " +
-#else
                         "[JoinSettle] Settling OFF — TransformSystemGroup ON (seed-hydrate model). " +
-#endif
                         "inGameFrames=" + settle.InGameFrames +
                         " joinSettleCompleted=" + settle.JoinSettleCompleted +
                         " hydrateComplete=" + ClientMapHydrateCache.IsComplete +
@@ -209,11 +196,7 @@ namespace TitanOrbit.ECS
             _lastGroupEnabled = flag;
             UnityEngine.Debug.Log(
                 "[JoinSettle] TransformSystemGroup " + (enabled ? "ENABLED" : "DISABLED") +
-#if UNITY_WEBGL && !UNITY_EDITOR
-                " (WebGL — Transform stays off).");
-#else
                 " (seed-hydrate join model).");
-#endif
         }
     }
 }

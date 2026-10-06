@@ -29,12 +29,14 @@ namespace TitanOrbit.ECS
         const float RefreshIntervalSeconds = 1f;
 
         float _lastRefreshElapsed;
+        int _lastGraphRevision;
 
         /// <summary>Requires the connection graph singleton before tinting asteroids.</summary>
         public void OnCreate(ref SystemState state)
         {
             state.RequireForUpdate<PlanetConnectionGraphTag>();
             _lastRefreshElapsed = -999f;
+            _lastGraphRevision = int.MinValue;
         }
 
         /// <summary>
@@ -44,9 +46,14 @@ namespace TitanOrbit.ECS
         public void OnUpdate(ref SystemState state)
         {
             float now = (float)SystemAPI.Time.ElapsedTime;
-            if (now - _lastRefreshElapsed < RefreshIntervalSeconds)
+            int graphRevision = PlanetConnectionGraphCache.ServerPublishRevision;
+            // Refresh on the 1s cadence, or immediately when a new triangle publishes
+            // (otherwise brand-new territory waits a full second with mask 0).
+            if (graphRevision == _lastGraphRevision &&
+                now - _lastRefreshElapsed < RefreshIntervalSeconds)
                 return;
             _lastRefreshElapsed = now;
+            _lastGraphRevision = graphRevision;
 
             // --- Empty graph → clear all territory ---
             // [TITAN-ORBIT] Must read ServerTriangles — CurrentTriangles is the client side.
@@ -93,6 +100,11 @@ namespace TitanOrbit.ECS
                 planets.AsArray(),
                 moonElapsed,
                 Allocator.Temp);
+
+            // Triangles exist but this tick's vertex bake was empty. Writing mask 0 here
+            // cleared team ownership and stopped yellow bonus gems until the next good bake.
+            if (runtime.Length == 0 && PlanetConnectionGraphCache.ServerTriangles.Count > 0)
+                return;
 
             // --- Point-in-triangle ownership per asteroid ---
             foreach (var (asteroid, transform) in SystemAPI

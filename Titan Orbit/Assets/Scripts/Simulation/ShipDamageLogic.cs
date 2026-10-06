@@ -4,8 +4,10 @@ namespace TitanOrbit.Simulation
 {
     /// <summary>
     /// Shared server hull + cargo damage rules ported from the pre-ECS <c>Starship.ApplyDamageOnServer</c>.
-    /// Hull absorbs damage first. Once hull is 0, each hit expels a gem worth that hit's
-    /// damage (10 ram → gem 10, 50-damage bullet → gem 50), clamped by remaining cargo.
+    /// Hull absorbs damage first, and only up to the hull it has left. Asteroid rams then
+    /// expel the leftover as gems (10 HP and 100 damage → 10 hull and 90 gems). Bullets,
+    /// mines, and rockets still expel a gem worth the full hit once hull is 0
+    /// (50-damage bullet → gem 50), clamped by remaining cargo.
     /// Death requires both hull and carried gems depleted — not hull alone — for every combat source
     /// (bullets, burn, mines, rockets, ram). A living 0-HP ship (cargo still aboard,
     /// <c>IsDead</c> false) may still tractor and scoop gems. Pickup is blocked only when
@@ -74,9 +76,10 @@ namespace TitanOrbit.Simulation
         /// </param>
         /// <param name="isImmune">True when fully moon-docked — no damage or spill.</param>
         /// <param name="spillLeftoverDamageOnly">
-        /// True for asteroid ram/grind self-chips: skip cargo on the hull-breaking tick
-        /// so grinding to 0 HP does not also empty the hold and mark death that pulse.
-        /// False (default) keeps bullet/mine/rocket 1:1 full-hit gems.
+        /// True for asteroid ram/grind self-chips: hull absorbs what it can, and only the
+        /// leftover (damage − hull absorbed) expels gems on that same hit. A 100-damage
+        /// ram into 10 HP takes 10 hull and expels 90 gems. False (default) keeps
+        /// bullet/mine/rocket 1:1 full-hit gems once hull is already 0.
         /// </param>
         /// <returns>Expulsion amount and death/hull flags for the caller.</returns>
         public static Result ApplyHullAndGemDamage(
@@ -108,28 +111,32 @@ namespace TitanOrbit.Simulation
             bool wasAlive = healthBefore > DeathThreshold;
 
             // --- Hull phase ---
+            // Hull only absorbs what it still has. The rest is leftover for cargo.
+            float hullAbsorbed = 0f;
             if (wasAlive && damage > 0.0001f)
             {
-                float newHealth = healthBefore - damage;
-                if (newHealth < 0f)
-                    newHealth = 0f;
+                hullAbsorbed = damage < healthBefore ? damage : healthBefore;
+                float newHealth = healthBefore - hullAbsorbed;
                 result.HealthDelta = newHealth - healthBefore;
                 health = newHealth;
                 result.AppliedHullDamage = true;
             }
 
             // --- Gem spill once hull is gone ---
-            // [TITAN-ORBIT] Bullets / mines keep full-hit gems (10 ram → gem 10).
-            // Asteroid self-chips: skip cargo on the hull-breaking tick so grinding to 0 HP
-            // does not also empty the hold and mark death on that same pulse.
+            // [TITAN-ORBIT] Bullets / mines keep full-hit gems once hull is 0
+            // (50-damage bullet → gem 50), including the breaking hit.
+            // Asteroid self-chips split the same hit: 10 HP left and 100 damage
+            // takes 10 hull and expels the leftover 90 (clamped by cargo).
+            float gemBasis = spillLeftoverDamageOnly ? damage - hullAbsorbed : damage;
+            if (gemBasis < 0f)
+                gemBasis = 0f;
+
             float gemsToExpel = 0f;
-            bool skipCargoThisHit = spillLeftoverDamageOnly && wasAlive;
-            if (!skipCargoThisHit
-                && currentGems > 0.0001f
-                && damage > 0.0001f
+            if (currentGems > 0.0001f
+                && gemBasis > 0.0001f
                 && health <= DeathThreshold)
             {
-                gemsToExpel = damage * expulsionRate;
+                gemsToExpel = gemBasis * expulsionRate;
                 if (gemsToExpel > currentGems)
                     gemsToExpel = currentGems;
             }

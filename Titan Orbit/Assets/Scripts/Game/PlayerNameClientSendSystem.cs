@@ -23,6 +23,7 @@ namespace TitanOrbit.Game
             // the client half of SetPlayerNameCommand — without it the roster stays empty and HUD
             // falls back to "Player {networkId}".
             PlayerNameRpcClient.TrySendLocalName();
+            SessionPlayerIdRpcClient.TrySend();
         }
     }
 }

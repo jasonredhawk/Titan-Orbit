@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Text;
 using TitanOrbit.Core;
+using TitanOrbit.Diagnostics;
 using TitanOrbit.Data;
 using TitanOrbit.ECS;
 using TMPro;
@@ -11,8 +12,8 @@ namespace TitanOrbit.Game
 {
     /// <summary>
     /// World-space nameplate locked to world orientation so it does <b>not</b> spin when the hull yaws.
-    /// Regular ships sit <b>screen-below</b> the hull (world −Z); MEGA hulls sit <b>above mid-center</b>
-    /// (world +Y):
+    /// Regular ships sit <b>screen-below</b> the hull (world −Z). Titan (MEGA) hulls lift the plate
+    /// in world +Y and shift it so the profile badge sits on the hull center:
     /// <code>
     /// [Name] .............. [Lv N]
     /// [Score] ............. [#Rank]
@@ -27,8 +28,9 @@ namespace TitanOrbit.Game
     /// content width. Long names are truncated by cutting characters.
     /// <para>
     /// [HYBRID] Client presentation only — fed by <see cref="EcsWorldVisualizer"/>. Regular-ship
-    /// clearance is half the widest local footprint (+ padding); MEGA clearance is half-height
-    /// above mid-center. Both are frozen until ability-upgrade growth; yaw must not move the plate.
+    /// clearance is half the widest local footprint (+ padding). Titan clearance is half-height
+    /// above the hull, with the profile badge pinned to the hull center. Both are frozen until
+    /// ability-upgrade growth; yaw must not move the plate.
     /// The label root is unparented so text/bars stay world-upright. Fully moon-docked ships hide
     /// the plate until takeoff.
     /// </para>
@@ -147,8 +149,10 @@ namespace TitanOrbit.Game
         static readonly Color HealthFillFull = new Color(0.15f, 1f, 0.25f, 0.98f);
         static readonly Color HealthFillMid = new Color(1f, 0.55f, 0.05f, 0.98f);
         static readonly Color HealthFillEmpty = new Color(1f, 0.15f, 0.12f, 0.98f);
-        static readonly Color GemsFill = new Color(0.95f, 0.35f, 0.35f, 0.98f);
-        static readonly Color PeopleFill = new Color(0.95f, 0.85f, 0.25f, 0.98f);
+        // Gem cargo and troops use Gem Cap / Troop Cap — not fire-power red or energy yellow.
+        // Health stays a traffic light (green / amber / red) so low hull still reads as danger.
+        static readonly Color GemsFill = VitalFill(2);
+        static readonly Color PeopleFill = VitalFill(3);
         static readonly Color FullVersionBadgeColor = new Color(1f, 0.82f, 0.25f, 0.95f);
         static readonly Color MetaRightColor = new Color(0.85f, 0.90f, 1f, 0.95f);
         static readonly Color ScoreColor = new Color(0.95f, 0.86f, 0.55f, 1f);
@@ -163,6 +167,18 @@ namespace TitanOrbit.Game
         // --- Bound identity ---
 
         int _networkId;
+
+        /// <summary>
+        /// Last team pushed by <see cref="ApplyPresentation"/>. Comms leader lines read this
+        /// instead of an ECS ship gather.
+        /// </summary>
+        public TeamId PresentationTeam { get; private set; }
+
+        /// <summary>
+        /// Troops aboard from the last nameplate paint (<c>ShipState.CurrentPeople</c>).
+        /// Comms "Escort" reads this so it does not gather ECS ship entities.
+        /// </summary>
+        public int PresentationPeople { get; private set; }
 
         // --- Hierarchy (world-space root — not a child of the yawing hull) ---
 
@@ -314,7 +330,8 @@ namespace TitanOrbit.Game
         /// True when <c>ShipTurretControlState.IsControlling</c> — hull is hidden on a pad.
         /// </param>
         /// <param name="isMega">
-        /// True when this hull is a purchased MEGA — plate sits above mid-center instead of under the ship.
+        /// True when this hull is a Titan — plate lifts above the hull and the profile badge
+        /// is pinned to the hull center instead of sitting under the ship.
         /// </param>
         /// <param name="badgeId">Filename-stable profile badge id, or 0 for none.</param>
         public void ApplyPresentation(
@@ -342,6 +359,8 @@ namespace TitanOrbit.Game
         {
             if (networkId > 0)
                 _networkId = networkId;
+            PresentationTeam = team;
+            PresentationPeople = currentPeople;
             _isMega = isMega;
             EnsureHierarchy();
             if (!_ready || _labelRoot == null)
@@ -447,6 +466,7 @@ namespace TitanOrbit.Game
         /// </summary>
         void LateUpdate()
         {
+            using var _memName = WebGlAllocBuckets.Measure(WebGlAllocBuckets.Nameplates);
             if (!_ready || _labelRoot == null || !_cachedVisible)
                 return;
 
@@ -495,7 +515,8 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Regular ships: screen-below the hull footprint by half the widest world dimension.
-        /// MEGA hulls: above the geometric mid-center by measured half-height.
+        /// Titan hulls: lift above the geometric center by measured half-height, then shift the
+        /// plate so the profile badge (not the top of the stack) sits on that center.
         /// Clearance is frozen until ability-upgrade growth changes the signature.
         /// </summary>
         void RefreshAnchorPose()
@@ -504,6 +525,17 @@ namespace TitanOrbit.Game
                 return;
 
             RefreshCachedHullFootprintIfGrown();
+
+            // [TITAN-ORBIT] World rotation — plate stays upright while the hull turns.
+            // Theatrical: face the orbiting camera; gameplay: flat −90. Always rewritten
+            // here so leaving theatrical cannot leave a leftover billboard rotation.
+            bool theatrical = TitanOrbit.UI.TheatricalWorldSpaceLabelRotation.IsTheatricalEngaged();
+            Quaternion rot = theatrical
+                ? TitanOrbit.UI.TheatricalWorldSpaceLabelRotation.BillboardRotationFacingCamera()
+                : Quaternion.Euler(-90f, 0f, 0f);
+            float scale = _studioPreview ? StudioLabelWorldScale : LabelWorldScale;
+            _labelRoot.localScale = new Vector3(scale, -scale, scale);
+            _labelRoot.rotation = rot;
 
             Vector3 worldPos;
             if (_isMega)
@@ -514,8 +546,9 @@ namespace TitanOrbit.Game
                     MaxHeightWorld);
 
                 Vector3 centerWorld = transform.TransformPoint(_cachedLocalCenter);
-                worldPos = centerWorld;
-                worldPos.y = centerWorld.y + lift + HeightAbovePlane;
+                Vector3 badgeAnchor = centerWorld;
+                badgeAnchor.y = centerWorld.y + lift + HeightAbovePlane;
+                worldPos = WorldPosForBadgeOnAnchor(badgeAnchor);
             }
             else
             {
@@ -534,16 +567,22 @@ namespace TitanOrbit.Game
                 worldPos.y = centerWorld.y + HeightAbovePlane;
             }
 
-            // [TITAN-ORBIT] World rotation — plate stays upright while the hull turns.
-            // Theatrical: face the orbiting camera; gameplay: flat −90. Always rewritten
-            // here so leaving theatrical cannot leave a leftover billboard rotation.
-            bool theatrical = TitanOrbit.UI.TheatricalWorldSpaceLabelRotation.IsTheatricalEngaged();
-            Quaternion rot = theatrical
-                ? TitanOrbit.UI.TheatricalWorldSpaceLabelRotation.BillboardRotationFacingCamera()
-                : Quaternion.Euler(-90f, 0f, 0f);
             _labelRoot.SetPositionAndRotation(worldPos, rot);
-            float scale = _studioPreview ? StudioLabelWorldScale : LabelWorldScale;
-            _labelRoot.localScale = new Vector3(scale, -scale, scale);
+        }
+
+        /// <summary>
+        /// Label-root world position that puts the profile badge on <paramref name="badgeAnchor"/>.
+        /// The stack grows in label-local −Y, so the root itself sits off the badge.
+        /// Scale and rotation must already be applied on <see cref="_labelRoot"/>.
+        /// </summary>
+        Vector3 WorldPosForBadgeOnAnchor(Vector3 badgeAnchor)
+        {
+            if (_playerBadge == null)
+                return badgeAnchor;
+
+            _labelRoot.position = badgeAnchor;
+            Vector3 badgeWorld = _playerBadge.transform.position;
+            return badgeAnchor + (badgeAnchor - badgeWorld);
         }
 
         /// <summary>
@@ -1042,6 +1081,17 @@ namespace TitanOrbit.Game
                 slot.Bg.enabled = active;
             if (slot.Letter != null)
                 slot.Letter.enabled = active;
+        }
+
+        /// <summary>
+        /// Gem Cap or Troop Cap at nameplate opacity. <paramref name="vitalIndex"/> is the
+        /// top-left row: 2 = gems, 3 = troops.
+        /// </summary>
+        static Color VitalFill(int vitalIndex)
+        {
+            Color c = ShipStatPalette.GetVitalBarColor(vitalIndex);
+            c.a = 0.98f;
+            return c;
         }
 
         static Color HealthFillColor(float ratio)
@@ -1596,16 +1646,48 @@ namespace TitanOrbit.Game
     /// </summary>
     public static class ShipMatchScoreLogic
     {
-        public const int PointsPerKill = 100;
-        public const int PointsPerGem = 2;
-        public const int PointsPerPerson = 5;
+        public const int PointsPerKill = TeamCommanderRules.PointsPerKill;
+        public const int PointsPerGem = TeamCommanderRules.PointsPerGem;
+        public const int PointsPerPerson = TeamCommanderRules.PointsPerPerson;
+
+        /// <summary>Last <see cref="ComputeTeamRanks"/> snapshot (owner NetworkId → 1-based rank).</summary>
+        static readonly Dictionary<int, int> s_RankByNetworkId = new Dictionary<int, int>(32);
 
         /// <summary>Combined score from ghosted match-long stats.</summary>
         public static int ComputeCombinedScore(int kills, int gemsDeposited, int peopleDelivered)
         {
-            return kills * PointsPerKill
-                   + gemsDeposited * PointsPerGem
-                   + peopleDelivered * PointsPerPerson;
+            return TeamCommanderRules.CombinedScore(kills, gemsDeposited, peopleDelivered);
+        }
+
+        /// <summary>
+        /// True when this 1-based team score rank is 1–3. Path-stroke thickness only —
+        /// not command authority. Use <see cref="IsCommander"/> for the Command Deck.
+        /// </summary>
+        /// <param name="rank">1 = highest combined score on that team.</param>
+        public static bool IsCommanderRank(int rank)
+        {
+            return TeamCommanderRules.IsCommanderRank(rank);
+        }
+
+        /// <summary>
+        /// True when the last nameplate role flush listed <paramref name="networkId"/>
+        /// as a living killer, miner, or troop title. A zero-score hull can still be
+        /// rank 1 on an empty team; that is not a command seat.
+        /// </summary>
+        /// <param name="networkId">GhostOwner.NetworkId to test.</param>
+        public static bool IsCommander(int networkId)
+        {
+            if (networkId <= 0)
+                return false;
+
+            // --- Earned titles, not score rank ---
+            // ShipTopOfTeamRoles already refuses score 0 and dead hulls. We probe
+            // every playable faction because this helper has no team argument.
+            return ShipTopOfTeamRoles.HoldsCommandSeat(TeamId.TeamA, networkId)
+                || ShipTopOfTeamRoles.HoldsCommandSeat(TeamId.TeamB, networkId)
+                || ShipTopOfTeamRoles.HoldsCommandSeat(TeamId.TeamC, networkId)
+                || ShipTopOfTeamRoles.HoldsCommandSeat(TeamId.TeamD, networkId)
+                || ShipTopOfTeamRoles.HoldsCommandSeat(TeamId.TeamE, networkId);
         }
 
         /// <summary>
@@ -1644,6 +1726,22 @@ namespace TitanOrbit.Game
                 for (int i = 0; i < list.Count; i++)
                     rankByNetworkId[list[i].OwnerNetworkId] = i + 1;
             }
+
+            s_RankByNetworkId.Clear();
+            foreach (var kv in rankByNetworkId)
+                s_RankByNetworkId[kv.Key] = kv.Value;
+        }
+
+        /// <summary>
+        /// 1-based rank on that player's team from the last nameplate flush.
+        /// Missing / unknown owners return false.
+        /// </summary>
+        public static bool TryGetTeamRank(int networkId, out int rank)
+        {
+            if (networkId > 0 && s_RankByNetworkId.TryGetValue(networkId, out rank) && rank > 0)
+                return true;
+            rank = 0;
+            return false;
         }
 
         static int CompareScoreThenId(ShipTopOfTeamRoles.Candidate a, ShipTopOfTeamRoles.Candidate b)

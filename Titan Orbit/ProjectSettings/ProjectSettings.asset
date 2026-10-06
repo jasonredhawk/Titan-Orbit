@@ -143,10 +143,10 @@ PlayerSettings:
   loadStoreDebugModeEnabled: 0
   visionOSBundleVersion: 1.0
   tvOSBundleVersion: 1.0
-  bundleVersion: 20260813.1939
+  bundleVersion: 20261006.1845
   preloadedAssets:
   - {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}
-  - {fileID: 0}
+  - {fileID: 11400000, guid: 9cc9574cb5696094da3bcf7cdfc2072c, type: 2}
   metroInputSource: 0
   wsaTransparentSwapchain: 0
   xboxOneDisableKinectGpuReservation: 1
@@ -826,11 +826,11 @@ PlayerSettings:
   webGLThreadsSupport: 0
   webGLDecompressionFallback: 1
   webGLInitialMemorySize: 128
-  webGLMaximumMemorySize: 2048
-  webGLMemoryGrowthMode: 2
+  webGLMaximumMemorySize: 4096
+  webGLMemoryGrowthMode: 1
   webGLMemoryLinearGrowthStep: 32
   webGLMemoryGeometricGrowthStep: 0.2
-  webGLMemoryGeometricGrowthCap: 128
+  webGLMemoryGeometricGrowthCap: 512
   webGLPowerPreference: 2
   webGLWebAssemblyTable: 0
   webGLWebAssemblyBigInt: 1

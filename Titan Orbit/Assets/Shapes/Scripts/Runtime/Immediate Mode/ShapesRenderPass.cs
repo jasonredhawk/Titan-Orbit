@@ -37,11 +37,36 @@ namespace Shapes {
 		}
 
 		public override void RecordRenderGraph( RenderGraph renderGraph, ContextContainer frameData ) {
+			// cameraColor exists only when URP allocates an intermediate target. Cameras that
+			// draw straight into a RenderTexture (join-load warmup) leave it empty.
+			// SetRenderAttachment then NREs, the graph never executes, and Forward+
+			// leaves ZBinningJob unfinished so every later camera render fails.
+			// Color and depth must stay a pair: a color-only attachment drops the camera
+			// depth buffer, and Shapes' default ZTest (LessEqual) then discards every
+			// fragment. Planets still draw in the opaque pass; territory fills and the
+			// lines between them do not.
+			UniversalResourceData resourceData = frameData.Get<UniversalResourceData>();
+			TextureHandle color = resourceData.activeColorTexture;
+			TextureHandle depth = resourceData.activeDepthTexture;
+			if( !color.IsValid() ) {
+				color = resourceData.cameraColor;
+				depth = resourceData.cameraDepth;
+			}
+			if( !color.IsValid() ) {
+				color = resourceData.backBufferColor;
+				depth = resourceData.backBufferDepth;
+			}
+			if( !color.IsValid() )
+				return;
+
 			using IRasterRenderGraphBuilder builder = renderGraph.AddRasterRenderPass<PassData>( "Render Shapes", out PassData data );
 			data.drawCommand = drawCommand;
 			builder.AllowPassCulling( false );
-			UniversalResourceData resourceData = frameData.Get<UniversalResourceData>();
-			builder.SetRenderAttachment( resourceData.cameraColor, 0, AccessFlags.Write );
+			builder.SetRenderAttachment( color, 0, AccessFlags.Write );
+			// Read-only: territory and orbit shapes use ZWrite Off. Binding depth is what
+			// lets LessEqual keep fills under hulls and in front of the starfield floor.
+			if( depth.IsValid() )
+				builder.SetRenderAttachmentDepth( depth, AccessFlags.Read );
 			builder.SetRenderFunc(
 				( PassData dataParam, RasterGraphContext context ) => {
 					dataParam.drawCommand.AppendToBuffer( context.cmd );

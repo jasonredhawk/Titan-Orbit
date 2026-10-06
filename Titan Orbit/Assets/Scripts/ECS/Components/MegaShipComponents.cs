@@ -57,12 +57,27 @@ namespace TitanOrbit.ECS
 
         /// <summary>Branch to restore on the previous level.</summary>
         [GhostField] public int PreviousBranch;
+
+        /// <summary>
+        /// Cannon lasers went inactive. Cleared only when the pool is strictly
+        /// above <c>CannonLaserMath.RechargeRatio</c> of MaxEnergy. Releasing
+        /// Fire does not reset it. Ghosted so client beams hide during the wait.
+        /// </summary>
+        [GhostField] public bool CannonLaserLockout;
+
+        /// <summary>
+        /// True while at least one cannon is burning a live lock or Shift mouse
+        /// stream. Ghosted so client beams hide when the last target dies even
+        /// if Fire is still held (no interpolation — bool snaps).
+        /// </summary>
+        [GhostField] public bool CannonLaserPulseOn;
     }
 
     /// <summary>
     /// Server-only sticky auto-aim, one slot per weapon mount. Each muzzle searches
-    /// when Fire is pressed (ships / pads / moon shields first, asteroids second).
-    /// Locks clear when Fire is released so the next press re-acquires.
+    /// when Fire is pressed (ships / pads / moon shields first, asteroids second)
+    /// and keeps that lock until the target dies, leaves range, or Fire is released.
+    /// Target == this hull means no current lock (hull-forward fire).
     /// <para>
     /// [TITAN-ORBIT] <see cref="AimPoint"/> is the lead intercept (target motion +
     /// this hull's velocity), not the target's current pivot. Phase B still fires
@@ -139,5 +154,21 @@ namespace TitanOrbit.ECS
         /// </summary>
         [GhostField]
         public int TargetGhostId;
+
+        /// <summary>
+        /// MEGA unique-weapon class (<see cref="ShipWeaponKind"/>). Ghosted so predicted
+        /// clients keep cannon-laser barrels after mount-buffer rollback (mount
+        /// <c>WeaponKind</c> is not a GhostField).
+        /// </summary>
+        [GhostField]
+        public byte WeaponKind;
+
+        /// <summary>
+        /// Seconds this barrel has been burning its current lock (0–<c>RampDurationSeconds</c>).
+        /// Restarts at 0 when the burn subject changes (50% DPS): a new entity, or a
+        /// different pad / moon on the same planet. The same subject keeps charge.
+        /// </summary>
+        [GhostField(Quantization = 100, Smoothing = SmoothingAction.Clamp)]
+        public float CannonLaserRampSeconds;
     }
 }

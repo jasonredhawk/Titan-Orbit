@@ -2,6 +2,7 @@ using TitanOrbit.Simulation;
 using Unity.Burst;
 using Unity.Entities;
 using Unity.Mathematics;
+using Unity.NetCode;
 using Unity.Transforms;
 
 namespace TitanOrbit.ECS
@@ -55,16 +56,33 @@ namespace TitanOrbit.ECS
         public float FireRate;
 
         /// <summary>
-        /// [TITAN-ORBIT] Seconds until this barrel may fire again. Ticked per mount so mixed
-        /// calibers keep different cadences while Fire is held.
+        /// Seconds until this barrel's arsenal square is ready. Counts down from
+        /// <c>1 / FireRate</c> after a paid shot. Zero means the square is full
+        /// and the next shot only needs the hull pool to cover that shot's cost.
+        /// Not a GhostField — this pose buffer must stay local or prediction
+        /// rollback wipes <see cref="LocalPosition"/>. The replicated copy is
+        /// <see cref="ShipWeaponReadyElement.FireCooldown"/>.
         /// </summary>
         public float FireCooldown;
+
+        /// <summary>
+        /// Unused. Bars no longer store energy moved out of the hull pool.
+        /// Kept so existing mount initializers stay source-compatible.
+        /// </summary>
+        public float EnergyCharge;
 
         /// <summary>
         /// [TITAN-ORBIT] Level-1 firePower for this barrel (before attributes) — bullet VFX
         /// growth baseline so a fat gun looks larger than a peashooter at the same ship level.
         /// </summary>
         public float ReferenceFirePower;
+
+        /// <summary>
+        /// [TITAN-ORBIT] Catalog <c>firePowerPerExtraLevel</c> for this barrel.
+        /// Weapon-fire SFX piano: base = <see cref="ReferenceFirePower"/> (top C);
+        /// max = base + this × 12 (L6 + L6 Fire Power). MEGA unique weapons stay 0.
+        /// </summary>
+        public float FirePowerPerExtraLevel;
 
         /// <summary>
         /// [TITAN-ORBIT] Acquire + travel range for this barrel (MEGA catalog component
@@ -74,8 +92,9 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// [TITAN-ORBIT] Muzzle speed for this barrel (MEGA unique-component
-        /// <c>bulletSpeed</c>). Regular ships leave this 0 and use hull
-        /// <c>ShipWeaponConfig.BulletSpeed</c>. Not a hull sum — guns/cannons/snipers
+        /// <c>bulletSpeed</c>). Missiles keep Weapon Missile Stats as authored
+        /// (not the hull runtime minimum). Regular ships leave this 0 and use hull
+        /// <c>ShipWeaponConfig.BulletSpeed</c>. Not a hull sum — guns/cannons/missiles/snipers
         /// each keep their own catalog number.
         /// </summary>
         public float BulletSpeed;
@@ -89,10 +108,48 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// [TITAN-ORBIT] MEGA per-mount <c>BulletVfxBank</c> category from the catalog unique
-        /// weapon row (or type-table default). Regular ships leave this 0 and fire the
-        /// hull <c>ShipLoadoutState.RuntimeBulletIndex</c>.
+        /// weapon row (or type-table default). Cannon / missile / sniper always fire this
+        /// bank. Titan Bullet (Gun) mounts adopt the hull
+        /// <c>ShipLoadoutState.RuntimeBulletIndex</c> when the player cycles. Regular
+        /// ships leave this 0 and fire the hull index.
         /// </summary>
         public int BulletBankIndex;
+
+        /// <summary>
+        /// [TITAN-ORBIT] MEGA type-table tracer scale (Gun / Cannon / Missile / Sniper).
+        /// Regular ships leave this 0 and use hull <c>ShipWeaponConfig.BulletScale</c>.
+        /// </summary>
+        public float BulletScale;
+
+        /// <summary>
+        /// [TITAN-ORBIT] MEGA unique-weapon class (<see cref="ShipWeaponKind"/>).
+        /// Cannons are hitscan lasers; other values still spawn bullets.
+        /// Regular family barrels leave this 0 (gun).
+        /// </summary>
+        public byte WeaponKind;
+
+        /// <summary>
+        /// Authored tracer scale for this barrel. MEGA mounts use
+        /// <see cref="BulletScale"/> when set; otherwise the hull fallback.
+        /// </summary>
+        public static float ResolveAuthoredScale(in ShipWeaponMountElement mount, float hullBulletScale)
+        {
+            return mount.BulletScale > 0.01f ? mount.BulletScale : math.max(0.1f, hullBulletScale);
+        }
+    }
+
+    /// <summary>
+    /// One arsenal ready-timer per weapon mount, same index as
+    /// <see cref="ShipWeaponMountElement"/>. Ghosted so the owner's squares
+    /// show the server's delay. A sibling buffer, not a field on the pose
+    /// buffer: ghosting that buffer would roll local muzzle poses back to zero.
+    /// Quantized to centiseconds — one timer per barrel, not a second energy pool.
+    /// </summary>
+    public struct ShipWeaponReadyElement : IBufferElementData
+    {
+        /// <summary>Seconds left until this barrel may fire. 0 = square is full.</summary>
+        [GhostField(Quantization = 100, Smoothing = SmoothingAction.Clamp)]
+        public float FireCooldown;
     }
 
     /// <summary>

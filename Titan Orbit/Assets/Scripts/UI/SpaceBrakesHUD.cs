@@ -9,12 +9,12 @@ using UnityEngine.UI;
 namespace TitanOrbit.UI
 {
     /// <summary>
-    /// Left-column CTRL keycap for space brakes. Shows ON / OFF and toggles the same
-    /// flag as Left Ctrl. Sits under <see cref="BulletTypeHUD"/> (or the rocket column
-    /// when no fire types are showing) so the left HUDs do not overlap.
+    /// Top-left CTRL keycap for space brakes. Shows ON / OFF and toggles the same
+    /// flag as Left Ctrl. Sits under <see cref="ShipWeaponArmHUD"/> (or fire types /
+    /// rockets when that strip is hidden) so the column under the ship stats does not overlap.
     /// Hidden on the main menu, Join Team, and Orbit Menu. Does not query ship entities.
     /// </summary>
-    [DefaultExecutionOrder(66230)]
+    [DefaultExecutionOrder(66260)]
     public class SpaceBrakesHUD : MonoBehaviour
     {
         /// <summary>Inner tile width. Matches rocket / bullet buttons.</summary>
@@ -31,9 +31,6 @@ namespace TitanOrbit.UI
 
         /// <summary>Panel height = tile + top/bottom pad.</summary>
         const float PanelHeight = TileHeight + PanelPad * 2f;
-
-        /// <summary>Left inset shared with rockets and fire types on the 1920×1080 overlay.</summary>
-        const float OverlayLeft = 14f;
 
         /// <summary>Air between the strip above and this CTRL tile.</summary>
         const float DockGap = 8f;
@@ -79,7 +76,7 @@ namespace TitanOrbit.UI
             go.AddComponent<SpaceBrakesHUD>();
         }
 
-        /// <summary>Builds the left-column CTRL tile.</summary>
+        /// <summary>Builds the CTRL tile in the column under the ship stats.</summary>
         void Awake()
         {
             BuildUi();
@@ -87,7 +84,7 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Docks under bullets / rockets, then paints ON/OFF from
+        /// Docks under arsenal / bullets / rockets, then paints ON/OFF from
         /// <see cref="PlayerInputHandler"/>. Hides on menus and while
         /// <see cref="HUDController.LocalPlayerDeathHidesHud"/>.
         /// </summary>
@@ -97,7 +94,8 @@ namespace TitanOrbit.UI
                 IsMainMenuShowing() ||
                 !EcsGameBridge.HasLocalPlayerShip() ||
                 HUDController.LocalPlayerDeathHidesHud ||
-                HUDController.MinimapExpandedObscuresHud)
+                HUDController.MinimapExpandedObscuresHud ||
+                HUDController.CommsMatrixObscuresHud)
             {
                 SetVisible(false);
                 return;
@@ -118,8 +116,8 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Parks this tile under the fire-type strip, or under rockets when that strip
-        /// is hidden, or in the mid-left slot when both are hidden.
+        /// Parks this tile under the arsenal strip, or under fire types / rockets
+        /// when that strip is hidden, or under the ship stats when the column is empty.
         /// </summary>
         void ApplyDock()
         {
@@ -129,9 +127,14 @@ namespace TitanOrbit.UI
             float dockBottom = 0f;
             bool stacked = false;
 
-            // Execution order 66230 runs after BulletTypeHUD (66220) and rockets (66200).
-            if (BulletTypeHUD.TryGetOverlayDockBottomY(out dockBottom, out bool bulletsVisible) &&
-                bulletsVisible)
+            // Execution order 66260 runs after ShipWeaponArmHUD (66250) and fire types (66220).
+            if (ShipWeaponArmHUD.TryGetOverlayDockBottomY(out dockBottom, out bool arsenalVisible) &&
+                arsenalVisible)
+            {
+                stacked = true;
+            }
+            else if (BulletTypeHUD.TryGetOverlayDockBottomY(out dockBottom, out bool bulletsVisible) &&
+                     bulletsVisible)
             {
                 stacked = true;
             }
@@ -141,16 +144,7 @@ namespace TitanOrbit.UI
                 stacked = true;
             }
 
-            if (stacked)
-            {
-                _panel.pivot = new Vector2(0f, 1f);
-                _panel.anchoredPosition = new Vector2(OverlayLeft, dockBottom - DockGap);
-            }
-            else
-            {
-                _panel.pivot = new Vector2(0f, 0.5f);
-                _panel.anchoredPosition = new Vector2(OverlayLeft, 0f);
-            }
+            RocketLoadoutHUD.PlaceInLeftColumn(_panel, stacked, dockBottom, DockGap);
         }
 
         /// <summary>True while the scene Main Menu panel is up (Play / Join Game).</summary>
@@ -224,7 +218,7 @@ namespace TitanOrbit.UI
             }
         }
 
-        /// <summary>Builds a rocket-sized CTRL tile in the left column.</summary>
+        /// <summary>Builds the CTRL tile in the column under the ship stats.</summary>
         void BuildUi()
         {
             _canvas = gameObject.AddComponent<Canvas>();
@@ -233,15 +227,13 @@ namespace TitanOrbit.UI
             var scaler = gameObject.AddComponent<CanvasScaler>();
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
             scaler.referenceResolution = new Vector2(1920f, 1080f);
+            scaler.matchWidthOrHeight = 0.5f;
             gameObject.AddComponent<GraphicRaycaster>();
 
             var panelGo = new GameObject("Panel", typeof(RectTransform), typeof(Image));
             panelGo.transform.SetParent(transform, false);
             _panel = panelGo.GetComponent<RectTransform>();
-            _panel.anchorMin = new Vector2(0f, 0.5f);
-            _panel.anchorMax = new Vector2(0f, 0.5f);
-            _panel.pivot = new Vector2(0f, 0.5f);
-            _panel.anchoredPosition = new Vector2(OverlayLeft, 0f);
+            RocketLoadoutHUD.PlaceInLeftColumn(_panel, false, 0f, 0f);
             _panel.sizeDelta = new Vector2(PanelWidth, PanelHeight);
             _panelImage = panelGo.GetComponent<Image>();
             _panelImage.color = FillColor;

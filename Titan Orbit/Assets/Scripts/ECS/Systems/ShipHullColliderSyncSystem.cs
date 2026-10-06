@@ -214,11 +214,13 @@ namespace TitanOrbit.ECS
             bool recompute = true;
             float3 cachedExtents = new float3(-1f);
             float3 cachedCenter = float3.zero;
+            float3 oldPivot = float3.zero;
             int megaRevision = 0;
             if (em.HasComponent<ShipHullColliderState>(entity))
             {
                 var prev = em.GetComponentData<ShipHullColliderState>(entity);
                 megaRevision = prev.AppliedMegaColliderRevision;
+                oldPivot = new float3(prev.AppliedPivotShiftX, 0f, prev.AppliedPivotShiftZ);
                 recompute = ShipHullColliderLogic.NeedsCoveringRecompute(
                     prev, chassisKey, branchIndex, attributeSum, isMega, equipmentKey, bankIndex);
                 if (!recompute)
@@ -233,7 +235,11 @@ namespace TitanOrbit.ECS
             ShipHullColliderLogic.TryApplyCoveringHull(
                 em, entity, chassisPrefab, motorMass, attrs, familyPrefix, isMega,
                 cachedExtents, cachedCenter, out float3 usedCenter, out float3 usedExtents,
-                storeFactors);
+                out float3 pivotShift, storeFactors);
+
+            // Buffers were not rebaked here. Move them only by how much the center changed
+            // so a fresh catalog bake is not shifted a second time.
+            ShipHullColliderLogic.OffsetAttachmentPlanar(em, entity, oldPivot - pivotShift);
 
             var hullState = new ShipHullColliderState
             {
@@ -255,6 +261,9 @@ namespace TitanOrbit.ECS
                 AppliedCoveringCenterX = usedCenter.x,
                 AppliedCoveringCenterY = usedCenter.y,
                 AppliedCoveringCenterZ = usedCenter.z,
+                PivotRecentered = 1,
+                AppliedPivotShiftX = pivotShift.x,
+                AppliedPivotShiftZ = pivotShift.z,
             };
 
             if (em.HasComponent<ShipHullColliderState>(entity))

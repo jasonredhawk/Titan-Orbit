@@ -295,6 +295,21 @@ namespace TitanOrbit.Data
                 * SelfToAsteroidDamageRatio);
 
         /// <summary>
+        /// Hull chip a regular ship takes from a rock: the ram or grind self formula,
+        /// capped by the asteroid's current Health. A small rock cannot deal a full
+        /// cruise ram back into the hull. MEGA plow uses its own remaining-HP slider.
+        /// </summary>
+        /// <param name="rammingSelfDamage">
+        /// Uncapped self-chip from <see cref="ComputeImpactSelfDamage"/> or
+        /// <see cref="ComputeGrindSelfDamagePerPulse"/>.
+        /// </param>
+        /// <param name="asteroidHealth">Asteroid Health before this hit is applied.</param>
+        public static float CapCollisionSelfDamageToAsteroidHealth(
+            float rammingSelfDamage,
+            float asteroidHealth) =>
+            Mathf.Min(Mathf.Max(0f, rammingSelfDamage), Mathf.Max(0f, asteroidHealth));
+
+        /// <summary>
         /// Grind pulse to asteroid: <c>grindDps × pulseInterval</c>.
         /// Four pulses per second at the default 0.25 s interval equals full grind DPS.
         /// </summary>

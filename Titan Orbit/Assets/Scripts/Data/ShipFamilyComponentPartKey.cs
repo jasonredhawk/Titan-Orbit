@@ -60,6 +60,10 @@ namespace TitanOrbit.Data
                 { "Cockpit_Base_1", ShipFamilyPartTypes.Cockpit },
                 { "Cockpit_Base_2", ShipFamilyPartTypes.Cockpit },
                 { "CockpitCover", ShipFamilyPartTypes.Cockpit },
+                // Cargo holds
+                { "Cargo", ShipFamilyPartTypes.Cargo },
+                { "Hold", ShipFamilyPartTypes.Cargo },
+                { "Storage", ShipFamilyPartTypes.Cargo },
                 // Hull catch-all
                 { "MainBody1", ShipFamilyPartTypes.Hull },
                 { "MainBody2", ShipFamilyPartTypes.Hull },
@@ -252,7 +256,8 @@ namespace TitanOrbit.Data
                 return new List<ShipComponentStatCategory> { ShipComponentStatCategory.Movement };
             }
 
-            if (string.Equals(partType, ShipFamilyPartTypes.Wing, StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(partType, ShipFamilyPartTypes.Wing, StringComparison.OrdinalIgnoreCase)
+                || ShipFamilyPartTypes.IsCargoProfile(partType))
             {
                 return new List<ShipComponentStatCategory>
                 {

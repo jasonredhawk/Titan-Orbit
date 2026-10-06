@@ -7,7 +7,9 @@ namespace TitanOrbit.Data
     /// CW PLANETS pack material lists for procedural planet visuals. Sole asset:
     /// <c>Assets/Resources/PlanetMaterialPool.asset</c> (Editor + player via <c>Resources.Load</c>).
     /// Neutral planets draw from <see cref="Materials"/>; home planets prefer
-    /// <see cref="WaterMaterials"/> (tropical water + atmosphere). Used by map generation and
+    /// <see cref="WaterMaterials"/> (tropical water + atmosphere).
+    /// <see cref="NeutralWaterLevelMin"/> and <see cref="NeutralWaterLevelMax"/> bound how much
+    /// ocean each non-home planet rolls on a new map. Used by map generation and
     /// <see cref="Game.PlanetSpinVisualProxy"/>.
     /// </summary>
     [CreateAssetMenu(fileName = "PlanetMaterialPool", menuName = "Titan Orbit/Planet Material Pool")]
@@ -18,6 +20,15 @@ namespace TitanOrbit.Data
 
         [Tooltip("Tropical-only materials (water + atmosphere) for home planets. If empty, home planets use Materials.")]
         public List<Material> WaterMaterials = new List<Material>();
+
+        [Header("Neutral planet oceans")]
+        [Tooltip("Smallest water level rolled for non-home planets on each new map. 0 is dry. Home worlds sit near 0.2.")]
+        [Range(0f, 1f)]
+        public float NeutralWaterLevelMin = 0.07f;
+
+        [Tooltip("Largest water level rolled for non-home planets. Home worlds sit near 0.2. Near 0.5 most of the surface is water.")]
+        [Range(0f, 1f)]
+        public float NeutralWaterLevelMax = 0.26f;
 
         /// <summary>
         /// Picks a random material from the appropriate list (water-preferred for home planets).

@@ -8,10 +8,13 @@ namespace TitanOrbit.Data
     /// <summary>
     /// ScriptableObject mapping each planet to a <see cref="ShipFamilyDefinition"/> and optional planet skin.
     /// Home planet (id 0) always resolves to AstroEagle; neutrals / captured planets use indices 1–11 rolled
-    /// at spawn into <c>PlanetState.ShipFamilyConfigIndex</c>. Prefabs, chassis ids, unlock tiers, and gem
-    /// costs come from each family's <c>upgradeTree</c>. <see cref="ShipFamilyEntry.planetMaterial"/> ties
-    /// that family to a recognizable CW PLANETS surface so players can spot the ship tree from the planet
-    /// look even when neutral placement is randomized. Paired with <see cref="PlanetShipFamilyAssignment"/>.
+    /// at spawn into <c>PlanetState.ShipFamilyConfigIndex</c>. Neutral planets also roll their own
+    /// <c>PlanetState.BulletBankIndex</c>; homes stay Laserbolt (family assets default to Laserbolt). Prefabs,
+    /// chassis ids, unlock tiers, and gem costs come from each family's <c>upgradeTree</c>. World labels use
+    /// <see cref="GetPlanetDisplayName"/> (proper place names via <see cref="PlanetDisplayNames"/>,
+    /// or a filled <see cref="ShipFamilyEntry.planetName"/>). <see cref="ShipFamilyEntry.planetMaterial"/>
+    /// ties that family to a recognizable CW PLANETS surface so players can spot the ship tree from the
+    /// planet look even when neutral placement is randomized. Paired with <see cref="PlanetShipFamilyAssignment"/>.
     /// </summary>
     [CreateAssetMenu(fileName = "PlanetShipFamilyConfig", menuName = "Titan Orbit/Planet Ship Family Config")]
     public class PlanetShipFamilyConfig : ScriptableObject
@@ -31,6 +34,12 @@ namespace TitanOrbit.Data
 
             [Tooltip("Optional display name; when empty, familyId from shipFamilyDefinition is used.")]
             public string familyName;
+
+            [Tooltip(
+                "Optional proper world name for planets that roll this family. When empty, " +
+                "GetPlanetDisplayName uses PlanetDisplayNames (unique per PlanetId). " +
+                "Does not replace familyName on ships or upgrade trees.")]
+            public string planetName;
 
             [Tooltip(
                 "Neutral / captured planet surface material for this family. Homes ignore this and use " +
@@ -135,54 +144,77 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Family label whose default gun bank is <paramref name="bankIndex"/>, or empty
-        /// when no family authored that category (FireballsV2 / Liquid / Ring2 have none).
+        /// Player-facing ship family for a planet (Astro Eagle, Cosmic Shark, …).
+        /// Same resolve path as <see cref="GetPlanetDisplayName"/>: homes force the home family,
+        /// neutrals use the ghosted <c>ShipFamilyConfigIndex</c>. Used by the minimap hover tip
+        /// under the proper world name.
+        /// </summary>
+        /// <param name="planetId">Stable planet id (homes = team id, neutrals ≥ 100).</param>
+        /// <param name="isHomePlanet">True for team home worlds — forces the home family.</param>
+        /// <param name="shipFamilyConfigIndex">Ghosted <c>PlanetState.ShipFamilyConfigIndex</c> (−1 = infer).</param>
+        /// <returns>Display name, or empty when the family row is missing.</returns>
+        public string GetFamilyDisplayName(int planetId, bool isHomePlanet, int shipFamilyConfigIndex = -1)
+        {
+            return FormatFamilyDisplayName(GetFamilyForPlanet(planetId, isHomePlanet, shipFamilyConfigIndex));
+        }
+
+        /// <summary>
+        /// Family label whose authored fallback gun is uniquely <paramref name="bankIndex"/>.
+        /// Empty when none or more than one family share that bank (all families now
+        /// default to Laserbolt, so this is empty for the shared default).
         /// </summary>
         /// <param name="bankIndex"><c>BulletVfxBank</c> category the HUD tile represents.</param>
         public string GetFamilyDisplayNameForDefaultBank(int bankIndex)
         {
-            if (families == null || bankIndex < 0)
-                return string.Empty;
-
-            // --- First family whose default gun matches ---
-            // [TITAN-ORBIT] Each gameplay family authors a unique bulletPrefabIndex.
-            // Unassigned catalog rows (FireballsV2, Liquid, Ring2) return empty.
-            for (int i = 0; i < families.Count; i++)
-            {
-                var entry = families[i];
-                var family = entry != null ? entry.shipFamilyDefinition : null;
-                if (family == null)
-                    continue;
-                if (BulletBankProfileUtility.ResolveBankIndexForFamily(family) == bankIndex)
-                    return FormatFamilyDisplayName(entry);
-            }
-
-            return string.Empty;
+            return TryGetUniqueFamilyEntryForDefaultBank(bankIndex, out ShipFamilyEntry entry)
+                ? FormatFamilyDisplayName(entry)
+                : string.Empty;
         }
 
         /// <summary>
-        /// Family whose default gun bank is <paramref name="bankIndex"/>
-        /// (unique <c>bulletPrefabIndex</c> per gameplay family).
+        /// Family whose authored fallback gun is uniquely <paramref name="bankIndex"/>.
+        /// False when several families share that bank (Laserbolt after the shared default).
         /// </summary>
         public bool TryGetFamilyForDefaultBank(int bankIndex, out ShipFamilyDefinition family)
         {
             family = null;
+            if (!TryGetUniqueFamilyEntryForDefaultBank(bankIndex, out ShipFamilyEntry entry))
+                return false;
+            family = entry.shipFamilyDefinition;
+            return family != null;
+        }
+
+        /// <summary>
+        /// Exactly one catalog row whose family fallback equals <paramref name="bankIndex"/>.
+        /// Shared Laserbolt (every family) must not claim a single owner — otherwise B-key
+        /// visual swap would restyle every Laserbolt hull as Astro Eagle.
+        /// </summary>
+        bool TryGetUniqueFamilyEntryForDefaultBank(int bankIndex, out ShipFamilyEntry entry)
+        {
+            entry = null;
             if (families == null || bankIndex < 0)
                 return false;
 
+            ShipFamilyEntry found = null;
+            int matches = 0;
             for (int i = 0; i < families.Count; i++)
             {
-                ShipFamilyDefinition candidate = families[i]?.shipFamilyDefinition;
-                if (candidate == null)
+                var candidate = families[i];
+                var family = candidate != null ? candidate.shipFamilyDefinition : null;
+                if (family == null)
                     continue;
-                if (BulletBankProfileUtility.ResolveBankIndexForFamily(candidate) == bankIndex)
-                {
-                    family = candidate;
-                    return true;
-                }
+                if (BulletBankProfileUtility.ResolveBankIndexForFamily(family) != bankIndex)
+                    continue;
+                found = candidate;
+                matches++;
+                if (matches > 1)
+                    return false;
             }
 
-            return false;
+            if (matches != 1)
+                return false;
+            entry = found;
+            return true;
         }
 
         /// <summary>Designer name, else spaced familyId (AstroEagle → Astro Eagle).</summary>
@@ -296,53 +328,65 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// World-space / minimap planet label from this planet's family.
-        /// Prefers designer <see cref="ShipFamilyEntry.familyName"/>, then camel-splits <c>familyId</c>
-        /// (AstroEagle → "Astro Eagle"). Same string the world label and minimap hover tip show.
+        /// World-space / minimap planet label. Same string as
+        /// <see cref="GetPlanetDisplayName"/> with home/family inferred from id only.
+        /// Prefer the overload that passes <c>IsHomePlanet</c> and <c>ShipFamilyConfigIndex</c>.
         /// </summary>
         /// <param name="planetId">Stable <c>PlanetState.PlanetId</c>.</param>
         public string GetPlanetDisplayNameFromFamilyId(int planetId) =>
             GetPlanetDisplayName(planetId, isHomePlanet: false, shipFamilyConfigIndex: -1);
 
         /// <summary>
-        /// Default gun type for this planet's family (Fireballs, Rift, …).
-        /// World planet labels show this under the family name. Empty when the family or bank is missing.
+        /// Default gun type for this planet (Fireballs, Rift, Laserbolt, …).
+        /// Prefers the planet's rolled <paramref name="bulletBankIndex"/>; falls back to the
+        /// family Laserbolt asset default when the bank was not stamped. Empty when missing.
         /// </summary>
         /// <param name="planetId">Stable <c>PlanetState.PlanetId</c>.</param>
         /// <param name="isHomePlanet">True for team home worlds — forces config index 0.</param>
         /// <param name="shipFamilyConfigIndex">Ghosted <c>PlanetState.ShipFamilyConfigIndex</c> (−1 = infer).</param>
-        public string GetPlanetBulletTypeName(int planetId, bool isHomePlanet, int shipFamilyConfigIndex = -1)
+        /// <param name="bulletBankIndex">Ghosted <c>PlanetState.BulletBankIndex</c> (−1 = family fallback).</param>
+        public string GetPlanetBulletTypeName(
+            int planetId,
+            bool isHomePlanet,
+            int shipFamilyConfigIndex = -1,
+            int bulletBankIndex = -1)
         {
-            // --- Same family row as the planet name ---
+            // --- Planet roll wins ---
+            // [TITAN-ORBIT] Family assets all default to Laserbolt. The fun is the per-planet
+            // gun rolled at spawn, so Cosmic Shark can be Fireballs this match and Plasma next.
+            if (bulletBankIndex >= 0)
+                return BulletBankProfileUtility.FormatBankCategoryName(
+                    PlanetShipFamilyAssignment.SanitizeSelectableDamageBank(bulletBankIndex));
+
             ShipFamilyEntry entry = GetFamilyForPlanet(planetId, isHomePlanet, shipFamilyConfigIndex);
             ShipFamilyDefinition family = entry != null ? entry.shipFamilyDefinition : null;
             return BulletBankProfileUtility.FormatFamilyBulletTypeName(family);
         }
 
         /// <summary>
-        /// Resolves the player-facing planet name using home flag + ghosted family index.
-        /// Homes always use the AstroEagle slot; neutrals use the index rolled at spawn.
+        /// Resolves the player-facing planet name. Planets are places — this is a proper world
+        /// name, not the ship family (Astro Eagle stays on hulls and the upgrade tree).
+        /// <para>
+        /// Designer <see cref="ShipFamilyEntry.planetName"/> on the family row wins when set.
+        /// Otherwise <see cref="PlanetDisplayNames"/> picks a stable name from
+        /// <paramref name="planetId"/> (homes by team, neutrals from id 100 upward).
+        /// </para>
         /// </summary>
-        /// <param name="planetId">Stable planet id (homes are 0).</param>
-        /// <param name="isHomePlanet">True for team home worlds — forces config index 0.</param>
-        /// <param name="shipFamilyConfigIndex">Ghosted <c>PlanetState.ShipFamilyConfigIndex</c> (−1 = infer).</param>
-        /// <returns>Display name, or empty when the config list has no family for this planet.</returns>
+        /// <param name="planetId">Stable planet id (homes = team id, neutrals ≥ 100).</param>
+        /// <param name="isHomePlanet">True for team home worlds — uses the capital-name list.</param>
+        /// <param name="shipFamilyConfigIndex">Ghosted <c>PlanetState.ShipFamilyConfigIndex</c> (−1 = infer). Used only for a filled <c>planetName</c> override.</param>
+        /// <returns>Display name, or empty when both the override and the catalog miss.</returns>
         public string GetPlanetDisplayName(int planetId, bool isHomePlanet, int shipFamilyConfigIndex = -1)
         {
-            // --- Resolve family entry ---
+            // --- Optional designer world name on this family row ---
+            // [TITAN-ORBIT] familyName is the ship tree label. planetName is the place name.
+            // Leaving planetName blank (the default) keeps every body unique via PlanetId.
             ShipFamilyEntry entry = GetFamilyForPlanet(planetId, isHomePlanet, shipFamilyConfigIndex);
-            if (entry == null)
-                return string.Empty;
+            if (entry != null && !string.IsNullOrWhiteSpace(entry.planetName))
+                return entry.planetName.Trim();
 
-            // Designer override wins (Inspector "familyName" on the config row).
-            if (!string.IsNullOrWhiteSpace(entry.familyName))
-                return entry.familyName.Trim();
-
-            // Fallback: split the ScriptableObject familyId so AstroEagle reads as "Astro Eagle".
-            string familyId = entry.shipFamilyDefinition != null ? entry.shipFamilyDefinition.familyId : null;
-            if (string.IsNullOrWhiteSpace(familyId))
-                return string.Empty;
-            return Core.DisplayNameFormatting.SplitCamelCase(familyId.Trim());
+            // --- Unique catalog name ---
+            return PlanetDisplayNames.Resolve(planetId, isHomePlanet);
         }
 
         /// <summary>

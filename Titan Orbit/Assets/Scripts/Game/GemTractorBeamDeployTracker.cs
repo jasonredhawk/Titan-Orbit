@@ -31,7 +31,7 @@ namespace TitanOrbit.Game
         public const float ExtendLineThickness = 0.065f;
 
         /// <summary>
-        /// Refreshes deploy pairs from ghost locks only. Keys are ship entity.Index + gem ghostId.
+        /// Refreshes deploy pairs from server lock RPCs. Keys are ship entity.Index + gem SpawnId.
         /// </summary>
         public static void LateUpdateTick()
         {

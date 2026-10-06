@@ -1,4 +1,6 @@
 using System.Collections.Generic;
+using Shapes;
+using TitanOrbit.Core;
 using TitanOrbit.Data;
 using TitanOrbit.ECS;
 using TitanOrbit.NetCode;
@@ -9,36 +11,71 @@ using UnityEngine.UI;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// [HYBRID] World-space keyword chips above a speaking ship. One bubble per
-    /// <c>GhostOwner.NetworkId</c> — a new callout replaces the old one.
+    /// [HYBRID] World-space keyword chips above a speaking ship. One speaker bubble per
+    /// <c>GhostOwner.NetworkId</c> — a new callout replaces the old one. Commander
+    /// sentences that tag Everyone / Us / You also plant the same gold chips
+    /// <b>below</b> each tagged hull (past the nameplate) so the order is readable
+    /// on every affected ship.
     /// <para>
     /// Client presentation only. Driven by <see cref="ShipCommsInbox"/> (RPC echo) and by
-    /// <see cref="Show"/> for the speaker's optimistic local preview. Anchors through
-    /// <see cref="ShipWeaponProxyRegistry"/> so we follow the wrapped hull transform
-    /// (display = sim; no extra wrap tiles).
+    /// <see cref="Show"/> for the speaker's optimistic local preview. Chip frames stay
+    /// steel unless that word owns a color (Purple, Red, Heal, Attack, …). One plate
+    /// outlines the whole row: white for All, the speaker's team color for Team,
+    /// command gold for Commander.
+    /// Anchors through <see cref="ShipWeaponProxyRegistry"/> so we follow the wrapped hull
+    /// transform (display = sim; no extra wrap tiles).
     /// </para>
     /// Regular nameplates sit world −Z (screen-below). These chips sit world +Z (screen-above)
-    /// on the same play-plane rotation (<c>Euler(-90,0,0)</c>, facing +Y) so they do not tilt
-    /// toward the camera. Borders are a sliced AA frame Image — not UGUI <c>Outline</c>,
+    /// on the same play-plane rotation (<c>Euler(-90,0,0)</c>, facing +Y) in gameplay. Theatrical
+    /// idle orbit billboards them at the lens like nameplates and scales by camera-to-hull
+    /// distance so remote callouts stay readable. A thin Shapes billboard line in the
+    /// speaker's team color ties the chip row back to the hull.
+    /// Commander-keyword paths keep drawing for 10s after the 4s chips fade, thinner
+    /// and partly transparent so the order stays visible without blocking the fight.
+    /// Minimap dest icons use the same window so the target stays on the radar disc.
+    /// Incoming chips, stems, and radar dests hide while the local hull is jammed in
+    /// enemy territory. Borders are a sliced AA frame Image — not UGUI <c>Outline</c>,
     /// which crawls while the ship flies. Execution order 67012: after
     /// <see cref="EcsWorldVisualizer"/> and nameplates.
     /// </summary>
     [DefaultExecutionOrder(67012)]
-    public sealed class ShipCommsBubblePresenter : MonoBehaviour
+    public sealed class ShipCommsBubblePresenter : ImmediateModeShapeDrawer
     {
+        /// <summary>Chip row + full-opacity path. After this, commander ghosts may linger.</summary>
         const float LifetimeSeconds = 4f;
         const float FadeSeconds = 0.65f;
         /// <summary>
-        /// Same tiny Y lift as <see cref="ShipWorldNameplate"/> so chips sit on the play plane,
-        /// not tilted toward the camera.
+        /// Same tiny Y lift as <see cref="ShipWorldNameplate"/> so gameplay chips sit on the
+        /// play plane. Theatrical mode keeps this lift and changes rotation plus scale.
         /// </summary>
         const float HeightAbovePlane = 0.08f;
 
         /// <summary>Gap past the hull edge on the screen-above (+Z) side, beyond the chip half-height.</summary>
         const float PaddingPastHull = 0.7f;
+        /// <summary>
+        /// Extra world −Z so commander echo chips sit past the nameplate (nameplates
+        /// cap around 1.6 units below the hull). Without this the gold row covers the plate.
+        /// </summary>
+        const float EchoBelowNameplatePad = 1.75f;
 
         const float FallbackXzRadius = 0.7f;
         const float WorldCanvasScale = 0.013f;
+
+        /// <summary>
+        /// Fallback L1 camera height. Theatrical chips grow with camera-to-hull distance
+        /// over this so on-screen size matches gameplay when the lens is that far away.
+        /// Live value comes from <see cref="CameraFollowEcs.Settings.heightAtLevel1"/>.
+        /// </summary>
+        const float TheatricalBillboardRefDistance = 25f;
+
+        /// <summary>Close-up floor so a crane-in cannot shrink chips to unreadable.</summary>
+        const float TheatricalBillboardScaleMin = 0.4f;
+
+        /// <summary>Far-ship cap so a map-wide speaker cannot spawn a giant world canvas.</summary>
+        const float TheatricalBillboardScaleMax = 8f;
+
+        /// <summary>Screen-pixel thickness so the leader stays thin from top-down and theatrical.</summary>
+        const float LeaderLineThicknessPixels = 1.8f;
 
         /// <summary>
         /// Nameplates use world −Z as screen-below. Chips sit on the opposite side so they
@@ -55,18 +92,27 @@ namespace TitanOrbit.Game
         const float ChipGap = 4f;
         const float ChipPadX = 8f;
         const float FrameInset = 2f;
+        /// <summary>Gap so the All / Team plate reads as one outline around every chip.</summary>
+        const float ChannelPad = 4f;
         const int WorldSortingOrder = 5010;
 
         static readonly Color ChipFill = new Color(0.03f, 0.05f, 0.09f, 0.96f);
-        static readonly Color ChipFrame = new Color(0.35f, 0.72f, 0.95f, 0.95f);
+        static readonly Color ChipFrame = ShipCommsCalloutGraphics.ChipNeutralFrame;
         static readonly Color ChipText = new Color(0.88f, 0.92f, 0.98f, 1f);
         static readonly Color ChipOutline = new Color(0.02f, 0.04f, 0.08f, 0.85f);
         static readonly Color ChipCaret = new Color(0.35f, 0.72f, 0.95f, 0.95f);
+        static readonly Color ChipAccent = ShipCommsCalloutGraphics.ChipDefaultAccent;
+        static readonly Color AllChannelFrame = new Color(1f, 1f, 1f, 0.92f);
 
         static ShipCommsBubblePresenter s_Instance;
         static Sprite s_PlateSprite;
+        /// <summary>True after the last jam pass hid leftover chips. Avoids SetActive every frame.</summary>
+        bool _bubblesHiddenByJam;
 
         readonly Dictionary<int, Bubble> _live = new Dictionary<int, Bubble>(16);
+        /// <summary>Commander echo chips keyed by the tagged ship's NetworkId (not the speaker).</summary>
+        readonly Dictionary<int, Bubble> _echo = new Dictionary<int, Bubble>(16);
+        readonly int[] _tagScratch = new int[ShipCommsCalloutGraphics.MaxTaggedPlayers];
         readonly List<int> _deadIds = new List<int>(8);
         Camera _cachedCamera;
 
@@ -78,14 +124,36 @@ namespace TitanOrbit.Game
             public Canvas WorldCanvas;
             public RectTransform CanvasRect;
             public CanvasGroup Group;
+            public Image ChannelFrame;
             public readonly TextMeshProUGUI[] Labels = new TextMeshProUGUI[ShipCommsKeywordCatalog.MaxSequenceLength];
             public readonly GameObject[] Chips = new GameObject[ShipCommsKeywordCatalog.MaxSequenceLength];
             public readonly LayoutElement[] ChipLayouts = new LayoutElement[ShipCommsKeywordCatalog.MaxSequenceLength];
             public readonly RectTransform[] ChipRects = new RectTransform[ShipCommsKeywordCatalog.MaxSequenceLength];
+            public readonly Image[] Frames = new Image[ShipCommsKeywordCatalog.MaxSequenceLength];
+            public readonly Image[] Carets = new Image[ShipCommsKeywordCatalog.MaxSequenceLength];
+            public readonly Image[] Fills = new Image[ShipCommsKeywordCatalog.MaxSequenceLength];
             public float Age;
             public byte Count;
+            public byte TeamOnly;
             public bool HasLocalCenter;
             public Vector3 LocalXzCenter;
+            public TeamId Team;
+            public Color LineColor;
+            public Vector3 LineFrom;
+            public Vector3 LineTo;
+            public bool HasLine;
+            public ShipCommsInbox.Callout Callout;
+            /// <summary>True when this row is a commander echo under a tagged hull.</summary>
+            public bool IsEcho;
+            /// <summary>Speaker who issued the order. Used to drop stale echoes from the same commander.</summary>
+            public int SourceNetworkId;
+            /// <summary>True = world −Z (below nameplate). False = world +Z (above hull).</summary>
+            public bool ScreenBelow;
+            /// <summary>
+            /// Cached at paint time: this sentence used a Commander keyword, so the
+            /// path stays after the chips fade. Echo rows never linger (no world lines).
+            /// </summary>
+            public bool LingerPaths;
         }
 
         /// <summary>
@@ -124,21 +192,119 @@ namespace TitanOrbit.Game
                     Destroy(pair.Value.Root);
             }
 
+            foreach (var pair in _echo)
+            {
+                if (pair.Value?.Root != null)
+                    Destroy(pair.Value.Root);
+            }
+
             _live.Clear();
+            _echo.Clear();
         }
 
         /// <summary>
-        /// Paints chips above <paramref name="networkId"/>'s hull. Replaces any bubble
-        /// already showing for that player and restarts the 4s timer.
+        /// Paints chips above the speaker's hull. Replaces any bubble already showing
+        /// for that player and restarts the 4s chip timer (commander paths may linger).
         /// </summary>
-        public static void Show(int networkId, byte count, byte k0, byte k1, byte k2)
+        public static void Show(in ShipCommsInbox.Callout callout)
         {
             if (s_Instance == null)
                 EnsureExists();
             if (s_Instance == null)
                 return;
+            if (ShipCommsRpcClient.IsLocalShipJammed())
+                return;
 
-            s_Instance.ApplyCallout(networkId, count, k0, k1, k2);
+            s_Instance.ApplyCallout(callout);
+        }
+
+        /// <summary>
+        /// Copies live comms path segments (world XZ) for the minimap overlay.
+        /// No alloc; respects the same on/off pulse as the world lines, including
+        /// the quieter commander linger after the 4s chips fade.
+        /// </summary>
+        /// <param name="linger">Optional per-slot flag. True = thinner ghost stroke.</param>
+        public static int CopyLivePathSegments(
+            Vector3[] from, Vector3[] to, Color[] colors, int[] ranks, int max, bool[] linger = null)
+        {
+            if (s_Instance == null || from == null || to == null || colors == null || max <= 0)
+                return 0;
+            if (ShipCommsRpcClient.IsLocalShipJammed())
+                return 0;
+
+            int written = 0;
+            foreach (var pair in s_Instance._live)
+            {
+                Bubble bubble = pair.Value;
+                if (bubble == null || written >= max)
+                    break;
+                if (bubble.Age >= ResolveExpireSeconds(bubble))
+                    continue;
+
+                written += ShipCommsCalloutGraphics.CopyVisiblePaths(
+                    in bubble.Callout,
+                    bubble.Age,
+                    LifetimeSeconds,
+                    from,
+                    to,
+                    colors,
+                    ranks,
+                    linger,
+                    written,
+                    max);
+            }
+
+            return written;
+        }
+
+        /// <summary>
+        /// Copies unique comms destinations (world XZ) for the minimap target icon.
+        /// Same lifetime as <see cref="CopyLivePathSegments"/> — 4s chips plus the
+        /// quieter commander linger — but it does not blink off with the travel pulse.
+        /// No alloc; walks the live speaker bubbles only (echoes have no path).
+        /// </summary>
+        /// <param name="linger">Optional per-slot flag. True = thinner / quieter chrome.</param>
+        public static int CopyLivePathTargets(
+            Vector3[] positions, Color[] colors, bool[] linger, int max)
+        {
+            if (s_Instance == null || positions == null || colors == null || max <= 0)
+                return 0;
+            if (ShipCommsRpcClient.IsLocalShipJammed())
+                return 0;
+
+            int written = 0;
+            foreach (var pair in s_Instance._live)
+            {
+                Bubble bubble = pair.Value;
+                if (bubble == null || written >= max)
+                    break;
+                if (bubble.Age >= ResolveExpireSeconds(bubble))
+                    continue;
+
+                written += ShipCommsCalloutGraphics.CopyVisibleTargets(
+                    in bubble.Callout,
+                    bubble.Age,
+                    LifetimeSeconds,
+                    positions,
+                    colors,
+                    linger,
+                    written,
+                    max);
+            }
+
+            return written;
+        }
+
+        /// <summary>
+        /// When this speaker bubble should be destroyed. Commander-keyword paths
+        /// keep the row alive (chips hidden) so DrawIntent can paint the ghost.
+        /// Echo chips never linger — they have no path of their own.
+        /// </summary>
+        static float ResolveExpireSeconds(Bubble bubble)
+        {
+            if (bubble != null && !bubble.IsEcho && bubble.LingerPaths)
+                return LifetimeSeconds + ShipCommsCalloutGraphics.CommanderPathLingerSeconds;
+            return LifetimeSeconds;
         }
 
         /// <summary>
@@ -146,12 +312,28 @@ namespace TitanOrbit.Game
         /// </summary>
         void LateUpdate()
         {
+            // --- Enemy-territory jam ---
+            // [TITAN-ORBIT] A jammed hull cannot hear. Drop inbox rows and hide leftover
+            // chips so enemy fill is silent even if a bubble was already mid-lifetime.
+            bool jammed = ShipCommsRpcClient.IsLocalShipJammed();
+            if (jammed)
+            {
+                while (ShipCommsInbox.TryDequeue(out _))
+                {
+                }
+
+                SetBubblesVisible(false);
+                return;
+            }
+
+            SetBubblesVisible(true);
+
             // --- Inbox ---
             // [HYBRID] Client simulation enqueued rows; we Instantiates UI on the main thread.
             while (ShipCommsInbox.TryDequeue(out ShipCommsInbox.Callout callout))
-                ApplyCallout(callout.NetworkId, callout.Count, callout.K0, callout.K1, callout.K2);
+                ApplyCallout(callout);
 
-            if (_live.Count <= 0)
+            if (_live.Count <= 0 && _echo.Count <= 0)
                 return;
 
             if (_cachedCamera == null)
@@ -160,61 +342,255 @@ namespace TitanOrbit.Game
             float dt = Time.deltaTime;
             _deadIds.Clear();
 
-            foreach (var pair in _live)
+            TickBubbles(_live, destroyEcho: false, dt);
+            TickBubbles(_echo, destroyEcho: true, dt);
+        }
+
+        /// <summary>
+        /// Ages one bubble map, fades the last slice of the 4s chip window, and
+        /// follows hulls while chips are up. Commander-keyword speaker rows stay
+        /// after that (chips hidden) so the path ghost can keep drawing.
+        /// Dead keys are destroyed after the walk so we never mutate the dictionary mid-foreach.
+        /// Local mute (leaderboard) kills a row on this tick even if chips were already up.
+        /// </summary>
+        /// <param name="map">Speaker bubbles or commander echoes.</param>
+        /// <param name="destroyEcho">True when <paramref name="map"/> is <see cref="_echo"/>.</param>
+        /// <param name="dt">Frame delta (seconds).</param>
+        void TickBubbles(Dictionary<int, Bubble> map, bool destroyEcho, float dt)
+        {
+            if (map.Count <= 0)
+                return;
+
+            _deadIds.Clear();
+            foreach (var pair in map)
             {
                 Bubble bubble = pair.Value;
-                bubble.Age += dt;
-
-                // --- Expire ---
-                if (bubble.Age >= LifetimeSeconds || bubble.Root == null)
+                if (bubble == null)
                 {
                     _deadIds.Add(pair.Key);
                     continue;
                 }
 
-                // --- Fade on the last slice of the lifetime ---
-                if (bubble.Group != null)
+                // --- Local mute ---
+                // [TITAN-ORBIT] Inbox already skips new callouts from a muted speaker.
+                // This catches chips already on screen when the player clicks Mute.
+                // Live map keys are the speaker NetworkId. Echo keys are the tagged
+                // hull — we mute by SourceNetworkId (the commander who issued the order).
+                if (destroyEcho
+                    ? CommsMuteList.IsMuted(bubble.SourceNetworkId)
+                    : CommsMuteList.IsMuted(pair.Key))
                 {
-                    float fadeStart = LifetimeSeconds - FadeSeconds;
-                    float alpha = bubble.Age < fadeStart
-                        ? 1f
-                        : 1f - Mathf.Clamp01((bubble.Age - fadeStart) / FadeSeconds);
-                    bubble.Group.alpha = alpha;
+                    _deadIds.Add(pair.Key);
+                    continue;
                 }
 
-                if (!TryFollowHull(bubble))
+                bubble.Age += dt;
+
+                // --- Expire ---
+                // Commander linger keeps the bubble past 4s so world/minimap paths
+                // can keep drawing. Echo rows and All/Team sentences still die at 4s.
+                if (bubble.Age >= ResolveExpireSeconds(bubble) || bubble.Root == null)
+                {
+                    _deadIds.Add(pair.Key);
+                    continue;
+                }
+
+                bool chipsAlive = bubble.Age < LifetimeSeconds;
+
+                // --- Fade on the last slice of the chip lifetime ---
+                // Linger does not keep the UGUI chips — only the Shapes path.
+                if (bubble.Group != null)
+                {
+                    if (!chipsAlive)
+                    {
+                        bubble.Group.alpha = 0f;
+                    }
+                    else
+                    {
+                        float fadeStart = LifetimeSeconds - FadeSeconds;
+                        float alpha = bubble.Age < fadeStart
+                            ? 1f
+                            : 1f - Mathf.Clamp01((bubble.Age - fadeStart) / FadeSeconds);
+                        bubble.Group.alpha = alpha;
+                    }
+                }
+
+                if (bubble.WorldCanvas != null)
+                    bubble.WorldCanvas.enabled = chipsAlive;
+
+                if (chipsAlive)
+                {
+                    if (!TryFollowHull(bubble))
+                        _deadIds.Add(pair.Key);
+                }
+                else
+                {
+                    // Stem is a chip-to-hull line. Hide it once the chips are gone.
+                    bubble.HasLine = false;
+                }
+            }
+
+            for (int i = 0; i < _deadIds.Count; i++)
+            {
+                if (destroyEcho)
+                    DestroyEcho(_deadIds[i]);
+                else
+                    DestroyBubble(_deadIds[i]);
+            }
+        }
+
+        /// <summary>
+        /// Shows or hides leftover speaker / echo chip roots. Used while the local
+        /// hull is jammed so a mid-lifetime bubble does not keep talking in enemy fill.
+        /// Age still freezes for that window because LateUpdate returns early.
+        /// </summary>
+        /// <param name="visible">False hides every live root; true restores them.</param>
+        void SetBubblesVisible(bool visible)
+        {
+            bool hide = !visible;
+            if (hide == _bubblesHiddenByJam)
+                return;
+
+            _bubblesHiddenByJam = hide;
+            SetBubbleMapActive(_live, visible);
+            SetBubbleMapActive(_echo, visible);
+        }
+
+        /// <summary>SetActive on each remaining chip root in one bubble map.</summary>
+        static void SetBubbleMapActive(Dictionary<int, Bubble> map, bool visible)
+        {
+            foreach (var pair in map)
+            {
+                Bubble bubble = pair.Value;
+                if (bubble?.Root != null)
+                    bubble.Root.SetActive(visible);
+            }
+        }
+
+        /// <summary>
+        /// Creates or recycles the speaker's above-hull chips, then plants commander
+        /// echo chips under every tagged teammate (Everyone / Us / You).
+        /// Bails when the speaker is on this client's mute list so a queued callout
+        /// that raced the mute click never paints.
+        /// </summary>
+        void ApplyCallout(in ShipCommsInbox.Callout callout)
+        {
+            if (callout.NetworkId <= 0 || callout.Count < 1)
+                return;
+
+            // [TITAN-ORBIT] Same mute key as the inbox. Belt-and-suspenders if a
+            // callout was already dequeued when the player clicked Mute.
+            if (CommsMuteList.IsMuted(callout.NetworkId))
+                return;
+
+            PaintBubbleMap(
+                _live,
+                callout.NetworkId,
+                in callout,
+                screenBelow: false,
+                sourceNetworkId: callout.NetworkId);
+            ApplyCommanderEchoes(in callout);
+        }
+
+        /// <summary>
+        /// Commander channel only: copy the sentence under each tagged hull. A new
+        /// order from the same speaker drops their previous echo set so Us cannot
+        /// leave stale Everyone chips behind.
+        /// </summary>
+        void ApplyCommanderEchoes(in ShipCommsInbox.Callout callout)
+        {
+            ShipCommsChannel channel = TeamCommanderRules.Sanitize(callout.TeamOnly);
+            if (channel != ShipCommsChannel.Commander)
+                return;
+
+            int tagged = ShipCommsCalloutGraphics.CollectTaggedPlayerIds(in callout, _tagScratch);
+
+            // --- Drop this commander's leftover targets ---
+            _deadIds.Clear();
+            foreach (var pair in _echo)
+            {
+                Bubble existing = pair.Value;
+                if (existing == null || existing.SourceNetworkId != callout.NetworkId)
+                    continue;
+                if (!ContainsNetworkId(_tagScratch, tagged, pair.Key))
                     _deadIds.Add(pair.Key);
             }
 
             for (int i = 0; i < _deadIds.Count; i++)
-                DestroyBubble(_deadIds[i]);
+                DestroyEcho(_deadIds[i]);
+
+            for (int i = 0; i < tagged; i++)
+            {
+                int targetId = _tagScratch[i];
+                if (targetId <= 0)
+                    continue;
+                PaintBubbleMap(
+                    _echo,
+                    targetId,
+                    in callout,
+                    screenBelow: true,
+                    sourceNetworkId: callout.NetworkId);
+            }
         }
 
-        /// <summary>Creates or recycles a bubble and writes the keyword labels.</summary>
-        void ApplyCallout(int networkId, byte count, byte k0, byte k1, byte k2)
+        /// <summary>True when <paramref name="id"/> is among the first <paramref name="count"/> slots.</summary>
+        static bool ContainsNetworkId(int[] ids, int count, int id)
         {
-            if (networkId <= 0 || count < 1)
+            for (int i = 0; i < count; i++)
+            {
+                if (ids[i] == id)
+                    return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Writes one chip row into <paramref name="map"/> at <paramref name="anchorId"/>
+        /// (speaker hull or tagged hull). Recycles the GameObject when that key is live.
+        /// </summary>
+        void PaintBubbleMap(
+            Dictionary<int, Bubble> map,
+            int anchorId,
+            in ShipCommsInbox.Callout callout,
+            bool screenBelow,
+            int sourceNetworkId)
+        {
+            if (anchorId <= 0)
                 return;
 
-            if (!_live.TryGetValue(networkId, out Bubble bubble) || bubble == null || bubble.Root == null)
+            if (!map.TryGetValue(anchorId, out Bubble bubble) || bubble == null || bubble.Root == null)
             {
-                bubble = CreateBubble(networkId);
-                _live[networkId] = bubble;
+                bubble = CreateBubble(anchorId, screenBelow);
+                map[anchorId] = bubble;
             }
 
             bubble.Age = 0f;
-            bubble.Count = count;
+            bubble.Count = callout.Count;
+            bubble.TeamOnly = callout.TeamOnly;
+            bubble.Callout = callout;
+            bubble.IsEcho = screenBelow;
+            bubble.ScreenBelow = screenBelow;
+            bubble.SourceNetworkId = sourceNetworkId;
+            bubble.HasLocalCenter = false;
+            // Echo chips sit under tagged hulls and never own a path, so they never linger.
+            bubble.LingerPaths = !screenBelow && ShipCommsCalloutGraphics.ShouldLingerCommanderPaths(in callout);
             if (bubble.Group != null)
                 bubble.Group.alpha = 1f;
+            if (bubble.WorldCanvas != null)
+                bubble.WorldCanvas.enabled = true;
 
             var catalog = ShipCommsKeywordCatalog.LoadDefault();
             float width = 0f;
-            width += ApplyChip(bubble, 0, count >= 1, k0, catalog);
-            width += ApplyChip(bubble, 1, count >= 2, k1, catalog);
-            width += ApplyChip(bubble, 2, count >= 3, k2, catalog);
-            width += Mathf.Max(0, count - 1) * ChipGap;
+            width += ApplyChip(bubble, 0, callout.Count >= 1, callout.K0, catalog);
+            width += ApplyChip(bubble, 1, callout.Count >= 2, callout.K1, catalog);
+            width += ApplyChip(bubble, 2, callout.Count >= 3, callout.K2, catalog);
+            width += ApplyChip(bubble, 3, callout.Count >= 4, callout.K3, catalog);
+            width += ApplyChip(bubble, 4, callout.Count >= 5, callout.K4, catalog);
+            width += Mathf.Max(0, callout.Count - 1) * ChipGap;
             if (bubble.CanvasRect != null)
-                bubble.CanvasRect.sizeDelta = new Vector2(width, ChipHeight + 8f);
+                bubble.CanvasRect.sizeDelta = new Vector2(width + ChannelPad * 2f, ChipHeight + ChannelPad * 2f);
+            PaintChannelFrame(bubble);
 
             TryFollowHull(bubble);
         }
@@ -223,7 +599,8 @@ namespace TitanOrbit.Game
         /// Shows or hides one chip, writes its label, and sizes it like a panel button.
         /// Returns the chip width used for the row (0 when hidden).
         /// </summary>
-        static float ApplyChip(Bubble bubble, int slot, bool visible, byte index, ShipCommsKeywordCatalog catalog)
+        static float ApplyChip(
+            Bubble bubble, int slot, bool visible, byte index, ShipCommsKeywordCatalog catalog)
         {
             GameObject chip = bubble.Chips[slot];
             if (chip != null)
@@ -233,8 +610,26 @@ namespace TitanOrbit.Game
                 return 0f;
 
             string text = catalog.TryGetLabel(index, out string label) ? label : "?";
+            if (ShipCommsCalloutGraphics.TryResolveHereDisplayLabel(in bubble.Callout, text, out string planetName))
+                text = planetName;
             TextMeshProUGUI tmp = bubble.Labels[slot];
             tmp.text = text.ToUpperInvariant();
+
+            // Same paint as a selected matrix tile so Attack stays grey+red font, Red stays faction wash.
+            // Per-chip border is the word color only. All / Team is the row plate.
+            ShipCommsCalloutGraphics.ResolveChipPaint(text, selected: true, out Color fill, out Color body, out Color accent);
+            Color frame = ShipCommsCalloutGraphics.ResolveChipFrameColor(text);
+
+            if (bubble.Frames[slot] != null)
+                bubble.Frames[slot].color = frame;
+            if (bubble.Carets[slot] != null)
+            {
+                bubble.Carets[slot].color = accent;
+                bubble.Carets[slot].enabled = true;
+            }
+            if (bubble.Fills[slot] != null)
+                bubble.Fills[slot].color = fill;
+            tmp.color = body;
             tmp.ForceMeshUpdate();
 
             float width = Mathf.Max(ChipWidth, tmp.preferredWidth + ChipPadX * 2f);
@@ -251,8 +646,8 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Parks the bubble on the play plane, screen-above the hull. Same world rotation as
-        /// <see cref="ShipWorldNameplate"/>: flat on XZ, facing +Y, no yaw with the ship.
+        /// Parks the bubble screen-above the hull. Gameplay stays flat on XZ like
+        /// <see cref="ShipWorldNameplate"/>; theatrical idle orbit billboards at the lens.
         /// </summary>
         bool TryFollowHull(Bubble bubble)
         {
@@ -267,26 +662,59 @@ namespace TitanOrbit.Game
             EnsureLocalHullCenter(hull, bubble);
             Vector3 centerWorld = hull.TransformPoint(bubble.LocalXzCenter);
 
-            // [TITAN-ORBIT] Nameplates sit world −Z (screen-below). +Z keeps chips readable
-            // on the opposite side of the hull, still on the play plane. Add half the canvas
-            // height so the near edge clears the hull (the pivot is the chip row center).
-            // Anchor XZ from mesh bounds center — hull.position is often off the visual midline.
-            // Scale with camera height so L2+ / MEGA zoom-out keeps the same on-screen size
-            // as L1 — same factor as floating gem/heal counts.
-            float zoom = WorldFloatingCountManager.ResolveCameraZoomScale();
-            float scale = WorldCanvasScale * zoom;
-            float halfChipWorld = (ChipHeight + 8f) * scale * 0.5f;
-            Vector3 pos = centerWorld
-                + ScreenAboveWorld * (xzRadius + PaddingPastHull + halfChipWorld);
-            pos.y = centerWorld.y + HeightAbovePlane;
-
-            // [TITAN-ORBIT] Euler −90 X lays the canvas on XZ. Negative Y scale un-mirrors
-            // UI after that tilt — same trick as the nameplate label root.
-            bubble.Root.transform.SetPositionAndRotation(pos, Quaternion.Euler(-90f, 0f, 0f));
-            bubble.Root.transform.localScale = new Vector3(scale, -scale, scale);
-
             if (_cachedCamera == null)
                 _cachedCamera = Camera.main;
+
+            // [TITAN-ORBIT] Gameplay: Euler −90 X lays the canvas on XZ. Theatrical: same
+            // camera-facing billboard as nameplates / planet labels so the row stays readable
+            // off the top-down plane. Always rewritten so leaving theatrical cannot leave
+            // a leftover billboard.
+            bool theatrical = TitanOrbit.UI.TheatricalWorldSpaceLabelRotation.IsTheatricalEngaged();
+            Quaternion rot = theatrical
+                ? TitanOrbit.UI.TheatricalWorldSpaceLabelRotation.BillboardRotationFacingCamera()
+                : Quaternion.Euler(-90f, 0f, 0f);
+
+            // Gameplay: height zoom (L2+ / MEGA). Theatrical: camera-to-this-hull distance
+            // so close crane-ins stay modest and remote speakers stay readable.
+            float scale = ResolveChipWorldScale(theatrical, _cachedCamera, centerWorld);
+            float canvasH = bubble.CanvasRect != null ? bubble.CanvasRect.sizeDelta.y : ChipHeight + ChannelPad * 2f;
+            float halfChipWorld = canvasH * scale * 0.5f;
+
+            // [TITAN-ORBIT] Nameplates sit world −Z (screen-below). Speaker chips use +Z
+            // so they do not cover the plate. Commander echoes use −Z plus a nameplate
+            // reserve so the gold row sits under the plate, not on top of it.
+            // Anchor XZ from mesh bounds center — hull.position is often off the visual midline.
+            Vector3 side = bubble.ScreenBelow ? -ScreenAboveWorld : ScreenAboveWorld;
+            float extra = bubble.ScreenBelow ? EchoBelowNameplatePad : 0f;
+            Vector3 pos = centerWorld
+                + side * (xzRadius + PaddingPastHull + extra + halfChipWorld);
+            pos.y = centerWorld.y + HeightAbovePlane;
+
+            bubble.Root.transform.SetPositionAndRotation(pos, rot);
+            bubble.Root.transform.localScale = new Vector3(scale, -scale, scale);
+
+            // Leader: chip near-edge → hull visual center. Same play-plane Y as the chips
+            // so top-down stays a short XZ stem; theatrical still reads as “from the row.”
+            Vector3 shipAnchor = centerWorld;
+            shipAnchor.y = pos.y;
+            Vector3 toChip = pos - shipAnchor;
+            float stemLen = toChip.magnitude;
+            if (stemLen > 0.02f)
+            {
+                float inset = Mathf.Min(halfChipWorld, stemLen * 0.45f);
+                bubble.LineFrom = pos - toChip * (inset / stemLen);
+                bubble.LineTo = shipAnchor;
+                bubble.HasLine = true;
+            }
+            else
+            {
+                bubble.HasLine = false;
+            }
+
+            if (bubble.Team == TeamId.None)
+                TryAssignTeamColor(hull, bubble);
+            PaintChannelFrame(bubble);
+
             if (bubble.WorldCanvas != null && _cachedCamera != null
                 && bubble.WorldCanvas.worldCamera != _cachedCamera)
                 bubble.WorldCanvas.worldCamera = _cachedCamera;
@@ -294,10 +722,172 @@ namespace TitanOrbit.Game
             return true;
         }
 
-        /// <summary>Builds a world-space canvas with three reusable chips.</summary>
-        Bubble CreateBubble(int networkId)
+        /// <summary>
+        /// Thin team-color stem from each live chip row to its hull. Game cameras only —
+        /// Scene / preview cameras must not lock this pass the way territory fill once did.
+        /// </summary>
+        public override void DrawShapes(Camera cam)
         {
-            var root = new GameObject("ShipCommsBubble_" + networkId);
+            if (cam == null || cam.cameraType != CameraType.Game)
+                return;
+
+            // Jammed listeners do not draw received stems / intent. Compose previews
+            // (Here / You / Us while S is held) still paint so the lock card is not blind.
+            bool jammed = ShipCommsRpcClient.IsLocalShipJammed();
+
+            bool pendingPing = ShipCommsClientState.IsOpen && ShipCommsClientState.HasPendingWaypoint;
+            bool pendingYou = ShipCommsClientState.IsOpen && ShipCommsClientState.HasPendingYou;
+            bool pendingUs = ShipCommsClientState.IsOpen && ShipCommsClientState.HasPendingUs;
+            if (_live.Count <= 0 && _echo.Count <= 0 && !pendingPing && !pendingYou && !pendingUs)
+                return;
+
+            using (Draw.Command(cam))
+            {
+                Draw.ResetAllDrawStates();
+                Draw.BlendMode = ShapesBlendMode.Transparent;
+                Draw.ThicknessSpace = ThicknessSpace.Pixels;
+                Draw.LineGeometry = LineGeometry.Billboard;
+
+                if (!jammed)
+                {
+                    DrawBubbleStems(_live, drawIntent: true);
+                    DrawBubbleStems(_echo, drawIntent: false);
+                }
+
+                if (pendingPing)
+                {
+                    Vector3 ping = ShipCommsClientState.PendingWaypoint;
+                    ping.y = HeightAbovePlane;
+                    Draw.ThicknessSpace = ThicknessSpace.Meters;
+                    Draw.Disc(ping, Vector3.up, 0.38f, ChipAccent);
+                    Draw.ThicknessSpace = ThicknessSpace.Pixels;
+                }
+
+                if (pendingYou)
+                    ShipCommsCalloutGraphics.DrawPendingYou(1f);
+                if (pendingUs)
+                    ShipCommsCalloutGraphics.DrawPendingUs(1f);
+            }
+        }
+
+        /// <summary>
+        /// Gold / team stem from each chip row back to its hull. Intent paths (Us /
+        /// Everyone lines) draw once on the speaker bubble — echoes only show chips.
+        /// </summary>
+        /// <param name="map">Speaker or echo dictionary.</param>
+        /// <param name="drawIntent">True only for the speaker map so paths are not drawn N times.</param>
+        void DrawBubbleStems(Dictionary<int, Bubble> map, bool drawIntent)
+        {
+            foreach (var pair in map)
+            {
+                Bubble bubble = pair.Value;
+                if (bubble == null)
+                    continue;
+
+                float alpha = bubble.Group != null ? bubble.Group.alpha : 1f;
+                int pathOwner = bubble.SourceNetworkId > 0 ? bubble.SourceNetworkId : bubble.NetworkId;
+                bool seePaths = ShipCommsCalloutGraphics.LocalViewerCanSeePaths(pathOwner);
+                Color stem = bubble.LineColor.a > 0.01f ? bubble.LineColor : ChipAccent;
+                if (TeamCommanderRules.Sanitize(bubble.TeamOnly) == ShipCommsChannel.Commander)
+                    stem = TeamCommanderRules.Gold;
+                stem.a = 0.9f * alpha;
+                if (seePaths && bubble.HasLine && alpha >= 0.01f)
+                    Draw.Line(bubble.LineFrom, bubble.LineTo, LeaderLineThicknessPixels, LineEndCap.None, stem);
+
+                if (drawIntent)
+                    ShipCommsCalloutGraphics.DrawIntent(in bubble.Callout, bubble.Age, LifetimeSeconds, alpha);
+            }
+        }
+
+        /// <summary>
+        /// Reads the hull nameplate's cached team (already painted by the visualizer).
+        /// Local optimistic callouts fall back to the Join Team assign so the stem is
+        /// not white for a frame. No ECS ship gather.
+        /// </summary>
+        static void TryAssignTeamColor(Transform hull, Bubble bubble)
+        {
+            TeamId team = TeamId.None;
+            if (hull != null)
+            {
+                var plate = hull.GetComponent<ShipWorldNameplate>();
+                if (plate != null)
+                    team = plate.PresentationTeam;
+            }
+
+            if (team == TeamId.None &&
+                bubble.NetworkId > 0 &&
+                bubble.NetworkId == EcsGameBridge.GetLocalNetworkId())
+                team = ClientTeamFlowState.ResolvePresentationTeam(TeamId.None);
+
+            if (team == TeamId.None)
+            {
+                bubble.LineColor = ChipAccent;
+                return;
+            }
+
+            bubble.Team = team;
+            bubble.LineColor = team.ToColor();
+            PaintChannelFrame(bubble);
+        }
+
+        /// <summary>
+        /// One plate around the row: white for All, speaker faction RGB for Team,
+        /// command gold for Commander. Sliced AA sprite — not UGUI Outline (that
+        /// crawls while the hull moves).
+        /// </summary>
+        static void PaintChannelFrame(Bubble bubble)
+        {
+            if (bubble == null || bubble.ChannelFrame == null)
+                return;
+
+            Color color = AllChannelFrame;
+            ShipCommsChannel channel = TeamCommanderRules.Sanitize(bubble.TeamOnly);
+            if (channel == ShipCommsChannel.Commander)
+            {
+                color = TeamCommanderRules.Gold;
+            }
+            else if (channel == ShipCommsChannel.Team)
+            {
+                if (bubble.Team != TeamId.None)
+                    color = bubble.Team.ToColor();
+                else if (bubble.LineColor.a > 0.01f)
+                    color = bubble.LineColor;
+            }
+
+            color.a = 0.94f;
+            bubble.ChannelFrame.color = color;
+        }
+
+        /// <summary>
+        /// World canvas scale. Gameplay follows top-down height zoom. Theatrical uses
+        /// camera-to-speaker distance over L1 height so the chip holds a stable screen size.
+        /// </summary>
+        static float ResolveChipWorldScale(bool theatrical, Camera cam, Vector3 shipCenter)
+        {
+            if (!theatrical || cam == null)
+                return WorldCanvasScale * WorldFloatingCountManager.ResolveCameraZoomScale();
+
+            float dist = Vector3.Distance(cam.transform.position, shipCenter);
+            float refDist = TheatricalBillboardRefDistance;
+            var follow = CameraFollowEcs.Instance;
+            if (follow != null)
+                refDist = Mathf.Max(1f, follow.Settings.heightAtLevel1);
+
+            return WorldCanvasScale * Mathf.Clamp(
+                dist / refDist,
+                TheatricalBillboardScaleMin,
+                TheatricalBillboardScaleMax);
+        }
+
+        /// <summary>
+        /// Builds a world-space canvas with up to five reusable chips. Echo rows use
+        /// a distinct GameObject name so the hierarchy stays readable in the Editor.
+        /// </summary>
+        /// <param name="networkId">Hull this canvas follows.</param>
+        /// <param name="echo">True when this is a commander order under a tagged ship.</param>
+        Bubble CreateBubble(int networkId, bool echo)
+        {
+            var root = new GameObject((echo ? "ShipCommsEcho_" : "ShipCommsBubble_") + networkId);
             root.transform.SetParent(null, true);
 
             var canvas = root.AddComponent<Canvas>();
@@ -316,19 +906,25 @@ namespace TitanOrbit.Game
             rect.pivot = new Vector2(0.5f, 0.5f);
             rect.anchorMin = new Vector2(0.5f, 0.5f);
             rect.anchorMax = new Vector2(0.5f, 0.5f);
-            rect.sizeDelta = new Vector2(ChipWidth, ChipHeight + 8f);
+            rect.sizeDelta = new Vector2(ChipWidth + ChannelPad * 2f, ChipHeight + ChannelPad * 2f);
             float zoom = WorldFloatingCountManager.ResolveCameraZoomScale();
             float scale = WorldCanvasScale * zoom;
             root.transform.SetPositionAndRotation(Vector3.zero, Quaternion.Euler(-90f, 0f, 0f));
             root.transform.localScale = new Vector3(scale, -scale, scale);
+
+            var channelGo = new GameObject("ChannelFrame", typeof(RectTransform), typeof(Image));
+            channelGo.transform.SetParent(root.transform, false);
+            Stretch(channelGo.GetComponent<RectTransform>(), 0f);
+            var channelImage = channelGo.GetComponent<Image>();
+            StylePlate(channelImage, AllChannelFrame);
 
             var row = new GameObject("Row", typeof(RectTransform), typeof(HorizontalLayoutGroup));
             row.transform.SetParent(root.transform, false);
             var rowRt = row.GetComponent<RectTransform>();
             rowRt.anchorMin = Vector2.zero;
             rowRt.anchorMax = Vector2.one;
-            rowRt.offsetMin = Vector2.zero;
-            rowRt.offsetMax = Vector2.zero;
+            rowRt.offsetMin = new Vector2(ChannelPad, ChannelPad);
+            rowRt.offsetMax = new Vector2(-ChannelPad, -ChannelPad);
             var h = row.GetComponent<HorizontalLayoutGroup>();
             h.spacing = ChipGap;
             h.childAlignment = TextAnchor.MiddleCenter;
@@ -344,6 +940,10 @@ namespace TitanOrbit.Game
                 WorldCanvas = canvas,
                 CanvasRect = rect,
                 Group = group,
+                ChannelFrame = channelImage,
+                IsEcho = echo,
+                ScreenBelow = echo,
+                SourceNetworkId = networkId,
             };
 
             for (int i = 0; i < ShipCommsKeywordCatalog.MaxSequenceLength; i++)
@@ -358,16 +958,18 @@ namespace TitanOrbit.Game
                 le.minWidth = ChipWidth;
                 le.minHeight = ChipHeight;
 
-                // Cyan frame first (behind). Sliced AA sprite — not UGUI Outline, which jitters in flight.
+                // Neutral frame first (behind). Sliced AA sprite — not UGUI Outline, which jitters in flight.
                 var frameGo = new GameObject("Frame", typeof(RectTransform), typeof(Image));
                 frameGo.transform.SetParent(chipGo.transform, false);
                 Stretch(frameGo.GetComponent<RectTransform>(), 0f);
-                StylePlate(frameGo.GetComponent<Image>(), ChipFrame);
+                var frameImage = frameGo.GetComponent<Image>();
+                StylePlate(frameImage, ChipFrame);
 
                 var fillGo = new GameObject("Fill", typeof(RectTransform), typeof(Image));
                 fillGo.transform.SetParent(chipGo.transform, false);
                 Stretch(fillGo.GetComponent<RectTransform>(), FrameInset);
-                StylePlate(fillGo.GetComponent<Image>(), ChipFill);
+                var fillImage = fillGo.GetComponent<Image>();
+                StylePlate(fillImage, ChipFill);
 
                 var caretGo = new GameObject("Caret", typeof(RectTransform), typeof(Image));
                 caretGo.transform.SetParent(chipGo.transform, false);
@@ -377,13 +979,17 @@ namespace TitanOrbit.Game
                 caretRt.pivot = new Vector2(0f, 0.5f);
                 caretRt.sizeDelta = new Vector2(2f, -FrameInset * 2f);
                 caretRt.anchoredPosition = new Vector2(FrameInset, 0f);
-                StylePlate(caretGo.GetComponent<Image>(), ChipCaret);
+                var caretImage = caretGo.GetComponent<Image>();
+                StylePlate(caretImage, ChipCaret);
 
                 var label = CreateWorldLabel(chipGo.transform, "Label");
                 bubble.Chips[i] = chipGo;
                 bubble.ChipLayouts[i] = le;
                 bubble.ChipRects[i] = chipRt;
                 bubble.Labels[i] = label;
+                bubble.Frames[i] = frameImage;
+                bubble.Fills[i] = fillImage;
+                bubble.Carets[i] = caretImage;
             }
 
             return bubble;
@@ -495,13 +1101,25 @@ namespace TitanOrbit.Game
             bubble.HasLocalCenter = true;
         }
 
-        /// <summary>Destroys one bubble GameObject and forgets the NetworkId mapping.</summary>
+        /// <summary>Destroys one speaker bubble GameObject and forgets the NetworkId mapping.</summary>
         void DestroyBubble(int networkId)
         {
-            if (!_live.TryGetValue(networkId, out Bubble bubble))
+            DestroyFromMap(_live, networkId);
+        }
+
+        /// <summary>Destroys one commander echo under a tagged hull.</summary>
+        void DestroyEcho(int networkId)
+        {
+            DestroyFromMap(_echo, networkId);
+        }
+
+        /// <summary>Removes one entry from a bubble map and destroys its world canvas.</summary>
+        static void DestroyFromMap(Dictionary<int, Bubble> map, int networkId)
+        {
+            if (!map.TryGetValue(networkId, out Bubble bubble))
                 return;
 
-            _live.Remove(networkId);
+            map.Remove(networkId);
             if (bubble?.Root != null)
                 Destroy(bubble.Root);
         }

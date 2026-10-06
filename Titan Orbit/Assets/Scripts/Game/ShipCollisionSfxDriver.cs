@@ -118,6 +118,10 @@ namespace TitanOrbit.Game
         int _lastTickFrame = -1;
         float _nextLocalGrindAt;
         bool _playedLocalAsteroidSfx;
+        float _localGrindHeardUntil;
+
+        /// <summary>Last rock the hull was overlapping. Re-checked by distance every pulse.</summary>
+        Entity _grindAsteroid;
 
         /// <summary>
         /// Sequence-0 ram / grind pulse from <see cref="BulletVfxDriver"/>. Skips the local
@@ -126,11 +130,17 @@ namespace TitanOrbit.Game
         /// <param name="displayPos">Observer display-space contact (Y flattened).</param>
         /// <param name="damage">Impact or grind-pulse HP — same piano key as bullets.</param>
         /// <param name="isKill">True when the rock died this pulse.</param>
-        public static void NotifyRemoteRamPulse(float3 displayPos, float damage, bool isKill)
+        /// <param name="ownerNetworkId">
+        /// Ramming ship. The local hull owns its own grind one-shots from predicted
+        /// contacts — replaying this ship's HitRpc after it has flown clear is the
+        /// loop that never stops.
+        /// </param>
+        public static void NotifyRemoteRamPulse(
+            float3 displayPos, float damage, bool isKill, int ownerNetworkId = 0)
         {
             if (s_instance == null)
                 return;
-            s_instance.ApplyRemotePulse(displayPos, damage, isKill);
+            s_instance.ApplyRemotePulse(displayPos, damage, isKill, ownerNetworkId);
         }
 
         /// <summary>[UNITY] Attach next to other client VFX drivers so Play Mode has SFX without scene wiring.</summary>
@@ -215,6 +225,7 @@ namespace TitanOrbit.Game
             if (!EcsGameBridge.TryGetLocalShipEntityOnWorld(world, out Entity localShip) ||
                 localShip == Entity.Null)
             {
+                _grindAsteroid = Entity.Null;
                 EndFrame();
                 return;
             }
@@ -243,12 +254,22 @@ namespace TitanOrbit.Game
                     if (pair.Ship != localShip && pair.Other != localShip)
                         continue;
 
+                    bool isAsteroid = pair.Kind == ShipPhysicsContactKind.Asteroid;
+                    if (isAsteroid)
+                    {
+                        Entity rock = pair.Ship == localShip ? pair.Other : pair.Ship;
+                        // Physics can keep a stale pair after the hull has left.
+                        // Only a real overlap may scrape.
+                        if (!AsteroidGrindOverlap.IsAudibleContact(em, localShip, rock))
+                            continue;
+                        _grindAsteroid = rock;
+                    }
+
                     ContactKey key = ContactKey.From(in pair);
                     if (!_liveNow.Add(key))
                         continue;
 
                     bool isNew = !_liveLast.Contains(key);
-                    bool isAsteroid = pair.Kind == ShipPhysicsContactKind.Asteroid;
                     bool played = false;
 
                     if (isNew &&
@@ -265,6 +286,7 @@ namespace TitanOrbit.Game
                         {
                             _playedLocalAsteroidSfx = true;
                             _nextLocalGrindAt = now + pulse;
+                            _localGrindHeardUntil = now + pulse;
                         }
 
                         played = true;
@@ -283,6 +305,7 @@ namespace TitanOrbit.Game
                         ScheduleNext(key, now, pulse);
                         _playedLocalAsteroidSfx = true;
                         _nextLocalGrindAt = now + pulse;
+                        _localGrindHeardUntil = now + pulse;
                     }
                 }
             }
@@ -293,8 +316,9 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Same <see cref="ShipAsteroidContactState"/> the spark stream uses. Covers a
-        /// one-tick contact-buffer miss so grind SFX stay on the 4 Hz metronome.
+        /// One-tick gap while the hull is still on the same rock. InContact is not
+        /// used — that flag stays set after fly-away and was keeping the scrape
+        /// (and the spark) on during normal flight.
         /// </summary>
         void TickLocalGrindFallback(
             EntityManager em,
@@ -305,10 +329,12 @@ namespace TitanOrbit.Game
         {
             if (_playedLocalAsteroidSfx || now < _nextLocalGrindAt)
                 return;
-            if (!em.Exists(localShip) || !em.HasComponent<ShipAsteroidContactState>(localShip))
+            if (_grindAsteroid == Entity.Null ||
+                !AsteroidGrindOverlap.IsAudibleContact(em, localShip, _grindAsteroid))
+            {
+                _grindAsteroid = Entity.Null;
                 return;
-            if (em.GetComponentData<ShipAsteroidContactState>(localShip).InContact == 0)
-                return;
+            }
             if (em.HasComponent<MegaShipState>(localShip) &&
                 em.GetComponentData<MegaShipState>(localShip).IsMega)
                 return;
@@ -330,13 +356,20 @@ namespace TitanOrbit.Game
 
             PlayForKind(audio, ShipPhysicsContactKind.Asteroid, grindDamage, grind: true);
             _nextLocalGrindAt = now + pulse;
+            _localGrindHeardUntil = now + pulse;
         }
 
-        void ApplyRemotePulse(float3 displayPos, float damage, bool isKill)
+        void ApplyRemotePulse(float3 displayPos, float damage, bool isKill, int ownerNetworkId)
         {
             if (isKill || damage <= 0.0001f)
                 return;
             if (AudioManager.Instance == null)
+                return;
+            int localNet = EcsGameBridge.GetLocalNetworkId();
+            bool ownShip = ownerNetworkId > 0 && localNet > 0 && ownerNetworkId == localNet;
+            // Our scrape comes from hull overlap. Own HitRpcs were still firing in
+            // free flight and retriggering the loop whenever the ship was moving.
+            if (ownShip)
                 return;
             if (IsNearLocalShip(displayPos))
                 return;
@@ -558,6 +591,7 @@ namespace TitanOrbit.Game
         {
             _liveLast.Clear();
             _liveNow.Clear();
+            _grindAsteroid = Entity.Null;
         }
 
         void PruneSchedule(float now)
@@ -616,6 +650,86 @@ namespace TitanOrbit.Game
             _queueQuery = default;
             _queriesCreated = false;
             _cachedQueryWorld = null;
+        }
+    }
+
+    /// <summary>
+    /// True only while the hull is actually on a living asteroid.
+    /// Uses the ship the player sees, so a stuck contact flag cannot keep
+    /// the scrape and spark on during free flight.
+    /// </summary>
+    static class AsteroidGrindOverlap
+    {
+        /// <summary>Pad past hull + rock radii so a resting PhysX contact still counts.</summary>
+        const float ContactPad = 0.65f;
+
+        public static bool IsAudibleContact(EntityManager em, Entity ship, Entity asteroid)
+        {
+            if (!em.Exists(asteroid))
+                return false;
+            if (em.HasComponent<AsteroidClientCulledTag>(asteroid))
+                return false;
+            if (em.HasComponent<AsteroidState>(asteroid) &&
+                em.GetComponentData<AsteroidState>(asteroid).IsDestroyed)
+                return false;
+            if (!em.HasComponent<LocalTransform>(asteroid))
+                return false;
+            if (!ToroidalMapEcs.TryGetMapSize(out float mapW, out float mapH))
+                return false;
+            if (!TryShipPose(em, ship, out float3 shipPos, out float shipScale))
+                return false;
+
+            var rockLt = em.GetComponentData<LocalTransform>(asteroid);
+            float d = ToroidalMapEcs.ToroidalDistance(shipPos, rockLt.Position, mapW, mapH);
+            float shipR = math.max(
+                HullRadius(em, ship, shipScale),
+                BodyCollisionMath.GetShipHullRadiusWorld(shipScale));
+            float rockR = BodyCollisionMath.GetAsteroidBodyRadiusWorld(rockLt.Scale);
+            return d <= shipR + rockR + ShipComponentRammingSuggestions.GrindOverlapSkin + ContactPad;
+        }
+
+        /// <summary>Presentation pose when the proxy exists; otherwise the sim pose.</summary>
+        static bool TryShipPose(EntityManager em, Entity ship, out float3 pos, out float scale)
+        {
+            scale = 1f;
+            pos = float3.zero;
+            if (em.Exists(ship) && em.HasComponent<LocalTransform>(ship))
+                scale = math.max(0.25f, em.GetComponentData<LocalTransform>(ship).Scale);
+
+            if (ShipDisplayPose.HasLocalPose)
+            {
+                Vector3 p = ShipDisplayPose.LocalPosition;
+                pos = new float3(p.x, 0f, p.z);
+                return true;
+            }
+
+            if (!em.Exists(ship) || !em.HasComponent<LocalTransform>(ship))
+                return false;
+            pos = em.GetComponentData<LocalTransform>(ship).Position;
+            pos.y = 0f;
+            return true;
+        }
+
+        /// <summary>
+        /// Covering-hull radius in world units. Same product as server sticky grind
+        /// so presentation stops when damage would stop.
+        /// </summary>
+        static float HullRadius(EntityManager em, Entity ship, float transformScale)
+        {
+            if (em.HasComponent<ShipHullColliderState>(ship))
+            {
+                var hull = em.GetComponentData<ShipHullColliderState>(ship);
+                float localR = math.max(
+                    hull.AppliedCoveringRadius,
+                    math.cmax(new float3(
+                        hull.AppliedCoveringExtentX,
+                        hull.AppliedCoveringExtentY,
+                        hull.AppliedCoveringExtentZ)));
+                if (localR > 0.05f)
+                    return localR * math.max(0.25f, transformScale);
+            }
+
+            return BodyCollisionMath.GetShipHullRadiusWorld(transformScale);
         }
     }
 }

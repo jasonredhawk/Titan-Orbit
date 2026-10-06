@@ -23,9 +23,9 @@ namespace TitanOrbit.Data
         ShipsOnly = 2,
 
         /// <summary>
-        /// Planetary defense turrets — damage enemy ships, people transports, and asteroids
-        /// (rocks block the bolt like ship guns; same HP write path as <see cref="Everything"/>).
-        /// Pass through moons and ship drones. Planets still block as solid world geometry.
+        /// Planetary defense turrets — aim at ships and transports only. Collision still
+        /// includes asteroids and drones in the beam (cross-fire), same HP write as
+        /// <see cref="Everything"/>. Planets still block as solid world geometry.
         /// </summary>
         ShipsAndTransports = 3,
     }

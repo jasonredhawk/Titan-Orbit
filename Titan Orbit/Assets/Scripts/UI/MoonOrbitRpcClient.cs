@@ -257,6 +257,38 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
+        /// Zeros one bottom-bar ability. No gem refund. Local Host applies on ServerWorld;
+        /// dedicated clients SendRpc from ClientWorld. Server re-validates in
+        /// <see cref="ShipAttributeUpgradeLogic.TryReset"/>.
+        /// </summary>
+        public static void ResetAttributeUpgrade(int attributeIndex)
+        {
+            if (attributeIndex < 0 || attributeIndex > 9)
+                return;
+
+            if (EcsGameBridge.IsLocalHost())
+            {
+                var server = EcsGameBridge.ServerWorld;
+                if (server != null && server.IsCreated)
+                {
+                    int networkId = EcsGameBridge.GetLocalNetworkId();
+                    if (ShipAttributeUpgradeLogic.TryResetForNetworkId(
+                            server.EntityManager, networkId, attributeIndex, out _))
+                        return;
+                }
+            }
+
+            var world = EcsGameBridge.ClientWorld;
+            if (world == null || !world.IsCreated)
+                return;
+
+            var em = world.EntityManager;
+            var entity = em.CreateEntity();
+            em.AddComponentData(entity, new ResetAttributeUpgradeCommand { AttributeIndex = attributeIndex });
+            em.AddComponentData(entity, new SendRpcCommandRequest { TargetConnection = Entity.Null });
+        }
+
+        /// <summary>
         /// Purchases a drone / rocket / mine pack at the home planet store.
         /// Local Host applies on ServerWorld; dedicated clients SendRpc from ClientWorld only.
         /// </summary>

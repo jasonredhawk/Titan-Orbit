@@ -50,9 +50,10 @@ namespace TitanOrbit.Editor
             var variants = BuildTeamVariants();
             var subjects = new[]
             {
-                (StoreItemType.FighterDrone, "FighterDrone", LoadPrefab("Assets/Prefabs/FighterDrone.prefab"), MaterialPolicy.TeamHullKeepCore),
-                (StoreItemType.ShieldDrone, "ShieldDrone", LoadPrefab("Assets/Prefabs/ShieldDrone.prefab"), MaterialPolicy.TeamHullKeepCore),
-                (StoreItemType.MiningDrone, "MiningDrone", LoadPrefab("Assets/Prefabs/MiningDrone.prefab"), MaterialPolicy.TeamHullKeepCore),
+                // In-game swarms load Assets/Resources/*Drone.prefab. The copies under Assets/Prefabs are the old meshes.
+                (StoreItemType.FighterDrone, "FighterDrone", LoadPrefab("Assets/Resources/FighterDrone.prefab"), MaterialPolicy.TeamHullKeepCore),
+                (StoreItemType.ShieldDrone, "ShieldDrone", LoadPrefab("Assets/Resources/ShieldDrone.prefab"), MaterialPolicy.TeamHullKeepCore),
+                (StoreItemType.MiningDrone, "MiningDrone", LoadPrefab("Assets/Resources/MiningDrone.prefab"), MaterialPolicy.TeamHullKeepCore),
                 (StoreItemType.SmallRockets, "Rockets", null, MaterialPolicy.TeamHullKeepCore),
                 (StoreItemType.SmallMines, "Mines", LoadMinePrefab(), MaterialPolicy.SingleTeamMaterial),
             };
@@ -264,7 +265,10 @@ namespace TitanOrbit.Editor
             float standoffMul = 6.2f,
             TeamId droneTeam = TeamId.None)
         {
-            var root = Object.Instantiate(prefab);
+            // PrefabUtility keeps FBX variants (Bomb_4) wired. Object.Instantiate can drop that mesh.
+            var root = PrefabUtility.InstantiatePrefab(prefab) as GameObject;
+            if (root == null)
+                root = Object.Instantiate(prefab);
             root.hideFlags = HideFlags.HideAndDontSave;
             SetLayerRecursively(root, PreviewLayer);
             PrepareCaptureRoot(root);
@@ -274,20 +278,11 @@ namespace TitanOrbit.Editor
                 ApplyMaterials(root, materials, policy);
             root.name = "StoreItemPreviewCapture";
 
-            var meshRenderers = root.GetComponentsInChildren<MeshRenderer>(true);
-            var renderersAll = root.GetComponentsInChildren<Renderer>(true);
-            Renderer[] boundsSource = meshRenderers.Length > 0 ? meshRenderers : renderersAll;
-            if (boundsSource.Length == 0)
+            if (!TryGetVisibleBounds(root, out Bounds wb))
             {
+                Debug.LogWarning($"[StoreItemPreview] No visible mesh on {prefab.name}. Skipping {assetPath}.");
                 Object.DestroyImmediate(root);
                 return false;
-            }
-
-            Bounds wb = boundsSource[0].bounds;
-            for (int i = 1; i < boundsSource.Length; i++)
-            {
-                if (boundsSource[i] != null && boundsSource[i].enabled)
-                    wb.Encapsulate(boundsSource[i].bounds);
             }
 
             var camGo = new GameObject("StoreItemPreviewCam");
@@ -359,14 +354,39 @@ namespace TitanOrbit.Editor
                     particleRenderer.enabled = false;
             }
 
+            // Leave authored-off renderers off. The Resources drone prefabs disable the
+            // placeholder sphere on the root; turning it back on covers the new ship mesh.
+        }
+
+        /// <summary>
+        /// World bounds of renderers that will actually draw. Skips disabled placeholder
+        /// spheres so the camera frames the ship (or the mine) instead of an empty shell.
+        /// </summary>
+        static bool TryGetVisibleBounds(GameObject root, out Bounds bounds)
+        {
+            bounds = default;
+            bool any = false;
             var renderers = root.GetComponentsInChildren<Renderer>(true);
             for (int i = 0; i < renderers.Length; i++)
             {
-                if (renderers[i] == null || renderers[i] is ParticleSystemRenderer)
+                Renderer renderer = renderers[i];
+                if (renderer == null || !renderer.enabled || !renderer.gameObject.activeInHierarchy)
                     continue;
-                renderers[i].enabled = true;
-                renderers[i].gameObject.SetActive(true);
+                if (renderer is ParticleSystemRenderer)
+                    continue;
+
+                if (!any)
+                {
+                    bounds = renderer.bounds;
+                    any = true;
+                }
+                else
+                {
+                    bounds.Encapsulate(renderer.bounds);
+                }
             }
+
+            return any && bounds.size.sqrMagnitude > 1e-8f;
         }
 
         static void ApplyMaterials(GameObject root, Material[] materials, MaterialPolicy policy)

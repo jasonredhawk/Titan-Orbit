@@ -161,7 +161,20 @@ namespace TitanOrbit.ECS
                     ScaleMultiplier = spawn.ScaleMultiplier,
                 });
 
-                BulletNetNotify.SendSpawn(ref ecb, spawn, DroneSwarmLogic.NoWeaponMountReproject);
+                float rocketBase = RocketCatalog.Get(1).firePower;
+                float rocketMax = RocketCatalog.Get(RocketCatalog.ReferenceMaxLevel).firePower;
+                // Same 12-step Extra Level ceiling as GemMusicalPitch (L6 + L6 Fire Power).
+                // TitanOrbit.Audio is not referenced by this ECS assembly.
+                int extraLevelCeiling = RocketCatalog.ReferenceMaxLevel * 2;
+                float rocketPer = (rocketMax - rocketBase)
+                    / math.max(1, extraLevelCeiling);
+                BulletNetNotify.SendSpawn(
+                    ref ecb,
+                    spawn,
+                    DroneSwarmLogic.NoWeaponMountReproject,
+                    stats.firePower,
+                    rocketBase,
+                    math.max(0f, rocketPer));
                 bullets.Add(spawn);
             }
 

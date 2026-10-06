@@ -38,8 +38,8 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// True while this hull is a purchased MEGA (from <c>MegaShipState.IsMega</c>).
-        /// Minimap draws a team-color triangle outline (yellow troop fill) instead of
-        /// the regular Cross so every client can spot capital ships without opening a nameplate.
+        /// Minimap draws a team-color triangle outline (Troop Cap purple fill) instead of
+        /// the regular X-in-square so every client can spot capital ships without opening a nameplate.
         /// </summary>
         public bool IsMega;
 
@@ -59,6 +59,12 @@ namespace TitanOrbit.UI
         /// <c>PlanetState.ShipFamilyConfigIndex</c> so the minimap hover tip can name the family.
         /// </summary>
         public byte ShipFamilyConfigIndex;
+
+        /// <summary>
+        /// [TITAN-ORBIT] Planet's rolled <c>BulletVfxBank</c> category
+        /// (<c>PlanetState.BulletBankIndex</c>). Ships unused. Hover tip names the gun.
+        /// </summary>
+        public byte BulletBankIndex;
 
         // --- Ship vitals / cargo (live hold — not match scores) ---
         /// <summary>[TITAN-ORBIT] Current hull points (<c>ShipState.Health</c>).</summary>

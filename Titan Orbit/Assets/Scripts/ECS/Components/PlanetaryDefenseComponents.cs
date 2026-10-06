@@ -128,6 +128,31 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
+        /// Active turret at <paramref name="turretLevel"/> with full HP from
+        /// <paramref name="config"/> (fallback ~Lv1 scale × level when config is missing).
+        /// </summary>
+        public static PlanetaryDefenseSlotElement CreateActiveSlot(
+            byte slotIndex,
+            int turretLevel,
+            PlanetaryDefenseConfig config)
+        {
+            int level = math.max(1, turretLevel);
+            float hp = 165f * level;
+            if (config != null)
+                hp = math.max(1f, config.GetLevelStats(level).maxHealth);
+
+            return new PlanetaryDefenseSlotElement
+            {
+                SlotIndex = slotIndex,
+                TurretLevel = (byte)level,
+                BuildProgress = 0f,
+                Health = hp,
+                MaxHealth = hp,
+                OccupiedByNetworkId = 0,
+            };
+        }
+
+        /// <summary>
         /// Ensures buffer length matches <paramref name="desiredCount"/>. Preserves existing
         /// slot data by index when growing; truncates when shrinking. When
         /// <paramref name="wipeExisting"/> is true, all slots become empty placeholders.
@@ -222,8 +247,32 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
+        /// Fills every defense pad with an active turret at the planet's max turret level
+        /// (1..6 from <see cref="PlanetaryDefenseMath.GetMaxTurretLevelForPlanet"/>).
+        /// Used for home worlds at match start — crown Lv7 is not seeded (moon gem gate).
+        /// </summary>
+        /// <param name="buffer">Owned planet slot buffer (already sized / wiped empty).</param>
+        /// <param name="planetLevel">Home planet starting level (drives turret level).</param>
+        /// <param name="config">Defense config for max HP at that turret level (nullable → fallback HP).</param>
+        public static void SeedMaxLevelStartingTurrets(
+            DynamicBuffer<PlanetaryDefenseSlotElement> buffer,
+            int planetLevel,
+            PlanetaryDefenseConfig config)
+        {
+            if (buffer.Length <= 0)
+                return;
+
+            int level = PlanetaryDefenseMath.GetMaxTurretLevelForPlanet(planetLevel);
+            if (level < 1)
+                return;
+
+            for (int i = 0; i < buffer.Length; i++)
+                buffer[i] = CreateActiveSlot((byte)i, level, config);
+        }
+
+        /// <summary>
         /// Seeds a random subset of empty defense pads with active turrets for map start
-        /// (home planets and starting owned neutrals).
+        /// (starting owned neutrals only — homes use <see cref="SeedMaxLevelStartingTurrets"/>).
         /// <paramref name="maxTurretsAndLevel"/> 0 = no-op. Otherwise places a random count of
         /// 0..<paramref name="maxTurretsAndLevel"/> turrets (capped by buffer length), each at a
         /// random level 1..<paramref name="maxTurretsAndLevel"/> (also capped by
@@ -272,20 +321,7 @@ namespace TitanOrbit.ECS
                 usedMask |= 1 << idx;
 
                 int level = rng.NextInt(1, maxLevel + 1);
-                // Fallback when config is missing — ~Lv1 scale × level (matches ×3 HP ladder).
-                float hp = 165f * level;
-                if (config != null)
-                    hp = math.max(1f, config.GetLevelStats(level).maxHealth);
-
-                buffer[idx] = new PlanetaryDefenseSlotElement
-                {
-                    SlotIndex = (byte)idx,
-                    TurretLevel = (byte)level,
-                    BuildProgress = 0f,
-                    Health = hp,
-                    MaxHealth = hp,
-                    OccupiedByNetworkId = 0,
-                };
+                buffer[idx] = CreateActiveSlot((byte)idx, level, config);
             }
         }
     }

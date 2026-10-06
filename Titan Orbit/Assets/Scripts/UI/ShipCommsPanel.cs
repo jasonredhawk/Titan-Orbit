@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using TitanOrbit.Core;
 using TitanOrbit.Data;
@@ -5,8 +6,11 @@ using TitanOrbit.ECS;
 using TitanOrbit.Game;
 using TitanOrbit.Input;
 using TitanOrbit.NetCode;
+using TitanOrbit.Services;
+using TitanOrbit.Shared;
 using TMPro;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 using UnityEngine.UI;
 
@@ -14,12 +18,29 @@ namespace TitanOrbit.UI
 {
     /// <summary>
     /// Hold-S comms matrix: a centered dark-glass HUD card with keyword tiles. The player
-    /// holds S, clicks 1–3 words in order, then releases S to send that sentence above
-    /// their ship.
+    /// holds S, clicks 1–5 words in order (3 free; one ad unlocks the 4th and 5th), then releases S to send that sentence above
+    /// their ship. Granted extras keep a quiet brass hint (same idea as the Orbit Menu
+    /// +1 gear slot, dimmer) so chips 4–5 and extra RECENT rows stay distinct from the free set.
+    /// Top-level rails stay TACTICAL / SUBJECT / SOCIAL / COMMANDER (plus TEAM).
+    /// Inside each rail, slim telemetry captions (STRIKE, WHO, GEAR, …) keep related
+    /// words on the same 5-wide row. An All / Team toggle and the RECENT chip list are remembered in PlayerPrefs
+    /// so both survive a new match. Free players get three RECENT rows; one ad unlocks the rest.
+    /// Commander is an earned Command Deck seat (living top killer, miner, or troop
+    /// mover): it unlocks Everyone / Escort / Form Up on its own — there is no CMDR tab —
+    /// and the Team pill relabels to Team Commander. Gold chrome is applied at send
+    /// when those command-deck words go out on Team. A RECENT row that used those
+    /// words is temporarily locked (same LOCK stamp as the tiles) when this machine
+    /// loses every title — the sentence stays in history and lights up again if a
+    /// title returns. We do not strip it into a different, non-command sentence.
+    /// Flying inside a non-friendly territory triangle jams comms: a lock veil covers
+    /// the keyword card <b>and</b> the docked minimap (COMMS JAMMED / FROM ENEMY
+    /// TERRITORY). Clicks, Here pings, and release-S do nothing. Open space and
+    /// friendly overlaps stay clear.
     /// <para>
     /// Client presentation only. Sending goes through <see cref="ShipCommsRpcClient"/>
-    /// (RPC — Remote Procedure Call: the client asks the server to broadcast). This panel
-    /// never writes ship ghosts. Desktop only for v1 — phones have no S key mapping yet.
+    /// (RPC — Remote Procedure Call: the client asks the server to broadcast or target
+    /// teammates). This panel never writes ship ghosts. Desktop only for v1 — phones have
+    /// no S key mapping yet.
     /// </para>
     /// Layout is explicit RectTransforms (no nested ContentSizeFitters). Spawn style
     /// matches <see cref="SpaceBrakesHUD"/>: <c>RuntimeInitializeOnLoadMethod</c> plus
@@ -36,15 +57,43 @@ namespace TitanOrbit.UI
         public const float TileWidth = 100f;
         public const float TileHeight = 26f;
         public const float TileGap = 4f;
-        public const int KeywordColumns = 6;
+        public const int KeywordColumns = 5;
 
-        const float RecentColWidth = 156f;
+        /// <summary>RECENT row is one-third smaller than the matrix; chips sit inside that row.</summary>
+        const float RecentScale = 2f / 3f;
+        const float RecentChipFit = 0.85f;
+        const float RecentChipWidth = TileWidth * RecentScale * RecentChipFit;
+        const float RecentChipHeight = TileHeight * RecentScale * RecentChipFit;
+        const float RecentChipGap = TileGap * RecentScale;
+        const float RecentChipFont = 6.5f;
+        const float RecentRowPadLeft = 8f;
+        const float RecentRowPadRight = 4f;
+        const float RecentColWidth =
+            RecentRowPadLeft
+            + ShipCommsKeywordCatalog.MaxSequenceLength * RecentChipWidth
+            + (ShipCommsKeywordCatalog.MaxSequenceLength - 1) * RecentChipGap
+            + RecentRowPadRight;
         const float RootGap = 10f;
+        /// <summary>Keeps the docked map circle inside the chrome instead of kissing the card edge.</summary>
+        const float MinimapCircleInset = 20f;
         const float HeaderHeight = 26f;
+        /// <summary>ALL pill. TEAM grows to <see cref="AudienceTeamToggleWidth"/> so TEAM COMMANDER fits.</summary>
+        const float AudienceToggleWidth = 48f;
+        /// <summary>TEAM / TEAM COMMANDER pill — wide enough for the commander caption on one line.</summary>
+        const float AudienceTeamToggleWidth = 116f;
+        const float AudienceToggleGap = 4f;
         const float BannerHeight = 14f;
+        /// <summary>Top-level TACTICAL / SUBJECT rail — same role as the old section titles.</summary>
+        const float SectionBannerHeight = 15f;
+        /// <summary>Slim telemetry caption for STRIKE / WHO / GEAR rows (not a second banner).</summary>
+        const float ThemeCaptionHeight = 8f;
         const float SectionGap = 6f;
+        /// <summary>Tight gap between themed 5-wide rows in the same family (STRIKE→HOLD).</summary>
+        const float ThemeRowGap = 3f;
+        /// <summary>Air after a family (verbs → nouns) before the next section rail.</summary>
+        const float FamilyGap = 8f;
         const float PanelPad = 12f;
-        const float RecentRowHeight = 22f;
+        const float RecentRowHeight = TileHeight * RecentScale;
 
         static readonly Color FillColor = new Color(0.012f, 0.016f, 0.028f, 1f);
         static readonly Color CaptionPlateColor = new Color(0.018f, 0.028f, 0.045f, 1f);
@@ -58,20 +107,98 @@ namespace TitanOrbit.UI
         static readonly Color PreviewEmpty = new Color(0.02f, 0.04f, 0.07f, 0.92f);
         static readonly Color LabelOutline = new Color(0.02f, 0.04f, 0.08f, 0.85f);
         static readonly Color SeparatorColor = new Color(0.12f, 0.18f, 0.28f, 0.85f);
+        static readonly Color TeamChannelColor = new Color(0.95f, 0.62f, 0.22f, 0.95f);
+        /// <summary>Same white plate as world-chip All frames.</summary>
+        static readonly Color AllChannelColor = new Color(1f, 1f, 1f, 0.92f);
+        /// <summary>Command-deck brass — same gold as the leaderboard Command Deck.</summary>
+        static readonly Color CommanderChannelColor = TeamCommanderRules.Gold;
+        /// <summary>Near-void plate so a locked command tile does not read as a live chip.</summary>
+        static readonly Color CommanderLockedFill = new Color(0.008f, 0.008f, 0.012f, 0.92f);
+        /// <summary>
+        /// Opaque void over a commander-gated RECENT row. Chips sit under this veil,
+        /// so LOCK needs a solid plate or the gold stamp washes out on the sentence.
+        /// </summary>
+        static readonly Color CommanderLockedRecentVeil = new Color(0.008f, 0.008f, 0.012f, 0.97f);
+        /// <summary>
+        /// Bright command brass for the LOCK stamp. Close to
+        /// <see cref="TeamCommanderRules.Gold"/> so gated tiles read at a glance,
+        /// but not the live selected outline (that glow is still off while locked).
+        /// </summary>
+        static readonly Color CommanderLockedStamp = new Color(0.94f, 0.80f, 0.38f, 0.98f);
+        /// <summary>Word under LOCK — low contrast so it cannot be mistaken for a pick.</summary>
+        static readonly Color CommanderLockedWord = new Color(0.28f, 0.30f, 0.34f, 0.38f);
+        /// <summary>Veil over a whole locked group so one ad reads as one lock, not a stamp per chip.</summary>
+        static readonly Color AdGateVeil = new Color(0.010f, 0.012f, 0.020f, 0.82f);
+        /// <summary>Amber plate for the single watch-ad CTA (same hue as the old AD stamp).</summary>
+        static readonly Color AdGatePlate = new Color(0.07f, 0.045f, 0.018f, 0.96f);
+        /// <summary>
+        /// Quiet brass wash for granted keyword chips 4–5. Extra RECENT rows
+        /// skip this fill and use <see cref="BonusPlateOutline"/> only.
+        /// </summary>
+        static readonly Color BonusPlateBg = new Color(0.038f, 0.036f, 0.032f, 0.94f);
+        /// <summary>Thin muted brass frame — low alpha so it does not glow like command gold.</summary>
+        static readonly Color BonusPlateOutline = new Color(0.56f, 0.48f, 0.34f, 0.38f);
+        /// <summary>Empty extra-slot number (4 / 5) — warm caption, not bright gold leaf.</summary>
+        static readonly Color BonusPlateTitle = new Color(0.72f, 0.68f, 0.54f, 0.88f);
+        /// <summary>Dark veil over every compose button while flying in enemy fill.</summary>
+        static readonly Color JamVeil = new Color(0.018f, 0.008f, 0.010f, 0.88f);
+        /// <summary>Hostile red plate for the jam lock stamp (not command gold).</summary>
+        static readonly Color JamPlate = new Color(0.08f, 0.018f, 0.022f, 0.96f);
+        /// <summary>Lock caption — reads as jammed, not as a command-deck unlock.</summary>
+        static readonly Color JamStamp = new Color(0.95f, 0.32f, 0.34f, 0.98f);
 
-        /// <summary>Keyword bytes chosen this hold, in click order (max 3).</summary>
+        /// <summary>Keyword bytes chosen this hold, in click order (max 5).</summary>
         readonly List<byte> _sequence = new List<byte>(ShipCommsKeywordCatalog.MaxSequenceLength);
 
         readonly List<KeywordTile> _tiles = new List<KeywordTile>(40);
         readonly PreviewSlot[] _preview = new PreviewSlot[ShipCommsKeywordCatalog.MaxSequenceLength];
-        readonly RecentSlot[] _recent = new RecentSlot[ShipCommsHistory.MaxEntries];
+        /// <summary>
+        /// RECENT rows built to fill the card. Allocated in <see cref="BuildUi"/> after
+        /// the keyword grid sets the panel height — not a compile-time 10-slot rail.
+        /// </summary>
+        RecentSlot[] _recent = Array.Empty<RecentSlot>();
 
         Canvas _canvas;
         CanvasGroup _group;
         RectTransform _panel;
         PlayerInputHandler _input;
+        Keyboard _cachedKeyboard;
+        UnityEngine.Camera _playAimCamera;
+        TextMeshProUGUI _headerSub;
+        Image _allFill;
+        Image _teamFill;
+        Outline _allOutline;
+        Outline _teamOutline;
+        TextMeshProUGUI _allLabel;
+        TextMeshProUGUI _teamLabel;
         bool _wasHeld;
         bool _built;
+        RectTransform _minimapDock;
+        RectTransform _minimapHost;
+        float _overlayW;
+        float _dockSize;
+        bool _minimapDocked;
+
+        /// <summary>Highlighted RECENT row while S is held. -1 = none.</summary>
+        int _recentCursor = -1;
+
+        /// <summary>
+        /// Last commander rank we painted while S was held. Rank can flip mid-hold
+        /// (a teammate deposits). We only rebuild audience / tiles / RECENT when
+        /// this changes so LateUpdate does not recolor the card every frame.
+        /// </summary>
+        bool _lastPaintedLocalCommander;
+
+        /// <summary>One plate over compose slots 4+5. Hidden after the keyword unlock ad.</summary>
+        UnlockGate _slotUnlockGate;
+        /// <summary>One plate over every RECENT row past the free three. Hidden after that unlock ad.</summary>
+        UnlockGate _recentUnlockGate;
+        /// <summary>Full-card lock while the local hull is in a non-friendly triangle.</summary>
+        GameObject _jamOverlay;
+        /// <summary>Same lock over the docked minimap so Here pings cannot be planted.</summary>
+        GameObject _jamMinimapOverlay;
+        /// <summary>Last painted jam visibility so LateUpdate does not SetActive every frame.</summary>
+        bool _jamOverlayVisible;
 
         /// <summary>One keyword button in the matrix.</summary>
         struct KeywordTile
@@ -81,24 +208,156 @@ namespace TitanOrbit.UI
             public Outline Outline;
             public TextMeshProUGUI Label;
             public TextMeshProUGUI OrderBadge;
+            public TextMeshProUGUI LockLabel;
+            public Button Button;
             public Image Caret;
+            /// <summary>Cyan for ordinary words; faction RGB for Red / Blue / Green / Orange / Purple.</summary>
+            public Color Accent;
+            /// <summary>True when this tile is one of the five team color keywords.</summary>
+            public bool IsTeamColor;
+            /// <summary>True when this word paints a colored comms line (Heal, Attack, …).</summary>
+            public bool IsLineColor;
+            /// <summary>True when this word is a command-deck unlock (Everyone, Us, Form Up, …).</summary>
+            public bool IsCommanderWord;
         }
 
-        /// <summary>One of the three sequence chips at the top of the card.</summary>
+        /// <summary>One of the five sequence chips at the top of the card.</summary>
         struct PreviewSlot
         {
             public Image Fill;
             public TextMeshProUGUI Label;
             public Outline Outline;
+            public Button Button;
         }
 
-        /// <summary>One of the last-sent sentence chips in the RECENT column.</summary>
-        struct RecentSlot
+        /// <summary>
+        /// One rewarded-ad plate that covers a whole locked group. Slots 4+5 share
+        /// <see cref="_slotUnlockGate"/>; every paid RECENT row shares
+        /// <see cref="_recentUnlockGate"/>. Per-chip AD stamps made it look like
+        /// each button needed its own video.
+        /// </summary>
+        sealed class UnlockGate
+        {
+            public GameObject Root;
+            public Button Button;
+        }
+
+        /// <summary>
+        /// One themed 5-wide row on the compose card. Catalog categories
+        /// (Tactical / Subject / Social / Commander) still decide which words exist;
+        /// these clusters only change the slim caption and tile order. Wire indices never move.
+        /// </summary>
+        enum MatrixCluster : byte
+        {
+            Team = 0,
+            Strike = 1,
+            Hold = 2,
+            Work = 3,
+            Who = 4,
+            Where = 5,
+            World = 6,
+            Gear = 7,
+            Reply = 8,
+            Thanks = 9,
+            React = 10,
+            Squad = 11,
+            Orders = 12,
+        }
+
+        /// <summary>
+        /// Top-level compose rails — the same TACTICAL / SUBJECT / SOCIAL /
+        /// COMMANDER (plus TEAM) blocks the matrix used before theme rows.
+        /// </summary>
+        enum MatrixFamily : byte
+        {
+            Team = 0,
+            Tactical = 1,
+            Subject = 2,
+            Social = 3,
+            Commander = 4,
+        }
+
+        /// <summary>
+        /// One slim theme caption plus its 5-wide tile row. <see cref="FamilyBreakAfter"/>
+        /// uses the wider <see cref="FamilyGap"/> so TEAM / TACTICAL / SUBJECT /
+        /// SOCIAL / COMMANDER still read as the old sections.
+        /// </summary>
+        struct ClusterSpec
+        {
+            public MatrixCluster Id;
+            public MatrixFamily Family;
+            public string Banner;
+            public bool CommanderChrome;
+            public bool FamilyBreakAfter;
+        }
+
+        /// <summary>
+        /// Top-to-bottom cluster list. TEAM stays faction order; every other row is
+        /// a sentence theme (strike verbs together, who-nouns together, …).
+        /// </summary>
+        static readonly ClusterSpec[] ClusterLayout =
+        {
+            new ClusterSpec { Id = MatrixCluster.Team, Family = MatrixFamily.Team, Banner = "TEAM", FamilyBreakAfter = true },
+            new ClusterSpec { Id = MatrixCluster.Strike, Family = MatrixFamily.Tactical, Banner = "STRIKE" },
+            new ClusterSpec { Id = MatrixCluster.Hold, Family = MatrixFamily.Tactical, Banner = "HOLD" },
+            new ClusterSpec { Id = MatrixCluster.Work, Family = MatrixFamily.Tactical, Banner = "WORK", FamilyBreakAfter = true },
+            new ClusterSpec { Id = MatrixCluster.Who, Family = MatrixFamily.Subject, Banner = "WHO" },
+            new ClusterSpec { Id = MatrixCluster.Where, Family = MatrixFamily.Subject, Banner = "WHERE" },
+            new ClusterSpec { Id = MatrixCluster.World, Family = MatrixFamily.Subject, Banner = "WORLD" },
+            new ClusterSpec { Id = MatrixCluster.Gear, Family = MatrixFamily.Subject, Banner = "GEAR", FamilyBreakAfter = true },
+            new ClusterSpec { Id = MatrixCluster.Reply, Family = MatrixFamily.Social, Banner = "REPLY" },
+            new ClusterSpec { Id = MatrixCluster.Thanks, Family = MatrixFamily.Social, Banner = "THANKS" },
+            new ClusterSpec { Id = MatrixCluster.React, Family = MatrixFamily.Social, Banner = "REACT", FamilyBreakAfter = true },
+            new ClusterSpec { Id = MatrixCluster.Squad, Family = MatrixFamily.Commander, Banner = "SQUAD", CommanderChrome = true },
+            new ClusterSpec { Id = MatrixCluster.Orders, Family = MatrixFamily.Commander, Banner = "ORDERS", CommanderChrome = true },
+        };
+
+        /// <summary>
+        /// Display order inside each cluster. Labels only — the RPC still sends the
+        /// catalog byte. Index matches <see cref="MatrixCluster"/>. TEAM is empty so
+        /// Red…Purple keep catalog (faction) order. A new catalog word that is not
+        /// listed here still appears, tacked on the last cluster of its family.
+        /// </summary>
+        static readonly string[][] ClusterThemeLabels =
+        {
+            Array.Empty<string>(),
+            new[] { "Attack", "Kill", "Capture", "Push", "Incoming" },
+            new[] { "Defend", "Hold", "Retreat", "Help", "Heal" },
+            new[] { "Mining", "Transport", "Deposit", "Follow", "Wait" },
+            new[] { "You", "Me", "Us", "Ally", "Enemy" },
+            new[] { "Here", "Home", "Base", "Pad", "Team" },
+            new[] { "Planet", "Moon", "Titan", "Asteroid", "Ship" },
+            new[] { "Gems", "Troops", "Turret", "Mines", "Rocket" },
+            new[] { "Yes", "No", "Ready", "Go", "Later" },
+            new[] { "Thanks", "No Problem", "Sorry", "Good Luck", "GG" },
+            new[] { "Good", "Bad", "Nice", "Wow", "Oops" },
+            new[] { "Everyone", "Escort", "Form Up", "Spread", "Focus" },
+            new[] { "Advance", "Cover", "Orders", "Report", "Status" },
+        };
+
+        /// <summary>One keyword chip inside a RECENT row.</summary>
+        struct RecentChip
         {
             public Image Fill;
             public TextMeshProUGUI Label;
             public Outline Outline;
+        }
+
+        /// <summary>One of the last-sent sentences: a selectable row of up to five chips.</summary>
+        sealed class RecentSlot
+        {
+            public Image Fill;
+            public Image Caret;
+            public Outline Outline;
             public Button Button;
+            /// <summary>
+            /// Dark glass over the sentence chips while this machine is not a commander.
+            /// Sits under <see cref="LockLabel"/> so the stamp has a readable plate.
+            /// </summary>
+            public Image LockVeil;
+            /// <summary>Gold LOCK stamp over a command sentence while this machine is not a commander.</summary>
+            public TextMeshProUGUI LockLabel;
+            public readonly RecentChip[] Chips = new RecentChip[ShipCommsKeywordCatalog.MaxSequenceLength];
         }
 
         /// <summary>
@@ -124,6 +383,12 @@ namespace TitanOrbit.UI
         /// <summary>Builds the overlay once, then starts hidden.</summary>
         void Awake()
         {
+            // [TITAN-ORBIT] MPPM clones share one PlayerPrefs store — suffix the keys so
+            // Player 2's All/Team choice and RECENT list do not overwrite Player 1.
+            ShipCommsClientState.BindPrefsKey(
+                TitanOrbitPlayModeUtility.GetInstancePlayerPrefsKey(ShipCommsClientState.TeamOnlyPrefsKey));
+            ShipCommsHistory.BindPrefsKey(
+                TitanOrbitPlayModeUtility.GetInstancePlayerPrefsKey(ShipCommsHistory.HistoryPrefsKey));
             BuildUi();
             SetOpen(false, clearSequence: true);
         }
@@ -134,6 +399,8 @@ namespace TitanOrbit.UI
         /// </summary>
         void OnDestroy()
         {
+            UndockMinimap();
+            HUDController.SetCommsMatrixObscuresHud(false);
             if (ShipCommsClientState.IsOpen)
                 ShipCommsClientState.SetOpen(false);
         }
@@ -180,12 +447,123 @@ namespace TitanOrbit.UI
                 TrySendSequence();
                 SetOpen(false, clearSequence: true);
             }
-            else if (!held)
+            else if (!held && ShipCommsClientState.IsOpen)
             {
                 SetOpen(false, clearSequence: false);
             }
+            else if (!held && _minimapDocked)
+            {
+                // Recover a map left under the dock after a prior close that disabled it first.
+                // Do not key this off childCount — chrome, MapHost, and the jam veil
+                // live on the dock even when the HUD map is already back in the corner.
+                UndockMinimap();
+            }
 
             _wasHeld = held && canUse;
+
+            // Aim / recent-wheel only matter while the matrix is up. Sampling Camera.main
+            // and IsPointerOverGameObject every closed frame showed up as extra LateUpdate work.
+            if (held && canUse)
+                TrySamplePlayAim();
+            if (ShipCommsClientState.IsOpen)
+            {
+                // Rank can change while S is held (a teammate deposits). Drop Commander,
+                // strip command words from the rail, and lock RECENT rows that used them.
+                EnsureCommanderLocksWhileOpen();
+                // Hull can cross a triangle edge mid-hold — show or lift the jam veil live.
+                bool jammed = ShipCommsRpcClient.IsLocalShipJammed();
+                PaintJamLock(jammed);
+                if (!jammed)
+                {
+                    TryStepRecentFromWheel();
+                    if (ShipCommsClientState.ConsumeWaypointChipDirty())
+                        EnsureMapPointChip();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Mouse wheel steps the RECENT column: up = newer (toward the top),
+        /// down = older. First notch loads the latest sentence that this machine
+        /// may still send. Ad-locked rows stay skipped until the one RECENT unlock
+        /// ad runs. Command sentences are skipped while this player is not a
+        /// commander — they stay in history and become walkable again if rank returns.
+        /// </summary>
+        void TryStepRecentFromWheel()
+        {
+            if (!TryReadScrollY(out float scrollY))
+                return;
+
+            int count = ShipCommsHistory.Recent.Count;
+            if (count < 1)
+                return;
+
+            // Free users only wheel through the first three filled chips.
+            int walkable = ShipCommsClientState.RecentRowsUnlocked
+                ? count
+                : Mathf.Min(count, ShipCommsClientState.FreeRecentRows);
+            if (walkable < 1)
+                return;
+
+            int delta = scrollY > 0f ? -1 : 1;
+
+            // --- First notch vs step ---
+            // No cursor yet: newest walkable row that is not commander-gated.
+            // Already on a row: keep walking in the scroll direction and skip gates.
+            int start = _recentCursor < 0 ? 0 : _recentCursor + delta;
+            int next = FindWalkableRecentRow(start, delta, walkable);
+            if (next < 0 || next == _recentCursor)
+                return;
+
+            OnRecentClicked(next);
+        }
+
+        /// <summary>
+        /// First filled RECENT slot in range that is not commander-gated.
+        /// </summary>
+        /// <param name="start">Index to try first (already stepped from the cursor).</param>
+        /// <param name="step">+1 older, −1 newer.</param>
+        /// <param name="walkable">Exclusive end of the free or unlocked range.</param>
+        /// <returns>Row index, or −1 when every remaining slot is empty or gated.</returns>
+        int FindWalkableRecentRow(int start, int step, int walkable)
+        {
+            int i = start;
+            while (i >= 0 && i < walkable)
+            {
+                if (!IsRecentCommanderLocked(i) && ShipCommsHistory.TryGet(i, out _))
+                    return i;
+                i += step;
+            }
+
+            return -1;
+        }
+
+        static bool TryReadScrollY(out float scrollY)
+        {
+            scrollY = 0f;
+#if ENABLE_INPUT_SYSTEM
+            if (Mouse.current == null)
+                return false;
+            scrollY = Mouse.current.scroll.ReadValue().y;
+#else
+            scrollY = UnityEngine.Input.mouseScrollDelta.y;
+#endif
+            return Mathf.Abs(scrollY) > 0.01f;
+        }
+
+        /// <summary>
+        /// Play-plane aim while the pointer is off the HUD. "You" / planet / asteroid
+        /// resolve from this so a click on the tile does not unproject through the card.
+        /// </summary>
+        void TrySamplePlayAim()
+        {
+            if (EventSystem.current != null && EventSystem.current.IsPointerOverGameObject())
+                return;
+
+            if (_playAimCamera == null)
+                _playAimCamera = UnityEngine.Camera.main;
+            if (_input != null && _input.TryGetMouseWorldPosition(_playAimCamera, out Vector3 world))
+                ShipCommsClientState.SetLastPlayAim(world);
         }
 
         /// <summary>
@@ -222,6 +600,8 @@ namespace TitanOrbit.UI
 
             Keyboard keyboard = Keyboard.current;
             if (keyboard == null)
+                keyboard = _cachedKeyboard;
+            if (keyboard == null)
             {
                 foreach (var device in InputSystem.devices)
                 {
@@ -233,6 +613,7 @@ namespace TitanOrbit.UI
                 }
             }
 
+            _cachedKeyboard = keyboard;
             return keyboard != null && keyboard.sKey.isPressed;
         }
 
@@ -242,10 +623,27 @@ namespace TitanOrbit.UI
         /// </summary>
         void SetOpen(bool open, bool clearSequence)
         {
+            bool wasOpen = ShipCommsClientState.IsOpen;
             if (clearSequence)
             {
                 _sequence.Clear();
+                _recentCursor = -1;
                 PaintSequence();
+            }
+
+            // Put the HUD map back before hiding the dock. The live minimap is a child of
+            // the dock while S is held — SetActive(false) on the dock would disable it,
+            // clear MinimapController.Instance, and skip the reparent.
+            if (!open && wasOpen)
+            {
+                UndockMinimap();
+                HUDController.SetCommsMatrixObscuresHud(false);
+                if (clearSequence)
+                {
+                    ShipCommsClientState.ClearPendingWaypoint();
+                    ShipCommsClientState.ClearPendingYou();
+                    ShipCommsClientState.ClearPendingUs();
+                }
             }
 
             if (_group != null)
@@ -257,35 +655,111 @@ namespace TitanOrbit.UI
 
             if (_panel != null)
                 _panel.gameObject.SetActive(open);
+            if (_minimapDock != null)
+                _minimapDock.gameObject.SetActive(open);
 
-            if (open)
+            if (open && !wasOpen)
+            {
+                GrantOwnedAdUnlocks();
+                _recentCursor = -1;
                 PaintRecent();
+                PaintAudience();
+                PaintSequence();
+                _lastPaintedLocalCommander = IsLocalCommander();
+                ShipCommsClientState.ClearPendingWaypoint();
+                ShipCommsClientState.ClearPendingYou();
+                ShipCommsClientState.ClearPendingUs();
+                HUDController.SetCommsMatrixObscuresHud(true);
+                DockMinimap();
+            }
 
             ShipCommsClientState.SetOpen(open);
         }
 
         /// <summary>
-        /// Releases S: send 1–3 indices, paint an optimistic local bubble, then clear.
+        /// Releases S: send 1–5 indices (and an optional minimap ping), paint an
+        /// optimistic local bubble, then clear.
         /// </summary>
         void TrySendSequence()
         {
+            // --- Enemy-territory jam ---
+            // Overlay already blocks clicks. Release-S must not sneak a sentence out
+            // if the hull crossed into enemy fill after the last paint.
+            if (ShipCommsRpcClient.IsLocalShipJammed())
+                return;
+
+            // --- Channel ---
+            // [TITAN-ORBIT] PlayerPrefs-backed All / Team toggle. The server re-checks
+            // team and commander rank — this byte is a request, not a rank the client
+            // can spoof. Command-deck words never leave this machine unless this
+            // hold still has a living category title. Team + those words upgrades
+            // to gold Commander chrome at send time (no CMDR tab).
+            if (!IsLocalCommander())
+                StripCommanderKeywordsFromSequence();
+            bool usesCommanderWords = SequenceHasCommanderKeyword();
+            ShipCommsChannel channel = TeamCommanderRules.ResolveDeliveryChannel(
+                ShipCommsClientState.Channel, IsLocalCommander(), usesCommanderWords);
+
             int count = _sequence.Count;
             if (count < 1)
                 return;
 
+            int allowed = ShipCommsClientState.AllowedSequenceLength;
+            if (count > allowed)
+                count = allowed;
+
             byte k0 = _sequence[0];
             byte k1 = count >= 2 ? _sequence[1] : (byte)0;
             byte k2 = count >= 3 ? _sequence[2] : (byte)0;
+            byte k3 = count >= 4 ? _sequence[3] : (byte)0;
+            byte k4 = count >= 5 ? _sequence[4] : (byte)0;
+            byte teamOnly = (byte)channel;
+            byte hasWaypoint = 0;
+            float waypointX = 0f;
+            float waypointZ = 0f;
+            if (ShipCommsClientState.HasPendingWaypoint)
+            {
+                hasWaypoint = 1;
+                Vector3 ping = ShipCommsClientState.PendingWaypoint;
+                waypointX = ping.x;
+                waypointZ = ping.z;
+            }
 
-            ShipCommsRpcClient.TrySend((byte)count, k0, k1, k2);
-            ShipCommsHistory.Record((byte)count, k0, k1, k2);
+            var payload = new ShipCommsInbox.Callout
+            {
+                NetworkId = EcsGameBridge.GetLocalNetworkId(),
+                Count = (byte)count,
+                K0 = k0,
+                K1 = k1,
+                K2 = k2,
+                K3 = k3,
+                K4 = k4,
+                TeamOnly = teamOnly,
+                HasWaypoint = hasWaypoint,
+                WaypointX = waypointX,
+                WaypointZ = waypointZ,
+            };
+
+            ShipCommsCalloutGraphics.BindResolvedTargets(ref payload);
+
+            ShipCommsRpcClient.TrySend(payload);
+            // Remember a player-picked Here ping only. Asteroid / planet re-resolve on reuse.
+            byte persistPing = payload.FocusKind == ShipCommsInbox.FocusKind.MapPing
+                ? payload.HasWaypoint
+                : (byte)0;
+            ShipCommsHistory.Record(
+                (byte)count, k0, k1, k2, k3, k4,
+                persistPing, payload.WaypointX, payload.WaypointZ);
 
             // --- Optimistic local chips ---
             // [TITAN-ORBIT] Enqueue through the ECS inbox (same path as the broadcast RPC)
             // so the speaker does not wait on round-trip. The echo replaces the same bubble.
-            int localId = EcsGameBridge.GetLocalNetworkId();
-            if (localId > 0)
-                ShipCommsInbox.Enqueue(localId, (byte)count, k0, k1, k2);
+            if (payload.NetworkId > 0)
+                ShipCommsInbox.Enqueue(payload);
+
+            ShipCommsClientState.ClearPendingWaypoint();
+            ShipCommsClientState.ClearPendingYou();
+            ShipCommsClientState.ClearPendingUs();
         }
 
         /// <summary>
@@ -296,19 +770,118 @@ namespace TitanOrbit.UI
         {
             if (!ShipCommsClientState.IsOpen)
                 return;
+            if (ShipCommsRpcClient.IsLocalShipJammed())
+                return;
+
+            // Locked command-deck tiles stay visible so the squad can see the unlock,
+            // but they do not enter the sentence until this machine holds a command seat.
+            if (ShipCommsKeywordCatalog.LoadDefault().IsCommanderKeyword(index)
+                && !CommanderKeywordsUnlocked())
+                return;
 
             int existing = IndexOfSequence(index);
             if (existing >= 0)
             {
                 _sequence.RemoveAt(existing);
+                if (!SequenceHasYou())
+                    ShipCommsClientState.ClearPendingYou();
+                if (!SequenceHasUs())
+                    ShipCommsClientState.ClearPendingUs();
+                if (!SequenceHasHere())
+                    ShipCommsClientState.ClearPendingWaypoint();
                 PaintSequence();
                 return;
             }
 
-            if (_sequence.Count >= ShipCommsKeywordCatalog.MaxSequenceLength)
+            if (_sequence.Count >= ShipCommsClientState.AllowedSequenceLength)
                 return;
 
             _sequence.Add(index);
+            TryLockYouOnClick(index);
+            TryLockUsOnClick(index);
+            PaintSequence();
+        }
+
+        /// <summary>
+        /// Locks the closest-in-range ship when the player clicks "You".
+        /// [TITAN-ORBIT] No hull in range (or only the local ship) leaves You empty.
+        /// Send must not rewrite that as Me — "You Asteroid" then draws the rock only.
+        /// </summary>
+        void TryLockYouOnClick(byte index)
+        {
+            var catalog = ShipCommsKeywordCatalog.LoadDefault();
+            if (!catalog.TryGetLabel(index, out string label)
+                || !string.Equals(label, "You", System.StringComparison.OrdinalIgnoreCase))
+                return;
+
+            // Play-plane aim — the last world point under the pointer, not the HUD tile.
+            Vector3 aim = ShipCommsClientState.HasLastPlayAim
+                ? ShipCommsClientState.LastPlayAim
+                : Vector3.zero;
+            int localId = EcsGameBridge.GetLocalNetworkId();
+            if (ShipCommsCalloutGraphics.TryResolveYou(aim, localId, out int youId)
+                && youId > 0
+                && youId != localId)
+                ShipCommsClientState.SetPendingYou(youId);
+            else
+                ShipCommsClientState.ClearPendingYou();
+        }
+
+        /// <summary>
+        /// Rings the speaker plus nearby friendlies when the player clicks "Us".
+        /// [TITAN-ORBIT] Us always includes this hull. Other seats are teammates
+        /// inside <see cref="ShipCommsCalloutGraphics.YouSelectRange"/> of Me —
+        /// not the play-plane aim used by You.
+        /// </summary>
+        void TryLockUsOnClick(byte index)
+        {
+            var catalog = ShipCommsKeywordCatalog.LoadDefault();
+            if (!catalog.TryGetLabel(index, out string label)
+                || !string.Equals(label, "Us", System.StringComparison.OrdinalIgnoreCase))
+                return;
+
+            // Compose can open only while this machine has a local ship, so Me
+            // is always a legal Us seat even when nobody else is nearby.
+            ShipCommsClientState.SetPendingUs();
+        }
+
+        bool SequenceHasYou() => SequenceHasLabel("You");
+
+        bool SequenceHasUs() => SequenceHasLabel("Us");
+
+        bool SequenceHasHere() => SequenceHasLabel("Here");
+
+        bool SequenceHasLabel(string label)
+        {
+            var catalog = ShipCommsKeywordCatalog.LoadDefault();
+            for (int i = 0; i < _sequence.Count; i++)
+            {
+                if (catalog.TryGetLabel(_sequence[i], out string word)
+                    && string.Equals(word, label, System.StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Minimap ping becomes a Here chip in the sentence so Recent can replay the point.
+        /// </summary>
+        void EnsureMapPointChip()
+        {
+            var catalog = ShipCommsKeywordCatalog.LoadDefault();
+            if (!catalog.TryGetIndex("Here", out byte here))
+                return;
+
+            int existing = IndexOfSequence(here);
+            if (existing < 0)
+            {
+                if (_sequence.Count >= ShipCommsClientState.AllowedSequenceLength)
+                    _sequence[_sequence.Count - 1] = here;
+                else
+                    _sequence.Add(here);
+            }
+
             PaintSequence();
         }
 
@@ -320,72 +893,212 @@ namespace TitanOrbit.UI
         {
             if (!ShipCommsClientState.IsOpen)
                 return;
-            if (slot < 0 || slot >= _sequence.Count)
+            if (ShipCommsRpcClient.IsLocalShipJammed())
+                return;
+            if (slot < 0 || slot >= ShipCommsKeywordCatalog.MaxSequenceLength)
+                return;
+
+            if (slot >= ShipCommsClientState.AllowedSequenceLength)
+            {
+                TryUnlockNextSlot();
+                return;
+            }
+
+            if (slot >= _sequence.Count)
                 return;
 
             _sequence.RemoveRange(slot, _sequence.Count - slot);
+            if (!SequenceHasYou())
+                ShipCommsClientState.ClearPendingYou();
+            if (!SequenceHasUs())
+                ShipCommsClientState.ClearPendingUs();
+            if (!SequenceHasHere())
+                ShipCommsClientState.ClearPendingWaypoint();
             PaintSequence();
         }
 
         /// <summary>
         /// Loads a previous sentence into the 1/2/3 rail so release-S sends it again.
+        /// Rows past the free first three sit under one unlock plate until that ad runs.
+        /// A command sentence is ignored while this machine is not a commander — the
+        /// row stays in history and the click is a no-op until rank returns.
         /// </summary>
         void OnRecentClicked(int index)
         {
             if (!ShipCommsClientState.IsOpen)
                 return;
+            if (ShipCommsRpcClient.IsLocalShipJammed())
+                return;
+
+            if (!ShipCommsClientState.IsRecentRowUnlocked(index))
+            {
+                TryUnlockRecentRows(index);
+                return;
+            }
+
+            if (IsRecentCommanderLocked(index))
+                return;
+
+            ApplyRecentSentence(index);
+        }
+
+        /// <summary>
+        /// Copies history slot <paramref name="index"/> onto the compose rail.
+        /// Caller already checked that the row is unlocked and exists. Command
+        /// sentences are refused while this machine is not a commander so we never
+        /// silently turn "Everyone Attack Planet" into "Attack Planet".
+        /// </summary>
+        void ApplyRecentSentence(int index)
+        {
             if (!ShipCommsHistory.TryGet(index, out ShipCommsHistory.Sentence sentence))
                 return;
 
+            // [TITAN-ORBIT] Keep the saved sentence intact. The RECENT row shows LOCK
+            // until this player is a commander again.
+            if (IsRecentCommanderLocked(index))
+                return;
+
             _sequence.Clear();
+            int allowed = ShipCommsClientState.AllowedSequenceLength;
             _sequence.Add(sentence.K0);
-            if (sentence.Count >= 2)
+            if (sentence.Count >= 2 && allowed >= 2)
                 _sequence.Add(sentence.K1);
-            if (sentence.Count >= 3)
+            if (sentence.Count >= 3 && allowed >= 3)
                 _sequence.Add(sentence.K2);
+            if (sentence.Count >= 4 && allowed >= 4)
+                _sequence.Add(sentence.K3);
+            if (sentence.Count >= 5 && allowed >= 5)
+                _sequence.Add(sentence.K4);
+
+            // Here pings replay the clicked map point. Asteroid / planet / You resolve
+            // again from the speaker so "Asteroid" is a new closest rock.
+            if (sentence.HasWaypoint != 0 && SequenceHasHere())
+                ShipCommsClientState.SetPendingWaypoint(
+                    new Vector3(sentence.WaypointX, 0f, sentence.WaypointZ));
+            else
+                ShipCommsClientState.ClearPendingWaypoint();
+
+            ShipCommsClientState.ClearPendingYou();
+            if (SequenceHasUs())
+                ShipCommsClientState.SetPendingUs();
+            else
+                ShipCommsClientState.ClearPendingUs();
+            ShipCommsClientState.ClearLastPlayAim();
+
+            // Command-deck words stay on whichever All / Team pill is armed. The
+            // seat itself unlocks them — we do not force a third channel.
+
+            _recentCursor = index;
+            PaintAudience();
             PaintSequence();
+            PaintRecent();
         }
 
-        /// <summary>Refreshes preview chips and the 1/2/3 badges on keyword tiles.</summary>
+        /// <summary>
+        /// Refreshes preview chips and the 1/2/3 badges on keyword tiles.
+        /// Slots 4–5 use the gold bonus plate after the keyword ad (or Orbit Unlocked).
+        /// </summary>
         void PaintSequence()
         {
             var catalog = ShipCommsKeywordCatalog.LoadDefault();
 
+            int allowed = ShipCommsClientState.AllowedSequenceLength;
             for (int i = 0; i < _preview.Length; i++)
             {
+                bool locked = i >= allowed;
                 bool filled = i < _sequence.Count;
                 string label = (i + 1).ToString();
                 if (filled && catalog.TryGetLabel(_sequence[i], out string word))
+                {
                     label = word;
+                    if (ShipCommsCalloutGraphics.TryResolvePendingHereDisplayLabel(word, out string planetName))
+                        label = planetName;
+                }
 
                 PreviewSlot slot = _preview[i];
+                // Slots 4–5 after the keyword ad (or Orbit Unlocked) — quiet brass, not navy Empty.
+                bool bonusSlot = !locked && i >= ShipCommsKeywordCatalog.DefaultSequenceLength;
+                Color previewFill = locked ? CaptionPlateColor : (filled ? TileSelected : PreviewEmpty);
+                Color previewLabel = filled ? BodyTextColor : CaptionTextColor;
+                Color previewAccent = AccentColor;
+                if (filled)
+                    ShipCommsCalloutGraphics.ResolveChipPaint(label, selected: true, out previewFill, out previewLabel, out previewAccent);
+                if (bonusSlot && !filled)
+                    previewFill = BonusPlateBg;
                 if (slot.Fill != null)
-                    slot.Fill.color = filled ? TileSelected : PreviewEmpty;
+                    slot.Fill.color = previewFill;
                 if (slot.Outline != null)
-                    slot.Outline.enabled = filled;
+                {
+                    // Empty extras keep a hairline brass frame so 4 and 5 stay readable.
+                    slot.Outline.effectColor = bonusSlot ? BonusPlateOutline : previewAccent;
+                    slot.Outline.effectDistance = bonusSlot
+                        ? new Vector2(1.1f, -1.1f)
+                        : new Vector2(1.2f, -1.2f);
+                    slot.Outline.enabled = bonusSlot || (filled && !locked);
+                }
                 if (slot.Label != null)
                 {
-                    slot.Label.text = filled ? label.ToUpperInvariant() : (i + 1).ToString();
-                    slot.Label.color = filled ? BodyTextColor : CaptionTextColor;
+                    slot.Label.text = locked ? string.Empty : (filled ? label.ToUpperInvariant() : (i + 1).ToString());
+                    slot.Label.color = !filled && bonusSlot ? BonusPlateTitle : previewLabel;
                 }
+
+                if (slot.Button != null)
+                    slot.Button.interactable = !locked;
             }
 
+            PaintUnlockGate(_slotUnlockGate, allowed < ShipCommsKeywordCatalog.MaxSequenceLength);
+
+            bool commanderLive = CommanderKeywordsUnlocked();
             for (int t = 0; t < _tiles.Count; t++)
             {
                 KeywordTile tile = _tiles[t];
                 int order = IndexOfSequence(tile.Index);
                 bool selected = order >= 0;
+                string word = catalog.TryGetLabel(tile.Index, out string painted) ? painted : string.Empty;
+                ShipCommsCalloutGraphics.ResolveChipPaint(word, selected, out Color fill, out Color labelColor, out Color accent);
+                bool commanderLocked = tile.IsCommanderWord && !commanderLive;
+                if (commanderLocked)
+                {
+                    // Dark plate + stamp so the tile cannot be mistaken for a live keyword.
+                    fill = CommanderLockedFill;
+                    labelColor = CommanderLockedWord;
+                    accent = CommanderLockedStamp;
+                    selected = false;
+                }
                 if (tile.Fill != null)
-                    tile.Fill.color = selected ? TileSelected : TileIdle;
+                    tile.Fill.color = fill;
                 if (tile.Outline != null)
+                {
+                    tile.Outline.effectColor = accent;
                     tile.Outline.enabled = selected;
+                }
                 if (tile.Caret != null)
+                {
+                    tile.Caret.color = accent;
                     tile.Caret.enabled = selected;
+                }
                 if (tile.OrderBadge != null)
                 {
                     tile.OrderBadge.text = selected ? (order + 1).ToString() : string.Empty;
+                    tile.OrderBadge.color = accent;
                     tile.OrderBadge.enabled = selected;
                 }
+                if (tile.Label != null)
+                {
+                    string tileText = word;
+                    if (ShipCommsCalloutGraphics.TryResolvePendingHereDisplayLabel(word, out string planetName))
+                        tileText = planetName;
+                    tile.Label.text = tileText.ToUpperInvariant();
+                    tile.Label.color = labelColor;
+                }
+                if (tile.LockLabel != null)
+                {
+                    tile.LockLabel.enabled = commanderLocked;
+                    tile.LockLabel.text = commanderLocked ? "LOCK" : string.Empty;
+                    tile.LockLabel.color = CommanderLockedStamp;
+                }
+                if (tile.Button != null)
+                    tile.Button.interactable = !commanderLocked;
             }
         }
 
@@ -401,33 +1114,154 @@ namespace TitanOrbit.UI
             return -1;
         }
 
-        /// <summary>Fills the RECENT column from <see cref="ShipCommsHistory"/>.</summary>
+        /// <summary>
+        /// Fills the RECENT column from <see cref="ShipCommsHistory"/>. Rows past the
+        /// free first three stay ghosted under one unlock plate until that video runs,
+        /// then keep a brass outline only so they stay distinct from the free three.
+        /// A filled row that used command-deck words is temporarily locked (opaque
+        /// veil + LOCK stamp, same language as the command tiles) while this machine
+        /// is not a commander. The sentence stays in history; we do not rewrite it.
+        /// </summary>
         void PaintRecent()
         {
             var catalog = ShipCommsKeywordCatalog.LoadDefault();
+            bool commanderLive = IsLocalCommander();
             for (int i = 0; i < _recent.Length; i++)
             {
                 RecentSlot slot = _recent[i];
-                bool filled = ShipCommsHistory.TryGet(i, out ShipCommsHistory.Sentence sentence);
+                if (slot == null)
+                    continue;
+
+                bool adLocked = !ShipCommsClientState.IsRecentRowUnlocked(i);
+                bool hasSentence = ShipCommsHistory.TryGet(i, out ShipCommsHistory.Sentence sentence);
+                bool filled = hasSentence;
+                bool commanderLocked = !adLocked
+                    && filled
+                    && !commanderLive
+                    && SentenceUsesCommanderKeyword(catalog, in sentence);
+                bool selected = !adLocked && !commanderLocked && filled && i == _recentCursor;
+
+                // --- Row plate ---
+                // Ad-locked rows stay the caption plate under the veil. Command-gated
+                // rows use an opaque void so LOCK does not sit on see-through chips.
+                // Granted extras (past the free first three) keep the same navy fill
+                // as the free rows — only a quiet brass outline marks them.
+                bool bonusRow = !adLocked && i >= ShipCommsClientState.FreeRecentRows;
                 if (slot.Fill != null)
-                    slot.Fill.color = filled ? TileSelected : PreviewEmpty;
-                if (slot.Outline != null)
-                    slot.Outline.enabled = filled;
-                if (slot.Button != null)
-                    slot.Button.interactable = filled;
-                if (slot.Label != null)
                 {
-                    slot.Label.text = filled
-                        ? catalog.FormatSentence(sentence.Count, sentence.K0, sentence.K1, sentence.K2)
-                        : "—";
-                    slot.Label.color = filled ? BodyTextColor : CaptionTextColor;
+                    if (commanderLocked)
+                        slot.Fill.color = CommanderLockedRecentVeil;
+                    else if (adLocked)
+                        slot.Fill.color = CaptionPlateColor;
+                    else
+                        slot.Fill.color = selected
+                            ? Color.Lerp(TileSelected, AllChannelColor, 0.42f)
+                            : (filled ? TileSelected : PreviewEmpty);
                 }
+                if (slot.Outline != null)
+                {
+                    if (bonusRow && !commanderLocked)
+                    {
+                        slot.Outline.effectColor = BonusPlateOutline;
+                        slot.Outline.effectDistance = selected
+                            ? new Vector2(1.6f, -1.6f)
+                            : new Vector2(1.0f, -1.0f);
+                        slot.Outline.enabled = true;
+                    }
+                    else
+                    {
+                        slot.Outline.effectColor = commanderLocked ? CommanderLockedStamp : AllChannelColor;
+                        slot.Outline.effectDistance = selected ? new Vector2(2f, -2f) : new Vector2(0.8f, -0.8f);
+                        slot.Outline.enabled = selected;
+                    }
+                }
+                if (slot.Caret != null)
+                {
+                    slot.Caret.color = AllChannelColor;
+                    slot.Caret.enabled = selected;
+                }
+                if (slot.Button != null)
+                    slot.Button.interactable = !adLocked && !commanderLocked && filled;
+                if (slot.LockVeil != null)
+                {
+                    slot.LockVeil.enabled = commanderLocked;
+                    slot.LockVeil.color = CommanderLockedRecentVeil;
+                }
+                if (slot.LockLabel != null)
+                {
+                    slot.LockLabel.enabled = commanderLocked;
+                    slot.LockLabel.text = commanderLocked ? "LOCK" : string.Empty;
+                    slot.LockLabel.color = CommanderLockedStamp;
+                }
+
+                for (int c = 0; c < slot.Chips.Length; c++)
+                {
+                    bool on = filled && c < sentence.Count;
+                    PaintRecentChip(
+                        slot.Chips[c],
+                        catalog,
+                        on ? SentenceKeyword(in sentence, c) : (byte)0,
+                        on,
+                        ghost: adLocked || commanderLocked);
+                }
+            }
+
+            PaintUnlockGate(
+                _recentUnlockGate,
+                !ShipCommsClientState.RecentRowsUnlocked
+                    && _recent.Length > ShipCommsClientState.FreeRecentRows);
+        }
+
+        /// <summary>Paints one RECENT chip like a selected matrix / preview tile.</summary>
+        /// <param name="ghost">True under the unlock veil so paid rows still preview the payoff.</param>
+        static void PaintRecentChip(RecentChip chip, ShipCommsKeywordCatalog catalog, byte index, bool on, bool ghost)
+        {
+            if (chip.Fill != null)
+                chip.Fill.gameObject.SetActive(on);
+            if (!on)
+                return;
+
+            string label = catalog.TryGetLabel(index, out string word) ? word : "?";
+            ShipCommsCalloutGraphics.ResolveChipPaint(label, selected: true, out Color fill, out Color body, out Color accent);
+            if (ghost)
+            {
+                fill = Color.Lerp(fill, CaptionPlateColor, 0.55f);
+                fill.a *= 0.55f;
+                body = Color.Lerp(body, CaptionTextColor, 0.45f);
+                body.a *= 0.55f;
+                accent.a *= 0.35f;
+            }
+
+            if (chip.Fill != null)
+                chip.Fill.color = fill;
+            if (chip.Outline != null)
+            {
+                chip.Outline.effectColor = accent;
+                chip.Outline.enabled = !ghost;
+            }
+            if (chip.Label != null)
+            {
+                chip.Label.text = label.ToUpperInvariant();
+                chip.Label.color = body;
+            }
+        }
+
+        static byte SentenceKeyword(in ShipCommsHistory.Sentence sentence, int slot)
+        {
+            switch (slot)
+            {
+                case 0: return sentence.K0;
+                case 1: return sentence.K1;
+                case 2: return sentence.K2;
+                case 3: return sentence.K3;
+                case 4: return sentence.K4;
+                default: return 0;
             }
         }
 
         /// <summary>
         /// Builds a fixed-size card in the middle of the screen: compact title, 1/2/3 rail,
-        /// keyword grids, and a slim RECENT column on the right.
+        /// keyword grids, and a RECENT column that fills the right rail to the bottom pad.
         /// </summary>
         void BuildUi()
         {
@@ -447,19 +1281,23 @@ namespace TitanOrbit.UI
 
             var catalog = ShipCommsKeywordCatalog.LoadDefault();
             IReadOnlyList<ShipCommsKeyword> words = catalog.GetEffectiveKeywords();
-            int tacticalCount = CountCategory(words, ShipCommsKeywordCategory.Tactical);
-            int subjectCount = CountCategory(words, ShipCommsKeywordCategory.Subject);
-            int socialCount = CountCategory(words, ShipCommsKeywordCategory.Social);
 
             float mainW = KeywordColumns * TileWidth + (KeywordColumns - 1) * TileGap;
             float overlayW = PanelPad + mainW + RootGap + RecentColWidth + PanelPad;
             float overlayH = PanelPad
                 + HeaderHeight + SectionGap
                 + TileHeight + SectionGap
-                + CategoryBlockHeight(tacticalCount) + SectionGap
-                + CategoryBlockHeight(subjectCount) + SectionGap
-                + CategoryBlockHeight(socialCount)
+                + MeasureClusterStack(words)
                 + PanelPad;
+            // --- RECENT fill ---
+            // [TITAN-ORBIT] The keyword grid owns panel height. Pack as many RECENT
+            // rows as fit so the list meets the bottom pad instead of stopping at 10.
+            float recentInnerH = overlayH - PanelPad * 2f;
+            int recentRows = CountRecentRowsThatFill(recentInnerH);
+            ShipCommsHistory.BindCapacity(recentRows);
+            _recent = new RecentSlot[recentRows];
+            _overlayW = overlayW;
+            _dockSize = overlayH;
 
             var panelGo = new GameObject("Panel", typeof(RectTransform), typeof(Image));
             panelGo.transform.SetParent(transform, false);
@@ -481,11 +1319,9 @@ namespace TitanOrbit.UI
             y += SectionGap;
             BuildPreviewRail(main, ref y);
             y += SectionGap;
-            BuildCategory(main, ref y, mainW, "TACTICAL", words, ShipCommsKeywordCategory.Tactical);
-            y += SectionGap;
-            BuildCategory(main, ref y, mainW, "SUBJECT", words, ShipCommsKeywordCategory.Subject);
-            y += SectionGap;
-            BuildCategory(main, ref y, mainW, "SOCIAL", words, ShipCommsKeywordCategory.Social);
+            BuildClusterStack(main, ref y, mainW, words);
+
+            BuildMinimapDock();
 
             RectTransform recent = CreateTopLeft(
                 _panel,
@@ -494,7 +1330,20 @@ namespace TitanOrbit.UI
                 PanelPad,
                 RecentColWidth,
                 overlayH - PanelPad * 2f);
-            BuildRecentColumn(recent);
+            BuildRecentColumn(recent, recentRows, recentInnerH);
+            try
+            {
+                BuildJamOverlay();
+            }
+            catch (Exception e)
+            {
+                // Jam veils are presentation-only. A TMP/UGUI failure here used to
+                // abort Awake, disable this behaviour, and make hold-S do nothing.
+                Debug.LogException(e);
+            }
+
+            if (_minimapDock != null)
+                _minimapDock.gameObject.SetActive(false);
 
             _built = true;
         }
@@ -526,7 +1375,11 @@ namespace TitanOrbit.UI
             AddCornerBracket(parent, "BR", new Vector2(1f, 0f), new Vector2(-6f, 6f), false, false);
         }
 
-        /// <summary>Two-line header: COMMS MATRIX + HOLD S · 3 WORDS in one strip.</summary>
+        /// <summary>
+        /// Two-line header: COMMS MATRIX + HOLD S · N WORDS, with an All / Team
+        /// channel switch on the right. Team relabels to Team Commander when this
+        /// machine holds a command seat. The switch is remembered in PlayerPrefs.
+        /// </summary>
         void BuildHeader(Transform parent, ref float y, float width)
         {
             RectTransform plate = CreateTopLeft(parent, "Header", 0f, y, width, HeaderHeight);
@@ -534,34 +1387,275 @@ namespace TitanOrbit.UI
             bg.color = CaptionPlateColor;
             bg.raycastTarget = false;
 
+            // Leave room on the right for All + the wide TEAM / TEAM COMMANDER pill.
+            float toggleReserve = AudienceToggleWidth + AudienceTeamToggleWidth + AudienceToggleGap + 10f;
+
             var title = CreateLabel(plate, "Title", "COMMS MATRIX", 11f, AccentColor, TextAlignmentOptions.Left);
             var titleRt = title.rectTransform;
             titleRt.anchorMin = new Vector2(0f, 0.42f);
             titleRt.anchorMax = new Vector2(1f, 1f);
             titleRt.offsetMin = new Vector2(8f, 0f);
-            titleRt.offsetMax = new Vector2(-8f, -1f);
+            titleRt.offsetMax = new Vector2(-toggleReserve, -1f);
             title.characterSpacing = 1.8f;
             title.fontStyle = FontStyles.Bold;
 
-            var sub = CreateLabel(plate, "Sub", "HOLD S  ·  3 WORDS", 8f, CaptionTextColor, TextAlignmentOptions.Left);
-            var subRt = sub.rectTransform;
+            _headerSub = CreateLabel(plate, "Sub", "HOLD S  ·  3 WORDS  ·  ALL", 8f, CaptionTextColor, TextAlignmentOptions.Left);
+            var subRt = _headerSub.rectTransform;
             subRt.anchorMin = new Vector2(0f, 0f);
             subRt.anchorMax = new Vector2(1f, 0.48f);
             subRt.offsetMin = new Vector2(8f, 1f);
-            subRt.offsetMax = new Vector2(-8f, 0f);
-            sub.characterSpacing = 0.8f;
+            subRt.offsetMax = new Vector2(-toggleReserve, 0f);
+            _headerSub.characterSpacing = 0.8f;
+
+            BuildAudienceToggle(plate, width);
+            PaintAudience();
 
             y += HeaderHeight;
         }
 
-        /// <summary>Three clickable sequence chips. Empty slots show 1 / 2 / 3.</summary>
+        /// <summary>
+        /// Two compact pills on the header's right: ALL (everyone) and TEAM
+        /// (teammates). TEAM becomes TEAM COMMANDER while this machine holds a
+        /// command seat. Clicking one writes <see cref="ShipCommsClientState.SetChannel"/>.
+        /// </summary>
+        void BuildAudienceToggle(RectTransform header, float headerWidth)
+        {
+            float teamX = headerWidth - AudienceTeamToggleWidth - 6f;
+            float allX = teamX - AudienceToggleGap - AudienceToggleWidth;
+            float y = (HeaderHeight - TileHeight + 8f) * 0.5f;
+            float h = HeaderHeight - 6f;
+
+            _allFill = CreateTile(header, "AllChannel", allX, y, AudienceToggleWidth, h, TileIdle);
+            _allLabel = CreateLabel(_allFill.transform, "Label", "ALL", 9f, BodyTextColor, TextAlignmentOptions.Center);
+            Stretch(_allLabel.rectTransform, 2f);
+            _allOutline = _allFill.gameObject.AddComponent<Outline>();
+            _allOutline.effectColor = AllChannelColor;
+            _allOutline.effectDistance = new Vector2(1f, -1f);
+            _allOutline.useGraphicAlpha = false;
+            _allFill.gameObject.GetComponent<Button>().onClick.AddListener(
+                () => OnAudienceClicked(ShipCommsChannel.All));
+
+            _teamFill = CreateTile(header, "TeamChannel", teamX, y, AudienceTeamToggleWidth, h, TileIdle);
+            _teamLabel = CreateLabel(_teamFill.transform, "Label", "TEAM", 8f, BodyTextColor, TextAlignmentOptions.Center);
+            Stretch(_teamLabel.rectTransform, 2f);
+            _teamLabel.enableWordWrapping = false;
+            _teamLabel.overflowMode = TextOverflowModes.Ellipsis;
+            _teamOutline = _teamFill.gameObject.AddComponent<Outline>();
+            _teamOutline.effectColor = AllChannelColor;
+            _teamOutline.effectDistance = new Vector2(1f, -1f);
+            _teamOutline.useGraphicAlpha = false;
+            _teamFill.gameObject.GetComponent<Button>().onClick.AddListener(
+                () => OnAudienceClicked(ShipCommsChannel.Team));
+        }
+
+        /// <summary>
+        /// Header pill click: remember All / Team and repaint the switch.
+        /// Safe to tap while composing — command-deck words stay on the rail when
+        /// this machine still holds a command seat (the seat unlocks them, not a tab).
+        /// Switching audience never strips those words just to change All ↔ Team.
+        /// </summary>
+        /// <param name="channel">Audience the next send should request (All or Team).</param>
+        void OnAudienceClicked(ShipCommsChannel channel)
+        {
+            if (!ShipCommsClientState.IsOpen)
+                return;
+            if (ShipCommsRpcClient.IsLocalShipJammed())
+                return;
+
+            // Compose UI is All / Team only. An old Commander value collapses to Team.
+            ShipCommsClientState.SetChannel(TeamCommanderRules.SanitizeComposeChoice((byte)channel));
+            PaintAudience();
+            PaintSequence();
+        }
+
+        /// <summary>
+        /// Local faction RGB for the TEAM pill — same palette as world-chip Team frames.
+        /// White until Join Team so the pill is not the old amber stand-in.
+        /// </summary>
+        static Color ResolveLocalTeamAccent()
+        {
+            TeamId team = ClientTeamFlowState.ResolvePresentationTeam(TeamId.None);
+            return team != TeamId.None ? team.ToColor() : AllChannelColor;
+        }
+
+        /// <summary>
+        /// Highlights the active All / Team pill and updates the HOLD S subtitle
+        /// so the channel is readable without staring at the switch. While this
+        /// machine holds a command seat, TEAM reads TEAM COMMANDER and uses
+        /// command brass instead of the faction accent.
+        /// </summary>
+        void PaintAudience()
+        {
+            ShipCommsChannel channel = TeamCommanderRules.SanitizeComposeChoice(
+                (byte)ShipCommsClientState.Channel);
+            Color teamAccent = ResolveLocalTeamAccent();
+            bool commanderEligible = IsLocalCommander();
+            bool allOn = channel == ShipCommsChannel.All;
+            bool teamOn = channel == ShipCommsChannel.Team;
+            Color teamPaint = commanderEligible ? CommanderChannelColor : teamAccent;
+
+            if (_allFill != null)
+                _allFill.color = allOn ? Color.Lerp(TileSelected, AllChannelColor, 0.22f) : TileIdle;
+            if (_teamFill != null)
+                _teamFill.color = teamOn ? Color.Lerp(TileSelected, teamPaint, 0.35f) : TileIdle;
+
+            if (_allOutline != null)
+            {
+                _allOutline.effectColor = AllChannelColor;
+                _allOutline.enabled = allOn;
+            }
+            if (_teamOutline != null)
+            {
+                _teamOutline.effectColor = teamPaint;
+                _teamOutline.enabled = teamOn;
+            }
+
+            if (_allLabel != null)
+                _allLabel.color = allOn ? AllChannelColor : CaptionTextColor;
+            if (_teamLabel != null)
+            {
+                _teamLabel.text = commanderEligible ? "TEAM COMMANDER" : "TEAM";
+                _teamLabel.fontSize = commanderEligible ? 7.5f : 9f;
+                _teamLabel.color = teamOn ? teamPaint : CaptionTextColor;
+            }
+
+            if (_headerSub != null)
+            {
+                int allowed = ShipCommsClientState.AllowedSequenceLength;
+                string words = allowed <= 3 ? "3 WORDS" : allowed + " WORDS";
+                string audience = allOn
+                    ? "ALL"
+                    : (commanderEligible ? "TEAM COMMANDER" : "TEAM");
+                _headerSub.text = "HOLD S  ·  " + words + "  ·  " + audience;
+            }
+        }
+
+        /// <summary>
+        /// While S is held, titles can flip (a teammate deposits more gems). Strip
+        /// command-deck words from the compose rail and lock RECENT rows that used
+        /// those words. We only repaint when commander status changes so this
+        /// LateUpdate path stays cheap.
+        /// </summary>
+        void EnsureCommanderLocksWhileOpen()
+        {
+            bool commander = IsLocalCommander();
+
+            // --- Compose rail ---
+            // Words typed this hold cannot send once the command deck is gone.
+            if (!commander && SequenceHasCommanderKeyword())
+                StripCommanderKeywordsFromSequence();
+
+            // --- RECENT cursor ---
+            // Deselect a command sentence so the locked row does not stay highlighted.
+            if (!commander && _recentCursor >= 0 && IsRecentCommanderLocked(_recentCursor))
+                _recentCursor = -1;
+
+            if (commander == _lastPaintedLocalCommander)
+                return;
+
+            _lastPaintedLocalCommander = commander;
+            PaintAudience();
+            PaintSequence();
+            PaintRecent();
+        }
+
+        /// <summary>
+        /// True when command-deck tiles may enter the sentence: this machine holds
+        /// an earned category title. The compose card does not require a CMDR tab —
+        /// becoming commander is the unlock.
+        /// </summary>
+        static bool CommanderKeywordsUnlocked()
+        {
+            return IsLocalCommander();
+        }
+
+        /// <summary>
+        /// True when the local player currently holds a living killer, miner, or
+        /// troop title on their team. Score rank alone is never enough — a fresh
+        /// spawn on an empty board stays crew until they earn a category.
+        /// Prefers the last minimap / nameplate role flush; falls back to scanning
+        /// every playable faction when team is still unknown.
+        /// </summary>
+        static bool IsLocalCommander()
+        {
+            int localId = EcsGameBridge.GetLocalNetworkId();
+            if (localId <= 0)
+                return false;
+
+            // --- Local team ---
+            // Presentation team covers join-team frames before the living hull is ready.
+            TeamId team = TeamId.None;
+            if (EcsGameBridge.TryGetLocalShipState(out var localShip))
+                team = localShip.Team;
+            if (team == TeamId.None)
+                team = ClientTeamFlowState.ResolvePresentationTeam(TeamId.None);
+
+            if (team != TeamId.None)
+                return ShipTopOfTeamRoles.HoldsCommandSeat(team, localId);
+
+            return ShipMatchScoreLogic.IsCommander(localId);
+        }
+
+        /// <summary>Removes command-deck words from the current compose rail.</summary>
+        void StripCommanderKeywordsFromSequence()
+        {
+            var catalog = ShipCommsKeywordCatalog.LoadDefault();
+            for (int i = _sequence.Count - 1; i >= 0; i--)
+            {
+                if (catalog.IsCommanderKeyword(_sequence[i]))
+                    _sequence.RemoveAt(i);
+            }
+        }
+
+        /// <summary>True when the current rail holds at least one command-deck word.</summary>
+        bool SequenceHasCommanderKeyword()
+        {
+            var catalog = ShipCommsKeywordCatalog.LoadDefault();
+            for (int i = 0; i < _sequence.Count; i++)
+            {
+                if (catalog.IsCommanderKeyword(_sequence[i]))
+                    return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// True when RECENT slot <paramref name="index"/> used a command-deck word
+        /// and this machine is not a commander. Ad-locked rows stay under the
+        /// watch-ad veil instead — this gate is only the temporary rank lock.
+        /// </summary>
+        /// <param name="index">RECENT column row (0 = newest).</param>
+        bool IsRecentCommanderLocked(int index)
+        {
+            if (IsLocalCommander())
+                return false;
+            if (!ShipCommsClientState.IsRecentRowUnlocked(index))
+                return false;
+            if (!ShipCommsHistory.TryGet(index, out ShipCommsHistory.Sentence sentence))
+                return false;
+
+            return SentenceUsesCommanderKeyword(ShipCommsKeywordCatalog.LoadDefault(), in sentence);
+        }
+
+        /// <summary>
+        /// True when any live keyword in a saved sentence is a command-deck word
+        /// (Everyone, Escort, Form Up, …).
+        /// </summary>
+        static bool SentenceUsesCommanderKeyword(
+            ShipCommsKeywordCatalog catalog,
+            in ShipCommsHistory.Sentence sentence)
+        {
+            return catalog.SequenceUsesCommanderKeyword(
+                sentence.Count, sentence.K0, sentence.K1, sentence.K2, sentence.K3, sentence.K4);
+        }
+
+        /// <summary>Five clickable sequence chips. Slots 4–5 start under one unlock plate.</summary>
         void BuildPreviewRail(Transform parent, ref float y)
         {
-            RectTransform rail = CreateTopLeft(
-                parent, "PreviewRail", 0f, y,
-                ShipCommsKeywordCatalog.MaxSequenceLength * TileWidth
-                + (ShipCommsKeywordCatalog.MaxSequenceLength - 1) * TileGap,
-                TileHeight);
+            float railW = ShipCommsKeywordCatalog.MaxSequenceLength * TileWidth
+                + (ShipCommsKeywordCatalog.MaxSequenceLength - 1) * TileGap;
+            RectTransform rail = CreateTopLeft(parent, "PreviewRail", 0f, y, railW, TileHeight);
 
             for (int i = 0; i < _preview.Length; i++)
             {
@@ -570,6 +1664,8 @@ namespace TitanOrbit.UI
                 Image tile = CreateTile(rail, "Preview" + (i + 1), x, 0f, TileWidth, TileHeight, PreviewEmpty);
                 var label = CreateLabel(tile.transform, "Label", (i + 1).ToString(), 10f, CaptionTextColor, TextAlignmentOptions.Center);
                 Stretch(label.rectTransform, 4f);
+                label.enableWordWrapping = false;
+                label.overflowMode = TextOverflowModes.Ellipsis;
                 var outline = tile.gameObject.AddComponent<Outline>();
                 outline.effectColor = AccentColor;
                 outline.effectDistance = new Vector2(1.2f, -1.2f);
@@ -584,14 +1680,43 @@ namespace TitanOrbit.UI
                     Fill = tile,
                     Label = label,
                     Outline = outline,
+                    Button = btn,
                 };
+            }
+
+            // --- One ad, both extra slots ---
+            // [TITAN-ORBIT] A stamp on 4 and another on 5 reads as two videos.
+            // One plate over both chips is the same unlock as TryUnlockNextSlot.
+            int lockedStart = ShipCommsKeywordCatalog.DefaultSequenceLength;
+            int lockedCount = ShipCommsKeywordCatalog.MaxSequenceLength - lockedStart;
+            if (lockedCount > 0)
+            {
+                float gateX = lockedStart * (TileWidth + TileGap);
+                float gateW = lockedCount * TileWidth + (lockedCount - 1) * TileGap;
+                _slotUnlockGate = CreateUnlockGate(
+                    rail,
+                    "UnlockSlots",
+                    gateX,
+                    0f,
+                    gateW,
+                    TileHeight,
+                    compact: true,
+                    title: "WATCH AD · UNLOCK ALL",
+                    sub: string.Empty,
+                    onClick: TryUnlockNextSlot);
             }
 
             y += TileHeight;
         }
 
-        /// <summary>Slim right-rail of the last ten sentences.</summary>
-        void BuildRecentColumn(RectTransform parent)
+        /// <summary>
+        /// Right-rail of saved sentences. Row count fills the card; leftover height
+        /// becomes even gaps so the last chip sits on the bottom pad.
+        /// </summary>
+        /// <param name="parent">RECENT column rect (already sized to the card inner height).</param>
+        /// <param name="rowCount">Slots to build — same value bound on <see cref="ShipCommsHistory"/>.</param>
+        /// <param name="innerHeight">Column height in canvas units (panel minus pads).</param>
+        void BuildRecentColumn(RectTransform parent, int rowCount, float innerHeight)
         {
             var rail = CreateIgnoredImage(parent, "Rail", SeparatorColor);
             var railRt = rail.rectTransform;
@@ -610,66 +1735,280 @@ namespace TitanOrbit.UI
             bannerRt.sizeDelta = new Vector2(0f, BannerHeight);
             banner.characterSpacing = 1.4f;
 
-            float y = BannerHeight + 4f;
-            for (int i = 0; i < _recent.Length; i++)
+            // --- Even gaps ---
+            // n * row + n * gap = space under the banner, so the last row's bottom
+            // lands on the column edge instead of leaving a dead strip.
+            float gap = ComputeRecentRowGap(innerHeight, rowCount);
+            float y = BannerHeight + gap;
+            for (int i = 0; i < rowCount; i++)
             {
                 int slot = i;
                 Image tile = CreateTile(parent, "Recent" + i, 0f, y, RecentColWidth, RecentRowHeight, PreviewEmpty);
-                var label = CreateLabel(tile.transform, "Label", "—", 7f, CaptionTextColor, TextAlignmentOptions.Left);
-                Stretch(label.rectTransform, 4f);
+                var caretGo = new GameObject("Caret", typeof(RectTransform), typeof(Image));
+                caretGo.transform.SetParent(tile.transform, false);
+                var caretRt = caretGo.GetComponent<RectTransform>();
+                caretRt.anchorMin = new Vector2(0f, 0f);
+                caretRt.anchorMax = new Vector2(0f, 1f);
+                caretRt.pivot = new Vector2(0f, 0.5f);
+                caretRt.sizeDelta = new Vector2(4f, -4f);
+                caretRt.anchoredPosition = new Vector2(2f, 0f);
+                var caret = caretGo.GetComponent<Image>();
+                caret.color = AllChannelColor;
+                caret.raycastTarget = false;
+                caret.enabled = false;
                 var outline = tile.gameObject.AddComponent<Outline>();
-                outline.effectColor = AccentColor;
-                outline.effectDistance = new Vector2(0.8f, -0.8f);
+                outline.effectColor = AllChannelColor;
+                outline.effectDistance = new Vector2(2f, -2f);
                 outline.useGraphicAlpha = false;
                 outline.enabled = false;
                 var btn = tile.gameObject.GetComponent<Button>();
                 btn.onClick.AddListener(() => OnRecentClicked(slot));
                 btn.interactable = false;
 
-                _recent[i] = new RecentSlot
+                var row = new RecentSlot
                 {
                     Fill = tile,
-                    Label = label,
+                    Caret = caret,
                     Outline = outline,
                     Button = btn,
                 };
-                y += RecentRowHeight + 4f;
+                for (int c = 0; c < row.Chips.Length; c++)
+                    row.Chips[c] = CreateRecentChip(tile.transform, c);
+
+                // [TITAN-ORBIT] Veil sits above the chips and under LOCK. The row
+                // fill is behind the sentence, so without this plate the gold stamp
+                // reads on top of live chip colors and disappears.
+                var lockVeil = CreateIgnoredImage(tile.transform, "LockVeil", CommanderLockedRecentVeil);
+                Stretch(lockVeil.rectTransform, 0f);
+                lockVeil.enabled = false;
+                row.LockVeil = lockVeil;
+
+                // Built after the veil so the stamp draws on the opaque plate.
+                // Hidden until PaintRecent sees a command sentence on a non-commander.
+                var lockLabel = CreateLabel(
+                    tile.transform, "Lock", "LOCK", 8f, CommanderLockedStamp, TextAlignmentOptions.Center);
+                Stretch(lockLabel.rectTransform, 2f);
+                lockLabel.characterSpacing = 1.2f;
+                lockLabel.fontStyle = FontStyles.Bold;
+                lockLabel.enabled = false;
+                row.LockLabel = lockLabel;
+
+                _recent[i] = row;
+                y += RecentRowHeight + gap;
+            }
+
+            // --- One ad, every paid row ---
+            // [TITAN-ORBIT] An AD stamp on each extra row reads as one video per
+            // sentence. One veil over the whole paid block is the same unlock.
+            int lockedStart = ShipCommsClientState.FreeRecentRows;
+            if (rowCount > lockedStart)
+            {
+                float lockedY = BannerHeight + gap + lockedStart * (RecentRowHeight + gap);
+                float lockedH = (rowCount - lockedStart) * (RecentRowHeight + gap) - gap;
+                _recentUnlockGate = CreateUnlockGate(
+                    parent,
+                    "UnlockRecent",
+                    0f,
+                    lockedY,
+                    RecentColWidth,
+                    Mathf.Max(RecentRowHeight, lockedH),
+                    compact: lockedH < 48f,
+                    title: lockedH < 48f ? "WATCH AD · UNLOCK ALL" : "WATCH AD",
+                    sub: "UNLOCK ALL",
+                    onClick: () => TryUnlockRecentRows(-1));
             }
         }
 
-        /// <summary>One banner plus a wrapping row of tiles for that category.</summary>
+        /// <summary>
+        /// How many RECENT rows fit under the banner using the compact chip gap.
+        /// Extra leftover height is later turned into even spacing, not more rows.
+        /// </summary>
+        /// <param name="innerHeight">Column height in canvas units (panel minus pads).</param>
+        /// <returns>At least 1, at most <see cref="ShipCommsHistory.HardMaxEntries"/>.</returns>
+        static int CountRecentRowsThatFill(float innerHeight)
+        {
+            // Banner, then n stacks of (gap + row). Floor so we never overflow the card.
+            float budget = innerHeight - BannerHeight;
+            float stride = RecentRowHeight + RecentChipGap;
+            if (budget < stride)
+                return 1;
+
+            int n = Mathf.FloorToInt(budget / stride);
+            return Mathf.Clamp(n, 1, ShipCommsHistory.HardMaxEntries);
+        }
+
+        /// <summary>
+        /// Gap after the banner and between rows so the last chip sits on the column bottom.
+        /// </summary>
+        /// <param name="innerHeight">Column height in canvas units (panel minus pads).</param>
+        /// <param name="rowCount">Slots actually built.</param>
+        static float ComputeRecentRowGap(float innerHeight, int rowCount)
+        {
+            if (rowCount < 1)
+                return RecentChipGap;
+
+            float leftover = innerHeight - BannerHeight - rowCount * RecentRowHeight;
+            float gap = leftover / rowCount;
+            return Mathf.Max(RecentChipGap, gap);
+        }
+
+        /// <summary>One matrix-sized chip inside a RECENT row. Clicks go through to the row.</summary>
+        static RecentChip CreateRecentChip(Transform parent, int slot)
+        {
+            float x = RecentRowPadLeft + slot * (RecentChipWidth + RecentChipGap);
+            var go = new GameObject("Chip" + slot, typeof(RectTransform), typeof(Image));
+            go.transform.SetParent(parent, false);
+            var rt = go.GetComponent<RectTransform>();
+            rt.anchorMin = new Vector2(0f, 0.5f);
+            rt.anchorMax = new Vector2(0f, 0.5f);
+            rt.pivot = new Vector2(0f, 0.5f);
+            rt.anchoredPosition = new Vector2(x, 0f);
+            rt.sizeDelta = new Vector2(RecentChipWidth, RecentChipHeight);
+            var fill = go.GetComponent<Image>();
+            fill.color = TileSelected;
+            fill.raycastTarget = false;
+
+            var label = CreateLabel(go.transform, "Label", string.Empty, RecentChipFont, BodyTextColor, TextAlignmentOptions.Center);
+            Stretch(label.rectTransform, 2f);
+            label.enableWordWrapping = false;
+            label.overflowMode = TextOverflowModes.Ellipsis;
+
+            var outline = go.AddComponent<Outline>();
+            outline.effectColor = AccentColor;
+            outline.effectDistance = new Vector2(1.1f, -1.1f);
+            outline.useGraphicAlpha = false;
+            outline.enabled = false;
+
+            go.SetActive(false);
+            return new RecentChip
+            {
+                Fill = fill,
+                Label = label,
+                Outline = outline,
+            };
+        }
+
+        /// <summary>
+        /// Walks <see cref="ClusterLayout"/> top to bottom. Each family opens with
+        /// the old TACTICAL / SUBJECT rail; themed rows inside it use a slim caption.
+        /// </summary>
+        void BuildClusterStack(
+            Transform parent,
+            ref float y,
+            float width,
+            IReadOnlyList<ShipCommsKeyword> words)
+        {
+            MatrixFamily shown = (MatrixFamily)255;
+            for (int i = 0; i < ClusterLayout.Length; i++)
+            {
+                ClusterSpec spec = ClusterLayout[i];
+                if (spec.Family != shown)
+                {
+                    Color sectionColor = spec.CommanderChrome ? CommanderChannelColor : AccentColor;
+                    BuildSectionHeader(parent, ref y, width, FamilyTitle(spec.Family), sectionColor);
+                    shown = spec.Family;
+                }
+
+                BuildCategory(parent, ref y, width, spec, words);
+                if (i >= ClusterLayout.Length - 1)
+                    continue;
+                y += spec.FamilyBreakAfter ? FamilyGap : ThemeRowGap;
+            }
+        }
+
+        /// <summary>
+        /// Cockpit section rail: left pip, <c>&gt; TACTICAL</c>, and a hairline.
+        /// Same language as <see cref="ShipStatTooltipChrome.AppendSectionBanner"/>.
+        /// </summary>
+        static void BuildSectionHeader(Transform parent, ref float y, float width, string title, Color accent)
+        {
+            RectTransform plate = CreateTopLeft(parent, title + "Section", 0f, y, width, SectionBannerHeight);
+
+            var pip = CreateIgnoredImage(plate, "Pip", accent);
+            var pipRt = pip.rectTransform;
+            pipRt.anchorMin = new Vector2(0f, 0.5f);
+            pipRt.anchorMax = new Vector2(0f, 0.5f);
+            pipRt.pivot = new Vector2(0f, 0.5f);
+            pipRt.anchoredPosition = new Vector2(0f, 1f);
+            pipRt.sizeDelta = new Vector2(2f, 9f);
+
+            var label = CreateLabel(plate, "Title", "> " + title, 8f, accent, TextAlignmentOptions.Left);
+            var labelRt = label.rectTransform;
+            labelRt.anchorMin = Vector2.zero;
+            labelRt.anchorMax = Vector2.one;
+            labelRt.offsetMin = new Vector2(6f, 2f);
+            labelRt.offsetMax = new Vector2(0f, -1f);
+            label.characterSpacing = 2.4f;
+            label.fontStyle = FontStyles.Bold;
+
+            Color rail = accent;
+            rail.a *= 0.38f;
+            var rule = CreateIgnoredImage(plate, "Rule", rail);
+            var ruleRt = rule.rectTransform;
+            ruleRt.anchorMin = new Vector2(0f, 0f);
+            ruleRt.anchorMax = new Vector2(1f, 0f);
+            ruleRt.pivot = new Vector2(0.5f, 0f);
+            ruleRt.sizeDelta = new Vector2(0f, 1f);
+            ruleRt.anchoredPosition = Vector2.zero;
+
+            y += SectionBannerHeight;
+        }
+
+        /// <summary>
+        /// Micro telemetry tag for a themed row (<c>// STRIKE</c> plus a dim rail).
+        /// Stays smaller than the TACTICAL / SUBJECT section so grouping does not shout.
+        /// </summary>
+        static void BuildThemeCaption(Transform parent, ref float y, float width, string title, Color accent)
+        {
+            RectTransform row = CreateTopLeft(parent, title + "Theme", 0f, y, width, ThemeCaptionHeight);
+
+            Color caption = Color.Lerp(CaptionTextColor, accent, 0.28f);
+            caption.a = 0.78f;
+            var label = CreateLabel(row, "Caption", "// " + title, 6.25f, caption, TextAlignmentOptions.Left);
+            var labelRt = label.rectTransform;
+            labelRt.anchorMin = Vector2.zero;
+            labelRt.anchorMax = Vector2.one;
+            labelRt.offsetMin = Vector2.zero;
+            labelRt.offsetMax = Vector2.zero;
+            label.characterSpacing = 2.6f;
+
+            Color rail = SeparatorColor;
+            rail.a = 0.7f;
+            var rule = CreateIgnoredImage(row, "Rail", rail);
+            var ruleRt = rule.rectTransform;
+            ruleRt.anchorMin = new Vector2(0f, 0.5f);
+            ruleRt.anchorMax = new Vector2(1f, 0.5f);
+            ruleRt.pivot = new Vector2(0f, 0.5f);
+            ruleRt.offsetMin = new Vector2(68f, -0.5f);
+            ruleRt.offsetMax = new Vector2(0f, 0.5f);
+
+            y += ThemeCaptionHeight;
+        }
+
+        /// <summary>Optional slim theme caption plus a wrapping 5-wide row of tiles.</summary>
         void BuildCategory(
             Transform parent,
             ref float y,
             float width,
-            string banner,
-            IReadOnlyList<ShipCommsKeyword> words,
-            ShipCommsKeywordCategory category)
+            ClusterSpec spec,
+            IReadOnlyList<ShipCommsKeyword> words)
         {
-            var bannerLabel = CreateLabel(parent, banner + "Banner", "> " + banner, 8f, AccentColor, TextAlignmentOptions.Left);
-            var bannerRt = bannerLabel.rectTransform;
-            bannerRt.anchorMin = new Vector2(0f, 1f);
-            bannerRt.anchorMax = new Vector2(0f, 1f);
-            bannerRt.pivot = new Vector2(0f, 1f);
-            bannerRt.anchoredPosition = new Vector2(0f, -y);
-            bannerRt.sizeDelta = new Vector2(width, BannerHeight);
-            bannerLabel.characterSpacing = 1.4f;
-            y += BannerHeight;
+            if (FamilyHasMultipleClusters(spec.Family))
+            {
+                Color themeAccent = spec.CommanderChrome ? CommanderChannelColor : AccentColor;
+                BuildThemeCaption(parent, ref y, width, spec.Banner, themeAccent);
+            }
 
             int placed = 0;
-            for (int i = 0; i < words.Count; i++)
+            int[] order = CollectClusterOrder(words, spec.Id);
+            for (int p = 0; p < order.Length; p++)
             {
-                if (!MatchesCategory(words[i].category, category))
-                    continue;
-                if (string.IsNullOrWhiteSpace(words[i].label))
-                    continue;
-
+                int i = order[p];
                 int col = placed % KeywordColumns;
                 int row = placed / KeywordColumns;
                 float x = col * (TileWidth + TileGap);
                 float tileY = y + row * (TileHeight + TileGap);
-                byte index = (byte)i;
-                KeywordTile tile = CreateKeywordTile(parent, index, words[i].label, x, tileY);
+                KeywordTile tile = CreateKeywordTile(parent, (byte)i, words[i].label, x, tileY);
                 _tiles.Add(tile);
                 placed++;
             }
@@ -681,7 +2020,14 @@ namespace TitanOrbit.UI
         /// <summary>One clickable keyword chip with an optional 1/2/3 order badge.</summary>
         KeywordTile CreateKeywordTile(Transform parent, byte index, string label, float x, float y)
         {
-            Image fill = CreateTile(parent, "Kw" + index, x, y, TileWidth, TileHeight, TileIdle);
+            // --- Faction tint ---
+            // [TITAN-ORBIT] Red / Blue / Green / Orange / Purple use the same RGB as hulls
+            // so "Attack Purple Base" is scannable in the SUBJECT grid.
+            ShipCommsCalloutGraphics.ResolveChipPaint(label, selected: false, out Color idleFill, out Color labelColor, out Color accent);
+            bool isTeamColor = TeamIdExtensions.TryParseColorName(label, out _);
+            bool isLineColor = !isTeamColor && ShipCommsCalloutGraphics.TryGetLineColor(label, out _);
+            bool isCommanderWord = ShipCommsKeywordCatalog.IsCommanderLabel(label);
+            Image fill = CreateTile(parent, "Kw" + index, x, y, TileWidth, TileHeight, idleFill);
 
             var caretGo = new GameObject("Caret", typeof(RectTransform), typeof(Image));
             caretGo.transform.SetParent(fill.transform, false);
@@ -692,16 +2038,16 @@ namespace TitanOrbit.UI
             caretRt.sizeDelta = new Vector2(2f, 0f);
             caretRt.anchoredPosition = Vector2.zero;
             var caret = caretGo.GetComponent<Image>();
-            caret.color = AccentColor;
+            caret.color = accent;
             caret.raycastTarget = false;
             caret.enabled = false;
 
-            var text = CreateLabel(fill.transform, "Label", label.ToUpperInvariant(), 10f, BodyTextColor, TextAlignmentOptions.Center);
+            var text = CreateLabel(fill.transform, "Label", label.ToUpperInvariant(), 10f, labelColor, TextAlignmentOptions.Center);
             Stretch(text.rectTransform, 4f);
             text.enableWordWrapping = false;
             text.overflowMode = TextOverflowModes.Ellipsis;
 
-            var badge = CreateLabel(fill.transform, "Order", string.Empty, 8f, AccentColor, TextAlignmentOptions.TopRight);
+            var badge = CreateLabel(fill.transform, "Order", string.Empty, 8f, accent, TextAlignmentOptions.TopRight);
             var badgeRt = badge.rectTransform;
             badgeRt.anchorMin = new Vector2(1f, 1f);
             badgeRt.anchorMax = new Vector2(1f, 1f);
@@ -710,13 +2056,22 @@ namespace TitanOrbit.UI
             badgeRt.anchoredPosition = new Vector2(-1f, -1f);
             badge.enabled = false;
 
+            // Hidden until the command deck is locked so a live commander tile does not look gated.
+            var lockLabel = CreateLabel(
+                fill.transform, "Lock", "LOCK", 10f, CommanderLockedStamp, TextAlignmentOptions.Center);
+            Stretch(lockLabel.rectTransform, 2f);
+            lockLabel.characterSpacing = 1.2f;
+            lockLabel.fontStyle = FontStyles.Bold;
+            lockLabel.enabled = false;
+
             var outline = fill.gameObject.AddComponent<Outline>();
-            outline.effectColor = AccentColor;
+            outline.effectColor = accent;
             outline.effectDistance = new Vector2(1.1f, -1.1f);
             outline.useGraphicAlpha = false;
             outline.enabled = false;
 
-            fill.gameObject.GetComponent<Button>().onClick.AddListener(() => OnKeywordClicked(index));
+            var btn = fill.gameObject.GetComponent<Button>();
+            btn.onClick.AddListener(() => OnKeywordClicked(index));
 
             return new KeywordTile
             {
@@ -725,40 +2080,243 @@ namespace TitanOrbit.UI
                 Outline = outline,
                 Label = text,
                 OrderBadge = badge,
+                LockLabel = lockLabel,
+                Button = btn,
                 Caret = caret,
+                Accent = accent,
+                IsTeamColor = isTeamColor,
+                IsLineColor = isLineColor,
+                IsCommanderWord = isCommanderWord,
             };
         }
 
-        /// <summary>SUBJECT also shows leftover Object-category rows from older assets.</summary>
-        static bool MatchesCategory(ShipCommsKeywordCategory word, ShipCommsKeywordCategory section)
+        /// <summary>
+        /// Card height of every section rail, slim theme caption, and tile row.
+        /// Used once in <see cref="BuildUi"/> so the RECENT rail can fill the same height.
+        /// </summary>
+        static float MeasureClusterStack(IReadOnlyList<ShipCommsKeyword> words)
         {
-            if (word == section)
-                return true;
-            return section == ShipCommsKeywordCategory.Subject
-                && word == ShipCommsKeywordCategory.Objects;
+            float height = 0f;
+            MatrixFamily shown = (MatrixFamily)255;
+            for (int i = 0; i < ClusterLayout.Length; i++)
+            {
+                ClusterSpec spec = ClusterLayout[i];
+                if (spec.Family != shown)
+                {
+                    height += SectionBannerHeight;
+                    shown = spec.Family;
+                }
+
+                if (FamilyHasMultipleClusters(spec.Family))
+                    height += ThemeCaptionHeight;
+                height += TileBlockHeight(CountCluster(words, spec.Id));
+                if (i >= ClusterLayout.Length - 1)
+                    continue;
+                height += spec.FamilyBreakAfter ? FamilyGap : ThemeRowGap;
+            }
+
+            return height;
         }
 
-        /// <summary>How many labeled rows belong under this banner (Objects fold into Subject).</summary>
-        static int CountCategory(IReadOnlyList<ShipCommsKeyword> words, ShipCommsKeywordCategory category)
+        /// <summary>Player-facing rail for a top-level compose family.</summary>
+        static string FamilyTitle(MatrixFamily family)
+        {
+            switch (family)
+            {
+                case MatrixFamily.Team: return "TEAM";
+                case MatrixFamily.Tactical: return "TACTICAL";
+                case MatrixFamily.Subject: return "SUBJECT";
+                case MatrixFamily.Social: return "SOCIAL";
+                case MatrixFamily.Commander: return "COMMANDER";
+                default: return "COMMS";
+            }
+        }
+
+        /// <summary>
+        /// True when this family has more than one themed row, so STRIKE / WHO
+        /// captions are worth the extra line. TEAM is a single row and skips them.
+        /// </summary>
+        static bool FamilyHasMultipleClusters(MatrixFamily family)
+        {
+            int n = 0;
+            for (int i = 0; i < ClusterLayout.Length; i++)
+            {
+                if (ClusterLayout[i].Family != family)
+                    continue;
+                n++;
+                if (n > 1)
+                    return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Picks the themed 5-wide row for this catalog word. Hidden leftovers
+        /// (old "Mine" / Subject "Transport") stay off the card. Color names
+        /// stay on TEAM. Commander words stay on SQUAD / ORDERS — never WHO.
+        /// A brand-new catalog label that is not in <see cref="ClusterThemeLabels"/>
+        /// still shows: it lands on the last row of its family (WORK / GEAR /
+        /// REACT / ORDERS).
+        /// </summary>
+        static bool TryGetCluster(in ShipCommsKeyword word, out MatrixCluster cluster)
+        {
+            cluster = MatrixCluster.Team;
+            if (string.IsNullOrWhiteSpace(word.label))
+                return false;
+            if (ShipCommsKeywordCatalog.IsHiddenFromMatrix(in word))
+                return false;
+
+            if (TeamIdExtensions.TryParseColorName(word.label, out _))
+            {
+                cluster = MatrixCluster.Team;
+                return true;
+            }
+
+            if (TryMatchThemeLabel(word.label, out cluster))
+                return true;
+
+            if (ShipCommsKeywordCatalog.IsCommanderWord(in word))
+            {
+                cluster = MatrixCluster.Orders;
+                return true;
+            }
+
+            if (word.category == ShipCommsKeywordCategory.Tactical)
+            {
+                cluster = MatrixCluster.Work;
+                return true;
+            }
+
+            if (word.category == ShipCommsKeywordCategory.Social)
+            {
+                cluster = MatrixCluster.React;
+                return true;
+            }
+
+            if (word.category == ShipCommsKeywordCategory.Subject
+                || word.category == ShipCommsKeywordCategory.Objects)
+            {
+                cluster = MatrixCluster.Gear;
+                return true;
+            }
+
+            if (word.category == ShipCommsKeywordCategory.Commander)
+            {
+                cluster = MatrixCluster.Orders;
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// True when <paramref name="label"/> is listed on a themed row.
+        /// TEAM is skipped — those five color names use faction order, not this table.
+        /// </summary>
+        static bool TryMatchThemeLabel(string label, out MatrixCluster cluster)
+        {
+            for (int c = 1; c < ClusterThemeLabels.Length; c++)
+            {
+                string[] theme = ClusterThemeLabels[c];
+                for (int i = 0; i < theme.Length; i++)
+                {
+                    if (!string.Equals(theme[i], label, StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    cluster = (MatrixCluster)c;
+                    return true;
+                }
+            }
+
+            cluster = MatrixCluster.Team;
+            return false;
+        }
+
+        /// <summary>
+        /// Wire indices for one themed row. TEAM keeps catalog order (Red…Purple).
+        /// Other clusters follow <see cref="ClusterThemeLabels"/>, then leftover
+        /// unlisted words in catalog order. Indices themselves never move.
+        /// </summary>
+        static int[] CollectClusterOrder(IReadOnlyList<ShipCommsKeyword> words, MatrixCluster cluster)
+        {
+            int n = 0;
+            for (int i = 0; i < words.Count; i++)
+            {
+                if (TryGetCluster(words[i], out MatrixCluster found) && found == cluster)
+                    n++;
+            }
+
+            var order = new int[n];
+            int w = 0;
+            for (int i = 0; i < words.Count; i++)
+            {
+                if (!TryGetCluster(words[i], out MatrixCluster found) || found != cluster)
+                    continue;
+                order[w++] = i;
+            }
+
+            if (cluster == MatrixCluster.Team)
+                return order;
+
+            for (int a = 1; a < order.Length; a++)
+            {
+                int key = order[a];
+                int keyRank = ThemeRank(cluster, words[key].label);
+                int b = a - 1;
+                while (b >= 0)
+                {
+                    int other = order[b];
+                    int otherRank = ThemeRank(cluster, words[other].label);
+                    if (otherRank < keyRank || (otherRank == keyRank && other < key))
+                        break;
+                    order[b + 1] = other;
+                    b--;
+                }
+
+                order[b + 1] = key;
+            }
+
+            return order;
+        }
+
+        /// <summary>
+        /// Left-to-right slot on this themed row. Unlisted leftovers sort after
+        /// the designed five so a newly appended catalog word still appears.
+        /// </summary>
+        static int ThemeRank(MatrixCluster cluster, string label)
+        {
+            int index = (int)cluster;
+            if (index < 0 || index >= ClusterThemeLabels.Length)
+                return int.MaxValue;
+
+            string[] theme = ClusterThemeLabels[index];
+            for (int i = 0; i < theme.Length; i++)
+            {
+                if (string.Equals(theme[i], label, StringComparison.OrdinalIgnoreCase))
+                    return i;
+            }
+
+            return theme.Length;
+        }
+
+        /// <summary>How many tiles belong under this themed row.</summary>
+        static int CountCluster(IReadOnlyList<ShipCommsKeyword> words, MatrixCluster cluster)
         {
             int count = 0;
             for (int i = 0; i < words.Count; i++)
             {
-                if (!MatchesCategory(words[i].category, category))
-                    continue;
-                if (string.IsNullOrWhiteSpace(words[i].label))
-                    continue;
-                count++;
+                if (TryGetCluster(words[i], out MatrixCluster found) && found == cluster)
+                    count++;
             }
 
             return count;
         }
 
-        /// <summary>Banner plus wrapping tile rows for one category.</summary>
-        static float CategoryBlockHeight(int count)
+        /// <summary>Wrapping tile rows for one themed cluster (no section or caption).</summary>
+        static float TileBlockHeight(int count)
         {
             int rows = Mathf.Max(1, Mathf.CeilToInt(count / (float)KeywordColumns));
-            return BannerHeight + rows * TileHeight + Mathf.Max(0, rows - 1) * TileGap;
+            return rows * TileHeight + Mathf.Max(0, rows - 1) * TileGap;
         }
 
         /// <summary>Child rect pinned to the parent's top-left, sized in canvas units.</summary>
@@ -861,6 +2419,423 @@ namespace TitanOrbit.UI
             if (font != null)
                 tmp.font = font;
             return tmp;
+        }
+
+        /// <summary>
+        /// Orbit Unlocked / remove-ads skips both comms videos for this match:
+        /// 4th + 5th keyword chips and every RECENT row past the free first three.
+        /// </summary>
+        void GrantOwnedAdUnlocks()
+        {
+            if (!TitanOrbitEntitlements.IsRemoveAdsOwned)
+                return;
+
+            ShipCommsClientState.SetExtraKeywordSlots(2);
+            ShipCommsClientState.SetRecentRowsUnlocked(true);
+        }
+
+        /// <summary>
+        /// One rewarded ad unlocks both extra compose slots (4th and 5th) for this match.
+        /// Orbit Unlocked / remove-ads grants both immediately.
+        /// </summary>
+        void TryUnlockNextSlot()
+        {
+            if (ShipCommsClientState.ExtraKeywordSlots >= 2)
+                return;
+
+            if (TitanOrbitEntitlements.IsRemoveAdsOwned)
+            {
+                ShipCommsClientState.SetExtraKeywordSlots(2);
+                PaintSequence();
+                PaintAudience();
+                return;
+            }
+
+            if (!TitanOrbitRewardedAds.CanOfferRewarded || TitanOrbitRewardedAds.IsShowing)
+                return;
+
+            TitanOrbitRewardedAds.Show(TitanOrbitRewardedAds.PlacementCommsSlot, result =>
+            {
+                if (result != TitanOrbitRewardedAdResult.Completed)
+                    return;
+
+                ShipCommsClientState.SetExtraKeywordSlots(2);
+                PaintSequence();
+                PaintAudience();
+            });
+        }
+
+        /// <summary>
+        /// One rewarded ad unlocks every RECENT row past the free first three.
+        /// After the video, a filled row that started the click is loaded onto the rail.
+        /// </summary>
+        /// <param name="pendingIndex">Row the player tapped, or -1 if none should auto-load.</param>
+        void TryUnlockRecentRows(int pendingIndex)
+        {
+            if (ShipCommsClientState.RecentRowsUnlocked)
+            {
+                if (pendingIndex >= 0)
+                    ApplyRecentSentence(pendingIndex);
+                return;
+            }
+
+            if (TitanOrbitEntitlements.IsRemoveAdsOwned)
+            {
+                ShipCommsClientState.SetRecentRowsUnlocked(true);
+                PaintRecent();
+                if (pendingIndex >= 0)
+                    ApplyRecentSentence(pendingIndex);
+                return;
+            }
+
+            if (!TitanOrbitRewardedAds.CanOfferRewarded || TitanOrbitRewardedAds.IsShowing)
+                return;
+
+            TitanOrbitRewardedAds.Show(TitanOrbitRewardedAds.PlacementCommsRecent, result =>
+            {
+                if (result != TitanOrbitRewardedAdResult.Completed)
+                    return;
+
+                ShipCommsClientState.SetRecentRowsUnlocked(true);
+                PaintRecent();
+                if (pendingIndex >= 0)
+                    ApplyRecentSentence(pendingIndex);
+            });
+        }
+
+        /// <summary>
+        /// Space-glass card to the left of the compose panel, same height, same chrome.
+        /// The live minimap reparents into the inner host while S is held so the player
+        /// can ping a world point.
+        /// </summary>
+        void BuildMinimapDock()
+        {
+            var go = new GameObject("CommsMinimapDock", typeof(RectTransform), typeof(Image));
+            go.transform.SetParent(transform, false);
+            _minimapDock = go.GetComponent<RectTransform>();
+            _minimapDock.anchorMin = new Vector2(0.5f, 0.5f);
+            _minimapDock.anchorMax = new Vector2(0.5f, 0.5f);
+            _minimapDock.pivot = new Vector2(0.5f, 0.5f);
+            LayoutMinimapDock(_dockSize);
+            var bg = go.GetComponent<Image>();
+            bg.color = FillColor;
+            bg.raycastTarget = false;
+            BuildSciFiChrome(_minimapDock);
+
+            var hostGo = new GameObject("MapHost", typeof(RectTransform));
+            hostGo.transform.SetParent(_minimapDock, false);
+            _minimapHost = hostGo.GetComponent<RectTransform>();
+            _minimapHost.anchorMin = new Vector2(0.5f, 0.5f);
+            _minimapHost.anchorMax = new Vector2(0.5f, 0.5f);
+            _minimapHost.pivot = new Vector2(0.5f, 0.5f);
+            _minimapHost.anchoredPosition = Vector2.zero;
+            LayoutMinimapDock(_dockSize);
+
+            // Stay active until BuildJamOverlay parents the lock veil. Building TMP /
+            // UGUI on an inactive dock threw in Awake and disabled this behaviour,
+            // so hold-S never opened the matrix.
+        }
+
+        /// <summary>Square card whose side matches the compose panel height.</summary>
+        void LayoutMinimapDock(float panelHeight)
+        {
+            float side = Mathf.Max(80f, panelHeight);
+            _dockSize = side;
+            // Shift the pair so minimap + matrix sit as one centered group.
+            float groupShift = (side + RootGap) * 0.5f;
+            if (_panel != null)
+                _panel.anchoredPosition = new Vector2(groupShift, 0f);
+
+            if (_minimapDock != null)
+            {
+                _minimapDock.sizeDelta = new Vector2(side, side);
+                _minimapDock.anchoredPosition = new Vector2(
+                    groupShift - _overlayW * 0.5f - RootGap - side * 0.5f,
+                    0f);
+            }
+
+            if (_minimapHost != null)
+            {
+                float mapSide = Mathf.Max(72f, side - MinimapCircleInset * 2f);
+                _minimapHost.sizeDelta = new Vector2(mapSide, mapSide);
+            }
+        }
+
+        /// <summary>Reparents the HUD minimap into the dock as a full-height map view.</summary>
+        void DockMinimap()
+        {
+            if (_minimapDocked || _minimapHost == null)
+                return;
+
+            var minimap = FindMinimapController();
+            if (minimap == null)
+                return;
+
+            float panelH = _panel != null ? _panel.sizeDelta.y : _dockSize;
+            LayoutMinimapDock(panelH);
+            _minimapDock.gameObject.SetActive(true);
+            float mapSide = _minimapHost.sizeDelta.x;
+            minimap.AttachToCommsDock(_minimapHost, mapSide);
+            _minimapDocked = true;
+        }
+
+        /// <summary>Returns the HUD minimap to its corner circle.</summary>
+        void UndockMinimap()
+        {
+            var minimap = FindMinimapController();
+            if (minimap != null && minimap.IsCommsDocked)
+                minimap.DetachFromCommsDock();
+
+            _minimapDocked = false;
+            if (_minimapDock != null)
+                _minimapDock.gameObject.SetActive(false);
+        }
+
+        /// <summary>
+        /// Live HUD map, including when it is still a child of a disabled comms dock
+        /// (that path clears <see cref="MinimapController.Instance"/> in OnDisable).
+        /// </summary>
+        static MinimapController FindMinimapController()
+        {
+            if (MinimapController.Instance != null)
+                return MinimapController.Instance;
+
+            return FindFirstObjectByType<MinimapController>(FindObjectsInactive.Include);
+        }
+
+        /// <summary>
+        /// Builds one clickable plate over a locked group. Compact mode is a single
+        /// chip (compose slots 4+5). Tall mode veils the paid RECENT block and
+        /// centers a CTA so the extra rows stay visible underneath.
+        /// </summary>
+        UnlockGate CreateUnlockGate(
+            Transform parent,
+            string name,
+            float x,
+            float yFromTop,
+            float width,
+            float height,
+            bool compact,
+            string title,
+            string sub,
+            UnityEngine.Events.UnityAction onClick)
+        {
+            var go = new GameObject(name, typeof(RectTransform), typeof(Image), typeof(Button));
+            go.transform.SetParent(parent, false);
+            var rt = go.GetComponent<RectTransform>();
+            rt.anchorMin = new Vector2(0f, 1f);
+            rt.anchorMax = new Vector2(0f, 1f);
+            rt.pivot = new Vector2(0f, 1f);
+            rt.anchoredPosition = new Vector2(x, -yFromTop);
+            rt.sizeDelta = new Vector2(width, height);
+            var fill = go.GetComponent<Image>();
+            fill.color = compact ? AdGatePlate : AdGateVeil;
+            fill.raycastTarget = true;
+            var btn = go.GetComponent<Button>();
+            btn.transition = Selectable.Transition.None;
+            btn.onClick.AddListener(onClick);
+
+            var accent = CreateIgnoredImage(go.transform, "Accent", TeamChannelColor);
+            var accentRt = accent.rectTransform;
+            accentRt.anchorMin = new Vector2(0f, 1f);
+            accentRt.anchorMax = new Vector2(1f, 1f);
+            accentRt.pivot = new Vector2(0.5f, 1f);
+            accentRt.sizeDelta = new Vector2(-8f, 2f);
+            accentRt.anchoredPosition = Vector2.zero;
+
+            Transform labelParent = go.transform;
+            if (!compact)
+            {
+                float plateW = Mathf.Min(width - 12f, 220f);
+                float plateH = Mathf.Min(40f, height - 8f);
+                var plate = CreateIgnoredImage(go.transform, "Cta", AdGatePlate);
+                var plateRt = plate.rectTransform;
+                plateRt.anchorMin = new Vector2(0.5f, 0.5f);
+                plateRt.anchorMax = new Vector2(0.5f, 0.5f);
+                plateRt.pivot = new Vector2(0.5f, 0.5f);
+                plateRt.anchoredPosition = Vector2.zero;
+                plateRt.sizeDelta = new Vector2(plateW, plateH);
+                var plateOutline = plate.gameObject.AddComponent<Outline>();
+                plateOutline.effectColor = TeamChannelColor;
+                plateOutline.effectDistance = new Vector2(1.1f, -1.1f);
+                plateOutline.useGraphicAlpha = false;
+                labelParent = plate.transform;
+            }
+
+            bool twoLine = !compact && !string.IsNullOrEmpty(sub) && height >= 48f;
+            var titleLabel = CreateLabel(
+                labelParent,
+                "Title",
+                title,
+                compact ? 8f : 10f,
+                TeamChannelColor,
+                TextAlignmentOptions.Center);
+            titleLabel.fontStyle = FontStyles.Bold;
+            titleLabel.characterSpacing = 1.1f;
+            if (twoLine)
+            {
+                var titleRt = titleLabel.rectTransform;
+                titleRt.anchorMin = new Vector2(0f, 0.42f);
+                titleRt.anchorMax = new Vector2(1f, 1f);
+                titleRt.offsetMin = new Vector2(6f, 0f);
+                titleRt.offsetMax = new Vector2(-6f, -2f);
+                var subLabel = CreateLabel(
+                    labelParent, "Sub", sub, 8f, CaptionTextColor, TextAlignmentOptions.Center);
+                subLabel.characterSpacing = 0.8f;
+                var subRt = subLabel.rectTransform;
+                subRt.anchorMin = new Vector2(0f, 0f);
+                subRt.anchorMax = new Vector2(1f, 0.48f);
+                subRt.offsetMin = new Vector2(6f, 2f);
+                subRt.offsetMax = new Vector2(-6f, 0f);
+            }
+            else
+            {
+                Stretch(titleLabel.rectTransform, 4f);
+            }
+
+            go.transform.SetAsLastSibling();
+            return new UnlockGate
+            {
+                Root = go,
+                Button = btn,
+            };
+        }
+
+        /// <summary>
+        /// Builds the enemy-territory lock on the keyword card and the docked minimap.
+        /// The map uses its own mouse hit-test (not UGUI), so the veil is the visual
+        /// lock; <see cref="MinimapController"/> also refuses Here pings while jammed.
+        /// </summary>
+        void BuildJamOverlay()
+        {
+            _jamOverlay = CreateJamOverlay(_panel, "JamLock");
+            _jamMinimapOverlay = CreateJamOverlay(_minimapDock, "JamLock");
+            _jamOverlayVisible = false;
+        }
+
+        /// <summary>
+        /// One raycast-blocking veil plus the LOCK / COMMS JAMMED plate. Last sibling
+        /// so it sits above keywords or the reparented HUD map.
+        /// </summary>
+        /// <param name="parent">Compose card or minimap dock.</param>
+        /// <param name="name">GameObject name in the hierarchy.</param>
+        /// <returns>Hidden overlay root, or null when <paramref name="parent"/> is missing.</returns>
+        GameObject CreateJamOverlay(Transform parent, string name)
+        {
+            if (parent == null)
+                return null;
+
+            var go = new GameObject(name, typeof(RectTransform), typeof(Image));
+            go.transform.SetParent(parent, false);
+            var rt = go.GetComponent<RectTransform>();
+            Stretch(rt, 0f);
+            var veil = go.GetComponent<Image>();
+            veil.color = JamVeil;
+            veil.raycastTarget = true;
+
+            // --- Center lock plate ---
+            // Same CTA language as the ad-gate plate: dark glass, thin rail, two-line
+            // caption. Hostile red instead of amber so it cannot be mistaken for WATCH AD.
+            var plate = CreateIgnoredImage(go.transform, "Plate", JamPlate);
+            var plateRt = plate.rectTransform;
+            plateRt.anchorMin = new Vector2(0.5f, 0.5f);
+            plateRt.anchorMax = new Vector2(0.5f, 0.5f);
+            plateRt.pivot = new Vector2(0.5f, 0.5f);
+            plateRt.anchoredPosition = Vector2.zero;
+            plateRt.sizeDelta = new Vector2(260f, 72f);
+            var plateOutline = plate.gameObject.AddComponent<Outline>();
+            plateOutline.effectColor = JamStamp;
+            plateOutline.effectDistance = new Vector2(1.1f, -1.1f);
+            plateOutline.useGraphicAlpha = false;
+
+            var accent = CreateIgnoredImage(plate.transform, "Accent", JamStamp);
+            var accentRt = accent.rectTransform;
+            accentRt.anchorMin = new Vector2(0f, 1f);
+            accentRt.anchorMax = new Vector2(1f, 1f);
+            accentRt.pivot = new Vector2(0.5f, 1f);
+            accentRt.sizeDelta = new Vector2(-10f, 2f);
+            accentRt.anchoredPosition = Vector2.zero;
+
+            var lockLabel = CreateLabel(
+                plate.transform, "Lock", "LOCK", 9f, JamStamp, TextAlignmentOptions.Center);
+            lockLabel.fontStyle = FontStyles.Bold;
+            lockLabel.characterSpacing = 2.2f;
+            var lockRt = lockLabel.rectTransform;
+            lockRt.anchorMin = new Vector2(0f, 0.68f);
+            lockRt.anchorMax = new Vector2(1f, 1f);
+            lockRt.offsetMin = new Vector2(8f, 0f);
+            lockRt.offsetMax = new Vector2(-8f, -6f);
+
+            var title = CreateLabel(
+                plate.transform,
+                "Title",
+                "COMMS JAMMED",
+                13f,
+                JamStamp,
+                TextAlignmentOptions.Center);
+            title.fontStyle = FontStyles.Bold;
+            title.characterSpacing = 1.2f;
+            var titleRt = title.rectTransform;
+            titleRt.anchorMin = new Vector2(0f, 0.32f);
+            titleRt.anchorMax = new Vector2(1f, 0.72f);
+            titleRt.offsetMin = new Vector2(8f, 0f);
+            titleRt.offsetMax = new Vector2(-8f, 0f);
+
+            var sub = CreateLabel(
+                plate.transform,
+                "Sub",
+                "FROM ENEMY TERRITORY",
+                8f,
+                CaptionTextColor,
+                TextAlignmentOptions.Center);
+            sub.characterSpacing = 0.8f;
+            var subRt = sub.rectTransform;
+            subRt.anchorMin = new Vector2(0f, 0f);
+            subRt.anchorMax = new Vector2(1f, 0.36f);
+            subRt.offsetMin = new Vector2(8f, 6f);
+            subRt.offsetMax = new Vector2(-8f, 0f);
+
+            go.transform.SetAsLastSibling();
+            go.SetActive(false);
+            return go;
+        }
+
+        /// <summary>
+        /// Shows or hides the enemy-territory lock on both the keyword card and the
+        /// docked minimap. Called while S is held so crossing a triangle edge
+        /// mid-compose updates the veil without reopening the card.
+        /// </summary>
+        /// <param name="jammed">True when the local hull is in a non-friendly triangle.</param>
+        void PaintJamLock(bool jammed)
+        {
+            if (jammed == _jamOverlayVisible)
+                return;
+
+            _jamOverlayVisible = jammed;
+            SetJamOverlayActive(_jamOverlay, jammed);
+            SetJamOverlayActive(_jamMinimapOverlay, jammed);
+        }
+
+        /// <summary>Toggles one jam veil and keeps it above later-reparented children.</summary>
+        static void SetJamOverlayActive(GameObject overlay, bool jammed)
+        {
+            if (overlay == null)
+                return;
+
+            overlay.SetActive(jammed);
+            if (jammed)
+                overlay.transform.SetAsLastSibling();
+        }
+
+        /// <summary>Shows or hides a group unlock plate and blocks clicks while a video is up.</summary>
+        static void PaintUnlockGate(UnlockGate gate, bool visible)
+        {
+            if (gate?.Root == null)
+                return;
+
+            gate.Root.SetActive(visible);
+            if (gate.Button != null)
+                gate.Button.interactable = visible && !TitanOrbitRewardedAds.IsShowing;
         }
 
         /// <summary>Stretches a rect to its parent with a uniform inset.</summary>

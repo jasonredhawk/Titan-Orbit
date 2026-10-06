@@ -30,6 +30,15 @@ namespace TitanOrbit.ECS
             public float Lifetime;
             public float MaxDistance;
             public float Damage;
+            /// <summary>
+            /// Extra Level fire power (pre-bank) for the weapon-type pitch piano.
+            /// 0 = unknown (PD / drones) — pitch uses <see cref="Damage"/> as the top C.
+            /// </summary>
+            public float FirePowerLive;
+            /// <summary>Catalog / unique-component base fire power (top C on that type's piano).</summary>
+            public float FirePowerBase;
+            /// <summary>Catalog Per Extra Level. MEGA unique weapons are 0.</summary>
+            public float FirePowerPerExtra;
             public byte OwnerTeam;
             public int OwnerNetworkId;
             public int BankIndex;

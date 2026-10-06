@@ -15,6 +15,7 @@ namespace TitanOrbit.ECS
     /// 1. <see cref="MapGenerationLogic.RollParameters"/> from seed (separate Random).
     /// 2. Fresh <c>Random.CreateFromIndex(seed)</c> for placement.
     /// 3. Homes → neutrals → starting-claim order → per-neutral ship-family rolls → asteroids.
+    /// 4. Neutral-planet bullet banks hash <c>matchSeed + planetId</c> (homes stay Laserbolt).
     /// </para>
     /// </summary>
     public static class MapLayoutBlueprint
@@ -45,6 +46,12 @@ namespace TitanOrbit.ECS
 
             /// <summary>Ship family slot for neutrals (0 for homes/asteroids).</summary>
             public byte ShipFamilyConfigIndex;
+
+            /// <summary>
+            /// Rolled <c>BulletVfxBank</c> category for this planet (0 = Laserbolt).
+            /// Unused on asteroids. Derived from match seed + PlanetId.
+            /// </summary>
+            public byte BulletBankIndex;
 
             /// <summary>Asteroid designer Size.</summary>
             public float Size;
@@ -115,6 +122,7 @@ namespace TitanOrbit.ECS
                     PlanetId = (int)team,
                     Level = home.Level,
                     ShipFamilyConfigIndex = 0,
+                    BulletBankIndex = PlanetShipFamilyAssignment.DefaultBulletBankIndex,
                 });
             }
 
@@ -125,20 +133,14 @@ namespace TitanOrbit.ECS
             var claimWork = new NativeList<MapGenerationLogic.StartingNeutralClaim>(
                 math.max(8, config.StartingOwnedNeutralPlanetsPerTeam * rolled.TeamCount),
                 Allocator.Temp);
-            var homePositions = new NativeArray<float3>(rolled.TeamCount, Allocator.Temp);
-            for (int i = 0; i < homeLayouts.Length && i < homePositions.Length; i++)
-                homePositions[i] = homeLayouts[i].Position;
 
             MapGenerationLogic.BuildStartingNeutralClaimOrder(
                 config.StartingOwnedNeutralPlanetsPerTeam,
                 rolled.TeamCount,
-                homePositions,
+                config.HomePlanetLevel,
                 neutralLayouts,
-                rolled.MapWidth,
-                rolled.MapHeight,
                 ref rng,
                 ref claimWork);
-            homePositions.Dispose();
 
             for (int i = 0; i < claimWork.Length; i++)
             {
@@ -157,6 +159,7 @@ namespace TitanOrbit.ECS
             {
                 var neutral = neutralLayouts[i];
                 byte family = (byte)(1 + rng.NextInt(0, PlanetShipFamilyAssignment.NonHomeFamilySlotCount));
+                int planetId = nextNeutralPlanetId++;
                 bodies.Add(new Body
                 {
                     EntityKind = 2,
@@ -164,9 +167,11 @@ namespace TitanOrbit.ECS
                     Scale = neutral.Scale,
                     AsteroidScale = new float3(neutral.Scale),
                     Team = TeamId.None,
-                    PlanetId = nextNeutralPlanetId++,
+                    PlanetId = planetId,
                     Level = neutral.Level,
                     ShipFamilyConfigIndex = family,
+                    BulletBankIndex = PlanetShipFamilyAssignment.RollPlanetBulletBankIndex(
+                        matchSeed, planetId),
                 });
             }
 

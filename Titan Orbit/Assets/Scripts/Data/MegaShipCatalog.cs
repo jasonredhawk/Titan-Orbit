@@ -89,8 +89,10 @@ namespace TitanOrbit.Data
     /// Regular families (AstroEagle, …) do not own these numbers — MEGAs are static
     /// (<see cref="MegaShipPartStats"/> has no Extra Level fields) and are not bottom-bar upgradable.
     /// <para>
-    /// [UNITY] Loaded from <c>Resources/MegaShipCatalog</c>. Editor menu
-    /// <c>Titan Orbit / Titan Ships / Rebuild Catalog From Folders</c> fills the hull list.
+    /// [UNITY] Loaded from <c>Resources/MegaShipCatalog</c>. Inspector
+    /// <c>Refresh Hull Pool From Folders</c> (or menu
+    /// <c>Titan Orbit / Titan Ships / Refresh Hull Pool From Folders</c>) appends new
+    /// prefabs. <c>Rebuild Catalog From Folders</c> recreates the sorted, re-indexed list.
     /// </para>
     /// </summary>
     [CreateAssetMenu(fileName = "MegaShipCatalog", menuName = "Titan Orbit/Titan Ship Catalog")]
@@ -105,8 +107,8 @@ namespace TitanOrbit.Data
         /// <summary>Player-facing class name (HUD, store cards, toasts). Internal ids stay <c>MEGA_###</c>.</summary>
         public const string DisplayClassName = "Titan";
 
-        /// <summary>Uppercase HUD / tree caption for a Titan hull slot.</summary>
-        public const string DisplayClassCaption = "TITAN SHIP";
+        /// <summary>Uppercase Orbit Menu tree caption for a Titan hull slot.</summary>
+        public const string DisplayClassCaption = "TITAN";
 
         /// <summary>Short pool tag when a visual family is missing (RANK 1 fallback).</summary>
         public const string DisplayClassShort = "TITAN";
@@ -115,10 +117,24 @@ namespace TitanOrbit.Data
         public const float DefaultPurchaseGemCost = 1200f;
 
         /// <summary>
-        /// Hard cap on MEGA bullet travel (and intercept-lead extension).
-        /// Shorter live rounds cut BulletSimulationSystem + tracer cost on volleys.
+        /// Ceiling for extra intercept-lead on short MEGA guns (volley cost).
+        /// Must not cut a longer barrel's authored <c>bulletRange</c> — snipers
+        /// are catalogued at 40 and must fly that far. Use
+        /// <see cref="ClampInterceptTravel"/> when spawning a led shot.
         /// </summary>
         public const float MaxBulletTravelDistance = 28f;
+
+        /// <summary>
+        /// Flight budget for a MEGA intercept shot. Honors the barrel's own
+        /// range; <see cref="MaxBulletTravelDistance"/> only caps extra lead
+        /// on shorter guns so volleys cannot fly across the map.
+        /// </summary>
+        public static float ClampInterceptTravel(float engageRange, float leadDistance)
+        {
+            float engage = Mathf.Max(0.5f, engageRange);
+            float travelCap = Mathf.Max(engage, MaxBulletTravelDistance);
+            return Mathf.Min(leadDistance, travelCap);
+        }
 
         /// <summary>Default acquire + travel range for rapid MEGA guns (world units). Written by Apply Default Type-Table Stats.</summary>
         public const float DefaultBulletAcquireRange = 20f;
@@ -134,15 +150,19 @@ namespace TitanOrbit.Data
 
         /// <summary>
         /// Unique-component / type-table bank field meaning "use the named default for this
-        /// weapon type" (Bullets / Plasma / Rockets / Laser).
+        /// weapon type" (Bullets / FireballsV2 / Rockets / Laser).
         /// </summary>
         public const int InheritTypeTableBankIndex = -1;
 
         /// <summary>Named <see cref="BulletVfxBank"/> default for rapid MEGA guns.</summary>
         public const string DefaultWeaponBulletBankName = "Bullets";
 
-        /// <summary>Named <see cref="BulletVfxBank"/> default for MEGA cannons.</summary>
-        public const string DefaultWeaponCannonBankName = "Plasma";
+        /// <summary>
+        /// Named <see cref="BulletVfxBank"/> default for MEGA cannons.
+        /// Cannons are hitscan lasers now — this bank is unused for projectiles.
+        /// The live beam is <c>CannonLaserVfx</c> (Archanor LaserStatic).
+        /// </summary>
+        public const string DefaultWeaponCannonBankName = "FireballsV2";
 
         /// <summary>
         /// Named <see cref="BulletVfxBank"/> default for MEGA missiles.
@@ -152,6 +172,9 @@ namespace TitanOrbit.Data
 
         /// <summary>Named <see cref="BulletVfxBank"/> default for MEGA snipers.</summary>
         public const string DefaultWeaponSniperBankName = "Laser";
+
+        /// <summary>Default tracer / VFX scale when a type-table bank scale is unset (0).</summary>
+        public const float DefaultWeaponBankScale = 1f;
 
         /// <summary>Minimum cruise speed after summing a hull (thruster-only prefabs).</summary>
         public const float MinHullMoveSpeed = 12f;
@@ -171,13 +194,19 @@ namespace TitanOrbit.Data
         /// <summary>Hard cap so stale catalog sums cannot return to ~3000 energy.</summary>
         public const float MaxHullEnergy = 2200f;
 
-        /// <summary>Minimum energy regen after resolve.</summary>
-        public const float MinHullEnergyRegen = 22f;
+        /// <summary>
+        /// Last-resort energy regen floor when <see cref="runtimeMinimumStats"/> is unset.
+        /// Live hulls use the catalog sum (cockpit + engines + armor), not this constant.
+        /// </summary>
+        public const float MinHullEnergyRegen = 1f;
 
-        /// <summary>Default energy regen when the catalog sum is still 0.</summary>
-        public const float DefaultHullEnergyRegen = 36f;
+        /// <summary>
+        /// Last-resort energy regen when a hull sum is still 0 and
+        /// <see cref="runtimeDefaultStats"/> is unset. Authored catalog defaults win.
+        /// </summary>
+        public const float DefaultHullEnergyRegen = 25f;
 
-        /// <summary>Hard cap on regen — full volley still drains, but the bar recovers between bursts.</summary>
+        /// <summary>Optional high-end regen hint for tooling. Live hulls are not clamped to this.</summary>
         public const float MaxHullEnergyRegen = 50f;
 
         /// <summary>Floor on MEGA PhysicsMass / ramming mass so rocks cannot shove the hull.</summary>
@@ -216,10 +245,16 @@ namespace TitanOrbit.Data
         /// </summary>
         public const int HullColliderRevision = 5;
 
-        /// <summary>Minimum troop cap after resolve.</summary>
+        /// <summary>
+        /// Last-resort troop cap floor when <see cref="runtimeMinimumStats"/> is unset.
+        /// Live hulls use the catalog sum (cockpit + wings), not this constant.
+        /// </summary>
         public const float MinHullPeople = 400f;
 
-        /// <summary>Default troop cap when the catalog sum is still 0.</summary>
+        /// <summary>
+        /// Last-resort troop cap when a hull sum is still 0 and
+        /// <see cref="runtimeDefaultStats"/> is unset. Authored catalog defaults win.
+        /// </summary>
         public const float DefaultHullPeople = 600f;
 
         /// <summary>Default extra world radius around a MEGA when framing the gameplay camera.</summary>
@@ -228,8 +263,8 @@ namespace TitanOrbit.Data
         /// <summary>Hard cap on MEGA camera height so tracers stay readable.</summary>
         public const float DefaultCameraMaxHeight = 90f;
 
-        /// <summary>Default extra propulsion cruise contribution (2% of every engine past the fastest).</summary>
-        public const float DefaultExtraEngineSpeedPercent = 0.02f;
+        /// <summary>Default extra propulsion cruise contribution (5% of every engine past the fastest).</summary>
+        public const float DefaultExtraEngineSpeedPercent = 0.05f;
 
         /// <summary>Default MEGA turret traverse when a weapon row leaves weaponRotationSpeed at 0.</summary>
         public const float DefaultWeaponRotationSpeed = 90f;
@@ -294,7 +329,7 @@ namespace TitanOrbit.Data
         [HideInInspector]
         public float globalScale = DefaultGlobalScale;
 
-        [Tooltip("Cruise speed = fastest engine + this fraction of every other engine's moveSpeed. Thrusters are ignored unless the hull has no engines. Default 0.02 (2%).")]
+        [Tooltip("Cruise speed = fastest part with moveSpeed + this fraction of every other part's moveSpeed. Any unique component that authored Move counts (wing, hull, cockpit, engine, thruster, …). Default 0.05 (5%).")]
         [Range(0f, 1f)]
         public float extraEngineSpeedPercent = DefaultExtraEngineSpeedPercent;
 
@@ -344,17 +379,33 @@ namespace TitanOrbit.Data
         [BulletVfxBankCategory(true, "Default (Bullets)")]
         public int weaponBulletBankIndex = InheritTypeTableBankIndex;
 
-        [Tooltip("BulletVfxBank category for MEGA cannons. Named default is Plasma.")]
-        [BulletVfxBankCategory(true, "Default (Plasma)")]
+        [Tooltip("Tracer / impact visual scale for rapid MEGA guns. 1 = default bank size. 0 uses 1.")]
+        [Min(0.05f)]
+        public float weaponBulletBankScale = DefaultWeaponBankScale;
+
+        [Tooltip("BulletVfxBank category for MEGA cannons. Named default is FireballsV2.")]
+        [BulletVfxBankCategory(true, "Default (FireballsV2)")]
         public int weaponCannonBankIndex = InheritTypeTableBankIndex;
+
+        [Tooltip("Tracer / impact visual scale for MEGA cannons that still fire projectiles. 1 = default bank size. 0 uses 1.")]
+        [Min(0.05f)]
+        public float weaponCannonBankScale = DefaultWeaponBankScale;
 
         [Tooltip("BulletVfxBank category for MEGA missile launchers. Named default is Rockets (target-seeking, same as store ALT rockets).")]
         [BulletVfxBankCategory(true, "Default (Rockets)")]
         public int weaponMissileBankIndex = InheritTypeTableBankIndex;
 
+        [Tooltip("Tracer / impact visual scale for MEGA missile launchers. 1 = default bank size. 0 uses 1.")]
+        [Min(0.05f)]
+        public float weaponMissileBankScale = DefaultWeaponBankScale;
+
         [Tooltip("BulletVfxBank category for MEGA snipers. Named default is Laser.")]
         [BulletVfxBankCategory(true, "Default (Laser)")]
         public int weaponSniperBankIndex = InheritTypeTableBankIndex;
+
+        [Tooltip("Tracer / impact visual scale for MEGA snipers. 1 = default bank size. 0 uses 1.")]
+        [Min(0.05f)]
+        public float weaponSniperBankScale = DefaultWeaponBankScale;
 
         [Tooltip("Cockpit / bridge — troop cap lives here.")]
         public MegaShipPartStats cockpitStats;
@@ -373,6 +424,9 @@ namespace TitanOrbit.Data
 
         [Tooltip("Armor / body / leftover parts.")]
         public MegaShipPartStats hullStats;
+
+        [Tooltip("Cargo / hold / storage parts on Titan hulls.")]
+        public MegaShipPartStats cargoStats;
 
         [Header("In-game default stats")]
         [Tooltip("Used in-game when a hull's summed stat is 0. Firepower stays 0. Catalog sums keep the raw 0.")]
@@ -597,7 +651,7 @@ namespace TitanOrbit.Data
 
         /// <summary>
         /// BulletVfxBank category for a MEGA weapon type. Authored type-table index wins;
-        /// -1 resolves the named default (Bullets / Plasma / Rockets / Laser).
+        /// -1 resolves the named default (Bullets / FireballsV2 / Rockets / Laser).
         /// </summary>
         public int GetTypeTableBankIndex(string partType)
         {
@@ -605,6 +659,31 @@ namespace TitanOrbit.Data
             if (authored >= 0)
                 return authored;
             return ResolveNamedBankIndex(GetDefaultBankNameForPartType(partType));
+        }
+
+        /// <summary>Authored type-table tracer scale for a weapon part type (0 when unset).</summary>
+        public float GetAuthoredTypeTableBankScale(string partType)
+        {
+            if (string.Equals(partType, ShipFamilyPartTypes.WeaponSniper, StringComparison.OrdinalIgnoreCase))
+                return weaponSniperBankScale;
+            if (string.Equals(partType, ShipFamilyPartTypes.WeaponMissile, StringComparison.OrdinalIgnoreCase))
+                return weaponMissileBankScale;
+            if (string.Equals(partType, ShipFamilyPartTypes.WeaponCannon, StringComparison.OrdinalIgnoreCase))
+                return weaponCannonBankScale;
+            if (string.Equals(partType, ShipFamilyPartTypes.WeaponBullet, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(partType, "Weapon", StringComparison.OrdinalIgnoreCase))
+                return weaponBulletBankScale;
+            return DefaultWeaponBankScale;
+        }
+
+        /// <summary>
+        /// Tracer / impact visual scale for a MEGA weapon type. Unset (0) fields use
+        /// <see cref="DefaultWeaponBankScale"/>.
+        /// </summary>
+        public float GetTypeTableBankScale(string partType)
+        {
+            float authored = GetAuthoredTypeTableBankScale(partType);
+            return authored > 0.001f ? authored : DefaultWeaponBankScale;
         }
 
         /// <summary>
@@ -616,6 +695,15 @@ namespace TitanOrbit.Data
             if (row != null && row.bulletPrefabIndex >= 0)
                 return row.bulletPrefabIndex;
             return GetTypeTableBankIndex(row != null ? row.partType : null);
+        }
+
+        /// <summary>
+        /// Tracer scale this unique weapon fires. Type-table scale for
+        /// <see cref="MegaShipComponentEntry.partType"/> (unset fields use 1).
+        /// </summary>
+        public float ResolveWeaponBankScale(MegaShipComponentEntry row)
+        {
+            return GetTypeTableBankScale(row != null ? row.partType : null);
         }
 
         /// <summary>First armed unique weapon bank on a hull (HUD / ram display), or false.</summary>
@@ -633,6 +721,52 @@ namespace TitanOrbit.Data
                 if (!TryGetUniqueComponent(count.displayName, out MegaShipComponentEntry row) || row == null)
                     continue;
                 if (!row.isWeapon && !ShipFamilyPartTypes.IsWeapon(row.partType))
+                    continue;
+                bankIndex = ResolveWeaponBankIndex(row);
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// True for a rapid Titan Bullet / Gun unique row. Laser, missile, and
+        /// sniper rows keep their catalog banks when the hull cycles fire types.
+        /// </summary>
+        public static bool IsGunClassWeaponRow(MegaShipComponentEntry row)
+        {
+            if (row == null)
+                return false;
+            if (!row.isWeapon && !ShipFamilyPartTypes.IsWeapon(row.partType))
+                return false;
+            if (row.isLaser || ShipFamilyPartTypes.IsWeaponCannonProfile(row.partType))
+                return false;
+            if (string.Equals(row.partType, ShipFamilyPartTypes.WeaponMissile, StringComparison.OrdinalIgnoreCase))
+                return false;
+            if (string.Equals(row.partType, ShipFamilyPartTypes.WeaponSniper, StringComparison.OrdinalIgnoreCase))
+                return false;
+            return true;
+        }
+
+        /// <summary>
+        /// First Titan Bullet bank on this hull. Titans spawn on this original
+        /// catalog type; the ship-family fleet weapon is the next B-key row.
+        /// False when the chassis has no gun-class unique weapon.
+        /// </summary>
+        public bool TryGetFirstGunBankIndex(MegaShipCatalogEntry entry, out int bankIndex)
+        {
+            bankIndex = 0;
+            if (entry?.componentCounts == null)
+                return false;
+
+            for (int i = 0; i < entry.componentCounts.Count; i++)
+            {
+                MegaShipComponentCount count = entry.componentCounts[i];
+                if (count == null || count.count <= 0 || string.IsNullOrEmpty(count.displayName))
+                    continue;
+                if (!TryGetUniqueComponent(count.displayName, out MegaShipComponentEntry row) || row == null)
+                    continue;
+                if (!IsGunClassWeaponRow(row))
                     continue;
                 bankIndex = ResolveWeaponBankIndex(row);
                 return true;
@@ -672,6 +806,8 @@ namespace TitanOrbit.Data
                 return thrusterStats;
             if (string.Equals(partType, ShipFamilyPartTypes.Tail, StringComparison.OrdinalIgnoreCase))
                 return tailStats;
+            if (ShipFamilyPartTypes.IsCargoProfile(partType))
+                return cargoStats;
             return hullStats;
         }
 
@@ -901,7 +1037,7 @@ namespace TitanOrbit.Data
             return entry != null ? GetScaleForFamily(entry.visualFamily) : GetGlobalScale();
         }
 
-        /// <summary>Extra propulsion cruise fraction (0.02 = 2% of every engine past the fastest).</summary>
+        /// <summary>Extra cruise fraction (0.05 = 5% of every Move contributor past the fastest).</summary>
         public float GetExtraEngineSpeedPercent()
         {
             return extraEngineSpeedPercent > 0f ? extraEngineSpeedPercent : DefaultExtraEngineSpeedPercent;
@@ -957,18 +1093,14 @@ namespace TitanOrbit.Data
                 ? CreateBuiltInRuntimeMinimums()
                 : runtimeMinimumStats;
             // Existing catalog assets may have seeded health/move defaults with traverse still 0.
-            if (defaults.maxPeople < DefaultHullPeople)
-                defaults.maxPeople = DefaultHullPeople;
-            if (mins.maxPeople < MinHullPeople)
-                mins.maxPeople = MinHullPeople;
             if (defaults.energyCap < DefaultHullEnergy)
                 defaults.energyCap = DefaultHullEnergy;
-            if (defaults.energyRegen < DefaultHullEnergyRegen)
-                defaults.energyRegen = DefaultHullEnergyRegen;
             if (mins.energyCap < MinHullEnergy)
                 mins.energyCap = MinHullEnergy;
-            if (mins.energyRegen < MinHullEnergyRegen)
-                mins.energyRegen = MinHullEnergyRegen;
+            // Troop cap and energy regen stay on the catalog: runtimeDefaultStats /
+            // runtimeMinimumStats plus the raw hull sum. Do not raise authored people
+            // mins to a hardcoded 400 — that flattened every Titan whose cockpit+wings
+            // total was 40–300. Energy regen had the same 22/s flatten.
             return MegaShipPartStats.ApplyRuntimeDefaultsAndMinimums(raw, defaults, mins);
         }
 
@@ -1149,6 +1281,7 @@ namespace TitanOrbit.Data
                 weaponRotationSpeed: DefaultWeaponRotationSpeed);
 
             SeedUnsetTypeTableBanksFromNames();
+            SeedUnsetTypeTableBankScales();
 
             cockpitStats = CreateStatic(
                 firePower: 0f, bulletSpeed: 0f, bulletRange: 0f, fireRate: 0f, ramming: 4f,
@@ -1180,11 +1313,17 @@ namespace TitanOrbit.Data
                 health: 32f, healthRegen: 0.45f, energy: 0f, energyRegen: 0f,
                 move: 0f, accel: 0f, turn: 0f, gems: 0f, people: 0f);
 
+            cargoStats = CreateStatic(
+                firePower: 0f, bulletSpeed: 0f, bulletRange: 0f, fireRate: 0f, ramming: 1.2f,
+                health: 40f, healthRegen: 2f, energy: 20f, energyRegen: 0.4f,
+                move: 0f, accel: 0f, turn: 0f, gems: 0f, people: 0f);
+
             runtimeDefaultStats = CreateBuiltInRuntimeDefaults();
             runtimeMinimumStats = CreateBuiltInRuntimeMinimums();
             ApplyTypeTableBulletRangesToUniqueWeapons();
             ApplyTypeTableBulletBanksToUniqueWeapons();
             ApplyTypeTableVitalsToUniqueParts();
+            ApplyTypeTableStatsToUniqueCargoParts();
             MegaShipComponentInventory.RecalcAllShipSums(this);
             if (cameraHullViewPadding <= 0f)
                 cameraHullViewPadding = DefaultCameraHullViewPadding;
@@ -1205,6 +1344,22 @@ namespace TitanOrbit.Data
                 weaponMissileBankIndex = ResolveNamedBankIndex(DefaultWeaponMissileBankName);
             if (weaponSniperBankIndex < 0)
                 weaponSniperBankIndex = ResolveNamedBankIndex(DefaultWeaponSniperBankName);
+        }
+
+        /// <summary>
+        /// Writes <see cref="DefaultWeaponBankScale"/> onto type-table scale fields that are still 0
+        /// so older catalog assets show 1 in the inspector instead of an empty float.
+        /// </summary>
+        void SeedUnsetTypeTableBankScales()
+        {
+            if (weaponBulletBankScale <= 0.001f)
+                weaponBulletBankScale = DefaultWeaponBankScale;
+            if (weaponCannonBankScale <= 0.001f)
+                weaponCannonBankScale = DefaultWeaponBankScale;
+            if (weaponMissileBankScale <= 0.001f)
+                weaponMissileBankScale = DefaultWeaponBankScale;
+            if (weaponSniperBankScale <= 0.001f)
+                weaponSniperBankScale = DefaultWeaponBankScale;
         }
 
         /// <summary>
@@ -1257,7 +1412,7 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Writes type-table energy / people onto cockpit, engine, and wing unique rows.
+        /// Writes type-table energy / people onto cockpit, engine, wing, and cargo unique rows.
         /// </summary>
         void ApplyTypeTableVitalsToUniqueParts()
         {
@@ -1271,7 +1426,8 @@ namespace TitanOrbit.Data
                     continue;
                 if (!string.Equals(row.partType, ShipFamilyPartTypes.Cockpit, StringComparison.OrdinalIgnoreCase)
                     && !ShipFamilyPartTypes.IsEngineProfile(row.partType)
-                    && !string.Equals(row.partType, ShipFamilyPartTypes.Wing, StringComparison.OrdinalIgnoreCase))
+                    && !string.Equals(row.partType, ShipFamilyPartTypes.Wing, StringComparison.OrdinalIgnoreCase)
+                    && !ShipFamilyPartTypes.IsCargoProfile(row.partType))
                     continue;
 
                 MegaShipPartStats table = GetStatsForPartType(row.partType);
@@ -1283,6 +1439,29 @@ namespace TitanOrbit.Data
                 if (table.maxPeople > 0.5f)
                     stats.maxPeople = table.maxPeople;
                 row.stats = stats;
+            }
+        }
+
+        /// <summary>
+        /// Writes type-table cargo stats onto unique cargo / hold / storage rows and
+        /// stamps their part type so Titan hulls pick up <see cref="cargoStats"/>.
+        /// </summary>
+        void ApplyTypeTableStatsToUniqueCargoParts()
+        {
+            if (uniqueComponents == null)
+                return;
+
+            for (int i = 0; i < uniqueComponents.Count; i++)
+            {
+                MegaShipComponentEntry row = uniqueComponents[i];
+                if (row == null)
+                    continue;
+                if (!ShipFamilyPartTypes.IsCargoProfile(row.partType)
+                    && !ShipFamilyPartTypes.IsCargoLikeName(row.displayName))
+                    continue;
+
+                row.partType = ShipFamilyPartTypes.Cargo;
+                row.stats = cargoStats;
             }
         }
 
@@ -1333,7 +1512,10 @@ namespace TitanOrbit.Data
             if (weaponBulletStats.firePower <= 0.01f && hullStats.healthCap <= 0.01f)
                 ApplyDefaultStaticStats();
             else
+            {
                 SeedUnsetFamilyScalesFromGlobal();
+                SeedUnsetTypeTableBankScales();
+            }
         }
 #endif
     }

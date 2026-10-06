@@ -5,6 +5,7 @@ using TitanOrbit.Simulation;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.NetCode;
+using Unity.Physics;
 using Unity.Transforms;
 using UnityEngine;
 
@@ -13,7 +14,7 @@ namespace TitanOrbit.Game
     /// <summary>
     /// Client-side moon landing presentation: animates the ship proxy from flight pose onto the
     /// closest moon-surface point (any latitude), then spins that contact with the moon mesh, and
-    /// reverses when thrusting away. Reads <see cref="ShipMoonDockState"/> from the visualization
+    /// leaves in one lerp to the planar orbit-zone exit when thrusting away. Reads <see cref="ShipMoonDockState"/> from the visualization
     /// ECS world. When active, <see cref="EcsWorldVisualizer"/> skips transform sync
     /// (<see cref="ShouldSkipTransformSync"/>).
     /// Provides a local camera follow override via <see cref="TryGetLocalFollowPosition"/> —
@@ -35,6 +36,12 @@ namespace TitanOrbit.Game
 
         /// <summary>Landing cinematic duration (seconds). Takeoff uses <see cref="GemEconomyConstants.MoonTakeoffDurationSeconds"/>.</summary>
         const float LandingDurationSeconds = 1f;
+
+        /// <summary>
+        /// Abort of an unfinished approach — grow back to flight pose on live ECS.
+        /// Shorter than a real leave so a re-approach is not still playing the exit.
+        /// </summary>
+        const float AbortApproachDurationSeconds = 0.28f;
 
         /// <summary>
         /// Soft follow rate when easing the camera onto a new dock target (1/s). [TITAN-ORBIT]
@@ -70,10 +77,13 @@ namespace TitanOrbit.Game
         Vector3 _lastMoonPos;
         Vector3 _lastSpinAxis = Vector3.up;
         float _lastMoonBodyRadius = 0.5f;
+        int _lastDockPlanetId;
 
         // Takeoff animation.
         bool _isTakeoffAnimating;
+        bool _forcedOrbitExit;
         float _takeoffProgress;
+        int _takeoffPlanetId;
         Vector3 _takeoffStartPosition;
         Quaternion _takeoffStartRotation;
         float _takeoffStartScale;
@@ -218,6 +228,7 @@ namespace TitanOrbit.Game
             _landingStartRotation = ComputeDockedRotation(_landingSurfaceDir, spinAxis);
             _landingStartScale = _baselineScale * DockScaleAtSurface;
             _isTakeoffAnimating = false;
+            _forcedOrbitExit = false;
             _wasLandingVisualActive = true;
             _wasMoonDockEngaged = true;
             _wasControllingTransform = true;
@@ -226,6 +237,7 @@ namespace TitanOrbit.Game
             _lastMoonPos = moonPos;
             _lastSpinAxis = spinAxis;
             _lastMoonBodyRadius = moonBodyRadius;
+            _lastDockPlanetId = moonDock.MoonPlanetId;
 
             ApplyLandingAnimation(moonDock, moonPos, spinAxis, moonBodyRadius);
         }
@@ -273,6 +285,7 @@ namespace TitanOrbit.Game
             // [TITAN-ORBIT] Mirror the server fully-landed latch for cosmetics. Once we have shown
             // the docked surface pose, soft LandingProgress dips (ghost blips / brief zone fights
             // before the server lock) must not release the proxy to EcsWorldVisualizer.
+            bool wasFullyLandedPresentation = _presentationFullyLandedLatch;
             if (!moonDockEngaged)
                 _presentationFullyLandedLatch = false;
             else if (fullyLanded)
@@ -283,10 +296,19 @@ namespace TitanOrbit.Game
                 (moonDock.LandingProgress > 0.001f && (approachReady || fullyLanded)));
             UpdateLocalInstanceRegistration(em);
 
+            // Re-approach cancels an abort cinematic. Real takeoff clears MoonPlanetId
+            // for the whole exit, so this cannot steal a forced leave.
+            if (_isTakeoffAnimating && landingVisualActive && !moonDock.IsTakingOff)
+            {
+                _isTakeoffAnimating = false;
+                _forcedOrbitExit = false;
+                _takeoffPlanetId = 0;
+            }
+
             // --- Takeoff reverse animation (when moon dock disengages) ---
             if (_isTakeoffAnimating)
             {
-                UpdateTakeoffAnimation(em);
+                UpdateTakeoffAnimation(em, moonDock);
                 // Follow the lerping hull during takeoff.
                 SetDockCameraFollow(transform.position, softCatchUp: false);
                 _wasControllingTransform = true;
@@ -298,11 +320,13 @@ namespace TitanOrbit.Game
             if (!landingVisualActive)
             {
                 if (_wasMoonDockEngaged && !moonDockEngaged)
-                    BeginTakeoffAnimation();
+                    BeginTakeoffAnimation(
+                        ResolveTakeoffPlanetId(moonDock),
+                        forcedOrbitExit: wasFullyLandedPresentation || moonDock.IsTakingOff);
 
                 if (_isTakeoffAnimating)
                 {
-                    UpdateTakeoffAnimation(em);
+                    UpdateTakeoffAnimation(em, moonDock);
                     SetDockCameraFollow(transform.position, softCatchUp: false);
                     _wasControllingTransform = true;
                     _wasLandingVisualActive = false;
@@ -355,6 +379,7 @@ namespace TitanOrbit.Game
             _wasControllingTransform = true;
             _wasLandingVisualActive = true;
             _wasMoonDockEngaged = moonDockEngaged;
+            _lastDockPlanetId = moonDock.MoonPlanetId;
         }
 
         void ResetDockPresentationState()
@@ -365,6 +390,9 @@ namespace TitanOrbit.Game
             _wasMoonDockEngaged = false;
             _presentationFullyLandedLatch = false;
             _hasLastMoonPose = false;
+            _lastDockPlanetId = 0;
+            _takeoffPlanetId = 0;
+            _forcedOrbitExit = false;
         }
 
         /// <summary>
@@ -481,44 +509,64 @@ namespace TitanOrbit.Game
                 s_localInstance = null;
         }
 
-        void BeginTakeoffAnimation()
+        static int ResolveTakeoffPlanetId(in ShipMoonDockState moonDock)
+        {
+            if (moonDock.TakeoffPlanetId != 0)
+                return moonDock.TakeoffPlanetId;
+            return moonDock.MoonPlanetId;
+        }
+
+        void BeginTakeoffAnimation(int planetId, bool forcedOrbitExit)
         {
             _takeoffStartPosition = transform.position;
             _takeoffStartRotation = transform.rotation;
             _takeoffStartScale = transform.localScale.x;
             _takeoffProgress = 0f;
             _isTakeoffAnimating = true;
+            _forcedOrbitExit = forcedOrbitExit;
+            _takeoffPlanetId = planetId != 0 ? planetId : _lastDockPlanetId;
             // Hard undock path — drop the fully-landed cosmetic latch so a future dock can re-capture.
+            // Keep last moon pose so a forced exit can track the moving pad.
             _presentationFullyLandedLatch = false;
-            _hasLastMoonPose = false;
         }
 
         /// <summary>
-        /// Lerps proxy back to ECS LocalTransform flight pose over LandingDurationSeconds.
-        /// Keeps the end pose on the same unbounded map-tile continuum as the cinematic start
-        /// so a seam dock cannot yank the hull back to the canonical tile mid-takeoff.
+        /// Fully-landed leave: one lerp to the planar orbit-zone exit. Abort of an
+        /// unfinished approach: lerp back to live ECS only — the forced exit used to
+        /// fling the hull outward, then the visualizer snapped to the entry pose.
         /// </summary>
-        void UpdateTakeoffAnimation(EntityManager em)
+        void UpdateTakeoffAnimation(EntityManager em, in ShipMoonDockState moonDock)
         {
             var lt = em.GetComponentData<LocalTransform>(_shipEntity);
             float flightScale = Mathf.Max(0.25f, lt.Scale) * BodyCollisionMath.ShipPresentationScale;
 
-            // --- Flight end pose (local = unbounded sim; remotes = hysteresis near local) ---
-            Vector3 endPosition = GetShipVisualPosition(em, lt.Position);
+            float duration = _forcedOrbitExit
+                ? GemEconomyConstants.MoonTakeoffDurationSeconds
+                : AbortApproachDurationSeconds;
+            if (_forcedOrbitExit && moonDock.IsTakingOff)
+                _takeoffProgress = Mathf.Max(_takeoffProgress, moonDock.TakeoffProgress);
+            else
+                _takeoffProgress = Mathf.Min(1f, _takeoffProgress + Time.deltaTime / duration);
 
-            // --- Stay in the duplicate space the landing cinematic used ---
-            // [TITAN-ORBIT] Landing placed the hull on the display-space moon (+N map tiles).
-            // If sim/ghost briefly sits on another tile image, GetDisplayPosition re-unwraps the
-            // end toward takeoff start so camera/ship do not lerp a full map width "home".
-            endPosition = ToroidalMap.GetDisplayPosition(endPosition, _takeoffStartPosition);
+            Vector3 livePosition = ToroidalMap.GetDisplayPosition(
+                GetShipVisualPosition(em, lt.Position), _takeoffStartPosition);
+            Quaternion liveRotation = lt.Rotation;
 
-            Quaternion endRotation = lt.Rotation;
+            Vector3 endPosition = livePosition;
+            Quaternion endRotation = liveRotation;
+            if (_forcedOrbitExit &&
+                TryGetTakeoffExitPose(em, lt, out Vector3 exitPosition, out Quaternion exitRotation))
+            {
+                exitPosition = ToroidalMap.GetDisplayPosition(exitPosition, _takeoffStartPosition);
+                float handoff = Mathf.InverseLerp(0.72f, 1f, _takeoffProgress);
+                endPosition = Vector3.Lerp(exitPosition, livePosition, handoff);
+                endRotation = Quaternion.Slerp(exitRotation, liveRotation, handoff);
+            }
+
             float endScale = flightScale;
-
-            _takeoffProgress = Mathf.Min(
-                1f,
-                _takeoffProgress + Time.deltaTime / GemEconomyConstants.MoonTakeoffDurationSeconds);
-            float eased = GemMoonDockEaseInOut(_takeoffProgress);
+            float eased = _forcedOrbitExit
+                ? ShipMoonTakeoffLogic.EaseLeave(_takeoffProgress)
+                : GemMoonDockEaseInOut(_takeoffProgress);
 
             transform.position = Vector3.Lerp(_takeoffStartPosition, endPosition, eased);
             transform.rotation = Quaternion.Slerp(_takeoffStartRotation, endRotation, eased);
@@ -532,8 +580,95 @@ namespace TitanOrbit.Game
             if (_takeoffProgress >= 1f)
             {
                 _isTakeoffAnimating = false;
+                _forcedOrbitExit = false;
+                _takeoffPlanetId = 0;
                 RefreshBaselineScale();
             }
+        }
+
+        /// <summary>
+        /// Planar takeoff exit matching <see cref="ShipMoonTakeoffLogic"/> at progress 1.
+        /// </summary>
+        bool TryGetTakeoffExitPose(
+            EntityManager em,
+            in LocalTransform lt,
+            out Vector3 endPosition,
+            out Quaternion endRotation)
+        {
+            endPosition = default;
+            endRotation = lt.Rotation;
+
+            int planetId = _takeoffPlanetId != 0
+                ? _takeoffPlanetId
+                : _lastDockPlanetId;
+            if (planetId == 0)
+                return false;
+
+            if (!TryResolveMoonPose(planetId, out Vector3 moonPos, out _, out float moonBodyRadius))
+            {
+                if (!_hasLastMoonPose)
+                    return false;
+                moonPos = _lastMoonPos;
+                moonBodyRadius = _lastMoonBodyRadius;
+            }
+            else
+            {
+                _lastMoonPos = moonPos;
+                _lastMoonBodyRadius = moonBodyRadius;
+                _hasLastMoonPose = true;
+            }
+
+            if (!EcsGameBridge.TryGetPlanetPoseByPlanetId(
+                    planetId, out float3 planetPos, out float planetSize, out var planetState))
+                return false;
+
+            if (!ToroidalMapEcs.TryGetMapSize(out float mapW, out float mapH)
+                && !ToroidalMap.TryGetMapSize(out mapW, out mapH))
+                return false;
+
+            if (ToroidalDisplay.TryGetReferencePosition(out var reference))
+            {
+                Vector3 displayPlanet = ToroidalDisplay.ToDisplayPositionWithHysteresis(
+                    planetId, planetPos, reference);
+                planetPos = new float3(displayPlanet.x, displayPlanet.y, displayPlanet.z);
+            }
+
+            float shipRadius = ResolveTakeoffShipRadius(em, lt);
+            float zoneRadius = math.max(
+                moonBodyRadius,
+                PlanetGemMoonMath.GetMoonShieldOuterRadiusWorld(
+                    planetSize, planetState.IsHomePlanet));
+            ShipMoonTakeoffLogic.ComputeRadii(
+                moonBodyRadius,
+                zoneRadius,
+                shipRadius,
+                out _,
+                out float exitRadius);
+            ShipMoonTakeoffLogic.ComputeOutward(
+                new float3(moonPos.x, moonPos.y, moonPos.z),
+                planetPos,
+                mapW,
+                mapH,
+                out float3 outward);
+            float3 exit = ShipMoonTakeoffLogic.EvaluateExitPosition(
+                new float3(moonPos.x, moonPos.y, moonPos.z),
+                outward,
+                exitRadius);
+            endPosition = GetShipVisualPosition(em, exit);
+            endRotation = quaternion.LookRotationSafe(outward, math.up());
+            return true;
+        }
+
+        float ResolveTakeoffShipRadius(EntityManager em, in LocalTransform lt)
+        {
+            float physicsRadius = -1f;
+            if (em.HasComponent<PhysicsCollider>(_shipEntity))
+            {
+                var collider = em.GetComponentData<PhysicsCollider>(_shipEntity);
+                physicsRadius = ShipPhysicsDriveLogic.MeasurePhysicsHullRadiusXZ(collider, lt);
+            }
+
+            return ShipPhysicsDriveLogic.ResolveMoonAttachHullRadius(physicsRadius, lt);
         }
 
         /// <summary>

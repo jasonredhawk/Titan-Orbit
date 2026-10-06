@@ -79,7 +79,8 @@ namespace TitanOrbit.ECS
         /// [TITAN-ORBIT] Collision / damage mask. Ship guns use <see cref="BulletDamageFilter.Everything"/>;
         /// mining drones use <see cref="BulletDamageFilter.AsteroidsOnly"/>; fighters use
         /// <see cref="BulletDamageFilter.ShipsOnly"/>; planetary defense uses
-        /// <see cref="BulletDamageFilter.ShipsAndTransports"/> (ships, transports, asteroids).
+        /// <see cref="BulletDamageFilter.ShipsAndTransports"/> (aim ships/transports;
+        /// rocks and drones in the beam still collide).
         /// </summary>
         public BulletDamageFilter DamageFilter;
 
@@ -107,6 +108,21 @@ namespace TitanOrbit.ECS
 
         /// <summary>1 when <see cref="HomingLockPos"/> is a live lock.</summary>
         public byte HomingHasLock;
+
+        /// <summary>
+        /// Planet ghost id for planetary-defense shots. 0 for ship guns / rockets.
+        /// Server-only — this buffer is not ghosted.
+        /// </summary>
+        public int SourceGhostId;
+
+        /// <summary><see cref="DeathVfxSourceKind"/> hint (Turret on PD pads). 0 = infer at hit.</summary>
+        public byte SourceKind;
+
+        /// <summary>
+        /// Muzzle / pad XZ at fire time. Planetary-defense shots stamp the turret so the
+        /// death camera can frame the gun instead of the planet. Zero for ship guns.
+        /// </summary>
+        public float2 SourceOriginXZ;
     }
 
     /// <summary>

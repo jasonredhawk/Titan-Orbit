@@ -129,6 +129,45 @@ namespace TitanOrbit.Data
             sustainedDps > 0.0001f ? sustainedDps : ComputeSustainedDps(firePower, fireRate);
 
         /// <summary>
+        /// Gear-card comparison value for one bar lane (0–9).
+        /// Slot 0 is sustained DPS plus ramming, so a ram spike still fills Offense
+        /// when it has no gun. Other lanes are the raw display fields (Health Cap,
+        /// Move Speed, …). Paired with
+        /// <see cref="ShipFamilyPowerBarNorm.GetComponentMaxPerStat"/> — the ceiling
+        /// and the fill must use this method or a ram would compare as zero DPS.
+        /// </summary>
+        /// <param name="statIndex">0 = DPS + ramming … 9 = Troop Cap.</param>
+        public float GetComponentCompareStatValue(int statIndex)
+        {
+            // --- Direct fields, not the legacy half-category split ---
+            // [TITAN-ORBIT] A ram-only part has ramming and zeros everywhere else.
+            // DisplayTotal ignores ramming, so HasDisplayStats is false and the
+            // ship-bar fallback would smear that ram into Bullet Speed. Gear
+            // comparison reads the real lane instead.
+            switch (statIndex)
+            {
+                case 0: return GetDisplayDps() + Mathf.Max(0f, rammingPower);
+                case 1: return bulletSpeed;
+                case 2: return healthCap;
+                case 3: return healthRegen;
+                case 4: return energyCap;
+                case 5: return energyRegen;
+                case 6: return moveSpeed;
+                case 7: return turnSpeed;
+                case 8: return gemCap;
+                case 9: return peopleCap;
+                default: return 0f;
+            }
+        }
+
+        /// <summary>
+        /// True when a gear card has anything to draw: normal display stats, or
+        /// ramming alone (ramming is not part of <see cref="DisplayTotal"/>).
+        /// </summary>
+        public bool HasComponentCompareStats =>
+            HasDisplayStats || rammingPower > 0.01f;
+
+        /// <summary>
         /// Stat value for one bar segment (0–9). Slot 0 is sustained DPS, not raw
         /// Fire Power. Falls back to a half-category split when display stats are unset.
         /// </summary>

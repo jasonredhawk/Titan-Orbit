@@ -53,6 +53,7 @@ namespace TitanOrbit.ECS.Authoring
                     // [TITAN-ORBIT] Starters use home family (AstroEagle). Moon-store purchases on
                     // captured neutrals overwrite this with that planet's ShipFamilyConfigIndex.
                     ShipFamilyConfigIndex = 0,
+                    HullBulletBankIndex = 0,
                     GemCapacity = 50f,
                     CurrentEnergy = 50f,
                     MaxEnergy = 50f,
@@ -119,11 +120,14 @@ namespace TitanOrbit.ECS.Authoring
                 {
                     HealthRegenPerSecond = 6f,
                     EnergyRegenPerSecond = 5f,
-                    HealthRegenDelayAfterDamage = 0.35f,
+                    HealthRegenDelayAfterDamage = ShipVitalsSettingsCache.HealthRegenDelayAfterDamage,
                 });
                 AddComponent(entity, new ShipVitalsState());
                 AddComponent(entity, new ShipAttributeUpgradeState());
-                AddComponent(entity, new ShipWeaponState());
+                AddComponent(entity, new ShipWeaponState { LastFiredMountIndex = -1 });
+                // [NETCODE] Arsenal mute mask MUST bake — GhostFields do not replicate
+                // when ShipEnsureComponentsSystem adds this only at runtime.
+                AddComponent(entity, ShipWeaponArmState.AllOn);
                 AddComponent(entity, new ShipOrbitState());
                 // [TITAN-ORBIT] Sticky friendly-triangle thrust latch — not a MovementSpeed attribute.
                 AddComponent(entity, new ShipTerritoryBoostLatch
@@ -146,7 +150,7 @@ namespace TitanOrbit.ECS.Authoring
                 // [NETCODE] Match-long kill/mine/transport scores — must be baked so GhostFields replicate.
                 // Runtime-only AddComponent would leave clients stuck at zero (same trap as ShipLoadoutState).
                 AddComponent(entity, new ShipMatchStats());
-                // [NETCODE] Unused leftover buffer — keep baked so ghost layout stays stable.
+                // [NETCODE] Escort HP / amount / in-flight flag — must bake to replicate.
                 AddBuffer<PeopleEscortVitalElement>(entity);
                 // [TITAN-ORBIT] Server-only last-damager for kill credit — not ghosted.
                 AddComponent(entity, new ShipCombatAttribution());
@@ -244,6 +248,13 @@ namespace TitanOrbit.ECS.Authoring
                     EnsureUniqueBakedCannonIndices(mounts);
                 }
                 // [TITAN-ORBIT] Intentionally no MuzzleOffset fallback — unarmed ships stay empty.
+
+                // [NETCODE] Ready timers must bake or the arsenal squares never see
+                // the server delay. Same length as the mount buffer; runtime chassis
+                // swaps resize it in PublishReadyTimers.
+                var ready = AddBuffer<ShipWeaponReadyElement>(shipEntity);
+                for (int i = 0; i < mounts.Length; i++)
+                    ready.Add(default);
             }
 
             /// <summary>

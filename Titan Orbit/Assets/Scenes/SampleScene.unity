@@ -2324,6 +2324,7 @@ MonoBehaviour:
   tickColumnFromRight: -5
   ticksCenterYOffset: -3
   titleFontSize: 12
+  abilityResetHoldSeconds: 3
   statsChipsVisible: 1
   statsToggleWidth: 52
   statsToggleHeight: 18
@@ -4002,6 +4003,7 @@ MonoBehaviour:
   theatricalPathDurationMaxSeconds: 1080
   theatricalFovMin: 28
   theatricalFovMax: 48
+  deathTheatricalEnabled: 1
 --- !u!1 &716424125
 GameObject:
   m_ObjectHideFlags: 0
@@ -8617,7 +8619,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: TitanOrbit.Game::TitanOrbit.Game.MatchEndScreenController
   overlayRoot: {fileID: 0}
   titleText: {fileID: 0}
-  subtitleText: {fileID: 0}
   continueButton: {fileID: 0}
 --- !u!114 &1418200278
 MonoBehaviour:
@@ -8715,7 +8716,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 98bebdf998b96a64c8683982a44e3e5b, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Core.GameManager
-  editorMultiplayerMode: 0
+  editorMultiplayerMode: 1
   showSpeedometer: 1
   showEgressMeter: 0
   showSpaceBackground: 0
@@ -8728,7 +8729,7 @@ MonoBehaviour:
   debugInfiniteRockets: 1
   debugInfiniteMines: 1
   debugSelfHarmRocketsAndMines: 0
-  debugMegaShipsAutoFireAsteroids: 0
+  debugMegaShipsAutoFireAsteroids: 1
   debugDisableMegaShipAutoFire: 0
   debugLogAsteroidDestroyPerf: 0
   debugEnableInstructionImageCapture: 0
@@ -9328,7 +9329,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Image
   m_Material: {fileID: 0}
-  m_Color: {r: 0.2, g: 0.9, b: 0.45, a: 1}
+  m_Color: {r: 0.424, g: 0.892, b: 0.568, a: 1}
   m_RaycastTarget: 1
   m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
   m_Maskable: 1
@@ -10047,7 +10048,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Image
   m_Material: {fileID: 0}
-  m_Color: {r: 0.2, g: 0.65, b: 0.95, a: 1}
+  m_Color: {r: 0.964, g: 0.856, b: 0.424, a: 1}
   m_RaycastTarget: 1
   m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
   m_Maskable: 1
@@ -10748,7 +10749,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Image
   m_Material: {fileID: 0}
-  m_Color: {r: 0.95, g: 0.25, b: 0.2, a: 1}
+  m_Color: {r: 0.748, g: 0.568, b: 0.928, a: 1}
   m_RaycastTarget: 1
   m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
   m_Maskable: 1
@@ -11239,7 +11240,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Image
   m_Material: {fileID: 0}
-  m_Color: {r: 0.9, g: 0.75, b: 0.3, a: 1}
+  m_Color: {r: 0.507, g: 0.312, b: 0.702, a: 1}
   m_RaycastTarget: 1
   m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
   m_Maskable: 1
@@ -12321,6 +12322,7 @@ MonoBehaviour:
   musicVolume: 0.7
   sfxVolume: 1
   shootVolume: 1
+  heavyShootVolumeMul: 3.25
   impactVolume: 1
   asteroidCollisionVolume: 0.3
   shipCollisionVolume: 0.2
@@ -12870,7 +12872,6 @@ MonoBehaviour:
   expandedBackgroundAlpha: 0.9
   fullMapRadius: 212
   expandedMapFitPadding: 1.03
-  markerHeight: 1
   mapSizeLabel: {fileID: 0}
   playerBlipPrefab: {fileID: 0}
   shipBlipPrefab: {fileID: 0}

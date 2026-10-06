@@ -13,6 +13,7 @@ using Unity.Collections;
 using Unity.Entities;
 using Unity.NetCode;
 using Unity.Networking.Transport;
+using Unity.Transforms;
 using Unity.Scenes;
 using Unity.Networking.Transport.Relay;
 using Unity.Services.Authentication;
@@ -193,8 +194,91 @@ namespace TitanOrbit.NetCode
             // Fallback soft cap only if something clears VSync — harmless while vSyncCount > 0.
             if (Application.targetFrameRate != 60)
                 Application.targetFrameRate = 60;
+
+            WatchDedicatedClientDrop();
         }
 #endif
+
+        /// <summary>
+        /// Dedicated client lost Relay or gameplay-ready. Reset the driver and map latch so Join
+        /// works on the same page. A browser refresh used to be the only way past the stuck socket.
+        /// </summary>
+        void WatchDedicatedClientDrop()
+        {
+            bool relayDead = TitanOrbitRelayAllocationSignal.ConsumeClientInvalid();
+            if (_returningToMenu || _unexpectedDisconnectResetRunning)
+                return;
+
+            if (relayDead && IsDedicatedOnlineClient)
+            {
+                BeginUnexpectedDedicatedClientReset(
+                    "Connection to the match server dropped. Join again.");
+                return;
+            }
+
+            // _connectWatch stays non-null after the coroutine ends, so it is not a "still joining" flag.
+            if (!IsDedicatedOnlineClient || !IsInGame)
+            {
+                _dedicatedWasGameplayReady = false;
+                _dedicatedMissingReadyFrames = 0;
+                return;
+            }
+
+            var client = ClientServerBootstrap.ClientWorld;
+            bool ready = IsClientGameplayReady(client);
+            if (ready)
+            {
+                _dedicatedWasGameplayReady = true;
+                _dedicatedMissingReadyFrames = 0;
+                return;
+            }
+
+            if (!_dedicatedWasGameplayReady || !IsInGame)
+                return;
+
+            _dedicatedMissingReadyFrames++;
+            if (_dedicatedMissingReadyFrames < 90)
+                return;
+
+            BeginUnexpectedDedicatedClientReset(
+                "Connection lost. Join the match again.");
+        }
+
+        void BeginUnexpectedDedicatedClientReset(string reason)
+        {
+            if (_connectWatch != null)
+            {
+                StopCoroutine(_connectWatch);
+                _connectWatch = null;
+            }
+
+            _dedicatedWasGameplayReady = false;
+            _dedicatedMissingReadyFrames = 0;
+            _unexpectedDisconnectResetRunning = true;
+            LastStatusMessage = reason;
+            Debug.LogWarning("[TitanOrbitSessionManager] " + reason);
+            StartCoroutine(ResetAfterUnexpectedDisconnect());
+        }
+
+        IEnumerator ResetAfterUnexpectedDisconnect()
+        {
+            Task reset = ResetDedicatedClientSessionAsync(LastStatusMessage);
+            while (!reset.IsCompleted)
+                yield return null;
+            _unexpectedDisconnectResetRunning = false;
+        }
+
+        /// <summary>
+        /// Clears client map latches after a drop or before a new dedicated Join.
+        /// Presentation applies this on the next UI tick via <c>EcsGameBridge.ConsumeSessionLeave</c>.
+        /// </summary>
+        static void NotifyClientMatchSessionEnded()
+        {
+#if !UNITY_SERVER
+            MapSessionMetaCache.Clear();
+            ClientMapHydrateCache.NotifySessionLeave();
+#endif
+        }
 
         /// <summary>Stops the editor's local ServerWorld sim until local play/host/client is started.</summary>
         public static void SuspendEditorLocalServerUntilLocalPlay()
@@ -245,11 +329,29 @@ namespace TitanOrbit.NetCode
             if (server == null || !server.IsCreated)
                 return;
 
-            Debug.Log("[TitanOrbitSessionManager] Disposing local ServerWorld for dedicated Relay join (client-only).");
+            DisposeEditorLocalServerWorld("dedicated Relay join (client-only)");
+#endif
+        }
 
-            // [NETCODE] World.Dispose removes it from the player loop and clears bootstrap ServerWorld.
+        /// <summary>
+        /// Disposes the Editor ServerWorld. The next Local play creates a new one, so map
+        /// generation runs again. Used for dedicated-join client-only and for a finished match.
+        /// </summary>
+        /// <param name="reason">Logged reason.</param>
+        static void DisposeEditorLocalServerWorld(string reason)
+        {
+#if UNITY_EDITOR
+            var server = ClientServerBootstrap.ServerWorld;
+            if (server == null || !server.IsCreated)
+                return;
+
+            Debug.Log("[TitanOrbitSessionManager] Disposing local ServerWorld (" + reason + ").");
+            // Next play is a new map. Drop match-only ship saves with the world.
+            MatchPlayerShipStore.Clear();
             server.Dispose();
             s_EditorLocalServerSuspendedForOnline = false;
+            // The finished-match latch belongs to this world. A new ServerWorld starts clean.
+            MatchEndServerSignal.Clear();
 #endif
         }
 
@@ -500,6 +602,24 @@ namespace TitanOrbit.NetCode
         /// Blocks a second leave and a overlapping Local play boot.
         /// </summary>
         bool _returningToMenu;
+
+        /// <summary>True while an unexpected Relay drop is resetting the client driver.</summary>
+        bool _unexpectedDisconnectResetRunning;
+
+        /// <summary>Saw a live dedicated connection this session — used to notice a later drop.</summary>
+        bool _dedicatedWasGameplayReady;
+
+        /// <summary>Frames without gameplay-ready after it had been true.</summary>
+        int _dedicatedMissingReadyFrames;
+
+        /// <summary>True while a dead Relay allocation is being replaced without wiping the match.</summary>
+        bool _relayRebindInProgress;
+
+        /// <summary>
+        /// Bumped when a new dedicated Join starts. A leave that began earlier must not
+        /// clear Relay state after that — it would pull the socket down again.
+        /// </summary>
+        int _clientSessionEpoch;
 
         /// <summary>Polls client world until a NetworkId exists — LAN host/client bootstrap.</summary>
         IEnumerator MaintainClientSession()
@@ -828,14 +948,27 @@ namespace TitanOrbit.NetCode
             return IsClientGameplayReady(ClientServerBootstrap.ClientWorld);
         }
 
+        static World s_readyQueryWorld;
+        static EntityQuery s_readyQuery;
+
         public static bool IsClientConnectionReady(World world)
         {
             if (world == null || !world.IsCreated)
                 return false;
 
-            return world.EntityManager
-                .CreateEntityQuery(typeof(NetworkStreamConnection), typeof(NetworkStreamInGame), typeof(NetworkId))
-                .CalculateEntityCount() > 0;
+            // One query for the life of the world. A new CreateEntityQuery every call
+            // (this runs several times a frame while flying) was never disposed, so the
+            // WebGL heap climbed a few megabytes every second until Chrome aborted.
+            if (s_readyQueryWorld != world)
+            {
+                if (s_readyQueryWorld != null && s_readyQueryWorld.IsCreated)
+                    s_readyQuery.Dispose();
+                s_readyQuery = world.EntityManager.CreateEntityQuery(
+                    typeof(NetworkStreamConnection), typeof(NetworkStreamInGame), typeof(NetworkId));
+                s_readyQueryWorld = world;
+            }
+
+            return s_readyQuery.CalculateEntityCount() > 0;
         }
 
         /// <summary>
@@ -863,7 +996,8 @@ namespace TitanOrbit.NetCode
             return false;
         }
 
-        public bool IsRecreateDedicatedMatchInProgress => _recreateDedicatedMatchInProgress;
+        public bool IsRecreateDedicatedMatchInProgress =>
+            _recreateDedicatedMatchInProgress || _relayRebindInProgress;
 
         IEnumerator BootDedicatedServer()
         {
@@ -1046,16 +1180,23 @@ namespace TitanOrbit.NetCode
             world.Update();
         }
 
+        static bool s_LoggedWebGlPlayerLoopTick;
+
         /// <summary>
-        /// Ticks ClientWorld. WebGL uses <see cref="TitanOrbitWebGlClientTick.SafeUpdate"/> so
-        /// Transform / predicted-fixed Burst never run (Chrome WASM OOB on join).
+        /// Ticks ClientWorld on desktop. On WebGL the ClientWorld stays on the player loop, so
+        /// this does not call <c>World.Update</c> (that would double-tick and was the old
+        /// SafeUpdate bypass).
         /// </summary>
         static void TickClientWorld(World world)
         {
             if (world == null || !world.IsCreated)
                 return;
 #if UNITY_WEBGL && !UNITY_EDITOR
-            TitanOrbitWebGlClientTick.SafeUpdate(world);
+            if (!s_LoggedWebGlPlayerLoopTick)
+            {
+                s_LoggedWebGlPlayerLoopTick = true;
+                Debug.Log("[WebGLClient] Player loop owns ClientWorld.Update.");
+            }
 #else
             world.Update();
 #endif
@@ -1151,6 +1292,15 @@ namespace TitanOrbit.NetCode
             if (_recreateDedicatedMatchInProgress)
                 return null;
 
+            // [TITAN-ORBIT] A won match must not be republished. The host spawns a new
+            // process and exits; recreating here would put the finished map back in Join Game.
+            if (MatchEndServerSignal.IsMatchWon)
+            {
+                Debug.LogWarning("[TitanOrbitSessionManager] Recreate skipped — match already won.");
+                DedicatedServerFileLog.Append("match", "Recreate skipped; match already won");
+                return null;
+            }
+
             // [TITAN-ORBIT] Occupied match — never wipe ships/map or delete the live lobby.
             int connectedPlayers = GetServerConnectedPlayerCount();
             if (connectedPlayers > 0)
@@ -1189,7 +1339,8 @@ namespace TitanOrbit.NetCode
                 await ClearNetworkConnectionsAsync(serverWorld);
                 // [TITAN-ORBIT] New lobby on the same ServerWorld must not keep orphan ships —
                 // NetCode reuses low NetworkIds, which falsely offered "rescue my ship" to new joiners.
-                WipeOrphanPlayerShipsAndResetRosters(serverWorld);
+                // clearSessionShips drops match-only ship saves. This recreate is a new game.
+                WipeOrphanPlayerShipsAndResetRosters(serverWorld, clearSessionShips: true);
                 ResetServerDriverIfNeeded();
                 ListenServer(serverWorld, config.ServerPort);
                 for (int i = 0; i < 90; i++)
@@ -1262,6 +1413,111 @@ namespace TitanOrbit.NetCode
             {
                 _recreateDedicatedMatchInProgress = false;
                 TitanOrbitDedicatedServerHost.SetHangWatchdogPaused(false);
+            }
+        }
+
+        /// <summary>
+        /// Relay told this process the allocation is dead. Publish a new join code on the same
+        /// lobby and listen again. The conquest map and ships stay; players who were dropped can
+        /// Join the same game. Does not wait out the 30-minute empty recycle.
+        /// </summary>
+        public async Task<bool> RebindDedicatedRelayKeepMatchAsync()
+        {
+            if (_relayRebindInProgress || _recreateDedicatedMatchInProgress)
+                return false;
+            if (MatchEndServerSignal.IsMatchWon)
+                return false;
+            if (string.IsNullOrEmpty(_activeLobbyId) || _serverConfig == null)
+                return false;
+
+            _relayRebindInProgress = true;
+            TitanOrbitDedicatedServerHost.SetHangWatchdogPaused(true);
+            string lobbyId = _activeLobbyId;
+            try
+            {
+                var prep = await PrepareDedicatedRelayAsync(_serverConfig);
+                if (prep == null)
+                {
+                    DedicatedServerFileLog.Append("lobby", "Relay rebind FAILED: PrepareDedicatedRelay returned null");
+                    return false;
+                }
+
+                var serverWorld = ClientServerBootstrap.ServerWorld;
+                if (serverWorld == null || !serverWorld.IsCreated)
+                {
+                    DedicatedServerFileLog.Append("lobby", "Relay rebind FAILED: ServerWorld missing");
+                    return false;
+                }
+
+                TitanOrbitRelayState.SetServerRelay(prep.Relay);
+                await ClearNetworkConnectionsAsync(serverWorld);
+                ResetServerDriverIfNeeded();
+                ListenServer(serverWorld, _serverConfig.ServerPort);
+                for (int i = 0; i < 90; i++)
+                {
+                    TickServerWorld(serverWorld);
+                    if (IsServerWorldListening(serverWorld))
+                        break;
+                    await Task.Delay(16);
+                }
+
+                if (!IsServerWorldListening(serverWorld))
+                {
+                    DedicatedServerFileLog.Append("lobby", "Relay rebind FAILED: listen not confirmed");
+                    return false;
+                }
+
+                RequestGoInGame(serverWorld);
+                await UpdateDedicatedLobbyRelayCodeAsync(lobbyId, prep.JoinCode, prep.RelayProtocol);
+                await TitanOrbitLobbyService.TryUpdatePlayerRelayAllocationAsync(lobbyId, prep.HostAllocationId);
+                DedicatedServerFileLog.Append(
+                    "lobby",
+                    "Relay rebind kept match lobby=" + lobbyId + " relay=" + prep.JoinCode);
+                Debug.Log("[TitanOrbitSessionManager] Relay rebind kept match lobby=" + lobbyId +
+                          " relay=" + prep.JoinCode);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                DedicatedServerFileLog.Append("lobby", "Relay rebind exception", ex);
+                Debug.LogError("[TitanOrbitSessionManager] Relay rebind failed: " + ex.Message);
+                return false;
+            }
+            finally
+            {
+                _relayRebindInProgress = false;
+                TitanOrbitDedicatedServerHost.SetHangWatchdogPaused(false);
+                TitanOrbitRelayAllocationSignal.ClearServerInvalid();
+            }
+        }
+
+        /// <summary>Writes a fresh Relay join code onto the live lobby without closing it.</summary>
+        async Task UpdateDedicatedLobbyRelayCodeAsync(string lobbyId, string joinCode, string protocol)
+        {
+            if (string.IsNullOrWhiteSpace(lobbyId) || string.IsNullOrWhiteSpace(joinCode))
+                return;
+
+            await TitanOrbitLobbyService.AcquireLobbyApiGateAsync();
+            try
+            {
+                await LobbyService.Instance.UpdateLobbyAsync(lobbyId, new UpdateLobbyOptions
+                {
+                    Data = new Dictionary<string, DataObject>
+                    {
+                        {
+                            TitanOrbitLobbyService.LobbyRelayCodeKey,
+                            new DataObject(DataObject.VisibilityOptions.Member, joinCode)
+                        },
+                        {
+                            TitanOrbitLobbyService.LobbyRelayProtocolKey,
+                            new DataObject(DataObject.VisibilityOptions.Public, protocol)
+                        }
+                    }
+                });
+            }
+            finally
+            {
+                TitanOrbitLobbyService.ReleaseLobbyApiGate();
             }
         }
 
@@ -1454,30 +1710,54 @@ namespace TitanOrbit.NetCode
         /// </summary>
         public void WipeOrphanPlayerShipsAndResetRosters()
         {
-            WipeOrphanPlayerShipsAndResetRosters(ClientServerBootstrap.ServerWorld);
+            // Empty match keeps saved ships so the same players can return before idle recreate.
+            WipeOrphanPlayerShipsAndResetRosters(ClientServerBootstrap.ServerWorld, clearSessionShips: false);
         }
 
         /// <summary>
         /// See <see cref="WipeOrphanPlayerShipsAndResetRosters()"/> — world overload for recreate path.
         /// </summary>
         /// <param name="serverWorld">Dedicated or host ServerWorld; no-op if null/destroyed.</param>
-        static void WipeOrphanPlayerShipsAndResetRosters(World serverWorld)
+        /// <param name="clearSessionShips">
+        /// True on a new game (lobby recreate). False when the same match is only briefly empty.
+        /// </param>
+        static void WipeOrphanPlayerShipsAndResetRosters(World serverWorld, bool clearSessionShips)
         {
             // --- Guard: no server world yet ---
             if (serverWorld == null || !serverWorld.IsCreated)
                 return;
 
             var em = serverWorld.EntityManager;
+            if (clearSessionShips)
+                MatchPlayerShipStore.Clear();
+            else
+                MatchPlayerShipStore.CaptureRemainingShips(em);
 
             // --- Destroy all ship ghosts (orphan reconnect targets) ---
-            // [NETCODE] GhostOwner ships survive disconnect by design for mid-match rejoin;
-            // empty / recreate must cancel that so NetworkId reuse cannot fake a rescue.
+            // [NETCODE] Disconnect does not despawn owned ghosts. OrphanPlayerShipCleanupSystem
+            // removes a hull once its owner connection is gone; this wipe is the empty-match
+            // backstop so a reused NetworkId cannot still point at a leftover ship.
             using (var ships = em.CreateEntityQuery(typeof(ShipTag), typeof(GhostOwner)))
             using (var entities = ships.ToEntityArray(Allocator.Temp))
             {
                 int destroyed = entities.Length;
                 for (int i = 0; i < entities.Length; i++)
-                    em.DestroyEntity(entities[i]);
+                {
+                    Entity ship = entities[i];
+                    if (!em.Exists(ship))
+                        continue;
+
+                    // Free the titan bay before the hull is gone so a later resume can reclaim it
+                    // when nobody else bought that slot.
+                    int ownerId = em.HasComponent<GhostOwner>(ship)
+                        ? em.GetComponentData<GhostOwner>(ship).NetworkId
+                        : 0;
+                    if (em.HasComponent<MegaShipState>(ship))
+                        MegaShipStatApplyLogic.ReleaseMegaOccupancy(em, ship);
+                    if (ownerId > 0)
+                        MegaShipPlanetLogic.FreeSlotsOccupiedBy(em, ownerId);
+                    em.DestroyEntity(ship);
+                }
 
                 if (destroyed > 0)
                 {
@@ -1486,6 +1766,9 @@ namespace TitanOrbit.NetCode
                     DedicatedServerFileLog.Append("match", "Wiped orphan ships count=" + destroyed);
                 }
             }
+
+            if (!clearSessionShips)
+                MatchPlayerShipStore.ClearBindings();
 
             // --- Reset roster counts (ActiveTeamCount stays — map still has those teams) ---
             using var teamQuery = em.CreateEntityQuery(typeof(TeamStateSingleton));
@@ -1642,12 +1925,14 @@ namespace TitanOrbit.NetCode
                     return false;
                 }
 
+                Debug.Log("[TitanOrbitSessionManager] Relay endpoint ready clientProtocol=" + clientProtocol +
+                          " endpointValid=True");
+
                 await TitanOrbitLobbyService.TryUpdatePlayerRelayAllocationAsync(
                     lobby.Id, joinAllocation.AllocationId.ToString());
 
                 TitanOrbitRelayState.SetClientRelay(clientRelay);
                 await EnsureClientReadyForRelayDriverResetAsync();
-                ResetClientDriverIfNeeded();
 
                 var clientWorld = ClientServerBootstrap.ClientWorld;
                 if (clientWorld == null || !clientWorld.IsCreated)
@@ -1657,7 +1942,14 @@ namespace TitanOrbit.NetCode
                     return false;
                 }
 
+#if UNITY_WEBGL && !UNITY_EDITOR
+                // Player loop owns ClientWorld. The init-group system resets the driver and
+                // connects before NetworkStreamReceiveSystem polls the WebSocket.
+                TitanOrbitWebGlRelayConnect.Request();
+#else
+                ResetClientDriverIfNeeded();
                 ConnectRelayClient(clientWorld);
+#endif
                 for (int i = 0; i < 30; i++)
                 {
                     TickClientWorld(clientWorld);
@@ -1690,6 +1982,49 @@ namespace TitanOrbit.NetCode
         }
 
         /// <summary>
+        /// True when the authoritative server has already declared a winner.
+        /// </summary>
+        public bool IsServerMatchWon()
+        {
+            if (MatchEndServerSignal.IsMatchWon)
+                return true;
+
+            var server = ClientServerBootstrap.ServerWorld;
+            if (server == null || !server.IsCreated)
+                return false;
+
+            using var query = server.EntityManager.CreateEntityQuery(typeof(MatchStateSingleton));
+            if (!query.TryGetSingleton<MatchStateSingleton>(out var match))
+                return false;
+            return match.WinningTeam != TeamId.None;
+        }
+
+        /// <summary>
+        /// Clears a latched win on the client world so the congrats card does not
+        /// reopen on the menu or on the next match.
+        /// </summary>
+        static void ClearClientMatchWinLatch()
+        {
+            var client = ClientServerBootstrap.ClientWorld;
+            if (client == null || !client.IsCreated)
+                return;
+
+            var em = client.EntityManager;
+            using var query = em.CreateEntityQuery(typeof(MatchStateSingleton));
+            if (query.CalculateEntityCount() != 1)
+                return;
+
+            Entity entity = query.GetSingletonEntity();
+            var match = em.GetComponentData<MatchStateSingleton>(entity);
+            if (match.WinningTeam == TeamId.None && match.GameState == 0)
+                return;
+
+            match.WinningTeam = TeamId.None;
+            match.GameState = 0;
+            em.SetComponentData(entity, match);
+        }
+
+        /// <summary>
         /// Disconnects this client and returns UI to the Main Menu.
         /// Called from the Escape command overlay. Dedicated Relay clients leave the lobby
         /// and reset the driver; a local host also parks ServerWorld so the leftover match
@@ -1719,13 +2054,31 @@ namespace TitanOrbit.NetCode
                 }
 
                 bool dedicated = IsDedicatedOnlineClient;
+                var client = ClientServerBootstrap.ClientWorld;
+
+                // Destroy the hull before the connection times out. Local host parks ServerWorld
+                // on the next lines, so a later sim tick never gets a chance to reap the ship.
+                // A titan bay is freed the same way death releases it.
+                bool sentLeaveRpc = ReleaseShipOnExit(client, dedicated);
+                if (sentLeaveRpc)
+                    await FlushClientSoLeaveRpcSends();
+                // Drop client copies now so the minimap cannot keep the hull through the disconnect.
+                ClearClientShipPresentation(client);
+
+                // Read before we tear worlds down. A won local host must not resume this map.
+                bool matchWon = MatchEndServerSignal.IsMatchWon || IsServerMatchWon();
                 IsInGame = false;
                 ClientTeamFlowState.Reset();
+                // Drop the client win latch and planet-count inference so the menu
+                // (and the next match) do not reopen the congrats card.
+                MapSessionMetaCache.Clear();
+                ClearClientMatchWinLatch();
 
                 if (dedicated)
                 {
                     // ResetDedicatedClientSessionAsync clears Relay, NetworkStreamInGame, and connections.
                     await ResetDedicatedClientSessionAsync("Returned to main menu.");
+                    ClearClientShipPresentation(client);
                     _activeLobbyId = null;
                     await TitanOrbitLobbyService.TryLeaveAllJoinedLobbiesAsync("return_to_menu");
                     LastStatusMessage = "Returned to main menu.";
@@ -1734,11 +2087,11 @@ namespace TitanOrbit.NetCode
 
                 // --- Local host / local LAN client ---
                 // [NETCODE] Drop GoInGame on the client first so HUD / flow see "not in game".
-                var client = ClientServerBootstrap.ClientWorld;
                 if (client != null && client.IsCreated)
                 {
                     ClearNetworkStreamInGame(client);
                     await ClearNetworkConnectionsAsync(client);
+                    ClearClientShipPresentation(client);
                 }
 
                 ResetClientDriverIfNeeded();
@@ -1755,8 +2108,16 @@ namespace TitanOrbit.NetCode
                     ClearNetworkStreamInGame(server);
                     await ClearNetworkConnectionsAsync(server);
                     ResetServerDriverIfNeeded();
-                    // [TITAN-ORBIT] Same park as boot-to-menu: QuitUpdate so map/match sim stops.
-                    SuspendEditorLocalServerUntilLocalPlay();
+                    if (matchWon)
+                    {
+                        // Next Local play creates a new ServerWorld and rolls a new map.
+                        DisposeEditorLocalServerWorld("match finished — next play is a new game");
+                    }
+                    else
+                    {
+                        // [TITAN-ORBIT] Same park as boot-to-menu: QuitUpdate so map/match sim stops.
+                        SuspendEditorLocalServerUntilLocalPlay();
+                    }
                 }
 
                 LastStatusMessage = "Returned to main menu.";
@@ -1768,11 +2129,77 @@ namespace TitanOrbit.NetCode
             }
         }
 
+        /// <summary>
+        /// Destroys the leaving player's hull now. In-process host: every parked hull goes,
+        /// because this process is about to stop simulating. A client of a remote server
+        /// sends a leave RPC so that host frees the titan bay on its next tick.
+        /// </summary>
+        /// <returns>True when a leave RPC was queued and still needs a few client ticks to send.</returns>
+        static bool ReleaseShipOnExit(World client, bool dedicated)
+        {
+            bool mppmClient = TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance();
+            var server = ClientServerBootstrap.ServerWorld;
+            bool serverAlive = !dedicated && !mppmClient && server != null && server.IsCreated;
+            bool localHost = IsLocalHostWorldsReady();
+            if (serverAlive && (localHost || ServerHasPlayerShips(server)))
+            {
+                int removed = PlayerShipExit.DespawnAllPlayerShips(server.EntityManager);
+                Debug.Log("[TitanOrbitSessionManager] Exit destroyed " + removed +
+                          " server ship(s) before parking the match.");
+            }
+
+            // This process is the match. The hulls are already gone; do not wait on an RPC.
+            if (localHost)
+                return false;
+
+            if (client == null || !client.IsCreated)
+                return false;
+
+            var em = client.EntityManager;
+            var entity = em.CreateEntity();
+            em.AddComponentData(entity, new LeaveMatchDespawnShipCommand());
+            em.AddComponentData(entity, new SendRpcCommandRequest { TargetConnection = Entity.Null });
+            Debug.Log("[TitanOrbitSessionManager] Sent leave-despawn RPC.");
+            return true;
+        }
+
+        static bool ServerHasPlayerShips(World server)
+        {
+            using var query = server.EntityManager.CreateEntityQuery(ComponentType.ReadOnly<ShipTag>());
+            return !query.IsEmptyIgnoreFilter;
+        }
+
+        /// <summary>Gives the reliable leave RPC a few client ticks to leave the machine.</summary>
+        async Task FlushClientSoLeaveRpcSends()
+        {
+            var client = ClientServerBootstrap.ClientWorld;
+            for (int i = 0; i < 20; i++)
+            {
+                if (client != null && client.IsCreated)
+                    TickClientWorld(client);
+                await Task.Yield();
+            }
+        }
+
+        /// <summary>
+        /// Drops client ship ghosts and the local-ship seed so the minimap cannot keep the hull
+        /// from the match you just left.
+        /// </summary>
+        static void ClearClientShipPresentation(World client)
+        {
+            if (client != null && client.IsCreated)
+                PlayerShipExit.DestroyClientShipGhosts(client.EntityManager);
+            LocalShipEntitySeed.Clear();
+        }
+
         public async Task ResetDedicatedClientSessionAsync(string reason = null)
         {
+            // Captured so a Join that starts while this await is in flight is not undone.
+            int epoch = _clientSessionEpoch;
             IsDedicatedOnlineClient = false;
             IsInGame = false;
             ClientTeamFlowState.Reset();
+            NotifyClientMatchSessionEnded();
             if (_connectWatch != null)
             {
                 StopCoroutine(_connectWatch);
@@ -1786,8 +2213,22 @@ namespace TitanOrbit.NetCode
                 await ClearNetworkConnectionsAsync(clientWorld);
             }
 
+            if (epoch != _clientSessionEpoch)
+            {
+                Debug.Log("[TitanOrbitSessionManager] Skipped stale client reset — a newer Join already started.");
+                return;
+            }
+
             TitanOrbitRelayState.Clear();
+            // WebGL: the player loop is already inside ClientWorld. Resetting the socket
+            // from this async method races NetworkStreamReceiveSystem and can throw while
+            // a dead connection entity still exists — the next Join then never connects
+            // until the browser page is refreshed. The init-group system resets instead.
+#if UNITY_WEBGL && !UNITY_EDITOR
+            TitanOrbitWebGlRelayConnect.RequestIdleReset();
+#else
             ResetClientDriverIfNeeded();
+#endif
 
             if (!string.IsNullOrEmpty(reason))
             {
@@ -1798,9 +2239,12 @@ namespace TitanOrbit.NetCode
 
         async Task PrepareClientForDedicatedRelayJoinAsync()
         {
+            _clientSessionEpoch++;
             IsDedicatedOnlineClient = true;
             IsInGame = false;
             ClientTeamFlowState.Reset();
+            // Previous WebGL session can still say the map finished loading. Clear that before connect.
+            NotifyClientMatchSessionEnded();
             StopMppmLanAutoConnect();
 
             // [UNITY] VSync on at join — sync presents to the monitor and avoid tear strips while
@@ -2162,7 +2606,8 @@ namespace TitanOrbit.NetCode
         {
             float started = Time.realtimeSinceStartup;
             float deadline = started + timeoutSeconds;
-            float lastDiag = 0f;
+            // First diagnostic runs on the opening frame, then every 5s.
+            float lastDiag = started - 5f;
             const float zombieFailSeconds = 20f;
             var client = ClientServerBootstrap.ClientWorld;
             while (Time.realtimeSinceStartup < deadline)
@@ -2178,6 +2623,12 @@ namespace TitanOrbit.NetCode
                     {
                         lastDiag = Time.realtimeSinceStartup;
                         LogClientConnectDiagnostics(client);
+#if UNITY_WEBGL && !UNITY_EDITOR
+                        // A failed WebSocket removes the connection entity. Ask for another
+                        // connect on the next initialization tick instead of waiting out the minute.
+                        if (!HasClientConnection(client) && TitanOrbitRelayState.TryGetClientRelay(out _))
+                            TitanOrbitWebGlRelayConnect.Request();
+#endif
                     }
 
                     if (dedicatedJoin && Time.realtimeSinceStartup - started >= zombieFailSeconds &&
@@ -2227,13 +2678,50 @@ namespace TitanOrbit.NetCode
                 return;
 
             var em = client.EntityManager;
-            int connections = em.CreateEntityQuery(typeof(NetworkStreamConnection)).CalculateEntityCount();
-            int withNetworkId = em.CreateEntityQuery(typeof(NetworkStreamConnection), typeof(NetworkId))
-                .CalculateEntityCount();
-            int inGame = em.CreateEntityQuery(typeof(NetworkStreamInGame)).CalculateEntityCount();
+            using var connectionsQuery = em.CreateEntityQuery(typeof(NetworkStreamConnection));
+            using var idQuery = em.CreateEntityQuery(typeof(NetworkStreamConnection), typeof(NetworkId));
+            using var inGameQuery = em.CreateEntityQuery(typeof(NetworkStreamInGame));
+            using var protocolQuery = em.CreateEntityQuery(typeof(NetworkProtocolVersion));
+            int connections = connectionsQuery.CalculateEntityCount();
+            int withNetworkId = idQuery.CalculateEntityCount();
+            int inGame = inGameQuery.CalculateEntityCount();
+            int spawnBuf = CountGhostSpawnBuffer(em);
+            string connState = "(none)";
+            // Desktop ClientConnectWatch calls World.Update, which leaves RpcSystem:RpcExecJob
+            // writing NetworkStreamConnection. EntityQuery.TryGetSingleton does not complete that
+            // job (unlike EntityManager.GetComponentData). WebGL skips this tick — the player
+            // loop has already finished the jobs — so only the Editor/standalone path threw and
+            // aborted the connect coroutine.
+            em.CompleteDependencyBeforeRO<NetworkStreamConnection>();
+            if (connections == 1 && connectionsQuery.TryGetSingleton<NetworkStreamConnection>(out var conn))
+                connState = conn.CurrentState.ToString();
+            var transform = client.GetExistingSystemManaged<TransformSystemGroup>();
+            bool transformOn = transform != null && transform.Enabled;
+            var predicted = client.GetExistingSystemManaged<PredictedSimulationSystemGroup>();
+            bool predictedOn = predicted != null && predicted.Enabled;
+            bool relayReady = TitanOrbitRelayState.TryGetClientRelay(out var relay);
             Debug.Log("[TitanOrbitSessionManager] Client connect diag: connections=" + connections +
+                      " state=" + connState +
                       " withNetworkId=" + withNetworkId + " inGame=" + inGame +
-                      " relay=" + TitanOrbitRelayState.TryGetClientRelay(out _));
+                      " spawnBuf=" + spawnBuf +
+                      " protocolReady=" + (protocolQuery.CalculateEntityCount() > 0) +
+                      " transformOn=" + transformOn +
+                      " predictedOn=" + predictedOn +
+                      " clientProtocol=" + TitanOrbitRelayUtility.ClientConnectionTypeForPlatform() +
+                      " relay=" + relayReady +
+                      (relayReady ? " endpoint=" + relay.Endpoint + " wss=" + relay.IsWebSocket + " secure=" + relay.IsSecure : ""));
+        }
+
+        /// <summary>Ghost spawn queue length, or -1 when GhostSpawn has not created the queue.</summary>
+        static int CountGhostSpawnBuffer(EntityManager em)
+        {
+            using var spawnQueue = em.CreateEntityQuery(typeof(GhostSpawnQueue));
+            if (spawnQueue.CalculateEntityCount() != 1)
+                return -1;
+            Entity queue = spawnQueue.GetSingletonEntity();
+            if (!em.HasBuffer<GhostSpawnBuffer>(queue))
+                return -1;
+            return em.GetBuffer<GhostSpawnBuffer>(queue).Length;
         }
 
         /// <summary>Resets client worlds and UI after dedicated connect timeout.</summary>
@@ -2420,15 +2908,21 @@ namespace TitanOrbit.NetCode
             driver.ValueRW.Connect(em, endpoint);
         }
 
-        static void ConnectRelayClient(World world)
+        /// <summary>
+        /// Opens the Relay connection on an already-reset client driver.
+        /// Returns the connection entity, or <see cref="Entity.Null"/> when connect was skipped.
+        /// </summary>
+        internal static Entity ConnectRelayClient(World world)
         {
             if (!TitanOrbitRelayState.TryGetClientRelay(out var relay))
-                return;
+                return Entity.Null;
             var em = world.EntityManager;
-            if (em.CreateEntityQuery(typeof(NetworkStreamConnection)).CalculateEntityCount() > 0)
-                return;
-            var driver = em.CreateEntityQuery(typeof(NetworkStreamDriver)).GetSingletonRW<NetworkStreamDriver>();
-            driver.ValueRW.Connect(world.EntityManager, relay.Endpoint);
+            using var connections = em.CreateEntityQuery(typeof(NetworkStreamConnection));
+            if (connections.CalculateEntityCount() > 0)
+                return Entity.Null;
+            using var driverQuery = em.CreateEntityQuery(typeof(NetworkStreamDriver));
+            var driver = driverQuery.GetSingletonRW<NetworkStreamDriver>();
+            return driver.ValueRW.Connect(em, relay.Endpoint);
         }
 
         static void ResetServerDriverIfNeeded()
@@ -2444,17 +2938,98 @@ namespace TitanOrbit.NetCode
             driver.ResetDriverStore(world.Unmanaged, ref store);
         }
 
-        static void ResetClientDriverIfNeeded()
+        /// <summary>
+        /// Removes leftover client connection entities so the WebSocket driver can be rebuilt.
+        /// </summary>
+        /// <param name="em">Client world entity manager. Call this from the init-group system, before receive runs.</param>
+        /// <returns>How many connection entities were released. Zero means the driver was already clear.</returns>
+        /// <remarks>
+        /// [NETCODE] <see cref="NetworkStreamConnection"/> is cleanup data. <c>DestroyEntity</c> does
+        /// not remove it, so the entity stays in the query. <c>ResetDriverStore</c> then throws
+        /// ("connections still present") before it disposes the old socket. On WebGL that throw
+        /// aborts the reconnect, and the browser keeps the dead WebSocket until a full page refresh.
+        /// Stripping the cleanup components lets the entity actually die. The caller then disposes
+        /// the driver, which closes the JavaScript socket.
+        /// </remarks>
+        internal static int ForceReleaseClientConnectionEntities(EntityManager em)
+        {
+            using var query = em.CreateEntityQuery(ComponentType.ReadOnly<NetworkStreamConnection>());
+            if (query.IsEmptyIgnoreFilter)
+                return 0;
+
+            using var entities = query.ToEntityArray(Allocator.Temp);
+            int released = entities.Length;
+            for (int i = 0; i < entities.Length; i++)
+            {
+                Entity entity = entities[i];
+                if (!em.Exists(entity))
+                    continue;
+
+                // --- Strip cleanup, then destroy ---
+                // A normal disconnect removes these from NetworkStreamReceiveSystem. A dropped
+                // WebSocket can leave Value uncreated, and that system then returns without
+                // cleaning up. The entity would block every later Join.
+                using (var types = em.GetComponentTypes(entity, Allocator.Temp))
+                {
+                    for (int t = 0; t < types.Length; t++)
+                    {
+                        if (!em.Exists(entity))
+                            break;
+                        if (!types[t].IsCleanupComponent)
+                            continue;
+                        em.RemoveComponent(entity, types[t]);
+                    }
+                }
+
+                if (em.Exists(entity))
+                    em.DestroyEntity(entity);
+            }
+
+            return released;
+        }
+
+        /// <summary>
+        /// Disposes the client transport and builds a new one from the current Relay allocation.
+        /// </summary>
+        /// <returns>False when there is no client world, no driver, or a connection entity is still alive.</returns>
+        /// <remarks>
+        /// [NETCODE] Call this only when no <see cref="NetworkStreamConnection"/> exists.
+        /// <c>ResetDriverStore</c> throws in that case, and it throws before disposing the new
+        /// store, which leaks a WebSocket. On WebGL the browser will not recover that socket
+        /// until the page reloads. The WebGL init system releases stuck connections first.
+        /// </remarks>
+        internal static bool ResetClientDriverIfNeeded()
         {
             var world = ClientServerBootstrap.ClientWorld;
-            if (world == null || !world.IsCreated) return;
-            var driverEntity = world.EntityManager.CreateEntityQuery(typeof(NetworkStreamDriver));
-            if (!driverEntity.TryGetSingletonEntity<NetworkStreamDriver>(out var entity)) return;
-            var driver = world.EntityManager.GetComponentData<NetworkStreamDriver>(entity);
+            if (world == null || !world.IsCreated)
+                return false;
+
+            var em = world.EntityManager;
+            using var driverQuery = em.CreateEntityQuery(typeof(NetworkStreamDriver));
+            if (!driverQuery.TryGetSingletonEntity<NetworkStreamDriver>(out var entity))
+                return false;
+
+            // --- Refuse while a connection entity is still registered ---
+            // Building the replacement store and then throwing leaks that store. Skip so the
+            // caller can drop the entities and try again on a later initialization tick.
+            using var connections = em.CreateEntityQuery(typeof(NetworkStreamConnection));
+            if (!connections.IsEmptyIgnoreFilter)
+            {
+                Debug.LogWarning("[TitanOrbitSessionManager] Client driver reset skipped — " +
+                                 connections.CalculateEntityCount() +
+                                 " NetworkStreamConnection(s) still present.");
+                return false;
+            }
+
+            var driver = em.GetComponentData<NetworkStreamDriver>(entity);
             var store = new NetworkDriverStore();
-            var netDebug = world.EntityManager.CreateEntityQuery(typeof(NetDebug)).GetSingleton<NetDebug>();
+            using var debugQuery = em.CreateEntityQuery(typeof(NetDebug));
+            var netDebug = debugQuery.GetSingleton<NetDebug>();
             new TitanOrbitRelayDriverConstructor().CreateClientDriver(world, ref store, netDebug);
+            // DriverStore is a pointer inside the singleton, so this writes the live driver
+            // even though GetComponentData returned a copy.
             driver.ResetDriverStore(world.Unmanaged, ref store);
+            return true;
         }
 
         /// <summary>
@@ -2491,6 +3066,15 @@ namespace TitanOrbit.NetCode
             {
                 Debug.LogError("[TitanOrbitSessionManager] Rejoin RPC failed: client not in-game.");
                 return false;
+            }
+
+            if (IsLocalHostWorldsReady() &&
+                TryReadLocalHostNetworkId(world, out int networkId) &&
+                TryEnqueueLocalHostRejoinRpc<T>(networkId))
+            {
+                Debug.Log("[TitanOrbitSessionManager] Enqueued rejoin RPC " + typeof(T).Name +
+                          " on ServerWorld (Local Host).");
+                return true;
             }
 
             var em = world.EntityManager;
@@ -2639,6 +3223,60 @@ namespace TitanOrbit.NetCode
                 RequestedTeam = (byte)team,
             });
             em.AddComponentData(rpcEntity, new ReceiveRpcCommandRequest { SourceConnection = connection });
+            return true;
+        }
+
+        /// <summary>
+        /// Local Host: deliver resume / abandon on ServerWorld without IPC.
+        /// </summary>
+        static bool TryEnqueueLocalHostRejoinRpc<T>(int networkId) where T : unmanaged, IRpcCommand
+        {
+            var server = ClientServerBootstrap.ServerWorld;
+            if (server == null || !server.IsCreated || networkId <= 0)
+                return false;
+
+            var em = server.EntityManager;
+            Entity connection = Entity.Null;
+            using (var query = em.CreateEntityQuery(
+                       ComponentType.ReadOnly<NetworkId>(),
+                       ComponentType.ReadOnly<NetworkStreamInGame>()))
+            using (var entities = query.ToEntityArray(Allocator.Temp))
+            using (var ids = query.ToComponentDataArray<NetworkId>(Allocator.Temp))
+            {
+                for (int i = 0; i < ids.Length; i++)
+                {
+                    if (ids[i].Value != networkId)
+                        continue;
+                    connection = entities[i];
+                    break;
+                }
+            }
+
+            if (connection == Entity.Null)
+                return false;
+
+            Entity rpcEntity = em.CreateEntity();
+            em.AddComponentData(rpcEntity, default(T));
+            em.AddComponentData(rpcEntity, new ReceiveRpcCommandRequest { SourceConnection = connection });
+            return true;
+        }
+
+        static bool TryReadLocalHostNetworkId(World client, out int networkId)
+        {
+            networkId = 0;
+            if (client == null || !client.IsCreated)
+                return false;
+
+            var em = client.EntityManager;
+            using var ids = em.CreateEntityQuery(
+                    ComponentType.ReadOnly<NetworkStreamConnection>(),
+                    ComponentType.ReadOnly<NetworkStreamInGame>(),
+                    ComponentType.ReadOnly<NetworkId>())
+                .ToComponentDataArray<NetworkId>(Allocator.Temp);
+            if (ids.Length == 0 || ids[0].Value <= 0)
+                return false;
+
+            networkId = ids[0].Value;
             return true;
         }
 

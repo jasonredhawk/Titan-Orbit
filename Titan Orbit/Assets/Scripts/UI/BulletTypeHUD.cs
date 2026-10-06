@@ -13,20 +13,22 @@ using UnityEngine.UI;
 namespace TitanOrbit.UI
 {
     /// <summary>
-    /// Compact left-side in-flight list of fire types the local ship can shoot. Each tile
+    /// Compact top-left in-flight list of fire types the local ship can shoot. Each tile
     /// names the <see cref="BulletVfxBank"/> category (LASERBOLT) and the ship family
-    /// that authored it (ASTRO EAGLE). Production shows the hull default plus purchased
-    /// foreign weapons. GameManager cycle-all (Test) lists every non-reserved catalog
-    /// bank so testers can click types they have not bought. B walks the same list; a
-    /// tile click jumps to that bank.
+    /// that authored it (ASTRO EAGLE). Production shows a Titan's original catalog
+    /// gun first, then the family fleet gun, plus purchased foreign weapons. GameManager cycle-all
+    /// (Test) lists every non-reserved catalog bank so testers can click types they
+    /// have not bought. B walks the same list; a tile click jumps to that bank.
     /// <para>
     /// Parks under <see cref="RocketLoadoutHUD"/> when that column is showing, or in the
-    /// same mid-left slot when no rockets / mines are equipped. Grows downward.
-    /// <see cref="SpaceBrakesHUD"/> docks under this strip. Writes nothing to ECS — clicks latch
-    /// <see cref="BulletBankSelection"/>; <see cref="ShipCycleBulletSystem"/> applies the
-    /// ghosted <see cref="ShipLoadoutState.RuntimeBulletIndex"/> on the predicted tick.
-    /// Hidden on the main menu, Join Team, Orbit Menu, MEGA hulls, and while the local
-    /// ship is dead. Holds last paint during
+    /// same slot under the ship stats when no rockets / mines are equipped. Grows downward.
+    /// <see cref="SpaceBrakesHUD"/> docks under this strip. Writes nothing to ECS — B and
+    /// clicks latch <see cref="BulletBankSelection"/>; the caret paints that request
+    /// immediately. <see cref="ShipCycleBulletSystem"/> then writes the ghosted
+    /// <see cref="ShipLoadoutState.RuntimeBulletIndex"/> on the predicted tick.
+    /// Hidden on the main menu, Join Team, Orbit Menu, and while the local
+    /// ship is dead. MEGA hulls show original Titan gun, then family fleet; only
+    /// Titan Bullet mounts adopt the selected bank. Holds last paint during
     /// <see cref="ClientJoinSettleCache.ShouldSkipShipEntityQueries"/> so MEGA plow gem
     /// Instantiates do not blink the panel off.
     /// </para>
@@ -54,14 +56,11 @@ namespace TitanOrbit.UI
         /// <summary>Inset from the dark panel edge to the first tile.</summary>
         const float PanelPad = 6f;
 
-        /// <summary>Thin ORDNANCE caption above the first tile.</summary>
+        /// <summary>Thin WEAPONS caption above the first tile.</summary>
         const float HeaderHeight = 14f;
 
         /// <summary>Panel width = tile + left/right pad.</summary>
         const float PanelWidth = TileWidth + PanelPad * 2f;
-
-        /// <summary>Left inset shared with rockets and Space Brakes on the 1920×1080 overlay.</summary>
-        const float OverlayLeft = 14f;
 
         /// <summary>Air between the rocket column bottom and this strip's top.</summary>
         const float DockGap = 8f;
@@ -209,15 +208,13 @@ namespace TitanOrbit.UI
                 IsMainMenuShowing() ||
                 MoonOrbitClientState.IsOrbitMenuVisible ||
                 HUDController.LocalPlayerDeathHidesHud ||
-                HUDController.MinimapExpandedObscuresHud)
+                HUDController.MinimapExpandedObscuresHud ||
+                HUDController.CommsMatrixObscuresHud)
             {
-                SetVisible(false);
-                return;
-            }
-
-            // MEGA volleys each fire a baked catalog bank — B and this list do not apply.
-            if (EcsGameBridge.TryGetLocalMegaShipState(out MegaShipState mega) && mega.IsMega)
-            {
+                if (HUDController.LocalPlayerDeathHidesHud ||
+                    ClientTeamFlowState.ShouldSuppressLocalPlayerControl() ||
+                    IsMainMenuShowing())
+                    BulletBankSelection.Clear();
                 SetVisible(false);
                 return;
             }
@@ -238,18 +235,24 @@ namespace TitanOrbit.UI
 
             if (!EcsGameBridge.HasLocalPlayerShip())
             {
+                BulletBankSelection.Clear();
                 SetVisible(false);
                 return;
             }
 
-            if (!TryReadRows(out int rowCount, out int selectedBank, out bool healLocked, out string hullFamilyName))
+            if (!TryReadRows(
+                    out int rowCount,
+                    out int selectedBank,
+                    out bool healLocked,
+                    out string hullFamilyName,
+                    out string titanDisplayName))
             {
                 SetVisible(false);
                 return;
             }
 
             SetVisible(true);
-            Paint(rowCount, selectedBank, healLocked, hullFamilyName);
+            Paint(rowCount, selectedBank, healLocked, hullFamilyName, titanDisplayName);
         }
 
         /// <summary>
@@ -259,13 +262,20 @@ namespace TitanOrbit.UI
         /// <param name="selectedBank">Ghosted fire index (heal bank when heal mode is firing).</param>
         /// <param name="healLocked">True when Production heal mode ignores clicks (same as B).</param>
         /// <param name="hullFamilyName">Local ship family label for the hull-default tile.</param>
+        /// <param name="titanDisplayName">Titan catalog name for the original-gun tile (empty on regular hulls).</param>
         /// <returns>True when at least one tile should paint.</returns>
-        bool TryReadRows(out int rowCount, out int selectedBank, out bool healLocked, out string hullFamilyName)
+        bool TryReadRows(
+            out int rowCount,
+            out int selectedBank,
+            out bool healLocked,
+            out string hullFamilyName,
+            out string titanDisplayName)
         {
             rowCount = 0;
             selectedBank = 0;
             healLocked = false;
             hullFamilyName = string.Empty;
+            titanDisplayName = string.Empty;
 
             var world = EcsGameBridge.ClientWorld;
             if (world == null || !world.IsCreated)
@@ -287,7 +297,10 @@ namespace TitanOrbit.UI
                 healLocked = loadout.HealingBulletsActive && !TitanOrbitDebugFlags.CycleAllBulletBanks;
             }
 
-            // Hull tile uses THIS ship's family, not the first config row that shares the bank.
+            // Family-fleet tile uses THIS ship's family (Astro Eagle), not the
+            // first config row that shares Laserbolt. Titans put the catalog hull
+            // name on the default "Bullets" tile and this family caption on the
+            // second row.
             if (em.HasComponent<ShipState>(ship))
             {
                 if (_familyConfig == null)
@@ -297,6 +310,15 @@ namespace TitanOrbit.UI
                         em.GetComponentData<ShipState>(ship).ShipFamilyConfigIndex);
             }
 
+            if (em.HasComponent<MegaShipState>(ship)
+                && em.GetComponentData<MegaShipState>(ship).IsMega)
+            {
+                var catalog = MegaShipCatalog.Load();
+                if (catalog != null)
+                    titanDisplayName = catalog.GetDisplayName(
+                        em.GetComponentData<MegaShipState>(ship).CatalogIndex);
+            }
+
             return true;
         }
 
@@ -304,7 +326,12 @@ namespace TitanOrbit.UI
         /// Stacks compact tiles for the current visible set, docks under rockets, and
         /// enables scroll only when Test cycle-all would cover Space Brakes.
         /// </summary>
-        void Paint(int rowCount, int selectedBank, bool healLocked, string hullFamilyName)
+        void Paint(
+            int rowCount,
+            int selectedBank,
+            bool healLocked,
+            string hullFamilyName,
+            string titanDisplayName)
         {
             bool cycleAll = TitanOrbitDebugFlags.CycleAllBulletBanks;
             if (cycleAll != _lastCycleAll)
@@ -312,9 +339,12 @@ namespace TitanOrbit.UI
 
             _paintedCount = 0;
 
-            // Heal / Test cycle-all can fire a bank that is not in this owned list.
-            // Park the caret on the hull default so the strip still has a live row.
-            int caretBank = selectedBank;
+            // --- Caret ---
+            // [TITAN-ORBIT] B / click latch an optimistic bank so this strip moves on
+            // the same Unity frame. Heal / Test can still fire a bank that is not in
+            // this owned list — park on the first row (Titan Bullets, or the family
+            // gun) so a tile stays live.
+            int caretBank = BulletBankSelection.ResolveCaretBank(selectedBank);
             bool caretInList = false;
             for (int i = 0; i < rowCount; i++)
             {
@@ -338,7 +368,8 @@ namespace TitanOrbit.UI
 
                 VisibleBankRow row = _rowScratch[i];
                 bool isSelected = row.BankIndex == caretBank;
-                PaintTile(_tiles[i], i, row, isSelected, healLocked, cycleAll, hullFamilyName);
+                PaintTile(
+                    _tiles[i], i, row, isSelected, healLocked, cycleAll, hullFamilyName, titanDisplayName);
                 _paintedBanks[i] = row.BankIndex;
                 _paintedCount++;
             }
@@ -354,7 +385,7 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Parks this strip under the rocket column, or in the mid-left slot when that
+        /// Parks this strip under the rocket column, or under the ship stats when that
         /// column is hidden. Space Brakes docks under whatever height we settle on.
         /// </summary>
         /// <param name="contentHeight">Full stacked-tile height including panel pad.</param>
@@ -369,22 +400,10 @@ namespace TitanOrbit.UI
 
             // Execution order 66220 runs after RocketLoadoutHUD (66200), so this
             // measurement already includes this frame's rocket / mine row count.
-            if (RocketLoadoutHUD.TryGetOverlayDockBottomY(out dockBottom, out rocketsVisible) &&
-                rocketsVisible)
-            {
-                // --- Under rockets ---
-                // Top-left pivot: the strip hangs down from just below the rocket glass.
-                _panel.pivot = new Vector2(0f, 1f);
-                _panel.anchoredPosition = new Vector2(OverlayLeft, dockBottom - DockGap);
-            }
-            else
-            {
-                // --- Mid-left park ---
-                // Same slot rockets use when they have packs. Pivot 0.5 grows equally
-                // up and down from screen center.
-                _panel.pivot = new Vector2(0f, 0.5f);
-                _panel.anchoredPosition = new Vector2(OverlayLeft, 0f);
-            }
+            bool stacked = RocketLoadoutHUD.TryGetOverlayDockBottomY(out dockBottom, out rocketsVisible) &&
+                           rocketsVisible;
+            // Under rockets when that glass is up; otherwise the home slot under ship stats.
+            RocketLoadoutHUD.PlaceInLeftColumn(_panel, stacked, dockBottom, DockGap);
 
             float panelHeight = Mathf.Max(minHeight, contentHeight);
             _panel.sizeDelta = new Vector2(PanelWidth, panelHeight);
@@ -401,7 +420,8 @@ namespace TitanOrbit.UI
             bool isSelected,
             bool healLocked,
             bool cycleAll,
-            string hullFamilyName)
+            string hullFamilyName,
+            string titanDisplayName)
         {
             if (tile == null || tile.Root == null)
                 return;
@@ -412,9 +432,16 @@ namespace TitanOrbit.UI
                 PanelPad,
                 -PanelPad - HeaderHeight - row * (TileHeight + TileGap));
 
-            string family = data.IsHullDefault && !string.IsNullOrEmpty(hullFamilyName)
-                ? hullFamilyName
-                : ResolveFamilyCaption(data.BankIndex);
+            // Titan original (Bullets / Craizan Star) first. Family fleet
+            // (Laserbolt / Astro Eagle) second. Purchased types fall back to
+            // whoever uniquely authored that bank.
+            string family;
+            if (data.IsTitanOriginal && !string.IsNullOrEmpty(titanDisplayName))
+                family = titanDisplayName;
+            else if (data.IsHullDefault && !string.IsNullOrEmpty(hullFamilyName))
+                family = hullFamilyName;
+            else
+                family = ResolveFamilyCaption(data.BankIndex);
             string category = ResolveCategoryName(data.BankIndex);
             bool unowned = cycleAll && !data.IsOwned;
 
@@ -589,7 +616,7 @@ namespace TitanOrbit.UI
         /// <summary>
         /// Builds dark-glass canvas and a pool of tappable fire-type buttons parented
         /// to the panel (same as rockets). A Mask + Color.clear viewport used to hide
-        /// every tile. Starts in the mid-left rocket slot; LateUpdate docks under rockets.
+        /// every tile. Starts under the ship stats; LateUpdate docks under rockets.
         /// </summary>
         void BuildUi()
         {
@@ -599,15 +626,13 @@ namespace TitanOrbit.UI
             var scaler = gameObject.AddComponent<CanvasScaler>();
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
             scaler.referenceResolution = new Vector2(1920f, 1080f);
+            scaler.matchWidthOrHeight = 0.5f;
             gameObject.AddComponent<GraphicRaycaster>();
 
             var panelGo = new GameObject("Panel", typeof(RectTransform), typeof(Image));
             panelGo.transform.SetParent(transform, false);
             _panel = panelGo.GetComponent<RectTransform>();
-            _panel.anchorMin = new Vector2(0f, 0.5f);
-            _panel.anchorMax = new Vector2(0f, 0.5f);
-            _panel.pivot = new Vector2(0f, 0.5f);
-            _panel.anchoredPosition = new Vector2(OverlayLeft, 0f);
+            RocketLoadoutHUD.PlaceInLeftColumn(_panel, false, 0f, 0f);
             _panel.sizeDelta = new Vector2(PanelWidth, TileHeight + PanelPad * 2f);
             var bg = panelGo.GetComponent<Image>();
             bg.color = FillColor;
@@ -624,7 +649,7 @@ namespace TitanOrbit.UI
             accentGo.GetComponent<Image>().color = ShipAbilityCategoryColors.GetPowerBreakdownStatColorForHud(0);
             accentGo.GetComponent<Image>().raycastTarget = false;
 
-            var header = CreateLabel(_panel, "Header", "ORDNANCE", 7.5f, HeaderColor, TextAlignmentOptions.Left);
+            var header = CreateLabel(_panel, "Header", "WEAPONS", 7.5f, HeaderColor, TextAlignmentOptions.Left);
             var headerRt = header.rectTransform;
             headerRt.anchorMin = new Vector2(0f, 1f);
             headerRt.anchorMax = new Vector2(1f, 1f);

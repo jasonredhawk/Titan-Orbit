@@ -4,7 +4,7 @@ using UnityEngine.EventSystems;
 namespace TitanOrbit.UI
 {
     /// <summary>
-    /// Pointer hover tip for moon-dock GEAR tiles and ORDNANCE rails.
+    /// Pointer hover tip for moon-dock GEAR tiles and WEAPONS rails.
     /// Builds one shared <see cref="ShipStatTooltipChrome"/> card under the parent canvas.
     /// Presentation-only — no ECS writes.
     /// </summary>

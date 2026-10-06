@@ -63,8 +63,8 @@ namespace TitanOrbit.ECS
     /// Server: after a ship dwells in an orbit ring, dispatches incremental people
     /// <b>load</b> (planet→ship hops) and <b>unload</b> (ship→planet hops). Both use
     /// server-only <see cref="PeopleTransportTag"/> + cosmetic
-    /// <see cref="PeopleTransportSpawnRpc"/>. Crew on the ship is cargo only — no
-    /// external escort spheres. Unload fires one packed sphere at a time.
+    /// <see cref="PeopleTransportSpawnRpc"/>. Delivered crew parks as derived escort
+    /// drones around the hull. Unload peels one parked orb at a time.
     /// <para>
     /// [TITAN-ORBIT] One batch = one transport sphere carrying <c>Amount</c> people (scaled up).
     /// Load batch = <c>shipLevel × planetLevel</c> (L6 ship at L3 planet → one +18).
@@ -97,6 +97,13 @@ namespace TitanOrbit.ECS
             // dropped to the main menu when orbit spawned PeopleTransportGhost floods.
             float dt = SystemAPI.Time.DeltaTime;
             float now = (float)SystemAPI.Time.ElapsedTime;
+            int hz = PlanetGemMoonOrbitClock.FallbackSimulationHz;
+            if (SystemAPI.TryGetSingleton<ClientServerTickRate>(out var tickRate))
+                hz = math.max(1, tickRate.SimulationTickRate);
+            NetworkTime networkTime = default;
+            bool hasNetworkTime = SystemAPI.TryGetSingleton<NetworkTime>(out networkTime);
+            float hopClock = PeopleTransportEscortLogic.ReadHopClockSeconds(
+                now, hasNetworkTime ? networkTime : default, hz);
             // [TITAN-ORBIT] Missing map size = skip transports this tick (do not invent 1000×1000).
             if (!SystemAPI.TryGetSingleton<MapStateSingleton>(out var map) ||
                 !ToroidalMapEcs.IsValidMapSize(map.MapWidth, map.MapHeight))
@@ -140,10 +147,16 @@ namespace TitanOrbit.ECS
                 if (shipState.ValueRO.IsDead || shipState.ValueRO.AwaitingTeamSelection)
                 {
                     orbit.ValueRW.IsTransferringPeople = false;
+                    PeopleTransportEscortLogic.ClearAll(state.EntityManager, shipEntity);
                     continue;
                 }
 
                 ref var transfer = ref transferState.ValueRW;
+                int shipLevelEarly = math.max(1, shipState.ValueRO.ShipLevel);
+                PeopleTransportEscortLogic.SyncParkedEscorts(
+                    state.EntityManager, shipEntity, shipState.ValueRO.CurrentPeople,
+                    PeopleTransportEscortLogic.ResolveChunk(shipLevelEarly, transfer.LastLoadCombineMax),
+                    GetShipNetworkId(ref state, shipEntity));
                 float3 shipPos = shipTransform.ValueRO.Position;
                 if (!orbit.ValueRO.InOrbitRing || orbit.ValueRO.OrbitPlanetId == 0)
                 {
@@ -202,15 +215,21 @@ namespace TitanOrbit.ECS
                 // Live PlanetLevel / ShipLevel every tick — leveling mid-orbit must change chunk size.
                 int shipLevel = math.max(1, shipState.ValueRO.ShipLevel);
                 int planetLevel = math.max(1, planetState.PlanetLevel);
-                float loadChunk = PeopleTransportMath.GetTransferChunk(shipLevel, planetLevel);
-                float transferMul = CardEffectQuery.GetMul(state.EntityManager, shipEntity, CardEffectKind.PeopleTransferSpeedMul);
-                float loadStep = loadChunk * dt * PeopleTransportConstants.TransferSpeedMultiplier * transferMul;
                 int shipNetworkId = GetShipNetworkId(ref state, shipEntity);
                 if (shipNetworkId == 0)
                 {
                     orbit.ValueRW.IsTransferringPeople = false;
                     continue;
                 }
+
+                // [TITAN-ORBIT] Top troop commander packs 5% more people per sphere
+                // (round-to-nearest). Load step uses the same chunk so throughput rises too.
+                bool topTroop = SystemAPI.TryGetSingleton<ShipCommandRoleSnapshot>(out var troopRoles)
+                                && troopRoles.IsTransporter(shipState.ValueRO.Team, shipNetworkId);
+                float loadChunk = TeamCommandRoleRules.ScaleTransferChunk(
+                    PeopleTransportMath.GetTransferChunk(shipLevel, planetLevel), topTroop);
+                float transferMul = CardEffectQuery.GetMul(state.EntityManager, shipEntity, CardEffectKind.PeopleTransferSpeedMul);
+                float loadStep = loadChunk * dt * PeopleTransportConstants.TransferSpeedMultiplier * transferMul;
                 float3 planetPos = planetTransform.Position;
                 bool friendly = shipState.ValueRO.Team != TeamId.None && planetState.Ownership == shipState.ValueRO.Team;
                 orbit.ValueRW.IsTransferringPeople = ComputeIsTransferringPeople(
@@ -226,7 +245,8 @@ namespace TitanOrbit.ECS
                 if (wantUnload)
                 {
                     transfer.TransferDirection = PeopleTransferDirection.Unload;
-                    int unloadChunk = PeopleTransportMath.GetTransferChunk(shipLevel, planetLevel);
+                    int unloadChunk = TeamCommandRoleRules.ScaleTransferChunk(
+                        PeopleTransportMath.GetTransferChunk(shipLevel, planetLevel), topTroop);
                     bool intervalReady = transfer.UnloadAccumulator <= 0.01f ||
                         (now - transfer.UnloadAccumulator) >=
                         PeopleTransportConstants.UnloadDispatchIntervalSeconds;
@@ -234,10 +254,10 @@ namespace TitanOrbit.ECS
                     {
                         int send = math.min(unloadChunk, shipState.ValueRO.CurrentPeople);
                         if (send > 0 && TryDispatchUnload(
-                                ref ecb, ref shipState.ValueRW, send, shipNetworkId,
-                                planetState.PlanetId, shipState.ValueRO.Team,
-                                shipPos, shipTransform.ValueRO.Scale, planetPos, planetSize,
-                                mapW, mapH, now))
+                                ref ecb, ref state, shipEntity, ref shipState.ValueRW, send, shipNetworkId,
+                                planetState.PlanetId, shipState.ValueRO.Team, planetState.Ownership,
+                                shipTransform.ValueRO, planetPos, planetSize,
+                                mapW, mapH, now, hopClock))
                         {
                             transfer.UnloadAccumulator = now;
                         }
@@ -262,9 +282,9 @@ namespace TitanOrbit.ECS
                             int surplus = planetState.Population - halfCap;
                             int send = (int)math.min(loadChunk, math.min(space, surplus));
                             if (send > 0 && TryDispatchLoad(
-                                    ref ecb, ref shipState.ValueRW, ref planetState,
+                                    ref ecb, ref state, shipEntity, ref shipState.ValueRW, ref planetState,
                                     ref transfer, send, shipNetworkId, planetState.PlanetId, shipState.ValueRO.Team,
-                                    shipPos, planetPos, planetSize, mapW, mapH, now))
+                                    shipPos, planetPos, planetSize, mapW, mapH, now, hopClock))
                             {
                                 transfer.LastLoadCombineMax = (int)loadChunk;
                                 transfer.LoadAccumulator = 0f;
@@ -379,6 +399,8 @@ namespace TitanOrbit.ECS
         /// or cargo space is tight).</param>
         static bool TryDispatchLoad(
             ref EntityCommandBuffer ecb,
+            ref SystemState state,
+            Entity shipEntity,
             ref ShipState ship,
             ref PlanetState planet,
             ref ShipPeopleTransferState transfer,
@@ -391,9 +413,11 @@ namespace TitanOrbit.ECS
             float planetSize,
             float mapW,
             float mapH,
-            float now)
+            float now,
+            float hopClock)
         {
             _ = ship;
+            _ = now;
             if (amount <= 0)
                 return false;
 
@@ -402,12 +426,15 @@ namespace TitanOrbit.ECS
             float3 targetPos = shipPos;
             float3 loadDir = ToroidalMapEcs.ToroidalDirection(spawnPos, targetPos, mapW, mapH);
             spawnPos += loadDir * 0.2f;
+            PeopleTransportEscortLogic.TryReserveLoadSeat(
+                state.EntityManager, shipEntity, amount, out byte seatId);
 
             // --- One packed sphere for the whole batch ---
             // [TITAN-ORBIT] Amount drives visual scale, HP, and ±N floating text. One spawn/pose
             // RPC stream instead of N × +1 flights (less bandwidth + fewer client Instantiates).
+            // Target baked here is only a fallback — the live flight homes on the seeded slot.
             SpawnTransport(ref ecb, spawnPos, targetPos, amount, shipNetworkId, planetId, 0,
-                shipNetworkId, true, team, now, mapW, mapH);
+                shipNetworkId, true, team, hopClock, mapW, mapH, seatId, -1f, 0);
 
             // [TITAN-ORBIT] Planet pays immediately; ship gains only on DeliverLoad (transitory vessel).
             planet.Population -= amount;
@@ -421,30 +448,56 @@ namespace TitanOrbit.ECS
         /// </summary>
         static bool TryDispatchUnload(
             ref EntityCommandBuffer ecb,
+            ref SystemState state,
+            Entity shipEntity,
             ref ShipState ship,
             int amount,
             int shipNetworkId,
             int planetId,
             TeamId team,
-            float3 shipPos,
-            float shipScale,
+            TeamId planetOwnership,
+            LocalTransform shipTransform,
             float3 planetPos,
             float planetSize,
             float mapW,
             float mapH,
-            float now)
+            float now,
+            float hopClock)
         {
+            _ = now;
             if (amount <= 0 || ship.CurrentPeople < amount)
                 return false;
 
-            float hullR = PeopleTransportMath.GetShipHullRadius(shipScale);
-            float3 spawnPos = PeopleTransportMath.GetShipUnloadSpawnToward(
-                shipPos, hullR, planetPos, mapW, mapH);
+            if (!PeopleTransportEscortLogic.TryPeelParkedSeat(
+                    state.EntityManager, shipEntity, out byte seatId, out int peeled, out float peeledHealth))
+            {
+                return false;
+            }
+
+            amount = math.min(amount, peeled);
+            if (amount <= 0)
+                return false;
+
+            float3 shipPos = shipTransform.Position;
+            PeopleTransportEscortLogic.GetEscortHullExtents(
+                state.EntityManager, shipEntity, shipTransform.Scale, out float extX, out float extZ);
+            float3 shipVel = float3.zero;
+            float3 heading = float3.zero;
+            if (state.EntityManager.HasComponent<ShipKinematics>(shipEntity))
+            {
+                var kin = state.EntityManager.GetComponentData<ShipKinematics>(shipEntity);
+                shipVel = kin.Velocity;
+                heading = kin.FormationHeading;
+            }
+            float3 spawnPos = PeopleTransportMath.EvaluateEscortSwarmPose(
+                shipPos, shipTransform.Rotation, extX, extZ, seatId, amount, shipNetworkId,
+                shipVel, hopClock, mapW, mapH, heading);
             float3 targetPos = PeopleTransportMath.GetPlanetSurfaceToward(
                 planetPos, planetSize, spawnPos, mapW, mapH);
 
             SpawnTransport(ref ecb, spawnPos, targetPos, amount, 0, 0, planetId,
-                shipNetworkId, false, team, now, mapW, mapH);
+                shipNetworkId, false, team, hopClock, mapW, mapH, seatId, peeledHealth,
+                (byte)planetOwnership);
 
             ship.CurrentPeople = math.max(0, ship.CurrentPeople - amount);
             return true;
@@ -466,24 +519,31 @@ namespace TitanOrbit.ECS
             int sourceShipNetworkId,
             bool isLoad,
             TeamId team,
-            float now,
+            float hopClock,
             float mapW,
-            float mapH)
+            float mapH,
+            byte seatId,
+            float healthOverride = -1f,
+            byte targetOwnerAtSpawn = 0)
         {
             float3 dir = ToroidalMapEcs.ToroidalDirection(spawnPos, targetPos, mapW, mapH);
             float cruise = PeopleTransportMath.ComputeCruiseSpeed(spawnPos, targetPos, isLoad, mapW, mapH);
-            // Start below cruise so the hop eases in (legacy magnet ramped with MoveTowards).
-            float initialMul = isLoad ? 0.55f : 0.45f;
-            float3 velocity = dir * cruise * initialMul;
+            // Planar launch dir * cruise. Y packs hop-clock spawn seconds so clients share
+            // the same closed-form t without changing the 62-byte SpawnRpc layout.
+            float3 velocity = dir * cruise;
+            velocity.y = hopClock;
             float scale = PeopleTransportMath.GetVisualScaleMultiplier(amount) * 0.25f;
             byte isLoadByte = (byte)(isLoad ? 1 : 0);
             byte teamByte = (byte)team;
+            float health = healthOverride > 0.01f
+                ? healthOverride
+                : PeopleTransportMath.ComputeMaxHealth(amount);
 
             // Sequence ties server sim entity ↔ client VFX ↔ pose RPCs (not a ghost).
             uint sequence = PeopleTransportVfxBridge.NextSequence();
 
             // --- Server-only sim entity (RPC VFX on clients, not GhostSpawn) ---
-            // Bullets / delivery read LocalTransform here. Clients magnet to the live ship.
+            // Bullets / delivery read LocalTransform here. Clients share the closed-form hop.
             Entity transport = ecb.CreateEntity();
             ecb.AddComponent<PeopleTransportTag>(transport);
             ecb.AddComponent(transport, LocalTransform.FromPositionRotationScale(spawnPos, quaternion.identity, scale));
@@ -491,10 +551,10 @@ namespace TitanOrbit.ECS
             {
                 Sequence = sequence,
                 Amount = amount,
-                Health = PeopleTransportMath.ComputeMaxHealth(amount),
+                Health = health,
                 Velocity = velocity,
                 SpawnPosition = spawnPos,
-                SpawnTime = now,
+                SpawnTime = hopClock,
                 CruiseSpeed = cruise,
                 TargetShipNetworkId = targetShipNetworkId,
                 SourcePlanetId = sourcePlanetId,
@@ -502,17 +562,23 @@ namespace TitanOrbit.ECS
                 SourceShipNetworkId = sourceShipNetworkId,
                 IsLoad = isLoadByte,
                 Team = teamByte,
+                SeatId = seatId,
+                TargetOwnerAtSpawn = targetOwnerAtSpawn,
+                Returning = 0,
             });
 
             // --- Client VFX spawn (PeopleTransportVfxDriver) ---
             float3 bakedTarget = targetPos;
             bakedTarget.y = 0f;
+            // Seat rides in spawn Y (seat+1). XZ stays the launch point. Layout stays 62 bytes.
+            float3 rpcSpawn = spawnPos;
+            rpcSpawn.y = seatId + 1f;
             // VFX/RPC carry the involved ship for hull floats (load dest, or unload source).
             int vfxShipId = targetShipNetworkId != 0 ? targetShipNetworkId : sourceShipNetworkId;
             var vfxReq = new PeopleTransportVfxBridge.SpawnRequest
             {
                 Sequence = sequence,
-                SpawnPosition = spawnPos,
+                SpawnPosition = rpcSpawn,
                 TargetPosition = bakedTarget,
                 Velocity = velocity,
                 CruiseSpeed = cruise,
@@ -526,12 +592,12 @@ namespace TitanOrbit.ECS
             if (ClientServerBootstrap.ClientWorld != null && ClientServerBootstrap.ClientWorld.IsCreated)
                 PeopleTransportVfxBridge.TryEnqueue(vfxReq);
 
-            // --- Broadcast spawn RPC (62B layout with TargetPosition — must match headless) ---
+            // --- Broadcast spawn RPC (62B layout — seat is SpawnPosition.y, must match headless) ---
             Entity rpcEntity = ecb.CreateEntity();
             ecb.AddComponent(rpcEntity, new PeopleTransportSpawnRpc
             {
                 Sequence = sequence,
-                SpawnPosition = spawnPos,
+                SpawnPosition = rpcSpawn,
                 TargetPosition = bakedTarget,
                 Velocity = velocity,
                 CruiseSpeed = cruise,
@@ -546,10 +612,10 @@ namespace TitanOrbit.ECS
         }
     }
 
-    /// <summary>Magnet-steers in-flight people transports and applies load/unload on arrival.</summary>
     /// <summary>
-    /// Server authoritative simulation of people-transport projectiles: movement, homing,
-    /// unload at planets/ships, capture/drain outcomes. Runs after dispatch and bullets.
+    /// Server authoritative simulation of people-transport spheres. They join a seeded
+    /// ship slot, sortie to a planet, and rejoin that slot with the same formation
+    /// step as fighter and mining drones. Runs after dispatch and bullets.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
@@ -562,6 +628,13 @@ namespace TitanOrbit.ECS
             // --- System OnUpdate ---
             float dt = SystemAPI.Time.DeltaTime;
             float now = (float)SystemAPI.Time.ElapsedTime;
+            int hz = PlanetGemMoonOrbitClock.FallbackSimulationHz;
+            if (SystemAPI.TryGetSingleton<ClientServerTickRate>(out var tickRate))
+                hz = math.max(1, tickRate.SimulationTickRate);
+            NetworkTime networkTime = default;
+            bool hasNetworkTime = SystemAPI.TryGetSingleton<NetworkTime>(out networkTime);
+            float hopClock = PeopleTransportEscortLogic.ReadHopClockSeconds(
+                now, hasNetworkTime ? networkTime : default, hz);
             // [TITAN-ORBIT] Missing map size = skip transport sim this tick (do not invent 1000×1000).
             if (!SystemAPI.TryGetSingleton<MapStateSingleton>(out var map) ||
                 !ToroidalMapEcs.IsValidMapSize(map.MapWidth, map.MapHeight))
@@ -615,16 +688,16 @@ namespace TitanOrbit.ECS
                 ref var t = ref transport.ValueRW;
                 if (t.Health <= 0f && t.Amount > 0f)
                     t.Health = PeopleTransportMath.ComputeMaxHealth(t.Amount);
-                float elapsed = now - t.SpawnTime;
+                float elapsed = hopClock - t.SpawnTime;
                 float3 myPos = transform.ValueRO.Position;
                 myPos.y = 0f;
                 bool isLoad = t.IsLoad != 0;
                 var team = (TeamId)t.Team;
 
                 StepTransportMotion(
-                    ref t, ref transform.ValueRW, isLoad, myPos, dt, mapW, mapH,
-                    shipStateByNetworkId, shipTransformByNetworkId, shipMoonDockByNetworkId,
-                    shipInputByNetworkId, shipOrbitByNetworkId,
+                    ref state, ref t, ref transform.ValueRW, isLoad, myPos, dt, hopClock, mapW, mapH,
+                    shipByNetworkId, shipStateByNetworkId, shipTransformByNetworkId,
+                    shipMoonDockByNetworkId, shipInputByNetworkId, shipOrbitByNetworkId,
                     planetTransformById, planetStateById);
                 myPos = transform.ValueRO.Position;
                 myPos.y = 0f;
@@ -673,7 +746,7 @@ namespace TitanOrbit.ECS
                                 myPos, t.SpawnPosition, sourceTransform.Position, sourcePlanetSize, elapsed, mapW, mapH))
                         {
                             var sourcePlanet = planetStateById[t.SourcePlanetId];
-                            ReturnLoadToPlanet(ref state, ref sourcePlanet, shipEntity, t.Amount, sourcePlanetSize);
+                            ReturnLoadToPlanet(ref state, ref sourcePlanet, shipEntity, t.Amount, sourcePlanetSize, t.SeatId);
                             planetStateById[t.SourcePlanetId] = sourcePlanet;
                             ecb.SetComponent(planetById[t.SourcePlanetId], sourcePlanet);
                             PeopleTransportNetNotify.EndAndDestroy(
@@ -683,14 +756,27 @@ namespace TitanOrbit.ECS
                         continue;
                     }
 
-                    float shipRadius = PeopleTransportMath.GetShipHullRadius(shipTransform.Scale);
-                    float3 shipCenter = shipTransform.Position;
-                    if (PeopleTransportMath.CanDeliverLoadToShip(myPos, shipCenter, shipRadius, mapW, mapH) &&
+                    bool atSlot = false;
+                    if (PeopleTransportEscortLogic.TryEvaluateTroopSlot(
+                            state.EntityManager, shipEntity, shipTransform, t.TargetShipNetworkId,
+                            t.SeatId, t.Amount, hopClock, mapW, mapH, out float3 loadSlot))
+                    {
+                        atSlot = ToroidalMapEcs.ToroidalDistance(myPos, loadSlot, mapW, mapH)
+                                 <= PeopleTransportMath.TroopSlotArriveDistance;
+                    }
+                    else
+                    {
+                        float shipRadius = PeopleTransportMath.GetShipHullRadius(shipTransform.Scale);
+                        atSlot = PeopleTransportMath.CanDeliverLoadToShip(
+                            myPos, shipTransform.Position, shipRadius, mapW, mapH);
+                    }
+
+                    if (atSlot &&
                         PeopleTransportMath.HasBriefTravelBeforeLoad(myPos, t.SpawnPosition, elapsed, mapW, mapH))
                     {
                         int sourcePlanetLevel = sourcePlanetState.PlanetLevel;
                         DeliverLoad(
-                            ref state, shipEntity, ref shipState, t.Amount, team, sourcePlanetLevel);
+                            ref state, shipEntity, ref shipState, t.Amount, team, sourcePlanetLevel, t.SeatId);
                         shipStateByNetworkId[t.TargetShipNetworkId] = shipState;
                         ecb.SetComponent(shipEntity, shipState);
                             PeopleTransportNetNotify.EndAndDestroy(
@@ -723,6 +809,59 @@ namespace TitanOrbit.ECS
                     }
 
                     float planetSize = math.max(0.5f, planetTransform.Scale);
+                    bool recallUnload = t.Returning != 0 ||
+                        PeopleTransportMath.ShouldRecallUnloadHop(
+                            t.TargetOwnerAtSpawn, planetState.Ownership);
+                    if (recallUnload)
+                    {
+                        if (shipByNetworkId.TryGetValue(t.SourceShipNetworkId, out var homeShip) &&
+                            shipStateByNetworkId.TryGetValue(t.SourceShipNetworkId, out var homeState) &&
+                            shipTransformByNetworkId.TryGetValue(t.SourceShipNetworkId, out var homeXf) &&
+                            !homeState.IsDead &&
+                            !homeState.AwaitingTeamSelection)
+                        {
+                            bool backAtSlot = false;
+                            if (PeopleTransportEscortLogic.TryEvaluateTroopSlot(
+                                    state.EntityManager, homeShip, homeXf, t.SourceShipNetworkId,
+                                    t.SeatId, t.Amount, hopClock, mapW, mapH, out float3 homeSlot))
+                            {
+                                float homeDist = ToroidalMapEcs.ToroidalDistance(
+                                    myPos, homeSlot, mapW, mapH);
+                                if (t.ReturnArmed == 0 &&
+                                    homeDist > PeopleTransportMath.TroopSlotArriveDistance)
+                                    t.ReturnArmed = 1;
+                                backAtSlot = homeDist <= PeopleTransportMath.TroopSlotArriveDistance;
+                            }
+                            else
+                            {
+                                float shipRadius = PeopleTransportMath.GetShipHullRadius(homeXf.Scale);
+                                backAtSlot = PeopleTransportMath.CanDeliverLoadToShip(
+                                    myPos, homeXf.Position, shipRadius, mapW, mapH);
+                                if (backAtSlot)
+                                    t.ReturnArmed = 1;
+                            }
+
+                            // Armed once the sortie has left the slot, so a capture on the
+                            // launch frame does not refund before the sphere has moved.
+                            bool rejoinReady = t.ReturnArmed != 0 || elapsed > 0.4f;
+                            if (backAtSlot && rejoinReady)
+                            {
+                                CompleteUnloadReturnToShip(
+                                    ref state, homeShip, ref homeState, t.Amount, t.SeatId, t.Health);
+                                shipStateByNetworkId[t.SourceShipNetworkId] = homeState;
+                                ecb.SetComponent(homeShip, homeState);
+                                PeopleTransportNetNotify.EndAndDestroy(
+                                    ref ecb, entity, in t, myPos, PeopleTransportPoseStatus.Returned);
+                            }
+                        }
+                        else
+                        {
+                            PeopleTransportNetNotify.EndAndDestroy(
+                                ref ecb, entity, in t, myPos, PeopleTransportPoseStatus.Destroyed);
+                        }
+
+                        continue;
+                    }
 
                     if (PeopleTransportMath.CanCompleteUnloadDelivery(
                             myPos, t.SpawnPosition, planetTransform.Position, planetSize, elapsed, mapW, mapH))
@@ -827,13 +966,16 @@ namespace TitanOrbit.ECS
         }
 
         internal static void StepTransportMotion(
+            ref SystemState state,
             ref PeopleTransportState transport,
             ref LocalTransform transform,
             bool isLoad,
             float3 myPos,
             float dt,
+            float timeSeconds,
             float mapW,
             float mapH,
+            NativeHashMap<int, Entity> shipByNetworkId,
             NativeHashMap<int, ShipState> shipStateByNetworkId,
             NativeHashMap<int, LocalTransform> shipTransformByNetworkId,
             NativeHashMap<int, ShipMoonDockState> shipMoonDockByNetworkId,
@@ -842,8 +984,23 @@ namespace TitanOrbit.ECS
             NativeHashMap<int, LocalTransform> planetTransformById,
             NativeHashMap<int, PlanetState> planetStateById)
         {
-            float3 target = float3.zero;
-            bool hasTarget = false;
+            bool loadEligible = false;
+            int slotShipId = isLoad ? transport.TargetShipNetworkId : transport.SourceShipNetworkId;
+            bool hasSlot = false;
+            float3 slot = float3.zero;
+            if (slotShipId != 0 &&
+                shipByNetworkId.TryGetValue(slotShipId, out var slotShip) &&
+                shipTransformByNetworkId.TryGetValue(slotShipId, out var slotXf))
+            {
+                hasSlot = PeopleTransportEscortLogic.TryEvaluateTroopSlot(
+                    state.EntityManager, slotShip, slotXf, slotShipId,
+                    transport.SeatId, transport.Amount, timeSeconds, mapW, mapH, out slot);
+            }
+
+            bool hasPlanet = false;
+            float3 planetCenter = float3.zero;
+            float planetSize = 1f;
+            bool recallUnload = !isLoad && transport.Returning != 0;
 
             if (isLoad &&
                 shipTransformByNetworkId.TryGetValue(transport.TargetShipNetworkId, out var shipTransform) &&
@@ -855,45 +1012,77 @@ namespace TitanOrbit.ECS
             {
                 float sourcePlanetSize = math.max(0.5f, sourceTransform.Scale);
                 shipMoonDockByNetworkId.TryGetValue(transport.TargetShipNetworkId, out var shipMoonDock);
-                bool eligible = IsShipEligibleForLoad(
+                loadEligible = IsShipEligibleForLoad(
                     shipState, shipInput, shipOrbit, shipMoonDock, shipTransform.Position, sourceTransform.Position,
                     sourcePlanetSize, sourcePlanetState.PlanetLevel, transport.SourcePlanetId, mapW, mapH);
-
-                target = eligible
-                    ? PeopleTransportMath.GetShipMagnetTarget(
-                        shipTransform.Position,
-                        PeopleTransportMath.GetShipHullRadius(shipTransform.Scale),
-                        myPos, mapW, mapH)
-                    : PeopleTransportMath.GetPlanetSurfaceToward(
-                        sourceTransform.Position, sourcePlanetSize, myPos, mapW, mapH);
-                hasTarget = true;
-            }
-            else if (!isLoad &&
-                     TryResolvePlanetTransform(transport.TargetPlanetId, transport.SourcePlanetId, planetTransformById,
-                         out var unloadPlanetTransform))
-            {
-                float planetSize = math.max(0.5f, unloadPlanetTransform.Scale);
-                target = PeopleTransportMath.GetPlanetSurfaceToward(
-                    unloadPlanetTransform.Position, planetSize, myPos, mapW, mapH);
-                hasTarget = true;
+                hasPlanet = true;
+                planetCenter = sourceTransform.Position;
+                planetSize = sourcePlanetSize;
             }
             else if (isLoad &&
-                     planetTransformById.TryGetValue(transport.SourcePlanetId, out var fallbackSourceTransform))
+                     planetTransformById.TryGetValue(transport.SourcePlanetId, out var fallbackSource))
             {
-                float planetSize = math.max(0.5f, fallbackSourceTransform.Scale);
-                target = PeopleTransportMath.GetPlanetSurfaceToward(
-                    fallbackSourceTransform.Position, planetSize, myPos, mapW, mapH);
-                hasTarget = true;
+                hasPlanet = true;
+                planetCenter = fallbackSource.Position;
+                planetSize = math.max(0.5f, fallbackSource.Scale);
+            }
+            else if (!isLoad)
+            {
+                if (!recallUnload &&
+                    planetStateById.TryGetValue(transport.TargetPlanetId, out var destPlanet) &&
+                    PeopleTransportMath.ShouldRecallUnloadHop(
+                        transport.TargetOwnerAtSpawn, destPlanet.Ownership))
+                    recallUnload = true;
+
+                if (recallUnload)
+                    transport.Returning = 1;
+
+                if (!recallUnload &&
+                    TryResolvePlanetTransform(
+                        transport.TargetPlanetId, transport.SourcePlanetId, planetTransformById,
+                        out var unloadPlanetTransform))
+                {
+                    hasPlanet = true;
+                    planetCenter = unloadPlanetTransform.Position;
+                    planetSize = math.max(0.5f, unloadPlanetTransform.Scale);
+                }
             }
 
-            if (!hasTarget)
+            if (isLoad && !loadEligible)
+                transport.Returning = 1;
+            else if (isLoad)
+                transport.Returning = 0;
+
+            if (!PeopleTransportEscortLogic.TryBuildTroopMoveIntent(
+                    isLoad,
+                    loadEligible,
+                    recallUnload,
+                    hasSlot,
+                    slot,
+                    hasPlanet,
+                    planetCenter,
+                    planetSize,
+                    myPos,
+                    mapW,
+                    mapH,
+                    out var intent))
                 return;
 
-            transport.Velocity = PeopleTransportMath.SteerMagnetVelocity(
-                myPos, target, transport.Velocity, dt, transport.CruiseSpeed, mapW, mapH);
-            myPos += transport.Velocity * dt;
-            // [TITAN-ORBIT] Wrap after integrate so transports crossing a seam stay canonical.
-            PeopleTransportConstants.WriteTransform(ref transform, myPos, mapW, mapH);
+            float3 offset = transport.FormationOffset;
+            float3 offsetVel = transport.FormationVelocity;
+            float3 prevIdle = transport.FormationPrevIdle;
+            byte ready = transport.FormationReady;
+            byte anchor = transport.FormationAnchor;
+            PeopleTransportEscortLogic.StepTroopDrone(
+                ref offset, ref offsetVel, ref prevIdle, ref ready, ref anchor,
+                myPos, in intent, dt, mapW, mapH, out float3 pos, out float3 worldVel);
+            transport.FormationOffset = offset;
+            transport.FormationVelocity = offsetVel;
+            transport.FormationPrevIdle = prevIdle;
+            transport.FormationReady = ready;
+            transport.FormationAnchor = anchor;
+            transport.Velocity = worldVel;
+            PeopleTransportConstants.WriteTransform(ref transform, pos, mapW, mapH);
         }
 
         static bool TryResolvePlanetTransform(
@@ -954,10 +1143,11 @@ namespace TitanOrbit.ECS
             ref ShipState ship,
             float amount,
             TeamId team,
-            int planetLevel)
+            int planetLevel,
+            byte seatId)
         {
             // --- DeliverLoad (arrival) ---
-            // CurrentPeople rises here; client VFX shows +N at the transport consume position.
+            // CurrentPeople rises here; the reserved seat parks as an escort drone.
             int space = ship.PeopleCapacity - ship.CurrentPeople;
             int toAdd = (int)math.min(amount, space);
             if (toAdd > 0)
@@ -966,7 +1156,14 @@ namespace TitanOrbit.ECS
             }
 
             _ = planetLevel;
-
+            PeopleTransportEscortLogic.MarkSeatParked(state.EntityManager, shipEntity, seatId);
+            int combine = 0;
+            if (state.EntityManager.HasComponent<ShipPeopleTransferState>(shipEntity))
+                combine = state.EntityManager.GetComponentData<ShipPeopleTransferState>(shipEntity).LastLoadCombineMax;
+            PeopleTransportEscortLogic.SyncParkedEscorts(
+                state.EntityManager, shipEntity, ship.CurrentPeople,
+                PeopleTransportEscortLogic.ResolveChunk(math.max(1, ship.ShipLevel), combine),
+                0);
             ClearPeopleInTransitOnShip(ref state, shipEntity, amount);
             LogPeopleEvent("Load", toAdd, team);
         }
@@ -980,10 +1177,12 @@ namespace TitanOrbit.ECS
             ref PlanetState planet,
             Entity shipEntity,
             float amount,
-            float planetSize)
+            float planetSize,
+            byte seatId)
         {
             int maxPop = PlanetPopulationMath.GetMaxPopulation(planetSize, planet.PlanetLevel);
             planet.Population = math.min(planet.Population + (int)amount, maxPop);
+            PeopleTransportEscortLogic.RemoveSeat(state.EntityManager, shipEntity, seatId);
             ClearPeopleInTransitOnShip(ref state, shipEntity, amount);
         }
 
@@ -996,6 +1195,32 @@ namespace TitanOrbit.ECS
             if (add <= 0)
                 return;
             ship.CurrentPeople = math.min(ship.PeopleCapacity, ship.CurrentPeople + add);
+        }
+
+        /// <summary>
+        /// Capture (or planet-gone) recall: cargo returns to the hull and parked
+        /// escort seats rebuild from the new count.
+        /// </summary>
+        static void CompleteUnloadReturnToShip(
+            ref SystemState state,
+            Entity shipEntity,
+            ref ShipState ship,
+            float amount,
+            byte seatId,
+            float health)
+        {
+            // Same seat id the sortie left, so the parked orb reappears where the
+            // sphere just rejoined — not a freshly hashed slot.
+            PeopleTransportEscortLogic.RestoreParkedSeat(
+                state.EntityManager, shipEntity, seatId, (int)amount, health);
+            RefundUnloadToShip(ref ship, amount);
+            int combine = 0;
+            if (state.EntityManager.HasComponent<ShipPeopleTransferState>(shipEntity))
+                combine = state.EntityManager.GetComponentData<ShipPeopleTransferState>(shipEntity).LastLoadCombineMax;
+            PeopleTransportEscortLogic.SyncParkedEscorts(
+                state.EntityManager, shipEntity, ship.CurrentPeople,
+                PeopleTransportEscortLogic.ResolveChunk(math.max(1, ship.ShipLevel), combine),
+                0);
         }
 
         /// <summary>Decrements inbound <see cref="ShipPeopleTransferState.PeopleInTransit"/> on a ship entity.</summary>
@@ -1084,6 +1309,7 @@ namespace TitanOrbit.ECS
                         continue;
 
                     ClearPeopleInTransitOnShip(ref state, ships[i], transport.Amount);
+                    PeopleTransportEscortLogic.RemoveSeat(em, ships[i], transport.SeatId);
                     break;
                 }
             }

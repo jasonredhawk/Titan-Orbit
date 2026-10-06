@@ -91,8 +91,8 @@ namespace TitanOrbit.NetCode
                 // [TITAN-ORBIT] Standalone client (Windows / WebGL / Android) — ClientWorld only.
                 // Join game → Relay. Do NOT CreateDefaultClientServerWorlds() (that auto-hosts).
 #if UNITY_WEBGL && !UNITY_EDITOR
-                // [TITAN-ORBIT] WebGL needs a filtered ClientWorld — stock CreateClientWorld OOBs
-                // during system OnCreate / first Update (Chrome 2026-08-09 / 2026-08-10).
+                // [TITAN-ORBIT] WebGL client omits Entities Graphics / VariableRate only.
+                // GhostSpawn and command buffers stay so Relay snapshots can spawn ghosts.
                 CreateWebGlClientWorld();
 #else
                 CreateClientWorld("ClientWorld");
@@ -128,22 +128,22 @@ namespace TitanOrbit.NetCode
 
 #if UNITY_WEBGL && !UNITY_EDITOR
         /// <summary>
-        /// Creates a WebGL ClientWorld with systems that proven-OOB on Chrome stripped out, then
-        /// keeps that world out of the player loop so the main menu can stay up.
-        ///
-        /// Proven WASM OOB loci (2026-08-09 / 2026-08-10 Chrome):
-        /// <list type="bullet">
-        /// <item>Entities Graphics / Physics GraphicsIntegration OnCreate (no compute).</item>
-        /// <item>VariableRateSimulation* and every *CommandBufferSystem* OnCreate.</item>
-        /// <item>GhostSpawnSystem OnCreate (~0x281af*).</item>
-        /// <item>First player-loop Update after menu-ready when ClientWorld ticks without ECBs
-        /// (Browser_mainLoop_runner ~0x4028cf7) — untick avoids that until a WebGL-safe ECB /
-        /// GhostSpawn OnCreate path exists.</item>
-        /// </list>
-        /// Uses stock <see cref="ClientServerBootstrap.CreateClientWorld(string, NativeList{SystemTypeIndex})"/>
-        /// so <c>Netcode.Client.Init()</c> still runs. Join ticks via
-        /// <see cref="TitanOrbitWebGlClientTick.SafeUpdate"/> (Transform forced OFF). GhostSpawn
-        /// + CommandBuffers stay excluded until a WebGL-safe OnCreate path exists.
+        /// Creates a WebGL ClientWorld that can receive snapshots and spawn ghosts.
+        /// <para>
+        /// Still omitted: Entities Graphics, Physics GraphicsIntegration (no compute; hybrid
+        /// GameObjects draw the match), VariableRateSimulation (unused), and Multiplayer Center
+        /// samples. GhostSpawn, command buffers, and the people-transport RPC client are included.
+        /// </para>
+        /// <para>
+        /// GhostSpawn and every command-buffer system are created in the same pass as
+        /// <c>RpcSystem</c> and <c>NetworkStreamReceiveSystem</c>. Those systems sort
+        /// <c>UpdateAfter</c> the command buffers; adding the buffers later left the Relay
+        /// handshake and map-recipe RPCs without a playback point, so the loading bar sat at
+        /// the warmup tail and the connect watch timed out.
+        /// <see cref="FixedStepSimulationSystemGroup"/> stays disabled: ship motors live in
+        /// <see cref="PredictedFixedStepSimulationSystemGroup"/>, and the Unity fixed-step group
+        /// trapped on Chrome in August 2026. Transform and predicted simulation stay on.
+        /// </para>
         /// </summary>
         static void CreateWebGlClientWorld()
         {
@@ -151,7 +151,9 @@ namespace TitanOrbit.NetCode
             NativeList<SystemTypeIndex> all = DefaultWorldInitialization.GetAllSystemTypeIndices(
                 WorldSystemFilterFlags.ClientSimulation | WorldSystemFilterFlags.Presentation);
 
-            var filtered = new NativeList<SystemTypeIndex>(all.Length, Allocator.Temp);
+            var systems = new NativeList<SystemTypeIndex>(all.Length, Allocator.Temp);
+            int commandBuffers = 0;
+            int ghostSpawn = 0;
             try
             {
                 for (int i = 0; i < all.Length; i++)
@@ -160,32 +162,46 @@ namespace TitanOrbit.NetCode
                     string systemName = TypeManager.GetSystemName(index).ToString();
                     if (IsWebGlExcludedSystemName(systemName))
                         continue;
-                    filtered.Add(index);
+                    if (systemName == "Unity.NetCode.GhostSpawnSystem")
+                        ghostSpawn++;
+                    else if (systemName.IndexOf("CommandBufferSystem", StringComparison.Ordinal) >= 0)
+                        commandBuffers++;
+                    systems.Add(index);
                 }
 
-                // --- Create world (registers systems + Netcode.Client.Init) ---
-                World world = CreateClientWorld("ClientWorld", filtered);
+                if (commandBuffers == 0)
+                    Debug.LogError("[WebGLClient] No CommandBuffer systems registered. Snapshots and Relay RPCs cannot be applied.");
+                if (ghostSpawn == 0)
+                    Debug.LogError("[WebGLClient] GhostSpawnSystem was not registered. Ghosts cannot spawn.");
 
-                // --- Menu-safe: do not tick ClientWorld from the player loop ---
-                // [TITAN-ORBIT] With CommandBufferSystems excluded, a full Simulation Update can
-                // OOB on the first Browser_mainLoop frames. Untick keeps the main menu alive.
-                // Join uses TitanOrbitWebGlClientTick.SafeUpdate (Transform forced OFF) — do not
-                // re-append this world to the player loop (that would double-tick + re-enable Transform).
-                TitanOrbitWebGlClientTick.DisableUnsafeGroups(world);
-                ScriptBehaviourUpdateOrder.RemoveWorldFromCurrentPlayerLoop(world);
-                Debug.Log("[TitanOrbitBootstrap] WebGL ClientWorld created (filtered, unticked for menu boot).");
+                // --- One create so RpcSystem / NetworkReceive sort against the command buffers ---
+                Debug.Log("[WebGLClient] OnCreate begin. systems=" + systems.Length +
+                          " commandBuffers=" + commandBuffers + " ghostSpawn=" + ghostSpawn + ".");
+                World world = CreateClientWorld("ClientWorld", systems);
+                Debug.Log("[WebGLClient] OnCreate complete.");
+
+                // Ship motors run in PredictedFixedStep, which is inside PredictedSimulation,
+                // not in FixedStepSimulationSystemGroup. Leave that Unity rate group off.
+                var fixedStep = world.GetExistingSystemManaged<FixedStepSimulationSystemGroup>();
+                if (fixedStep != null)
+                    fixedStep.Enabled = false;
+
+                Debug.Log("[WebGLClient] ClientWorld on player loop. Transform and PredictedSimulation ON. " +
+                          "FixedStep OFF. Next trap after this line is the first Update " +
+                          "(see '[WebGLClient] First Update begin').");
             }
             finally
             {
-                if (filtered.IsCreated)
-                    filtered.Dispose();
+                if (systems.IsCreated)
+                    systems.Dispose();
                 if (all.IsCreated)
                     all.Dispose();
             }
         }
 
         /// <summary>
-        /// Systems that must not register on WebGL (proven OnCreate OOB or unsupported without compute).
+        /// Systems that must not register on WebGL. Communication systems (GhostSpawn, command
+        /// buffers, people-transport RPC) stay in the world.
         /// </summary>
         /// <param name="systemName">Full system type name from <see cref="TypeManager.GetSystemName"/>.</param>
         /// <returns>True when the system must be omitted from the WebGL ClientWorld.</returns>
@@ -194,7 +210,7 @@ namespace TitanOrbit.NetCode
             if (string.IsNullOrEmpty(systemName))
                 return false;
 
-            // [UNITY] Entities Graphics — no compute shaders on WebGL.
+            // [UNITY] Entities Graphics — no compute shaders on WebGL. Hybrid proxies draw ships.
             if (systemName.StartsWith("Unity.Rendering.", StringComparison.Ordinal))
                 return true;
             if (systemName.StartsWith("Unity.Entities.Graphics.", StringComparison.Ordinal))
@@ -204,31 +220,17 @@ namespace TitanOrbit.NetCode
             if (systemName.StartsWith("Unity.Physics.GraphicsIntegration.", StringComparison.Ordinal))
                 return true;
 
-            // [TITAN-ORBIT] Proven WASM OOB on BeginVariableRateSimulationEntityCommandBufferSystem
-            // OnCreate. Titan Orbit uses NetCode predicted fixed-step, not VariableRateSimulation.
+            // [TITAN-ORBIT] Unused. Also drops BeginVariableRateSimulationEntityCommandBufferSystem.
+            // Predicted fixed-step is the ship tick. Other command buffers stay registered.
             if (systemName.IndexOf("VariableRateSimulation", StringComparison.Ordinal) >= 0)
                 return true;
 
-            // [TITAN-ORBIT] Proven WASM OOB on GhostSpawnSystem OnCreate. Join cannot spawn ghosts
-            // until a WebGL-safe OnCreate path exists — keep excluded with the menu-untick policy.
-            if (systemName == "Unity.NetCode.GhostSpawnSystem")
-                return true;
-
-            // [TITAN-ORBIT] Proven WASM OOB on every *CommandBufferSystem* OnCreate hit on WebGL
-            // (VariableRate, FixedStep, Presentation, Initialization, PredictedSimulation,
-            // PreLateUpdate, BeginSimulation). Strip all until OnCreate is WebGL-safe.
-            if (systemName.IndexOf("CommandBufferSystem", StringComparison.Ordinal) >= 0)
-                return true;
-
-            // [TITAN-ORBIT] Multiplayer Center NetcodeForEntities example systems are not used by
-            // Titan Orbit gameplay — omit from WebGL ClientWorld.
+            // [TITAN-ORBIT] Multiplayer Center samples are not used by Titan Orbit.
+            // Their SetRpcSystemDynamicAssemblyListSystem is what turns the server handshake
+            // bit on. WebGL must not rely on that sample: TitanOrbitRpcDynamicAssemblyListSystem
+            // sets the same bit on this ClientWorld.
             if (systemName.IndexOf("Unity.Multiplayer.Center", StringComparison.Ordinal) >= 0
                 || systemName.IndexOf("Unity_Multiplayer_Center", StringComparison.Ordinal) >= 0)
-                return true;
-
-            // [TITAN-ORBIT] People-transport spawn RPC client — omitted on WebGL menu boot path
-            // (not required until ClientWorld is re-ticked for in-game join).
-            if (systemName == "TitanOrbit.ECS.PeopleTransportSpawnRpcClientSystem")
                 return true;
 
             return false;

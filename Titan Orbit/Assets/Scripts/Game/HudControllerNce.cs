@@ -1,6 +1,7 @@
 using TitanOrbit.Core;
 using TitanOrbit.ECS;
 using TitanOrbit.Simulation;
+using Unity.Entities;
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
@@ -21,6 +22,25 @@ namespace TitanOrbit.Game
         /// <summary>Text field for authoritative match countdown from <see cref="MatchStateSingleton"/>.</summary>
         [SerializeField] TMP_Text timerText;
 
+        World _matchWorld;
+        EntityQuery _matchQuery;
+        bool _matchQueryReady;
+        int _shownHp = int.MinValue;
+        int _shownHpMax = int.MinValue;
+        int _shownGems = int.MinValue;
+        int _shownGemCap = int.MinValue;
+        int _shownTimer = int.MinValue;
+        int _shownPlanetLevel;
+        int _shownPlanetGems;
+
+        void OnDestroy()
+        {
+            if (_matchQueryReady && _matchWorld != null && _matchWorld.IsCreated)
+                _matchQuery.Dispose();
+            _matchQueryReady = false;
+            _matchWorld = null;
+        }
+
         /// <summary>
         /// [UNITY] Per-frame HUD refresh — ship stats from local ghost; timer from client or host world.
         /// </summary>
@@ -30,34 +50,77 @@ namespace TitanOrbit.Game
             // [HYBRID] EcsGameBridge copies predicted/authoritative ship state for UI only.
             if (EcsGameBridge.TryGetLocalShipState(out var ship))
             {
-                if (healthText != null)
-                    healthText.text = $"HP {ship.Health:0}/{ship.MaxHealth:0}";
+                int hp = Mathf.RoundToInt(ship.Health);
+                int hpMax = Mathf.RoundToInt(ship.MaxHealth);
+                if (healthText != null && (hp != _shownHp || hpMax != _shownHpMax))
+                {
+                    _shownHp = hp;
+                    _shownHpMax = hpMax;
+                    healthText.text = "HP " + hp + "/" + hpMax;
+                }
+
                 if (gemsText != null)
                 {
-                    string gems = $"Gems {ship.CurrentGems:0}/{ship.GemCapacity:0}";
-                    // [TITAN-ORBIT] Orbit motor shows planet gem pool when ship is in ring deposit mode.
-                    if (EcsGameBridge.TryGetLocalShipOrbitState(out var orbit) && orbit.UsingOrbitMotor)
+                    int gems = Mathf.RoundToInt(ship.CurrentGems);
+                    int gemCap = Mathf.RoundToInt(ship.GemCapacity);
+                    bool orbiting = EcsGameBridge.TryGetLocalShipOrbitState(out var orbit) && orbit.UsingOrbitMotor;
+                    int planetLevel = 0;
+                    int planetGems = 0;
+                    int planetMax = 0;
+                    if (orbiting && EcsGameBridge.TryGetPlanetStateByPlanetId(orbit.OrbitPlanetId, out var planet))
                     {
-                        gems += "  •  Orbiting";
-                        if (EcsGameBridge.TryGetPlanetStateByPlanetId(orbit.OrbitPlanetId, out var planet))
-                        {
-                            float max = PlanetEconomyMath.GetMaxGemsForLevel(planet.PlanetLevel);
-                            gems += $"  •  Planet L{planet.PlanetLevel} {planet.CurrentGems:0}/{max:0}";
-                        }
+                        planetLevel = planet.PlanetLevel;
+                        planetGems = Mathf.RoundToInt(planet.CurrentGems);
+                        planetMax = Mathf.RoundToInt(PlanetEconomyMath.GetMaxGemsForLevel(planet.PlanetLevel));
                     }
-                    gemsText.text = gems;
+
+                    if (gems != _shownGems || gemCap != _shownGemCap || planetLevel != _shownPlanetLevel ||
+                        planetGems != _shownPlanetGems)
+                    {
+                        _shownGems = gems;
+                        _shownGemCap = gemCap;
+                        _shownPlanetLevel = planetLevel;
+                        _shownPlanetGems = planetGems;
+                        string line = "Gems " + gems + "/" + gemCap;
+                        if (orbiting)
+                        {
+                            line += "  •  Orbiting";
+                            if (planetLevel > 0)
+                                line += "  •  Planet L" + planetLevel + " " + planetGems + "/" + planetMax;
+                        }
+
+                        gemsText.text = line;
+                    }
                 }
             }
 
             // --- Match timer ---
             // [ECS/DOTS] MatchStateSingleton replicates from server; host reads ServerWorld, client reads ClientWorld.
             var world = EcsGameBridge.ClientWorld ?? EcsGameBridge.ServerWorld;
-            if (world != null && world.IsCreated && timerText != null)
+            if (world != null && world.IsCreated && timerText != null && TryGetMatchTimer(world, out int seconds) &&
+                seconds != _shownTimer)
             {
-                if (world.EntityManager.CreateEntityQuery(typeof(MatchStateSingleton))
-                    .TryGetSingleton<MatchStateSingleton>(out var match))
-                    timerText.text = $"Time {match.MatchTimer:0}s";
+                _shownTimer = seconds;
+                timerText.text = "Time " + seconds + "s";
             }
+        }
+
+        bool TryGetMatchTimer(World world, out int seconds)
+        {
+            seconds = 0;
+            if (_matchWorld != world)
+            {
+                if (_matchQueryReady && _matchWorld != null && _matchWorld.IsCreated)
+                    _matchQuery.Dispose();
+                _matchQuery = world.EntityManager.CreateEntityQuery(typeof(MatchStateSingleton));
+                _matchWorld = world;
+                _matchQueryReady = true;
+            }
+
+            if (!_matchQuery.TryGetSingleton<MatchStateSingleton>(out var match))
+                return false;
+            seconds = Mathf.FloorToInt(match.MatchTimer);
+            return true;
         }
     }
 }

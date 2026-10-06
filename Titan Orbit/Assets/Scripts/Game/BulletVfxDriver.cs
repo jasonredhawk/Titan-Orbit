@@ -6,6 +6,7 @@ using TitanOrbit.Data;
 using TitanOrbit.ECS;
 using TitanOrbit.Entities;
 using TitanOrbit.Generation;
+using TitanOrbit.Diagnostics;
 using TitanOrbit.NetCode;
 using TitanOrbit.Shared;
 using TitanOrbit.Simulation;
@@ -72,6 +73,12 @@ namespace TitanOrbit.Game
             public float MaxDistance;
             public float Traveled;
             public float Damage;
+            /// <summary>Extra Level fire power (pre-bank) for the weapon-type pitch piano.</summary>
+            public float FirePowerLive;
+            /// <summary>Catalog / unique-component base (top C).</summary>
+            public float FirePowerBase;
+            /// <summary>Catalog Per Extra Level. MEGA unique weapons are 0.</summary>
+            public float FirePowerPerExtra;
             public byte OwnerTeam;
             public int BankIndex;
             public float ScaleMultiplier;
@@ -255,6 +262,7 @@ namespace TitanOrbit.Game
         /// </summary>
         void LateUpdate()
         {
+            using var _memBul = WebGlAllocBuckets.Measure(WebGlAllocBuckets.Bullets);
             if (_lastTickFrame == Time.frameCount)
                 return;
             _lastTickFrame = Time.frameCount;
@@ -393,7 +401,7 @@ namespace TitanOrbit.Game
                         continue;
                     }
 
-                    if (t.RemainingLifetime <= 0f || t.Traveled >= math.max(0.5f, t.MaxDistance))
+                    if (t.RemainingLifetime <= 0f || BulletFlight.IsRangeExpired(t.Traveled, t.MaxDistance))
                     {
                         DestroyTracerGo(t);
                         RemoveAtSwap(i);
@@ -599,7 +607,7 @@ namespace TitanOrbit.Game
                     ? ToroidalMapEcs.Wrap(nextPos)
                     : nextPos;
 
-                if (t.RemainingLifetime <= 0f || t.Traveled >= math.max(0.5f, t.MaxDistance))
+                if (t.RemainingLifetime <= 0f || BulletFlight.IsRangeExpired(t.Traveled, t.MaxDistance))
                 {
                     displayLogical = t.LogicalPos;
                     displayVel = t.Velocity;
@@ -803,7 +811,8 @@ namespace TitanOrbit.Game
                         display, sparkNormal, ramScale, killBoom, ramBank, ramTeam);
                     // Sequence-0 is also the grind metronome (4 Hz). Local hull SFX is predicted
                     // from contacts; remotes hear these pulses (skip-near-local inside the driver).
-                    ShipCollisionSfxDriver.NotifyRemoteRamPulse(display, hit.Damage, killBoom);
+                    ShipCollisionSfxDriver.NotifyRemoteRamPulse(
+                        display, hit.Damage, killBoom, hit.OwnerNetworkId);
                     if (killBoom)
                     {
                         BulletImpactAttach.PlayAtLogicalPoint(
@@ -816,7 +825,8 @@ namespace TitanOrbit.Game
                     var ramSynth = new Tracer { OwnerNetworkId = 0, IsAnticipation = false };
                     TryShowHitRpcFloats(
                         hitPos, hit.HitPosition, hit.Damage, ramTeam,
-                        hit.AsteroidHealthAfter, hit.PlanetaryDefensePlanetId, in ramSynth);
+                        hit.AsteroidHealthAfter, hit.PlanetaryDefensePlanetId,
+                        hit.PlanetaryDefenseSlotIndex, hit.PlanetaryDefenseHealthAfter, in ramSynth);
                     continue;
                 }
 
@@ -838,7 +848,8 @@ namespace TitanOrbit.Game
                     };
                     TryShowHitRpcFloats(
                         hitPos, hit.HitPosition, hit.Damage, (TeamId)hit.OwnerTeam,
-                        hit.AsteroidHealthAfter, hit.PlanetaryDefensePlanetId, in synth);
+                        hit.AsteroidHealthAfter, hit.PlanetaryDefensePlanetId,
+                        hit.PlanetaryDefenseSlotIndex, hit.PlanetaryDefenseHealthAfter, in synth);
                     ClearStaleAnticipationTracers(hit.OwnerTeam);
                     continue;
                 }
@@ -865,7 +876,8 @@ namespace TitanOrbit.Game
                     // Always show float on HitRpc — even when VFX was client-predicted.
                     TryShowHitRpcFloats(
                         hitPos, hit.HitPosition, hit.Damage, (TeamId)hit.OwnerTeam,
-                        hit.AsteroidHealthAfter, hit.PlanetaryDefensePlanetId, in tracer);
+                        hit.AsteroidHealthAfter, hit.PlanetaryDefensePlanetId,
+                        hit.PlanetaryDefenseSlotIndex, hit.PlanetaryDefenseHealthAfter, in tracer);
 
                     DestroyTracerGo(tracer);
                     RemoveAtSwap(idx);
@@ -885,7 +897,8 @@ namespace TitanOrbit.Game
                     var nearTracer = _tracers[nearIdx];
                     TryShowHitRpcFloats(
                         hitPos, hit.HitPosition, hit.Damage, (TeamId)hit.OwnerTeam,
-                        hit.AsteroidHealthAfter, hit.PlanetaryDefensePlanetId, in nearTracer);
+                        hit.AsteroidHealthAfter, hit.PlanetaryDefensePlanetId,
+                        hit.PlanetaryDefenseSlotIndex, hit.PlanetaryDefenseHealthAfter, in nearTracer);
 
                     DestroyTracerGo(nearTracer);
                     RemoveAtSwap(nearIdx);
@@ -900,7 +913,8 @@ namespace TitanOrbit.Game
                     };
                     TryShowHitRpcFloats(
                         hitPos, hit.HitPosition, hit.Damage, (TeamId)hit.OwnerTeam,
-                        hit.AsteroidHealthAfter, hit.PlanetaryDefensePlanetId, in synth);
+                        hit.AsteroidHealthAfter, hit.PlanetaryDefensePlanetId,
+                        hit.PlanetaryDefenseSlotIndex, hit.PlanetaryDefenseHealthAfter, in synth);
                     ClearStaleAnticipationTracers(hit.OwnerTeam);
                 }
                 else
@@ -909,7 +923,8 @@ namespace TitanOrbit.Game
                     var synth = new Tracer { OwnerNetworkId = 0, IsAnticipation = false };
                     TryShowHitRpcFloats(
                         hitPos, hit.HitPosition, hit.Damage, (TeamId)hit.OwnerTeam,
-                        hit.AsteroidHealthAfter, hit.PlanetaryDefensePlanetId, in synth);
+                        hit.AsteroidHealthAfter, hit.PlanetaryDefensePlanetId,
+                        hit.PlanetaryDefenseSlotIndex, hit.PlanetaryDefenseHealthAfter, in synth);
                 }
             }
         }
@@ -924,6 +939,7 @@ namespace TitanOrbit.Game
         /// on kill. Do not DestroyEntity here — sim-group soft-destroy owns ECS teardown.
         /// Ship hits pass &lt; 0 and <paramref name="planetaryDefensePlanetId"/> 0 — we
         /// surface-fit the hull and show accumulated damage on that ship.
+        /// Planetary-defense hits pass a planet id and show the same −damage float on the pad.
         /// </para>
         /// </summary>
         static void TryShowHitRpcFloats(
@@ -933,13 +949,26 @@ namespace TitanOrbit.Game
             TeamId ownerTeam,
             float asteroidHealthAfter,
             int planetaryDefensePlanetId,
+            int planetaryDefenseSlotIndex,
+            float planetaryDefenseHealthAfter,
             in Tracer tracer)
         {
-            // Planetary-defense pad HP is applied in BulletHitRpcClientSystem — not a ship hull.
+            // Pad HP is applied in BulletHitRpcClientSystem. The float parks on the hybrid turret.
+            if (planetaryDefensePlanetId > 0)
+            {
+                EcsFloatingCountPresenter.TryNotifyDefenseTurretBulletHit(
+                    planetaryDefensePlanetId,
+                    planetaryDefenseSlotIndex,
+                    damage,
+                    planetaryDefenseHealthAfter,
+                    ownerTeam,
+                    tracer.OwnerNetworkId);
+                return;
+            }
+
             if (asteroidHealthAfter < 0f)
             {
-                if (planetaryDefensePlanetId <= 0)
-                    TryShowShipFloatForHitRpc(hitDisplayPos, damage, ownerTeam);
+                TryShowShipFloatForHitRpc(hitDisplayPos, damage, ownerTeam);
                 return;
             }
 
@@ -1034,6 +1063,9 @@ namespace TitanOrbit.Game
             adopted.BankIndex = req.BankIndex;
             adopted.ScaleMultiplier = req.ScaleMultiplier > 0f ? req.ScaleMultiplier : adopted.ScaleMultiplier;
             adopted.Damage = req.Damage;
+            adopted.FirePowerLive = req.FirePowerLive;
+            adopted.FirePowerBase = req.FirePowerBase;
+            adopted.FirePowerPerExtra = req.FirePowerPerExtra;
             // [TITAN-ORBIT] Lifetime <= 0 = distance-only (PD turrets); do not clamp to 0.05s.
             adopted.RemainingLifetime = ResolveTracerLifetime(req.Lifetime);
             adopted.MaxDistance = math.max(0.5f, req.MaxDistance);
@@ -1254,9 +1286,12 @@ namespace TitanOrbit.Game
             spawnDisplay.y = mountY;
 
             // --- Muzzle flash at fire origin ---
-            // Skip when the bolt dies at the barrel (nose-touch / spawned inside).
-            // Hull collision should show the impact animation, not a gun flash on the ship.
+            // Skip the flash when the bolt dies at the barrel (nose-touch / spawned
+            // inside) so hull collision shows the impact only. Fire SFX still plays —
+            // Fireballs V1 has no muzzle prefab/audio, and MEGA cannons were silent
+            // whenever this probe hit nearby world geometry.
             float cameraScale = ResolveMegaCameraVisualScale();
+            float pianoLive = req.FirePowerLive > 0.01f ? req.FirePowerLive : req.Damage;
             if (!IsImmediateCollisionSpawn(in req))
             {
                 BulletVisualFactory.PlayMuzzleVfx(
@@ -1266,10 +1301,20 @@ namespace TitanOrbit.Game
                     bankIndex,
                     team,
                     scaleMul * cameraScale,
-                    req.Damage);
-                AudioManager.Instance?.PlayWeaponShootSound(
-                    BulletVisualFactory.GetFirePowerSoundPitch(req.Damage));
+                    pianoLive,
+                    req.FirePowerBase,
+                    req.FirePowerPerExtra);
             }
+
+            // --- Fire start one-shot ---
+            // [TITAN-ORBIT] Shared AudioManager clip. Not the Sci-Fi muzzle prefab —
+            // Fireballs / several banks have muzzleParticle = null, so pitching a
+            // muzzle AudioSource would play nothing. Pitch uses Extra Level bookends,
+            // not bank-scaled plan.Damage.
+            AudioManager.GetOrFind()?.PlayWeaponShootSound(
+                BulletVisualFactory.GetFirePowerSoundPitch(
+                    pianoLive, req.FirePowerBase, req.FirePowerPerExtra),
+                BulletVisualFactory.GetFirePowerShootVolume(req.Damage));
 
             // --- Pooled tracer shell (destroy-probe: spawnMs ~14 ms was Instantiates here) ---
             GameObject projectilePrefab = null;
@@ -1302,7 +1347,8 @@ namespace TitanOrbit.Game
             VfxUrpCompat.ApplyImpactVisualScale(go, visualScale);
             VfxUrpCompat.PrepareVfxInstance(go);
             BulletVisualFactory.SetAudioPitchInHierarchy(
-                go, BulletVisualFactory.GetFirePowerSoundPitch(req.Damage));
+                go, BulletVisualFactory.GetFirePowerSoundPitch(
+                    pianoLive, req.FirePowerBase, req.FirePowerPerExtra));
 
             ClientBulletStretchVisual stretch = go.GetComponent<ClientBulletStretchVisual>();
             if (_bank != null
@@ -1340,6 +1386,9 @@ namespace TitanOrbit.Game
                 MaxDistance = math.max(0.5f, req.MaxDistance),
                 Traveled = 0f,
                 Damage = req.Damage,
+                FirePowerLive = req.FirePowerLive,
+                FirePowerBase = req.FirePowerBase,
+                FirePowerPerExtra = req.FirePowerPerExtra,
                 OwnerTeam = req.OwnerTeam,
                 BankIndex = bankIndex,
                 ScaleMultiplier = scaleMul,
@@ -1668,8 +1717,10 @@ namespace TitanOrbit.Game
             if (t.Go != null)
                 t.Go.transform.position = hitDisplay;
 
+            float impactPianoLive = t.FirePowerLive > 0.01f ? t.FirePowerLive : t.Damage;
             BulletVisualFactory.SpawnBulletImpactVfx(
-                hitDisplay, _bank, bankIndex, team, t.Damage, scaleMul, attachParent);
+                hitDisplay, _bank, bankIndex, team, impactPianoLive, scaleMul, attachParent,
+                0f, default, t.FirePowerBase, t.FirePowerPerExtra);
 
             // --- Remember for HitRpc / SpawnRpc reconcile ---
             // Mining floats and turret HP wait for HitRpc (authoritative remaining Health).

@@ -4,6 +4,7 @@ using TitanOrbit.Core;
 using TitanOrbit.Data;
 using TitanOrbit.ECS;
 using TitanOrbit.Entities;
+using TitanOrbit.Generation;
 using TitanOrbit.NetCode;
 using TitanOrbit.Shared;
 using TitanOrbit.Simulation;
@@ -105,6 +106,10 @@ namespace TitanOrbit.Game
         Transform _poolRoot;
         int _lastTickFrame = -1;
         bool _localWasContacting;
+        Entity _localGrindAsteroid;
+        EntityQuery _contactQuery;
+        World _contactQueryWorld;
+        bool _contactQueryCreated;
 
         /// <summary>
         /// Places or refreshes the grind stream at a Sequence-0 ram / grind flash.
@@ -158,6 +163,7 @@ namespace TitanOrbit.Game
             if (s_Instance == this)
                 s_Instance = null;
             RecycleAll();
+            DisposeContactQuery();
         }
 
         /// <summary>
@@ -202,6 +208,14 @@ namespace TitanOrbit.Game
                 return;
             }
 
+            // Own hull: HitRpc keeps arriving after the mesh is gone or the ship has
+            // left. Refreshing LocalShipKey off that pulse is what left the loop running.
+            if (key == LocalShipKey && !LocalHitStillOnRock())
+            {
+                StopEmitter(LocalShipKey);
+                return;
+            }
+
             EnsureEmitter(key, displayPos, normalXZ, intensity, burst: true, bankIndex, team);
         }
 
@@ -216,6 +230,8 @@ namespace TitanOrbit.Game
             if (world == null || !world.IsCreated)
             {
                 _localWasContacting = false;
+                _localGrindAsteroid = Entity.Null;
+                StopEmitter(LocalShipKey);
                 return;
             }
 
@@ -223,20 +239,27 @@ namespace TitanOrbit.Game
                 ship == Entity.Null)
             {
                 _localWasContacting = false;
+                _localGrindAsteroid = Entity.Null;
+                StopEmitter(LocalShipKey);
                 return;
             }
 
             var em = world.EntityManager;
-            if (!em.Exists(ship) || !em.HasComponent<ShipAsteroidContactState>(ship))
+            if (!em.Exists(ship))
             {
                 _localWasContacting = false;
+                _localGrindAsteroid = Entity.Null;
+                StopEmitter(LocalShipKey);
                 return;
             }
 
-            var contact = em.GetComponentData<ShipAsteroidContactState>(ship);
-            if (contact.InContact == 0)
+            var contact = em.HasComponent<ShipAsteroidContactState>(ship)
+                ? em.GetComponentData<ShipAsteroidContactState>(ship)
+                : default;
+            if (!ConfirmLocalGrind(em, ship))
             {
                 _localWasContacting = false;
+                StopEmitter(LocalShipKey);
                 return;
             }
 
@@ -262,6 +285,8 @@ namespace TitanOrbit.Game
 
             float3 n = contact.OutwardNormal;
             n.y = 0f;
+            if (math.lengthsq(n) < 1e-8f)
+                n = NormalOffRememberedRock(em, shipPos);
             if (math.lengthsq(n) < 1e-8f)
                 n = new float3(0f, 0f, 1f);
             else
@@ -504,6 +529,7 @@ namespace TitanOrbit.Game
                 return;
 
             StopSystems(e.Systems);
+            SilenceAudio(e.Go);
             e.Go.SetActive(false);
             if (_poolRoot != null)
                 e.Go.transform.SetParent(_poolRoot, false);
@@ -528,6 +554,142 @@ namespace TitanOrbit.Game
             for (int i = _live.Count - 1; i >= 0; i--)
                 RecycleAt(i);
             _localWasContacting = false;
+            _localGrindAsteroid = Entity.Null;
+        }
+
+        /// <summary>
+        /// True while the local hull is on a living asteroid. A sticky
+        /// <see cref="ShipAsteroidContactState.InContact"/> is not enough — that bit
+        /// stays set after fly-away and kept this stream (and its audio) alive.
+        /// </summary>
+        bool ConfirmLocalGrind(EntityManager em, Entity ship)
+        {
+            if (TryReadContactRock(em, ship, out Entity rock))
+            {
+                _localGrindAsteroid = rock;
+                return true;
+            }
+
+            if (AsteroidGrindOverlap.IsAudibleContact(em, ship, _localGrindAsteroid))
+                return true;
+
+            _localGrindAsteroid = Entity.Null;
+            return false;
+        }
+
+        /// <summary>
+        /// HitRpc for our own hull. Keep the stream only while the hull still
+        /// overlaps a living asteroid.
+        /// </summary>
+        bool LocalHitStillOnRock()
+        {
+            var world = EcsGameBridge.GetLocalPlayerShipWorld();
+            if (world == null || !world.IsCreated)
+                return false;
+            if (!EcsGameBridge.TryGetLocalShipEntityOnWorld(world, out Entity ship) ||
+                ship == Entity.Null ||
+                !world.EntityManager.Exists(ship))
+                return false;
+
+            var em = world.EntityManager;
+            if (ConfirmLocalGrind(em, ship))
+                return true;
+
+            return false;
+        }
+
+        /// <summary>Separation direction from the remembered rock toward the ship.</summary>
+        float3 NormalOffRememberedRock(EntityManager em, float3 shipPos)
+        {
+            if (_localGrindAsteroid == Entity.Null ||
+                !em.Exists(_localGrindAsteroid) ||
+                !em.HasComponent<LocalTransform>(_localGrindAsteroid))
+                return float3.zero;
+            if (!ToroidalMapEcs.TryGetMapSize(out float mapW, out float mapH))
+                return float3.zero;
+
+            float3 rockPos = em.GetComponentData<LocalTransform>(_localGrindAsteroid).Position;
+            float3 off = ToroidalMapEcs.ShortestOffsetXZ(rockPos, shipPos, mapW, mapH);
+            off.y = 0f;
+            return math.lengthsq(off) > 1e-8f ? math.normalize(off) : float3.zero;
+        }
+
+        bool TryReadContactRock(EntityManager em, Entity ship, out Entity rock)
+        {
+            rock = Entity.Null;
+            var world = EcsGameBridge.GetLocalPlayerShipWorld();
+            if (world == null || !world.IsCreated)
+                return false;
+
+            EnsureContactQuery(world);
+            if (!_contactQueryCreated || _contactQuery.IsEmptyIgnoreFilter)
+                return false;
+
+            Entity queueEntity = _contactQuery.GetSingletonEntity();
+            if (!em.HasBuffer<ShipPhysicsContactElement>(queueEntity))
+                return false;
+
+            var pairs = em.GetBuffer<ShipPhysicsContactElement>(queueEntity);
+            for (int i = 0; i < pairs.Length; i++)
+            {
+                ShipPhysicsContactElement pair = pairs[i];
+                if (pair.Kind != ShipPhysicsContactKind.Asteroid)
+                    continue;
+                if (pair.Ship != ship && pair.Other != ship)
+                    continue;
+
+                Entity candidate = pair.Ship == ship ? pair.Other : pair.Ship;
+                if (!AsteroidGrindOverlap.IsAudibleContact(em, ship, candidate))
+                    continue;
+
+                rock = candidate;
+                return true;
+            }
+
+            return false;
+        }
+
+        void EnsureContactQuery(World world)
+        {
+            if (_contactQueryCreated && _contactQueryWorld == world)
+                return;
+
+            DisposeContactQuery();
+            _contactQuery = world.EntityManager.CreateEntityQuery(
+                ComponentType.ReadOnly<ShipPhysicsContactQueueTag>());
+            _contactQueryWorld = world;
+            _contactQueryCreated = true;
+        }
+
+        void DisposeContactQuery()
+        {
+            if (_contactQueryCreated && _contactQuery != default
+                && _contactQueryWorld != null && _contactQueryWorld.IsCreated)
+            {
+                _contactQuery.Dispose();
+            }
+
+            _contactQuery = default;
+            _contactQueryCreated = false;
+            _contactQueryWorld = null;
+        }
+
+        static void SilenceAudio(GameObject root)
+        {
+            if (root == null)
+                return;
+
+            AudioSource[] sources = root.GetComponentsInChildren<AudioSource>(true);
+            for (int i = 0; i < sources.Length; i++)
+            {
+                if (sources[i] == null)
+                    continue;
+                sources[i].Stop();
+                sources[i].loop = false;
+                sources[i].playOnAwake = false;
+                sources[i].mute = true;
+                sources[i].enabled = false;
+            }
         }
 
         static void StopSystems(ParticleSystem[] systems)
@@ -640,7 +802,10 @@ namespace TitanOrbit.Game
                 if (sources[i] == null)
                     continue;
                 sources[i].Stop();
+                sources[i].loop = false;
                 sources[i].playOnAwake = false;
+                sources[i].mute = true;
+                sources[i].volume = 0f;
                 sources[i].enabled = false;
             }
 

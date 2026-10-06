@@ -1,5 +1,6 @@
 using TitanOrbit;
 using TitanOrbit.Core;
+using TitanOrbit.Data;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
@@ -74,7 +75,15 @@ namespace TitanOrbit.ECS
                 }
 
                 var teamState = SystemAPI.GetSingletonRW<TeamStateSingleton>();
-                bool ok = TryAssignTeam(ref teamState.ValueRW, requested, out var message);
+                bool ok = true;
+                FixedString128Bytes message = default;
+                if (MatchPlayerShipStore.HasSavedShip(networkId))
+                {
+                    ok = false;
+                    message = "Resume or abandon your saved ship first.";
+                }
+                else
+                    ok = TryAssignTeam(em, ref teamState.ValueRW, requested, out message);
                 float3 spawnedPos = float3.zero;
                 bool hasSpawnedPos = false;
 
@@ -215,7 +224,7 @@ namespace TitanOrbit.ECS
             }
             else
             {
-                ClientTeamFlowState.ClearTeamPickRequest();
+                ClientTeamFlowState.NotifyTeamPickRejected(message.ToString());
                 Debug.LogWarning(
                     $"[TeamManagementSystem] Local Host TeamChoiceResult failed networkId={networkId}: {message}");
             }
@@ -243,14 +252,29 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// [TITAN-ORBIT] Validates team choice against ActiveTeamCount and MaxPlayersPerTeam cap.
+        /// [TITAN-ORBIT] Validates team choice against ActiveTeamCount, live planet ownership,
+        /// and MaxPlayersPerTeam. A team with zero owned planets stays listed on Join Team
+        /// but cannot be joined — there is nowhere to spawn.
         /// </summary>
-        static bool TryAssignTeam(ref TeamStateSingleton team, TeamId requested, out FixedString128Bytes message)
+        static bool TryAssignTeam(
+            EntityManager em,
+            ref TeamStateSingleton team,
+            TeamId requested,
+            out FixedString128Bytes message)
         {
             message = default;
             if (requested == TeamId.None || (int)requested > team.ActiveTeamCount)
             {
                 message = "Invalid team.";
+                return false;
+            }
+
+            // --- No friendly world: reject before the roster count increments ---
+            // [TITAN-ORBIT] Join Team still shows the card. Ownership is live PlanetState,
+            // not the baked home slot (a captured home with other worlds still allows join).
+            if (!ShipHomeSpawnLogic.TeamOwnsAnyPlanet(em, requested))
+            {
+                message = "This team has no planets.";
                 return false;
             }
 
@@ -310,149 +334,18 @@ namespace TitanOrbit.ECS
             out float3 spawnPos)
         {
             spawnPos = float3.zero;
-            if (!SystemAPI.TryGetSingleton<GamePrefabs>(out var prefabs) || prefabs.Ship == Entity.Null)
-                return false;
+            // ecb stays in the signature for callers. Spawn is immediate so GhostSend sees the hull
+            // the same tick — deferred Instantiates left clients stuck at map-meta with no ship.
+            _ = ecb;
 
-            // --- Resolve GhostCollection ship prefab (preferred over baked GamePrefabs entity) ---
-            Entity shipPrefab = ResolveGhostCollectionShipPrefab(em, prefabs.Ship, out bool usedCollection);
-            if (shipPrefab == Entity.Null || !em.Exists(shipPrefab))
-                return false;
-
-            // --- Resolve spawn inside home planet rings (outside moon dock disc) ---
-            // [TITAN-ORBIT] Same helper as death respawn / rejoin — interior annulus, not the orbit rail.
             int hz = 0;
             if (SystemAPI.TryGetSingleton<ClientServerTickRate>(out var tickRate))
                 hz = tickRate.SimulationTickRate;
             double orbitElapsed = SystemAPI.TryGetSingleton<NetworkTime>(out var networkTime)
                 ? PlanetGemMoonOrbitClock.GetElapsedSeconds(networkTime, hz, includeTickFraction: false)
                 : SystemAPI.Time.ElapsedTime;
-            spawnPos = ShipHomeSpawnLogic.FindHomeSpawnPosition(em, team, orbitElapsed);
 
-            // --- Immediate Instantiates (same tick as CommandTarget + GhostSend grace) ---
-            // [NETCODE] ECB Instantiates would leave the hull invisible to GhostSend until playback.
-            Entity ship = em.Instantiate(shipPrefab);
-            em.SetComponentData(ship, new ShipState
-            {
-                Health = 100f,
-                MaxHealth = 100f,
-                Team = team,
-                ShipLevel = 1,
-                GemCapacity = 50f,
-                CurrentEnergy = 50f,
-                MaxEnergy = 50f,
-                PeopleCapacity = 10,
-                AwaitingTeamSelection = false,
-            });
-            em.SetComponentData(ship, LocalTransform.FromPosition(spawnPos));
-
-            if (em.HasComponent<GhostOwner>(ship))
-                em.SetComponentData(ship, new GhostOwner { NetworkId = networkId });
-            else
-                em.AddComponentData(ship, new GhostOwner { NetworkId = networkId });
-
-            // Prefab often already bakes ShipAttributeUpgradeState — only add when missing.
-            if (!em.HasComponent<ShipAttributeUpgradeState>(ship))
-                em.AddComponentData(ship, new ShipAttributeUpgradeState());
-
-            var commandTarget = new CommandTarget { targetEntity = ship };
-            if (em.HasComponent<CommandTarget>(connection))
-                em.SetComponentData(connection, commandTarget);
-            else
-                em.AddComponentData(connection, commandTarget);
-
-            // --- Point distance-importance at the new hull immediately ---
-            // [NETCODE] GhostConnectionPosition often stays at origin until the next
-            // TitanOrbitGhostConnectionPositionSystem tick — first ship snapshot can lose to
-            // far map resends even with FirstSend bias.
-            if (em.HasComponent<GhostConnectionPosition>(connection))
-            {
-                em.SetComponentData(connection, new GhostConnectionPosition
-                {
-                    Position = spawnPos,
-                    Rotation = quaternion.identity,
-                });
-            }
-            else
-            {
-                em.AddComponentData(connection, new GhostConnectionPosition
-                {
-                    Position = spawnPos,
-                    Rotation = quaternion.identity,
-                });
-            }
-
-            // --- Keep GhostSend elevated until the first ship snapshots leave ---
-            TitanOrbitGhostSendGrace.ArmShipSpawnGrace();
-            TitanOrbitServerShipGhostVerifySystem.Enqueue(ship, networkId);
-
-            int ghostId = 0;
-            if (em.HasComponent<GhostInstance>(ship))
-                ghostId = em.GetComponentData<GhostInstance>(ship).ghostId;
-
-            Debug.Log(
-                $"[TeamManagementSystem] Spawned ship for networkId={networkId} team={team} at {spawnPos} " +
-                $"(collectionPrefab={usedCollection}, ghostId={ghostId}).");
-            return true;
-        }
-
-        /// <summary>
-        /// Finds the GhostCollection entry for the ship prefab so SpawnGhostJob can assign a ghost id.
-        /// Prefers entity match, then <see cref="GhostType"/> match, else first <see cref="ShipTag"/>.
-        /// </summary>
-        static Entity ResolveGhostCollectionShipPrefab(
-            EntityManager em,
-            Entity gamePrefabsShip,
-            out bool usedCollection)
-        {
-            usedCollection = false;
-            Entity shipTagFallback = Entity.Null;
-
-            using var collectionQuery = em.CreateEntityQuery(ComponentType.ReadOnly<GhostCollection>());
-            if (collectionQuery.IsEmptyIgnoreFilter)
-                return gamePrefabsShip;
-
-            Entity collectionEntity = collectionQuery.GetSingletonEntity();
-            if (!em.HasBuffer<GhostCollectionPrefab>(collectionEntity))
-                return gamePrefabsShip;
-
-            GhostType targetType = default;
-            bool hasTargetType = gamePrefabsShip != Entity.Null && em.HasComponent<GhostType>(gamePrefabsShip);
-            if (hasTargetType)
-                targetType = em.GetComponentData<GhostType>(gamePrefabsShip);
-
-            var buffer = em.GetBuffer<GhostCollectionPrefab>(collectionEntity, isReadOnly: true);
-            for (int i = 0; i < buffer.Length; i++)
-            {
-                Entity candidate = buffer[i].GhostPrefab;
-                if (candidate == Entity.Null || !em.Exists(candidate))
-                    continue;
-
-                if (candidate == gamePrefabsShip)
-                {
-                    usedCollection = true;
-                    return candidate;
-                }
-
-                // GamePrefabs.Ship entity handle often differs from the collection entry — match GhostType.
-                if (hasTargetType &&
-                    em.HasComponent<GhostType>(candidate) &&
-                    em.GetComponentData<GhostType>(candidate) == targetType)
-                {
-                    usedCollection = true;
-                    return candidate;
-                }
-
-                if (shipTagFallback == Entity.Null && em.HasComponent<ShipTag>(candidate))
-                    shipTagFallback = candidate;
-            }
-
-            if (shipTagFallback != Entity.Null)
-            {
-                usedCollection = true;
-                return shipTagFallback;
-            }
-
-            return gamePrefabsShip;
+            return PlayerShipSpawn.TrySpawn(em, connection, networkId, team, orbitElapsed, out _, out spawnPos);
         }
 
         /// <summary>In-process ClientWorld NetworkId, or false when this process is server-only / not in-game.</summary>

@@ -39,7 +39,9 @@ namespace TitanOrbit.ECS
     /// through an undamaged mesh. Client VFX still throttles the explosion prefab.
     /// Grind pulses at 4 Hz (<see cref="AsteroidSettings.GrindPulseIntervalSeconds"/>):
     /// each pulse applies that interval's ship damage, then spawns one gem worth that pulse's
-    /// expelled cargo.
+    /// expelled cargo. Regular-ship self-chip (impact and grind) is the ram formula capped
+    /// by the rock's current Health, so a small asteroid cannot dump a full cruise ram
+    /// back into the hull.
     /// </para>
     /// </summary>
     [UpdateInGroup(typeof(PredictedFixedStepSimulationSystemGroup), OrderLast = true)]
@@ -49,6 +51,14 @@ namespace TitanOrbit.ECS
     {
         /// <summary>Keep grind sticky this many ticks after the last real collision event.</summary>
         const byte MaxMissedTicks = 3;
+
+        /// <summary>
+        /// After an impact, ignore another impact on that same target until this many
+        /// seconds have passed. Compound hulls raise several PhysX events per rock, and a
+        /// bounce often drops the contact for a few ticks — each one used to apply a full
+        /// cruise ram (the stat-sheet hit) again, so one collision showed 250+ damage.
+        /// </summary>
+        const double ImpactRearmSeconds = 0.75;
 
         /// <summary>Minimum closing speed (u/s) to fire an impact pulse on contact enter.</summary>
         const float ImpactMinClosingSpeed = 0.35f;
@@ -109,6 +119,9 @@ namespace TitanOrbit.ECS
 
             // --- Mark which (ship, target) pairs collided this tick ---
             var hitThisTick = new NativeHashSet<long>(math.max(8, queue.Length * 2), Allocator.Temp);
+            // One impact per pair per tick. A compound hull can emit several events
+            // against the same rock; each one used to be a full ram.
+            var impactedThisTick = new NativeHashSet<long>(math.max(8, queue.Length), Allocator.Temp);
 
             var ecb = new EntityCommandBuffer(Allocator.Temp);
 
@@ -135,6 +148,10 @@ namespace TitanOrbit.ECS
                 if (ship.IsDead || ship.AwaitingTeamSelection)
                     continue;
 
+                int interactNet = 0;
+                if (state.EntityManager.HasComponent<GhostOwner>(shipEntity))
+                    interactNet = state.EntityManager.GetComponentData<GhostOwner>(shipEntity).NetworkId;
+
                 // --- Stowed in planetary defense turret: hull is removed from play ---
                 if (state.EntityManager.HasComponent<ShipTurretControlState>(shipEntity) &&
                     state.EntityManager.GetComponentData<ShipTurretControlState>(shipEntity).IsControlling)
@@ -152,7 +169,8 @@ namespace TitanOrbit.ECS
 
                 // --- Mobility totalMass + after-tax accel (same tax as ShipPhysicsDriveLogic) ---
                 ResolveMobilityRamInputs(
-                    in ship, in motor, out float totalMass, out float taxedAccel, out float hullMassRef);
+                    in ship, in motor, out float totalMass, out float taxedAccel, out float hullMassRef,
+                    out float taxedCruise);
 
                 // [TITAN-ORBIT] Rating from ShipFamilyDefinition component rammingPower (summed +
                 // Extra Level in ShipStatApplyLogic → motor.RammingPower). Fire Power purchases
@@ -172,6 +190,12 @@ namespace TitanOrbit.ECS
                     pending.ClosingSpeed,
                     pending.EstimatedImpulse,
                     totalMass);
+
+                // Solver separation is not flight speed. A 25 u/s depenetration used to
+                // score grindDps × (1 + 25/10) — several times the stat-sheet cruise hit.
+                // LastAppliedMaxSpeed is often 0 on this tick, which skipped the old cap.
+                if (!otherIsShip)
+                    closing = CapAsteroidClosingToCruise(ref state, shipEntity, taxedCruise, closing);
 
                 long key = PackKey(shipEntity, other);
                 hitThisTick.Add(key);
@@ -209,7 +233,7 @@ namespace TitanOrbit.ECS
                 // elsewhere. Self-damage is remaining rock Health × catalog plow slider (default 1).
                 if (isMega && !otherIsShip)
                 {
-                    if (isNewContact && !IsDeadAsteroid(ref state, other))
+                    if (isNewContact && impactedThisTick.Add(key) && !IsDeadAsteroid(ref state, other))
                     {
                         float remainingHp = 0f;
                         if (state.EntityManager.HasComponent<AsteroidState>(other))
@@ -218,7 +242,7 @@ namespace TitanOrbit.ECS
                                 state.EntityManager.GetComponentData<AsteroidState>(other).Health);
 
                         if (remainingHp > 0.01f)
-                            ApplyAsteroidDamage(ref state, other, remainingHp, ship.Team);
+                            ApplyAsteroidDamage(ref state, other, remainingHp, ship.Team, interactNet);
                         if (IsDeadAsteroid(ref state, other))
                             AsteroidDeathPhysics.QueueStripColliders(ecb, state.EntityManager, other);
 
@@ -249,8 +273,10 @@ namespace TitanOrbit.ECS
                             gemPrefab, shipPos, spawnServerTime, ecb, now,
                             damagerNetworkId: 0,
                             impulseXZ: new float2(normalShipFromOther.x, normalShipFromOther.z),
-                            impulsePower: selfDamage);
+                            impulsePower: selfDamage,
+                            sourceEntity: other);
                         state.EntityManager.SetComponentData(shipEntity, ship);
+                        contact.LastImpactTime = now;
                     }
 
                     contact.WasColliding = 1;
@@ -260,21 +286,31 @@ namespace TitanOrbit.ECS
                 }
 
                 // --- Impact on contact enter: grindDps × (1 + closing / ram-double speed) ---
-                if (isNewContact && closing >= ImpactMinClosingSpeed)
+                // Rearm hold keeps the contact after a short separation so the next PhysX
+                // event is not a brand-new pair. impactedThisTick covers extra manifolds
+                // in this same step, before that contact write is visible.
+                bool impactReady = isNewContact
+                    && closing >= ImpactMinClosingSpeed
+                    && impactedThisTick.Add(key);
+                if (impactReady)
                 {
                     if (!otherIsShip)
                     {
                         float asteroidDamage = ShipComponentRammingSuggestions.ComputeImpactDamage(
                             ramRating, totalMass, closing, hullMassRef);
-                        float selfDamage = ShipComponentRammingSuggestions.ComputeImpactSelfDamage(
-                            ramRating, totalMass, closing, hullMassRef);
+                        // Self-chip is the ram formula, but never more than the rock still has.
+                        // A size-1 asteroid must not punch the hull for a full cruise ram.
+                        float selfDamage = ShipComponentRammingSuggestions.CapCollisionSelfDamageToAsteroidHealth(
+                            ShipComponentRammingSuggestions.ComputeImpactSelfDamage(
+                                ramRating, totalMass, closing, hullMassRef),
+                            ReadAsteroidHealth(ref state, other));
 
                         // Gem VFX intensity only — not part of the damage product.
                         float impactForceN = (totalMass * closing) / math.max(1e-4f, fixedDt);
                         float intensity = ShipComponentRammingSuggestions.ComputeRamImpactGemExpulsionIntensity(
                             impactForceN, selfDamage);
 
-                        ApplyAsteroidDamage(ref state, other, asteroidDamage, ship.Team);
+                        ApplyAsteroidDamage(ref state, other, asteroidDamage, ship.Team, interactNet);
                         if (IsDeadAsteroid(ref state, other))
                         {
                             // [PHYSICS] Drop the hull this tick so the next physics step cannot
@@ -290,8 +326,10 @@ namespace TitanOrbit.ECS
                             gemPrefab, shipPos, spawnServerTime, ecb, now,
                             damagerNetworkId: 0,
                             impulseXZ: new float2(normalShipFromOther.x, normalShipFromOther.z),
-                            impulsePower: selfDamage);
+                            impulsePower: selfDamage,
+                            sourceEntity: other);
                         state.EntityManager.SetComponentData(shipEntity, ship);
+                        contact.LastImpactTime = now;
                     }
                     else
                     {
@@ -299,6 +337,7 @@ namespace TitanOrbit.ECS
                         ApplyShipVsShipImpact(
                             ref state, shipEntity, other, closing, fixedDt,
                             gemPrefab, spawnServerTime, ecb, now);
+                        contact.LastImpactTime = now;
                         ship = state.EntityManager.GetComponentData<ShipState>(shipEntity);
                         // Sticky bookkeeping on the other hull too.
                         MarkColliding(ref state, other, shipEntity, now);
@@ -360,7 +399,11 @@ namespace TitanOrbit.ECS
                     }
 
                     contact.MissedTicks = (byte)math.min(255, contact.MissedTicks + 1);
-                    if (contact.MissedTicks > MaxMissedTicks)
+                    // Hold the pair through the impact rearm window. Removing it after three
+                    // quiet ticks let the next bounce event count as a new ram.
+                    bool holdForImpactRearm = contact.LastImpactTime > 0.0
+                        && now - contact.LastImpactTime < ImpactRearmSeconds;
+                    if (contact.MissedTicks > MaxMissedTicks && !holdForImpactRearm)
                     {
                         contacts.RemoveAt(c);
                         continue;
@@ -375,6 +418,7 @@ namespace TitanOrbit.ECS
             ecb.Playback(state.EntityManager);
             ecb.Dispose();
             hitThisTick.Dispose();
+            impactedThisTick.Dispose();
         }
 
         /// <summary>
@@ -496,7 +540,8 @@ namespace TitanOrbit.ECS
             var offMotor = state.EntityManager.GetComponentData<ShipMotorConfig>(offender);
             var vicShip = state.EntityManager.GetComponentData<ShipState>(victim);
 
-            ResolveMobilityRamInputs(in offShip, in offMotor, out float totalMass, out _, out float hullMassRef);
+            ResolveMobilityRamInputs(
+                in offShip, in offMotor, out float totalMass, out _, out float hullMassRef, out _);
             float ramPower = offMotor.RammingPower;
             int ramBankIndex = 0;
             if (state.EntityManager.HasComponent<ShipLoadoutState>(offender))
@@ -538,7 +583,8 @@ namespace TitanOrbit.ECS
                 gemPrefab, vicPos, spawnServerTime, ecb, now,
                 damagerNetworkId: offenderNetworkId,
                 impulseXZ: ramImpulse,
-                impulsePower: damage);
+                impulsePower: damage,
+                sourceEntity: offender);
             state.EntityManager.SetComponentData(victim, vicShip);
         }
 
@@ -551,12 +597,14 @@ namespace TitanOrbit.ECS
         /// <param name="totalMass">Gems×mG + people×mP + size×mCS. MEGA skip-tax reports 0 (plow ignores this).</param>
         /// <param name="taxedAccel">After-tax acceleration used only for the grind push gate.</param>
         /// <param name="hullMassReference">ComponentSize used as the 1× ram mass reference.</param>
+        /// <param name="taxedCruise">After-tax MaxSpeed before territory. The stat-sheet cruise line.</param>
         static void ResolveMobilityRamInputs(
             in ShipState ship,
             in ShipMotorConfig motor,
             out float totalMass,
             out float taxedAccel,
-            out float hullMassReference)
+            out float hullMassReference,
+            out float taxedCruise)
         {
             float baseMass = motor.Mass > 0f ? motor.Mass : ShipMassLogic.DefaultBaseMass;
             float componentSize = motor.HullMassReference > 0f
@@ -575,6 +623,41 @@ namespace TitanOrbit.ECS
                 skipMassTax: motor.SkipMassTax != 0);
             totalMass = taxed.TotalMass;
             taxedAccel = taxed.EngineThrust;
+            taxedCruise = taxed.MaxSpeed;
+        }
+
+        /// <summary>
+        /// Asteroid impact closing speed, never above the stat-sheet full-cruise line
+        /// (taxed MaxSpeed × friendly territory). A PhysX separation of 25 is not a ram.
+        /// When the contact number is that spike and kinematics still shows real flight,
+        /// use the ship's speed so a sub-cruise hull stays under the cruise self-chip.
+        /// </summary>
+        static float CapAsteroidClosingToCruise(
+            ref SystemState state,
+            Entity shipEntity,
+            float taxedCruise,
+            float measuredClosing)
+        {
+            float cruiseCap = math.max(ImpactMinClosingSpeed, taxedCruise);
+            if (state.EntityManager.HasComponent<ShipTerritoryBoostLatch>(shipEntity))
+            {
+                float territory = state.EntityManager.GetComponentData<ShipTerritoryBoostLatch>(shipEntity).LatchedMult;
+                if (territory > 1f)
+                    cruiseCap *= territory;
+            }
+
+            float closing = measuredClosing;
+            if (closing > cruiseCap)
+                closing = cruiseCap;
+
+            // Kinematics is post-bounce flight, not the solver's 25 u/s shove.
+            float flight = ReadPlanarSpeed(ref state, shipEntity);
+            if (measuredClosing > cruiseCap + 0.05f
+                && flight > ImpactMinClosingSpeed
+                && flight <= cruiseCap * 1.05f)
+                closing = flight;
+
+            return math.max(0f, closing);
         }
 
         /// <summary>Planar XZ speed from kinematics (solver may zero PhysicsVelocity on a jam).</summary>
@@ -665,7 +748,9 @@ namespace TitanOrbit.ECS
                 return;
 
             var motor = state.EntityManager.GetComponentData<ShipMotorConfig>(shipEntity);
-            ResolveMobilityRamInputs(in ship, in motor, out float totalMass, out float taxedAccel, out float hullMassRef);
+            ResolveMobilityRamInputs(
+                in ship, in motor, out float totalMass, out float taxedAccel, out float hullMassRef,
+                out _);
             float familyRam = motor.RammingPower > 0.001f
                 ? motor.RammingPower
                 : ShipFamilyDefaultFallbackStats.CreateBaseline().rammingPower;
@@ -719,13 +804,20 @@ namespace TitanOrbit.ECS
             float pulse = ShipComponentRammingSuggestions.GrindPulseIntervalSeconds;
             float asteroidPulse = ShipComponentRammingSuggestions.ComputeGrindDamagePerPulse(
                 ramRating, totalMass, pulse, hullMassRef);
-            float selfPulse = ShipComponentRammingSuggestions.ComputeGrindSelfDamagePerPulse(
-                ramRating, totalMass, pulse, hullMassRef);
+            // Same cap as impact: a nearly-dead or tiny rock only chips the hull for
+            // the Health it still has, not a full grind self-pulse.
+            float selfPulse = ShipComponentRammingSuggestions.CapCollisionSelfDamageToAsteroidHealth(
+                ShipComponentRammingSuggestions.ComputeGrindSelfDamagePerPulse(
+                    ramRating, totalMass, pulse, hullMassRef),
+                ReadAsteroidHealth(ref state, asteroid));
             float grindIntensity =
                 ShipComponentRammingSuggestions.ComputeRamGrindGemExpulsionIntensity(
                     taxedAccel, selfPulse);
 
-            ApplyAsteroidDamage(ref state, asteroid, asteroidPulse, ship.Team);
+            int grindNet = 0;
+            if (state.EntityManager.HasComponent<GhostOwner>(shipEntity))
+                grindNet = state.EntityManager.GetComponentData<GhostOwner>(shipEntity).NetworkId;
+            ApplyAsteroidDamage(ref state, asteroid, asteroidPulse, ship.Team, grindNet);
             if (IsDeadAsteroid(ref state, asteroid))
                 AsteroidDeathPhysics.QueueStripColliders(ecb, state.EntityManager, asteroid);
 
@@ -737,7 +829,8 @@ namespace TitanOrbit.ECS
                 gemPrefab, shipPos, spawnServerTime, ecb, now,
                 damagerNetworkId: 0,
                 impulseXZ: new float2(normalShipFromOther.x, normalShipFromOther.z),
-                impulsePower: selfPulse);
+                impulsePower: selfPulse,
+                sourceEntity: asteroid);
 
             contact.NextGrindTime = now + pulse;
         }
@@ -791,6 +884,14 @@ namespace TitanOrbit.ECS
         static long PackKey(Entity ship, Entity other) =>
             ((long)ship.Index << 32) ^ (uint)other.Index;
 
+        /// <summary>Current asteroid Health, or 0 when the entity is not a live rock.</summary>
+        static float ReadAsteroidHealth(ref SystemState state, Entity asteroid)
+        {
+            if (!state.EntityManager.HasComponent<AsteroidState>(asteroid))
+                return 0f;
+            return math.max(0f, state.EntityManager.GetComponentData<AsteroidState>(asteroid).Health);
+        }
+
         /// <summary>
         /// True when this entity is an asteroid that should no longer ram or grind the hull
         /// (already killed this tick, or a leftover 0-HP zombie waiting for DestroyEntity).
@@ -812,7 +913,12 @@ namespace TitanOrbit.ECS
         /// and must <see cref="AsteroidDeathPhysics.QueueStripColliders"/> on kill so the next
         /// physics step cannot ram a 0-HP hull.
         /// </summary>
-        static void ApplyAsteroidDamage(ref SystemState state, Entity asteroid, float damage, TeamId interactTeam)
+        static void ApplyAsteroidDamage(
+            ref SystemState state,
+            Entity asteroid,
+            float damage,
+            TeamId interactTeam,
+            int interactNetworkId)
         {
             if (damage <= 0.0001f || !state.EntityManager.Exists(asteroid))
                 return;
@@ -828,6 +934,7 @@ namespace TitanOrbit.ECS
             // [TITAN-ORBIT] Health is independent of RemainingGems (AsteroidSettings ratios).
             a.Health -= damage;
             a.LastInteractTeam = interactTeam;
+            a.LastInteractNetworkId = interactNetworkId;
             if (a.Health <= 0f)
             {
                 a.Health = 0f;
@@ -912,6 +1019,10 @@ namespace TitanOrbit.ECS
                     scaleMul *= ShipComponentRammingSuggestions.RamKillImpactVisualScale;
             }
 
+            int ownerNet = 0;
+            if (state.EntityManager.HasComponent<GhostOwner>(shipEntity))
+                ownerNet = state.EntityManager.GetComponentData<GhostOwner>(shipEntity).NetworkId;
+
             BulletNetNotify.SendRamAsteroidHit(
                 ref ecb,
                 hitPos,
@@ -920,7 +1031,8 @@ namespace TitanOrbit.ECS
                 bankIndex,
                 scaleMul,
                 healthAfter,
-                AsteroidLayoutSlot.Read(state.EntityManager, asteroid));
+                AsteroidLayoutSlot.Read(state.EntityManager, asteroid),
+                ownerNet);
         }
 
         /// <summary>
@@ -968,7 +1080,8 @@ namespace TitanOrbit.ECS
             double now,
             int damagerNetworkId,
             float2 impulseXZ = default,
-            float impulsePower = -1f)
+            float impulsePower = -1f,
+            Entity sourceEntity = default)
         {
             if (damage <= 0.0001f || ship.IsDead)
                 return;
@@ -978,9 +1091,9 @@ namespace TitanOrbit.ECS
             bool isDead = ship.IsDead;
 
             // --- Hull then cargo ---
-            // [TITAN-ORBIT] Hull absorbs first. Asteroid self-chips spill leftover only so the
-            // pulse that breaks hull does not also dump the hold at full ram damage (that
-            // one-shot high-level ships once Health hit 0).
+            // [TITAN-ORBIT] Hull absorbs first. Asteroid self-chips spill only the leftover
+            // (damage past remaining HP) so a 10 HP hull hit for 100 loses 10 hull and
+            // expels 90 gems, instead of swallowing the whole hit on the hull.
             bool asteroidSelf = damagerNetworkId == 0;
             var result = ShipDamageLogic.ApplyHullAndGemDamage(
                 ref health,
@@ -1015,7 +1128,8 @@ namespace TitanOrbit.ECS
                     damagerNetworkId,
                     (float)now,
                     impulseXZ,
-                    power);
+                    power,
+                    sourceEntity);
             }
 
             if (result.GemsToExpel > 0.0001f)

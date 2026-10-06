@@ -126,7 +126,11 @@ namespace TitanOrbit.Game
 
             float3 want = math.normalize(velocity);
             var target = Quaternion.LookRotation(new Vector3(want.x, 0f, want.z), Vector3.up);
-            t.rotation = Quaternion.RotateTowards(t.rotation, target, 420f * Time.deltaTime);
+            // Prefab / fresh Instantiates can come in nose-up. Don't tween through that.
+            if (Mathf.Abs(t.forward.y) > 0.75f)
+                t.rotation = target;
+            else
+                t.rotation = Quaternion.RotateTowards(t.rotation, target, 420f * Time.deltaTime);
         }
 
         /// <summary>Rescales an existing proxy when packed people change.</summary>

@@ -73,5 +73,75 @@ namespace TitanOrbit.Core
                 return "None";
             return "Team " + team.ToLetter();
         }
+
+        /// <summary>
+        /// Spoken color name for the hold-S comms matrix ("Red", "Purple", …).
+        /// Empty when <paramref name="team"/> is <see cref="TeamId.None"/>.
+        /// </summary>
+        /// <param name="team">Playable faction. None has no color word.</param>
+        /// <returns>Catalog label used by <c>ShipCommsKeywordCatalog</c>.</returns>
+        public static string ToColorName(this TeamId team)
+        {
+            // --- Comms / HUD color word ---
+            // [TITAN-ORBIT] Same five names players see on hulls: A red, B blue, C green,
+            // D orange, E purple. Comms chips and team tiles share this spelling so
+            // "Attack Purple Base" matches the purple faction, not a letter.
+            switch (team)
+            {
+                case TeamId.TeamA: return "Red";
+                case TeamId.TeamB: return "Blue";
+                case TeamId.TeamC: return "Green";
+                case TeamId.TeamD: return "Orange";
+                case TeamId.TeamE: return "Purple";
+                default: return string.Empty;
+            }
+        }
+
+        /// <summary>
+        /// Inverse of <see cref="ToColorName"/> — "purple" / "PURPLE" → TeamE.
+        /// Used by the comms panel to tint the five color keyword tiles.
+        /// </summary>
+        /// <param name="label">Chip text from the keyword catalog.</param>
+        /// <param name="team">Resolved faction when true.</param>
+        /// <returns>True when <paramref name="label"/> is one of the five team colors.</returns>
+        public static bool TryParseColorName(string label, out TeamId team)
+        {
+            team = TeamId.None;
+            if (string.IsNullOrWhiteSpace(label))
+                return false;
+
+            // [STANDARD] OrdinalIgnoreCase — players tap "Purple"; the catalog stores "Purple".
+            if (string.Equals(label, "Red", System.StringComparison.OrdinalIgnoreCase))
+            {
+                team = TeamId.TeamA;
+                return true;
+            }
+
+            if (string.Equals(label, "Blue", System.StringComparison.OrdinalIgnoreCase))
+            {
+                team = TeamId.TeamB;
+                return true;
+            }
+
+            if (string.Equals(label, "Green", System.StringComparison.OrdinalIgnoreCase))
+            {
+                team = TeamId.TeamC;
+                return true;
+            }
+
+            if (string.Equals(label, "Orange", System.StringComparison.OrdinalIgnoreCase))
+            {
+                team = TeamId.TeamD;
+                return true;
+            }
+
+            if (string.Equals(label, "Purple", System.StringComparison.OrdinalIgnoreCase))
+            {
+                team = TeamId.TeamE;
+                return true;
+            }
+
+            return false;
+        }
     }
 }

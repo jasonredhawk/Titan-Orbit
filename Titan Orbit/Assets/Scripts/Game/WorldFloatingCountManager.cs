@@ -64,6 +64,7 @@ namespace TitanOrbit.Game
         const int TargetKindShip = unchecked((int)0x01000000);
         const int TargetKindAsteroid = unchecked((int)0x0A000000);
         const int TargetKindPlanet = unchecked((int)0x02000000);
+        const int TargetKindDefenseTurret = unchecked((int)0x03000000);
         const int TargetKindWorld = unchecked((int)0x04000000);
 
         [Tooltip("Icons, colors, type toggles, layout, and streak timing. Defaults to Resources/FloatingText.")]
@@ -193,6 +194,14 @@ namespace TitanOrbit.Game
 
         public static int TargetIdForPlanet(int planetId) =>
             TargetKindPlanet | (planetId & 0x00FFFFFF);
+
+        /// <summary>
+        /// One streak per pad. Planet ids are small (team or neutral counter); slot is 0..15.
+        /// </summary>
+        public static int TargetIdForDefenseTurret(int planetId, int slotIndex) =>
+            TargetKindDefenseTurret
+            | ((slotIndex & 0xF) << 20)
+            | (planetId & 0x000FFFFF);
 
         public static int TargetIdForWorldPosition(Vector3 worldPosition)
         {
@@ -423,7 +432,8 @@ namespace TitanOrbit.Game
                 spacing,
                 fontToUse,
                 bodyRadius,
-                clearShipHull);
+                clearShipHull,
+                Mathf.Abs(signedAmount));
             if (popup == null)
             {
                 ReturnSlot(slot);
@@ -482,7 +492,8 @@ namespace TitanOrbit.Game
 
                 flipped.Popup.RelocateWorld(spawnPos, bodyRadius: 0f);
                 flipped.Popup.Refresh(flipMessage, flipColor, followAnchor: null, followWorldOffset: Vector3.zero,
-                    stackLane: 0, stackSpacing: 0f, flipIcon, bodyRadius: 0f);
+                    stackLane: 0, stackSpacing: 0f, flipIcon, bodyRadius: 0f, clearShipHull: false, replayPop: true,
+                    magnitude: Mathf.Abs(flipped.Accumulated));
                 flipped.VisualDirty = false;
                 flipped.LastVisualFlushTime = now;
                 flipped.LastPopTime = now;
@@ -523,7 +534,8 @@ namespace TitanOrbit.Game
                 $"FloatingCountPopup_{channel}",
                 spawnPos,
                 fontToUse,
-                bodyRadius: 0f);
+                bodyRadius: 0f,
+                Mathf.Abs(signedAmount));
             if (popup == null)
                 return;
 
@@ -598,7 +610,7 @@ namespace TitanOrbit.Game
 
             var settings = Settings;
             Color hpColor = settings != null ? settings.healthColor : new Color(0.2f, 0.9f, 0.3f, 1f);
-            ShowOrRefreshLabeled(
+                ShowOrRefreshLabeled(
                 targetId,
                 targetAnchor,
                 targetAnchor.position,
@@ -607,7 +619,8 @@ namespace TitanOrbit.Game
                 hpColor,
                 ResolveTypeIcon(FloatingCountChannel.HealthChange),
                 bodyRadius,
-                clearShipHull);
+                clearShipHull,
+                remainingHealth);
         }
 
         bool TryPrepareAmount(
@@ -700,7 +713,8 @@ namespace TitanOrbit.Game
             Color color,
             Sprite icon,
             float bodyRadius,
-            bool clearShipHull = false)
+            bool clearShipHull = false,
+            float magnitude = 0f)
         {
             if (anchor == null || string.IsNullOrEmpty(message))
                 return;
@@ -728,6 +742,7 @@ namespace TitanOrbit.Game
                 slot.LabeledMessage = message;
                 slot.PendingColor = color;
                 slot.PendingIcon = icon;
+                slot.Accumulated = magnitude;
                 slot.VisualDirty = true;
                 return;
             }
@@ -736,7 +751,7 @@ namespace TitanOrbit.Game
             float spacing = settings != null ? settings.StackLineSpacing : 1.25f;
 
             slot = RentSlot();
-            slot.Accumulated = 0f;
+            slot.Accumulated = magnitude;
             slot.StreakDeadline = now + window;
             slot.Expired = false;
             slot.Channel = keyChannel;
@@ -761,7 +776,8 @@ namespace TitanOrbit.Game
                 spacing,
                 fontToUse,
                 bodyRadius,
-                clearShipHull);
+                clearShipHull,
+                Mathf.Abs(magnitude));
             if (popup == null)
             {
                 ReturnSlot(slot);
@@ -788,6 +804,9 @@ namespace TitanOrbit.Game
                 case FloatingCountChannel.GemPickup:
                 case FloatingCountChannel.GemDeposit:
                     return 2;
+                case FloatingCountChannel.PeopleLoad:
+                case FloatingCountChannel.PeopleUnload:
+                    return 3;
                 default:
                     return 0;
             }
@@ -818,7 +837,8 @@ namespace TitanOrbit.Game
             float stackSpacing,
             TMP_FontAsset fontToUse,
             float bodyRadius,
-            bool clearShipHull = false)
+            bool clearShipHull = false,
+            float magnitude = 1f)
         {
             if (string.IsNullOrEmpty(message) || anchor == null)
                 return null;
@@ -842,7 +862,8 @@ namespace TitanOrbit.Game
                 stackLane: stackLane,
                 stackSpacing: stackSpacing,
                 bodyRadius: bodyRadius,
-                clearShipHull: clearShipHull);
+                clearShipHull: clearShipHull,
+                magnitude: magnitude);
             return popup;
         }
 
@@ -853,7 +874,8 @@ namespace TitanOrbit.Game
             string popupName,
             Vector3 worldPosition,
             TMP_FontAsset fontToUse,
-            float bodyRadius)
+            float bodyRadius,
+            float magnitude = 1f)
         {
             if (string.IsNullOrEmpty(message))
                 return null;
@@ -875,7 +897,8 @@ namespace TitanOrbit.Game
                 followWorldOffset: Vector3.zero,
                 stackLane: 0,
                 stackSpacing: 0f,
-                bodyRadius: bodyRadius);
+                bodyRadius: bodyRadius,
+                magnitude: magnitude);
             return popup;
         }
 
@@ -1019,7 +1042,8 @@ namespace TitanOrbit.Game
                 icon,
                 slot.BodyRadius,
                 slot.ClearShipHull,
-                replayPop);
+                replayPop,
+                Mathf.Abs(slot.Accumulated));
 
             slot.LastVisualFlushTime = now;
             slot.LastFormatKey = formatKey;

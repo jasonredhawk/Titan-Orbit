@@ -35,7 +35,7 @@ namespace TitanOrbit.ECS
             state.EntityManager.SetComponentData(entity, new TeamStateSingleton
             {
                 ActiveTeamCount = 0,
-                MaxPlayersPerTeam = 20,
+                MaxPlayersPerTeam = ResolveMaxPlayersPerTeam(),
             });
             state.EntityManager.SetComponentData(entity, new MatchStateSingleton());
             // [TITAN-ORBIT] Size stays 0 until map generation rolls a real period — never invent 1000×1000.
@@ -47,6 +47,18 @@ namespace TitanOrbit.ECS
             state.EntityManager.AddBuffer<MapLayoutEntryElement>(entity);
             // [NETCODE] Server roster only — not a ghost. Clients get names via PlayerNameAnnounceRpc.
             state.EntityManager.AddBuffer<PlayerNameElement>(entity);
+        }
+
+        /// <summary>
+        /// Reads the per-team roster cap from <see cref="MapGenerationSettingsCache"/>
+        /// (Resources asset). Falls back to <see cref="MapGenerationSettings.DefaultMaxPlayersPerTeam"/>.
+        /// </summary>
+        static int ResolveMaxPlayersPerTeam()
+        {
+            var settings = MapGenerationSettingsCache.Settings;
+            if (settings != null && settings.maxPlayersPerTeam > 0)
+                return settings.maxPlayersPerTeam;
+            return MapGenerationSettings.DefaultMaxPlayersPerTeam;
         }
 
         public void OnUpdate(ref SystemState state) { }
@@ -225,6 +237,7 @@ namespace TitanOrbit.ECS
             UnityEngine.Debug.Log(
                 $"[MapGeneration] Using settings from {DescribeConfigSource()}. " +
                 $"Map {_config.MinMapSize:F0}-{_config.MaxMapSize:F0}, teams {_config.MinTeamsPerMatch}-{_config.MaxTeamsPerMatch}, " +
+                $"maxPlayersPerTeam {_config.MaxPlayersPerTeam}, " +
                 $"neutrals {_config.MinNeutralPlanets}-{_config.MaxNeutralPlanets}, " +
                 $"startingOwnedNeutralsPerTeam {_config.StartingOwnedNeutralPlanetsPerTeam}, " +
                 $"startingRandomDefenseTurretsMax {_config.StartingRandomDefenseTurretsMax}, " +
@@ -256,6 +269,7 @@ namespace TitanOrbit.ECS
 
             var teamState = SystemAPI.GetSingletonRW<TeamStateSingleton>();
             teamState.ValueRW.ActiveTeamCount = _rolled.TeamCount;
+            teamState.ValueRW.MaxPlayersPerTeam = math.max(1, _config.MaxPlayersPerTeam);
             teamState.ValueRW.TeamACount = 0;
             teamState.ValueRW.TeamBCount = 0;
             teamState.ValueRW.TeamCCount = 0;
@@ -295,29 +309,23 @@ namespace TitanOrbit.ECS
             MapGenerationLogic.BuildNeutralPlanets(_config, _rolled, ref _rng, planetPlacements, neutralLayouts);
 
             // --- Round-robin starting claims (applied after spawn, one per tick) ---
-            // [TITAN-ORBIT] Neutrals spawn as TeamId.None; each team then “captures” the closest
-            // available neutral to its home, one team at a time, so sticky connections form like
-            // live play instead of wiring every pre-owned planet in a single graph rebuild.
+            // [TITAN-ORBIT] Neutrals spawn as TeamId.None; each team then “captures” the
+            // lowest-level (then smallest) available neutral, one team at a time, so sticky
+            // connections form like live play instead of wiring every pre-owned planet in a
+            // single graph rebuild.
             if (_claimQueue.IsCreated)
                 _claimQueue.Dispose();
             _claimQueue = new NativeList<MapGenerationLogic.StartingNeutralClaim>(
                 math.max(8, _config.StartingOwnedNeutralPlanetsPerTeam * _rolled.TeamCount),
                 Allocator.Persistent);
 
-            var homePositions = new NativeArray<float3>(_rolled.TeamCount, Allocator.Temp);
-            for (int i = 0; i < homeLayouts.Length && i < homePositions.Length; i++)
-                homePositions[i] = homeLayouts[i].Position;
-
             MapGenerationLogic.BuildStartingNeutralClaimOrder(
                 _config.StartingOwnedNeutralPlanetsPerTeam,
                 _rolled.TeamCount,
-                homePositions,
+                _config.HomePlanetLevel,
                 neutralLayouts,
-                _rolled.MapWidth,
-                _rolled.MapHeight,
                 ref _rng,
                 ref _claimQueue);
-            homePositions.Dispose();
             _claimIndex = 0;
 
             if (_neutralPlanetIdsByLayoutIndex.IsCreated)
@@ -460,6 +468,7 @@ namespace TitanOrbit.ECS
 
                     // [TITAN-ORBIT] Starting claims get fresh empty defense pads, then optional
                     // random starter turrets from Map Generation Settings (0 = leave empty).
+                    // Homes skip this path — they spawn with every pad at max turret level.
                     PlanetaryDefenseSlotSyncSystem.WipeSlotsForOwnershipChange(
                         state.EntityManager, planetEntity, claim.Team, claimedLevel);
 
@@ -674,6 +683,10 @@ namespace TitanOrbit.ECS
                 PlanetId = planetId,
                 IsHomePlanet = isHome,
                 ShipFamilyConfigIndex = isHome ? PlanetShipFamilyAssignment.HomeFamilyConfigIndex : shipFamilyConfigIndex,
+                // [TITAN-ORBIT] Homes lock Laserbolt. Neutrals use the same seed+id hash as
+                // MapLayoutBlueprint so client hydrate matches.
+                BulletBankIndex = PlanetShipFamilyAssignment.ResolveSpawnBulletBankIndex(
+                    isHome, _rolled.Seed, planetId),
             });
             if (!em.HasComponent<PlanetTag>(e))
                 em.AddComponent<PlanetTag>(e);
@@ -697,23 +710,20 @@ namespace TitanOrbit.ECS
             SetOrAddComponent(em, e, moonState);
 
             // --- Planetary defense pads for owned homes (neutrals wait for claim wipe) ---
-            // [TITAN-ORBIT] Homes spawn already owned — seed empty slots immediately so pads
-            // appear without waiting on SlotSync's first tick. Optional random starter turrets
-            // use the same Map Generation Settings knob as starting owned neutrals.
+            // [TITAN-ORBIT] Homes spawn already owned — size pads immediately so they appear
+            // without waiting on SlotSync's first tick, then fill every pad at the home
+            // planet's max turret level (starting HomePlanetLevel, not crown Lv7).
             if (team != TeamId.None)
             {
                 int planetLevel = math.max(1, level);
                 PlanetaryDefenseSlotSyncSystem.WipeSlotsForOwnershipChange(
                     em, e, team, planetLevel);
 
-                if (_config.StartingRandomDefenseTurretsMax > 0 &&
-                    em.HasBuffer<PlanetaryDefenseSlotElement>(e))
+                if (isHome && em.HasBuffer<PlanetaryDefenseSlotElement>(e))
                 {
                     var defenseBuffer = em.GetBuffer<PlanetaryDefenseSlotElement>(e);
-                    PlanetaryDefenseLogic.SeedRandomStartingTurrets(
+                    PlanetaryDefenseLogic.SeedMaxLevelStartingTurrets(
                         defenseBuffer,
-                        ref _rng,
-                        _config.StartingRandomDefenseTurretsMax,
                         planetLevel,
                         PlanetaryDefenseConfig.LoadDefault());
                 }
@@ -753,17 +763,7 @@ namespace TitanOrbit.ECS
         /// </summary>
         static MapGenerationLogic.AsteroidBodyTuning ResolveAsteroidBodyTuning()
         {
-            var settings = AsteroidSettingsCache.ResolveOrDefault();
-            settings.ClampValues();
-            return new MapGenerationLogic.AsteroidBodyTuning
-            {
-                MinSize = settings.MinSize,
-                MaxSize = settings.MaxSize,
-                HealthPerSize = settings.HealthPerSize,
-                GemsPerSize = settings.GemsPerSize,
-                VisualScaleAtMinSize = settings.VisualScaleAtMinSize,
-                VisualScaleAtMaxSize = settings.VisualScaleAtMaxSize,
-            };
+            return MapGenerationLogic.FromAsteroidSettings(AsteroidSettingsCache.ResolveOrDefault());
         }
 
         static void SetOrAddComponent<T>(EntityManager em, Entity e, T value) where T : unmanaged, IComponentData

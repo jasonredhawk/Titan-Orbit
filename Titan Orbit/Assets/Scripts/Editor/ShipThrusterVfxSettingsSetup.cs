@@ -1,6 +1,7 @@
 #if UNITY_EDITOR
 using System.Collections.Generic;
 using System.IO;
+using TitanOrbit.Core;
 using TitanOrbit.Data;
 using UnityEditor;
 using UnityEngine;
@@ -8,9 +9,8 @@ using UnityEngine;
 namespace TitanOrbit.Editor
 {
     /// <summary>
-    /// [EDITOR] Writes family jet prefabs into the single
-    /// <see cref="ThrusterVfxBank"/> asset and removes leftover per-family settings.
-    /// Menu: <b>Titan Orbit → Assign Family Thruster VFX</b>.
+    /// [EDITOR] Writes the four JetFlame types and their team-color prefabs into
+    /// <see cref="ThrusterVfxBank"/>. Menu: <b>Titan Orbit → Assign Thruster VFX</b>.
     /// </summary>
     public static class ShipThrusterVfxSettingsSetup
     {
@@ -18,115 +18,74 @@ namespace TitanOrbit.Editor
             "Assets/Archanor/Sci-Fi Arsenal/Sci-Fi Effects/Prefabs/Interactive/JetFlame";
         const string LegacyDefaultAssetPath = "Assets/Resources/ShipThrusterVfxSettings.asset";
 
-        static readonly string[] ColorOrder = { "Blue", "Green", "Purple", "Red", "White", "Yellow" };
-
-        struct FamilyFlameAssign
+        struct TeamColorAssign
         {
-            public string FamilyId;
-            public string SignaturePrefabPath;
-            public string StyleFolder;
-            public string ColorPrefabFormat;
+            public TeamId Team;
+            public string ColorName;
+            public string FileColor;
         }
 
-        static readonly FamilyFlameAssign[] Assignments =
+        /// <summary>Team D is orange. Those prefabs are named Yellow.</summary>
+        static readonly TeamColorAssign[] TeamColors =
         {
-            new FamilyFlameAssign
+            new TeamColorAssign { Team = TeamId.TeamA, ColorName = "Red", FileColor = "Red" },
+            new TeamColorAssign { Team = TeamId.TeamB, ColorName = "Blue", FileColor = "Blue" },
+            new TeamColorAssign { Team = TeamId.TeamC, ColorName = "Green", FileColor = "Green" },
+            new TeamColorAssign { Team = TeamId.TeamD, ColorName = "Orange", FileColor = "Yellow" },
+            new TeamColorAssign { Team = TeamId.TeamE, ColorName = "Purple", FileColor = "Purple" },
+        };
+
+        struct StyleAssign
+        {
+            public string Name;
+            public string Folder;
+            public string ColorPrefabFormat;
+            public string FallbackFileName;
+        }
+
+        static readonly StyleAssign[] Styles =
+        {
+            new StyleAssign
             {
-                FamilyId = "AstroEagle",
-                SignaturePrefabPath = JetFlameRoot + "/V2/ModularJetFlame2.prefab",
-                StyleFolder = "V2",
-                ColorPrefabFormat = "{0}JetFlame2"
+                Name = "V1",
+                Folder = "V1",
+                ColorPrefabFormat = "{0}JetFlame",
+                FallbackFileName = "ModularJetFlame"
             },
-            new FamilyFlameAssign
+            new StyleAssign
             {
-                FamilyId = "CosmicShark",
-                SignaturePrefabPath = JetFlameRoot + "/V3/ModularJetFlame3.prefab",
-                StyleFolder = "V3",
-                ColorPrefabFormat = "{0}JetFlame3"
+                Name = "V2",
+                Folder = "V2",
+                ColorPrefabFormat = "{0}JetFlame2",
+                FallbackFileName = "ModularJetFlame2"
             },
-            new FamilyFlameAssign
+            new StyleAssign
             {
-                FamilyId = "ForceBadger",
-                SignaturePrefabPath = JetFlameRoot + "/V1/RedJetFlame.prefab",
-                StyleFolder = "V1",
-                ColorPrefabFormat = "{0}JetFlame"
+                Name = "V3",
+                Folder = "V3",
+                ColorPrefabFormat = "{0}JetFlame3",
+                FallbackFileName = "ModularJetFlame3"
             },
-            new FamilyFlameAssign
+            new StyleAssign
             {
-                FamilyId = "GalaxyRaptor",
-                SignaturePrefabPath = JetFlameRoot + "/V3/PurpleJetFlame3.prefab",
-                StyleFolder = "V3",
-                ColorPrefabFormat = "{0}JetFlame3"
-            },
-            new FamilyFlameAssign
-            {
-                FamilyId = "HyperFalcon",
-                SignaturePrefabPath = JetFlameRoot + "/V2/YellowJetFlame2.prefab",
-                StyleFolder = "V2",
-                ColorPrefabFormat = "{0}JetFlame2"
-            },
-            new FamilyFlameAssign
-            {
-                FamilyId = "LightFox",
-                SignaturePrefabPath = JetFlameRoot + "/Soft/JetFlameSoftYellow.prefab",
-                StyleFolder = "Soft",
-                ColorPrefabFormat = "JetFlameSoft{0}"
-            },
-            new FamilyFlameAssign
-            {
-                FamilyId = "MeteorMantis",
-                SignaturePrefabPath = JetFlameRoot + "/Soft/JetFlameSoftGreen.prefab",
-                StyleFolder = "Soft",
-                ColorPrefabFormat = "JetFlameSoft{0}"
-            },
-            new FamilyFlameAssign
-            {
-                FamilyId = "NightAye",
-                SignaturePrefabPath = JetFlameRoot + "/V1/PurpleJetFlame.prefab",
-                StyleFolder = "V1",
-                ColorPrefabFormat = "{0}JetFlame"
-            },
-            new FamilyFlameAssign
-            {
-                FamilyId = "ProtonLegacy",
-                SignaturePrefabPath = JetFlameRoot + "/V2/RedJetFlame2.prefab",
-                StyleFolder = "V2",
-                ColorPrefabFormat = "{0}JetFlame2"
-            },
-            new FamilyFlameAssign
-            {
-                FamilyId = "SpaceExcalibur",
-                SignaturePrefabPath = JetFlameRoot + "/V1/ModularJetFlame.prefab",
-                StyleFolder = "V1",
-                ColorPrefabFormat = "{0}JetFlame"
-            },
-            new FamilyFlameAssign
-            {
-                FamilyId = "StarForce",
-                SignaturePrefabPath = JetFlameRoot + "/V3/BlueJetFlame3.prefab",
-                StyleFolder = "V3",
-                ColorPrefabFormat = "{0}JetFlame3"
-            },
-            new FamilyFlameAssign
-            {
-                FamilyId = "StriderOx",
-                SignaturePrefabPath = JetFlameRoot + "/V1/GreenJetFlame.prefab",
-                StyleFolder = "V1",
-                ColorPrefabFormat = "{0}JetFlame"
+                Name = "Soft",
+                Folder = "Soft",
+                ColorPrefabFormat = "JetFlameSoft{0}",
+                FallbackFileName = "JetFlameSoftWhite"
             },
         };
 
         /// <summary>
-        /// [EDITOR] Refresh <c>Resources/ThrusterVfxBank</c> and delete leftover per-family assets.
+        /// [EDITOR] Refresh <c>Resources/ThrusterVfxBank</c> from the JetFlame folders.
         /// </summary>
-        [MenuItem("Titan Orbit/Assign Family Thruster VFX")]
-        public static void AssignFamilyThrusterVfx()
+        [MenuItem("Titan Orbit/Assign Thruster VFX")]
+        public static void AssignThrusterVfx()
         {
             EnsureThrusterVfxBank();
             DeleteLegacySettingsAssets();
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
-            Debug.Log("[Titan Orbit] Assign Family Thruster VFX: updated Resources/ThrusterVfxBank.");
+            Debug.Log("[Titan Orbit] Assign Thruster VFX: updated Resources/ThrusterVfxBank (V1, V2, V3, Soft × team colors).");
         }
 
         static void EnsureThrusterVfxBank()
@@ -142,74 +101,62 @@ namespace TitanOrbit.Editor
                 AssetDatabase.CreateAsset(bank, ThrusterVfxBank.ResourcesAssetPath);
             }
 
-            if (bank.entries == null)
-                bank.entries = new List<ThrusterVfxBank.Entry>();
-            bank.entries.Clear();
+            if (bank.thrusters == null)
+                bank.thrusters = new List<ThrusterVfxBank.ThrusterType>();
+            bank.thrusters.Clear();
 
-            for (int i = 0; i < Assignments.Length; i++)
+            for (int i = 0; i < Styles.Length; i++)
             {
-                FamilyFlameAssign row = Assignments[i];
-                GameObject signature = AssetDatabase.LoadAssetAtPath<GameObject>(row.SignaturePrefabPath);
-                if (signature == null)
+                StyleAssign style = Styles[i];
+                var row = new ThrusterVfxBank.ThrusterType
                 {
-                    Debug.LogWarning(
-                        "[Titan Orbit] Assign Family Thruster VFX: missing prefab " + row.SignaturePrefabPath);
-                    continue;
-                }
-
-                var entry = new ThrusterVfxBank.Entry
-                {
-                    familyId = row.FamilyId,
-                    displayName = row.FamilyId,
-                    prefab = signature,
-                    colorPrefabs = new List<ThrusterVfxBank.ColorPrefab>()
+                    name = style.Name,
+                    teamColors = new List<ThrusterVfxBank.TeamColorFlame>(),
+                    fallbackPrefab = LoadPrefab(style.Folder, style.FallbackFileName)
                 };
 
-                for (int c = 0; c < ColorOrder.Length; c++)
+                if (row.fallbackPrefab == null)
                 {
-                    string color = ColorOrder[c];
-                    string fileName = string.Format(row.ColorPrefabFormat, color);
-                    string path = JetFlameRoot + "/" + row.StyleFolder + "/" + fileName + ".prefab";
-                    GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(path);
-                    if (prefab == null)
-                        continue;
+                    Debug.LogWarning(
+                        "[Titan Orbit] Assign Thruster VFX: missing fallback "
+                        + style.Folder + "/" + style.FallbackFileName);
+                }
 
-                    entry.colorPrefabs.Add(new ThrusterVfxBank.ColorPrefab
+                for (int c = 0; c < TeamColors.Length; c++)
+                {
+                    TeamColorAssign color = TeamColors[c];
+                    string fileName = string.Format(style.ColorPrefabFormat, color.FileColor);
+                    GameObject prefab = LoadPrefab(style.Folder, fileName);
+                    if (prefab == null)
                     {
-                        colorName = color,
+                        Debug.LogWarning(
+                            "[Titan Orbit] Assign Thruster VFX: missing "
+                            + style.Name + " " + color.ColorName + " at " + style.Folder + "/" + fileName);
+                        continue;
+                    }
+
+                    row.teamColors.Add(new ThrusterVfxBank.TeamColorFlame
+                    {
+                        team = color.Team,
+                        colorName = color.ColorName,
                         prefab = prefab
                     });
                 }
 
-                bank.entries.Add(entry);
+                bank.thrusters.Add(row);
+                CopyStylePrefabToResources(
+                    JetFlameRoot + "/" + style.Folder + "/" + style.FallbackFileName + ".prefab",
+                    "Assets/Resources/" + style.FallbackFileName + ".prefab");
             }
 
-            bank.stylePrefabs = new GameObject[ThrusterVfxBank.StyleCount];
-            bank.stylePrefabs[0] = AssetDatabase.LoadAssetAtPath<GameObject>(
-                ThrusterVfxBank.JetFlameFolder + "/V1/ModularJetFlame.prefab");
-            bank.stylePrefabs[1] = AssetDatabase.LoadAssetAtPath<GameObject>(
-                ThrusterVfxBank.JetFlameFolder + "/V2/ModularJetFlame2.prefab");
-            bank.stylePrefabs[2] = AssetDatabase.LoadAssetAtPath<GameObject>(
-                ThrusterVfxBank.JetFlameFolder + "/V3/ModularJetFlame3.prefab");
-            bank.stylePrefabs[3] = AssetDatabase.LoadAssetAtPath<GameObject>(
-                ThrusterVfxBank.JetFlameFolder + "/Soft/JetFlameSoftWhite.prefab");
-
-            CopyStylePrefabToResources(
-                ThrusterVfxBank.JetFlameFolder + "/V1/ModularJetFlame.prefab",
-                "Assets/Resources/ModularJetFlame.prefab");
-            CopyStylePrefabToResources(
-                ThrusterVfxBank.JetFlameFolder + "/V2/ModularJetFlame2.prefab",
-                "Assets/Resources/ModularJetFlame2.prefab");
-            CopyStylePrefabToResources(
-                ThrusterVfxBank.JetFlameFolder + "/V3/ModularJetFlame3.prefab",
-                "Assets/Resources/ModularJetFlame3.prefab");
-            CopyStylePrefabToResources(
-                ThrusterVfxBank.JetFlameFolder + "/Soft/JetFlameSoftWhite.prefab",
-                "Assets/Resources/JetFlameSoftWhite.prefab");
-
             CopyColoredStylePrefabsToResources();
-
             EditorUtility.SetDirty(bank);
+        }
+
+        static GameObject LoadPrefab(string folder, string fileName)
+        {
+            return AssetDatabase.LoadAssetAtPath<GameObject>(
+                JetFlameRoot + "/" + folder + "/" + fileName + ".prefab");
         }
 
         static void CopyStylePrefabToResources(string sourcePath, string destPath)
@@ -223,15 +170,14 @@ namespace TitanOrbit.Editor
 
         static void CopyColoredStylePrefabsToResources()
         {
-            string[] folders = { "V1", "V2", "V3", "Soft" };
-            string[] formats = { "{0}JetFlame", "{0}JetFlame2", "{0}JetFlame3", "JetFlameSoft{0}" };
-            for (int s = 0; s < folders.Length; s++)
+            for (int s = 0; s < Styles.Length; s++)
             {
-                for (int c = 0; c < ColorOrder.Length; c++)
+                StyleAssign style = Styles[s];
+                for (int c = 0; c < TeamColors.Length; c++)
                 {
-                    string fileName = string.Format(formats[s], ColorOrder[c]);
+                    string fileName = string.Format(style.ColorPrefabFormat, TeamColors[c].FileColor);
                     CopyStylePrefabToResources(
-                        JetFlameRoot + "/" + folders[s] + "/" + fileName + ".prefab",
+                        JetFlameRoot + "/" + style.Folder + "/" + fileName + ".prefab",
                         "Assets/Resources/" + fileName + ".prefab");
                 }
             }

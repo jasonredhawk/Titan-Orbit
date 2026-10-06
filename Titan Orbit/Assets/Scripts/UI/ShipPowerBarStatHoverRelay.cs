@@ -1,55 +1,90 @@
-using TitanOrbit.Data;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
+#if ENABLE_INPUT_SYSTEM
+using UnityEngine.InputSystem;
+#endif
 
 namespace TitanOrbit.UI
 {
     /// <summary>
-    /// Invisible padded hit target over a colourful power bar. Maps the pointer to
-    /// one of the ten tiny ODEMC slots and opens <see cref="ShipPowerBarStatTooltip"/>.
-    /// The shared tip parents itself to this bar's Orbit Menu canvas — not the first
-    /// HUD canvas in the scene — so the STAT TELEMETRY card draws above the dock.
-    /// Forwards click and drag to the parent <see cref="Button"/> / <see cref="ScrollRect"/>
-    /// so hovering a slot does not steal chassis purchase or list scroll.
+    /// Invisible padded hit target over a colourful power bar. One shared
+    /// <see cref="Probe"/> reads the pointer while the Orbit Menu is open and maps
+    /// it to a slot — we do not trust EventSystem enter/exit here.
     /// <para>
-    /// [UNITY] A child Image with <c>raycastTarget = true</c> wins the EventSystem hit
-    /// over the card Button underneath. We therefore re-raise click/drag ourselves.
+    /// [TITAN-ORBIT] IPointerEnter on this pad used to open
+    /// <see cref="ShipPowerBarStatTooltip"/>. A nested tip canvas (or any later
+    /// sibling over the pointer) made EventSystem fire Exit on the same hover,
+    /// so the STAT TELEMETRY card vanished. LateUpdate containment against the
+    /// dark tray ignores that hole. Among overlapping live bars we keep the
+    /// closest visible tray so a stale full-card rect cannot steal the hover.
     /// </para>
+    /// Click / drag still forward to the card Button / ScrollRect when this pad
+    /// has raycastTarget, so purchase and list scroll keep working.
     /// Presentation-only — no ECS writes. Paired with <see cref="ShipUpgradeTreePowerBarUI"/>.
     /// </summary>
     public class ShipPowerBarStatHoverRelay : MonoBehaviour,
-        IPointerEnterHandler,
-        IPointerMoveHandler,
-        IPointerExitHandler,
         IPointerClickHandler,
         IInitializePotentialDragHandler,
         IBeginDragHandler,
         IDragHandler,
         IEndDragHandler
     {
+        /// <summary>Live pads. The probe walks this once per frame — not 24 LateUpdates.</summary>
+        static readonly List<ShipPowerBarStatHoverRelay> s_Live = new List<ShipPowerBarStatHoverRelay>(32);
+
+        /// <summary>One hidden runner. Created on first enable; destroyed with play mode.</summary>
+        static Probe s_Probe;
+
         /// <summary>Bar that owns the ten slot rects and the last painted breakdown.</summary>
         public ShipUpgradeTreePowerBarUI Owner;
 
         int _hoverSlot = -1;
 
-        /// <summary>Pointer entered the padded bar — pick a slot and show that tip.</summary>
-        public void OnPointerEnter(PointerEventData eventData)
+        void OnEnable()
         {
-            ShowSlotUnderPointer(eventData);
+            if (!s_Live.Contains(this))
+                s_Live.Add(this);
+            EnsureProbe();
         }
 
-        /// <summary>Pointer slid across the bar — retarget when the slot changes.</summary>
-        public void OnPointerMove(PointerEventData eventData)
+        void OnDisable()
         {
-            ShowSlotUnderPointer(eventData);
-        }
-
-        /// <summary>Pointer left the padded bar — hide if we still own the shared tip.</summary>
-        public void OnPointerExit(PointerEventData eventData)
-        {
+            s_Live.Remove(this);
             _hoverSlot = -1;
-            ShipPowerBarStatTooltip.Hide();
+            ShipPowerBarStatTooltip.HideIfOwner(this);
+        }
+
+        /// <summary>
+        /// Call when the Orbit Menu becomes visible. Recreates the LateUpdate probe and
+        /// the STAT TELEMETRY overlay so a leftover Unity 6 canvas from the last dock
+        /// cannot stay invisible. Also rebuilds every live tray rect.
+        /// </summary>
+        public static void NotifyMenuShown()
+        {
+            // --- Fresh probe + overlay ---
+            // [UNITY] HideAndDontSave / a disabled nested canvas survived the first
+            // close and left second-open hover with pads but no painted card.
+            if (s_Probe != null)
+            {
+                Object.Destroy(s_Probe.gameObject);
+                s_Probe = null;
+            }
+
+            EnsureProbe();
+            ShipPowerBarStatTooltip.RecreateOverlay();
+            PurgeDead();
+            ClearSlots();
+
+            for (int i = 0; i < s_Live.Count; i++)
+            {
+                ShipPowerBarStatHoverRelay relay = s_Live[i];
+                if (relay == null || relay.Owner == null)
+                    continue;
+                relay._hoverSlot = -1;
+                relay.Owner.ForceRebuildHoverTray();
+            }
         }
 
         /// <summary>
@@ -87,29 +122,179 @@ namespace TitanOrbit.UI
             Forward(eventData, ExecuteEvents.endDragHandler);
         }
 
-        void OnDisable()
+        /// <summary>
+        /// One pointer sample for every live bar. Called from <see cref="Probe.LateUpdate"/>.
+        /// Picks the closest visible tray under the cursor — not the first enabled bar.
+        /// </summary>
+        public static void TickAll()
         {
-            _hoverSlot = -1;
-            ShipPowerBarStatTooltip.Hide();
+            // --- Pointer vs tray ---
+            // Do not gate on IsOrbitMenuVisible. That flag has been wrong during
+            // warmup / close, and it would keep the STAT TELEMETRY card dead.
+            // Inactive parents already drop us from s_Live via OnDisable.
+            // [TITAN-ORBIT] First-in-list used to win. Warmup leftovers, GEAR tiles, and
+            // a stale full-card track can all "contain" the same screen point. The player
+            // then sees no card (wrong bar, off-screen tip) except on the rare frame
+            // the real 16px tray was first. Closest visible tray wins instead.
+            if (!TryReadPointerScreen(out Vector2 screen))
+            {
+                ShipPowerBarStatTooltip.Hide();
+                ClearSlots();
+                return;
+            }
+
+            ShipPowerBarStatHoverRelay hit = null;
+            int slot = -1;
+            float bestArea = float.MaxValue;
+            float bestDist = float.MaxValue;
+            for (int i = 0; i < s_Live.Count; i++)
+            {
+                ShipPowerBarStatHoverRelay relay = s_Live[i];
+                if (relay == null || !relay.isActiveAndEnabled || relay.Owner == null)
+                    continue;
+                if (!relay.gameObject.activeInHierarchy)
+                    continue;
+                if (!IsShownForHover(relay.transform))
+                    continue;
+
+                UnityEngine.Camera cam = EventCameraFor(relay.transform);
+                if (!relay.Owner.TryHitSlot(screen, cam, out int picked, out float area, out float dist))
+                    continue;
+
+                // Closest tray center = the bar under the cursor. A leftover full-card
+                // rect loses to the 16px track. Same distance: smaller tray (MEGA vs L6).
+                bool better = dist + 0.5f < bestDist
+                    || (Mathf.Abs(dist - bestDist) <= 0.5f && area < bestArea);
+                if (!better)
+                    continue;
+
+                bestArea = area;
+                bestDist = dist;
+                hit = relay;
+                slot = picked;
+            }
+
+            if (hit == null)
+            {
+                ShipPowerBarStatTooltip.Hide();
+                ClearSlots();
+                return;
+            }
+
+            for (int i = 0; i < s_Live.Count; i++)
+            {
+                if (s_Live[i] != null && s_Live[i] != hit)
+                    s_Live[i]._hoverSlot = -1;
+            }
+
+            if (slot == hit._hoverSlot && ShipPowerBarStatTooltip.ActiveSlot == slot
+                && ReferenceEquals(ShipPowerBarStatTooltip.ActiveOwner, hit))
+                return;
+
+            hit._hoverSlot = slot;
+            hit.Owner.ShowStatTooltip(slot);
         }
 
         /// <summary>
-        /// Resolves which of the ten slots contains the pointer (or is nearest in the pad)
-        /// and opens the shared tip. Skips rebuild when the slot did not change.
+        /// False when a parent CanvasGroup has faded this bar out (hidden warmup,
+        /// concealed dock). Those leftover rects must not steal the hover.
         /// </summary>
-        void ShowSlotUnderPointer(PointerEventData eventData)
+        /// <param name="t">Hover pad or bar transform.</param>
+        /// <returns>True when the player can see this hierarchy.</returns>
+        static bool IsShownForHover(Transform t)
         {
-            if (Owner == null)
-                return;
+            if (t == null)
+                return false;
 
-            int slot = Owner.PickSlotAtScreenPoint(eventData.position, eventData.enterEventCamera);
-            if (slot < 0)
-                return;
-            if (slot == _hoverSlot && ShipPowerBarStatTooltip.ActiveSlot == slot)
-                return;
+            // --- Walk CanvasGroups ---
+            // [UNITY] Alpha multiplies down the chain unless ignoreParentGroups is on.
+            // Join warmup keeps the 24-node tree active at alpha 0 so layout can
+            // measure — those trays still have world rects over the loading screen.
+            float alpha = 1f;
+            Transform walk = t;
+            while (walk != null)
+            {
+                CanvasGroup group = walk.GetComponent<CanvasGroup>();
+                if (group != null)
+                {
+                    if (group.ignoreParentGroups)
+                        alpha = group.alpha;
+                    else
+                        alpha *= group.alpha;
+                    if (alpha < 0.01f)
+                        return false;
+                }
 
-            _hoverSlot = slot;
-            Owner.ShowStatTooltip(slot);
+                walk = walk.parent;
+            }
+
+            return true;
+        }
+
+        /// <summary>Screen-space camera for Overlay (null) vs Camera-space canvases.</summary>
+        static UnityEngine.Camera EventCameraFor(Transform t)
+        {
+            Canvas canvas = t != null ? t.GetComponentInParent<Canvas>() : null;
+            if (canvas == null)
+                return null;
+            if (canvas.rootCanvas != null)
+                canvas = canvas.rootCanvas;
+            return canvas.renderMode == RenderMode.ScreenSpaceOverlay ? null : canvas.worldCamera;
+        }
+
+        /// <summary>Mouse (or primary touch) in screen pixels. False when there is no pointer.</summary>
+        static bool TryReadPointerScreen(out Vector2 screen)
+        {
+#if ENABLE_INPUT_SYSTEM
+            if (Mouse.current != null)
+            {
+                screen = Mouse.current.position.ReadValue();
+                return float.IsFinite(screen.x) && float.IsFinite(screen.y);
+            }
+
+            if (Touchscreen.current != null && Touchscreen.current.primaryTouch.press.isPressed)
+            {
+                screen = Touchscreen.current.primaryTouch.position.ReadValue();
+                return float.IsFinite(screen.x) && float.IsFinite(screen.y);
+            }
+
+            screen = new Vector2(-1f, -1f);
+            return false;
+#else
+            screen = UnityEngine.Input.mousePosition;
+            return float.IsFinite(screen.x) && float.IsFinite(screen.y);
+#endif
+        }
+
+        static void ClearSlots()
+        {
+            for (int i = 0; i < s_Live.Count; i++)
+            {
+                if (s_Live[i] != null)
+                    s_Live[i]._hoverSlot = -1;
+            }
+        }
+
+        /// <summary>Drops Unity fake-nulls left after a hide/destroy so the next open does not walk ghosts.</summary>
+        static void PurgeDead()
+        {
+            for (int i = s_Live.Count - 1; i >= 0; i--)
+            {
+                if (s_Live[i] == null)
+                    s_Live.RemoveAt(i);
+            }
+        }
+
+        static void EnsureProbe()
+        {
+            // [UNITY] Destroyed objects compare as null. Do not use HideAndDontSave —
+            // that flag let the runner vanish after the first Orbit Menu close.
+            if (s_Probe != null)
+                return;
+            var go = new GameObject("ShipPowerBarHoverProbe");
+            Object.DontDestroyOnLoad(go);
+            go.hideFlags = HideFlags.HideInHierarchy;
+            s_Probe = go.AddComponent<Probe>();
         }
 
         /// <summary>
@@ -123,6 +308,15 @@ namespace TitanOrbit.UI
             if (transform.parent == null)
                 return;
             ExecuteEvents.ExecuteHierarchy(transform.parent.gameObject, eventData, functor);
+        }
+
+        /// <summary>Hidden runner — one LateUpdate for every power-bar pad.</summary>
+        sealed class Probe : MonoBehaviour
+        {
+            void LateUpdate()
+            {
+                TickAll();
+            }
         }
     }
 }

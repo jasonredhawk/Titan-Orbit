@@ -100,12 +100,11 @@ namespace TitanOrbit.ECS
         /// <param name="speedWeightPerMass">Subtract from MaxSpeed per unit totalMass.</param>
         /// <param name="accelWeightPerMass">Subtract from accel per unit totalMass.</param>
         /// <param name="turnWeightPerMass">
-        /// Designer turn weight in definition units. <see cref="ShipMobilityResolution"/> scales it
-        /// ×10 to °/s so it matches motor RotationSpeed.
+        /// Yaw lost per unit totalMass, in degrees per second (same unit as motor RotationSpeed).
         /// </param>
         /// <param name="minSpeed">Floor after subtractive MaxSpeed tax.</param>
         /// <param name="minAccel">Floor after subtractive accel tax.</param>
-        /// <param name="minTurn">Floor after subtractive turn tax (definition units; scaled ×10 to °/s).</param>
+        /// <param name="minTurn">Floor after subtractive turn tax, in degrees per second.</param>
         /// <param name="skipMassTax">True for MEGA hulls — keep chassis speed / accel / turn.</param>
         /// <param name="isMegaShip">
         /// True while <see cref="MegaShipState.IsMega"/>. Disables overdrive and treats
@@ -185,7 +184,8 @@ namespace TitanOrbit.ECS
                         dt,
                         mapW,
                         mapH,
-                        elapsedSeconds))
+                        elapsedSeconds,
+                        shipPhysicsRadius))
                 {
                     physicsDamping = default;
                     orbitState = default;
@@ -260,8 +260,7 @@ namespace TitanOrbit.ECS
                     massPerGem,
                     massPerPerson,
                     massPerComponentSize);
-                // [TITAN-ORBIT] RotationSpeed is already °/s; turnWeight / minTurn are definition
-                // units. ApplyMassTaxBurst multiplies those by 10 so yaw tax matches Speed/Accel ratio.
+                // [TITAN-ORBIT] RotationSpeed, turnWeight, and minTurn are all degrees per second.
                 taxed = ShipMobilityResolution.ApplyMassTaxBurst(
                     motor.MaxSpeed,
                     motor.EngineThrust,
@@ -431,7 +430,7 @@ namespace TitanOrbit.ECS
                 float t = math.saturate(MoonApproachCoOrbitResponsiveness * dt);
                 vel = math.lerp(vel, moonApproachVel, t);
                 vel.y = 0f;
-                ApplyRecoilDecay(ref vel, maxSpeed, movementMass, motor.RecoilDecayPerSecond, dt);
+                ApplyRecoilDecay(ref vel, maxSpeed, motor.RecoilDecayPerSecond, dt);
                 SnapBoostCapDrop(ref vel, previousMaxSpeed, maxSpeed);
             }
             else
@@ -447,7 +446,7 @@ namespace TitanOrbit.ECS
                     !input.DisableSpaceBrakes,
                     dt);
 
-                ApplyRecoilDecay(ref vel, maxSpeed, movementMass, motor.RecoilDecayPerSecond, dt);
+                ApplyRecoilDecay(ref vel, maxSpeed, motor.RecoilDecayPerSecond, dt);
 
                 // Triangle / OVERDRIVE leftover — not collision overspeed (see SnapBoostCapDrop).
                 SnapBoostCapDrop(ref vel, previousMaxSpeed, maxSpeed);
@@ -617,10 +616,14 @@ namespace TitanOrbit.ECS
                     vel += accel * dt;
                     vel.y = 0f;
 
-                    // Thrust from below MaxSpeed may not cross the cruise cap.
+                    // Thrust may reach the cruise cap, and may steer while a ram is
+                    // still above that cap, but it must not add speed past either.
+                    // A pure side-step (turn while already at cap) used to grow
+                    // magnitude with no clamp — registered 6.5, still flying ~9.
                     float speedOut = math.length(vel);
-                    if (speedIn < maxSpeed && speedOut > maxSpeed)
-                        vel = math.normalize(vel) * maxSpeed;
+                    float thrustCap = speedIn > maxSpeed ? speedIn : maxSpeed;
+                    if (speedOut > thrustCap)
+                        vel = math.normalize(vel) * thrustCap;
                 }
             }
             else if (spaceBrakes && math.lengthsq(vel) > 0.001f)
@@ -948,12 +951,14 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Bleeds temporary overspeed from recoil / impact bounces back toward MaxSpeed.
+        /// Bleeds temporary overspeed from recoil / impact / takeoff back toward MaxSpeed.
+        /// Rate is world units per second. It is not divided by hull movement mass —
+        /// flight accel is already a taxed rate, and dividing left heavy hulls above
+        /// cruise for a long time (the speedometer still said 6.5 while the ship held ~9).
         /// </summary>
         static void ApplyRecoilDecay(
             ref float3 vel,
             float maxSpeed,
-            float mass,
             float recoilDecayPerSecond,
             float dt)
         {
@@ -962,8 +967,7 @@ namespace TitanOrbit.ECS
                 return;
 
             float decay = recoilDecayPerSecond > 0f ? recoilDecayPerSecond : 6f;
-            float effectiveRecoilDecay = decay / math.max(ShipMassLogic.MinMass, mass);
-            float targetMag = math.clamp(mag - effectiveRecoilDecay * dt, maxSpeed, mag);
+            float targetMag = math.clamp(mag - decay * dt, maxSpeed, mag);
             vel = math.normalize(vel) * targetMag;
         }
 

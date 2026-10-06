@@ -11,7 +11,7 @@ namespace TitanOrbit.Services
     {
         /// <summary>
         /// True when this client should play a video (no Orbit Unlocked entitlement).
-        /// Owners still get death keep-loadout instantly via the rewarded facade.
+        /// Owners skip the death keep/forfeit card and keep gear on respawn.
         /// The +1 slot is auto-granted for owners and never shows this gate.
         /// </summary>
         public static bool ShouldShowAds => !TitanOrbitEntitlements.IsOrbitUnlockedOwned;

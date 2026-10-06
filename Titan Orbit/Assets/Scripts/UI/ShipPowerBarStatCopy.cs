@@ -94,20 +94,22 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Full power-bar hover body: title, this hull vs catalog max, what the stat is,
+        /// Full power-bar hover body: title, this card vs catalog max, what the stat is,
         /// then a small RANK 1 line. Call on pointer-enter — not every frame.
         /// </summary>
         /// <param name="statIndex">Hovered slot 0–9.</param>
         /// <param name="thisValue">This card's display-stat value (same as the bar fill).</param>
         /// <param name="maxValue">Pool max used as the fill denominator.</param>
-        /// <param name="megaPool">True when the bar used MEGA catalog maxes.</param>
-        /// <param name="thisChassisId">Optional chassis on this card; when it matches RANK 1 we say "this hull".</param>
+        /// <param name="pool">Regular ships, Titans, or gear components.</param>
+        /// <param name="thisChassisId">Hull id or component leader key. Matching RANK 1 says “this hull” or “this part”.</param>
+        /// <param name="componentShipLevel">Gear only. Extra Level of the component ceiling.</param>
         public static string BuildPowerBarTipBody(
             int statIndex,
             float thisValue,
             float maxValue,
-            bool megaPool,
-            string thisChassisId)
+            ShipPowerBarComparisonPool pool,
+            string thisChassisId,
+            int componentShipLevel = 1)
         {
             StringBuilder sb = s_Sb;
             sb.Clear();
@@ -148,19 +150,16 @@ namespace TitanOrbit.UI
                 sb.AppendLine();
             }
 
-            AppendRankOneFooter(sb, statIndex, megaPool, thisChassisId, thisValue);
+            AppendRankOneFooter(sb, statIndex, pool, thisChassisId, thisValue, componentShipLevel);
             return sb.ToString();
         }
 
         /// <summary>
         /// Small RANK 1 block used by power-bar tips and in-flight ability chips.
         /// Stays last so the stat details stay the main read.
+        /// Regular chips and Titan chips keep their own catalog. This overload
+        /// picks the pool from <paramref name="megaPool"/>.
         /// </summary>
-        /// <param name="sb">Tip builder already holding the main body.</param>
-        /// <param name="statIndex">Slot 0–9.</param>
-        /// <param name="megaPool">Which catalog pool to query.</param>
-        /// <param name="thisChassisId">Hovered / live hull; matching RANK 1 says "this hull".</param>
-        /// <param name="thisValue">Optional; when it meets the pool max we also treat this card as RANK 1.</param>
         public static void AppendRankOneFooter(
             StringBuilder sb,
             int statIndex,
@@ -168,10 +167,40 @@ namespace TitanOrbit.UI
             string thisChassisId,
             float thisValue = -1f)
         {
+            AppendRankOneFooter(
+                sb,
+                statIndex,
+                megaPool ? ShipPowerBarComparisonPool.Titans : ShipPowerBarComparisonPool.RegularShips,
+                thisChassisId,
+                thisValue);
+        }
+
+        /// <summary>
+        /// Small RANK 1 block for one comparison pool. Gear uses
+        /// <see cref="ShipPowerBarComparisonPool.Components"/> and names a part.
+        /// </summary>
+        /// <param name="sb">Tip builder already holding the main body.</param>
+        /// <param name="statIndex">Slot 0–9.</param>
+        /// <param name="pool">Which catalog to query.</param>
+        /// <param name="thisChassisId">Hovered hull or part. Matching RANK 1 says this card holds the max.</param>
+        /// <param name="thisValue">Optional; when it meets the pool max we also treat this card as RANK 1.</param>
+        /// <param name="componentShipLevel">Gear only. Extra Level of the component ceiling.</param>
+        public static void AppendRankOneFooter(
+            StringBuilder sb,
+            int statIndex,
+            ShipPowerBarComparisonPool pool,
+            string thisChassisId,
+            float thisValue = -1f,
+            int componentShipLevel = 1)
+        {
             if (sb == null)
                 return;
 
-            ShipPowerBarStatLeader leader = ShipFamilyPowerBarNorm.GetStatLeader(statIndex, megaPool);
+            if (pool == ShipPowerBarComparisonPool.Unset)
+                pool = ShipPowerBarComparisonPool.RegularShips;
+
+            ShipPowerBarStatLeader leader = ShipFamilyPowerBarNorm.GetStatLeader(
+                statIndex, pool, componentShipLevel);
             if (!leader.IsValid)
                 return;
 
@@ -188,8 +217,12 @@ namespace TitanOrbit.UI
             string unit = GetUnitSuffix(statIndex);
             if (thisIsLeader)
             {
+                // Gear says "part". Ship tree says "hull". Same mint so the winner still pops.
+                string holder = pool == ShipPowerBarComparisonPool.Components
+                    ? "This part holds the catalog max  "
+                    : "This hull holds the catalog max  ";
                 sb.Append("<color=#").Append(HexThisHull).Append('>')
-                    .Append("This hull holds the catalog max  ")
+                    .Append(holder)
                     .Append(FormatValue(leader.value))
                     .Append(unit)
                     .Append("</color>");

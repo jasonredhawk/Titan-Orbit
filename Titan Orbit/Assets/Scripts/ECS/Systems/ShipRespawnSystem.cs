@@ -175,6 +175,7 @@ namespace TitanOrbit.ECS
                 ref territoryLatch,
                 ref transform,
                 spawnPos);
+            PeopleTransportEscortLogic.ClearAll(em, ship);
 
             em.SetComponentData(ship, shipState);
             if (em.HasComponent<ShipKinematics>(ship))
@@ -197,11 +198,15 @@ namespace TitanOrbit.ECS
                     LastDamageServerTime = 0f,
                     LastImpulseXZ = float2.zero,
                     LastImpulsePower = 0f,
+                    LastSourceGhostId = 0,
+                    LastSourceKind = 0,
+                    LastSourcePosXZ = float2.zero,
+                    LastSourceHasPos = 0,
                 });
             }
 
             if (em.HasComponent<ShipDeathVfxState>(ship))
-                em.SetComponentData(ship, new ShipDeathVfxState { Packed = 0 });
+                em.SetComponentData(ship, new ShipDeathVfxState());
 
             em.RemoveComponent<ShipDeathState>(ship);
         }
@@ -274,6 +279,7 @@ namespace TitanOrbit.ECS
             ship.IsEliminated = false;
             ship.OverdriveLockout = false;
             kinematics.Velocity = float3.zero;
+            kinematics.FormationHeading = float3.zero;
             orbit.OrbitPlanetId = 0;
             orbit.InOrbitRing = false;
             orbit.UsingOrbitMotor = false;

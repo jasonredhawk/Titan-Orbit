@@ -13,9 +13,11 @@ namespace TitanOrbit.Simulation
     public static class PlanetPopulationMath
     {
         /// <summary>
-        /// [TITAN-ORBIT] Seconds to pause passive growth after hostile people unload on a planet.
+        /// [TITAN-ORBIT] Seconds to pause passive growth after a hostile people unload.
+        /// Each new attack restamps the timer, so regen cannot restart until 3 seconds
+        /// after the last hit.
         /// </summary>
-        public const float PopulationGrowthPauseAfterAttackSeconds = 1f;
+        public const float PopulationGrowthPauseAfterAttackSeconds = 3f;
 
         /// <summary>
         /// [TITAN-ORBIT] Seconds for a planet to grow from 0 to its current max population at the

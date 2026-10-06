@@ -32,6 +32,7 @@ namespace TitanOrbit.Game
         {
             s_PendingQueue.Clear();
             GemClientEntityRegistry.Clear();
+            ClientLocalGemSpawn.Clear();
             PlanetClientEntityRegistry.Clear();
             AsteroidClientEntityRegistry.Clear();
             LocalShipEntitySeed.Clear();

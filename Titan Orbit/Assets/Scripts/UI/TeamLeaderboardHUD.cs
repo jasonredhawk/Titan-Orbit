@@ -13,17 +13,23 @@ namespace TitanOrbit.UI
 {
     /// <summary>
     /// In-game team leaderboard in the top-right corner — same width as the minimap, height
-    /// stretched down until it meets the minimap below. Press TAB to cycle Team A…E panels.
+    /// stretched down until it meets the minimap below. Opens on the team this player joined.
+    /// Press TAB to cycle Team A…E panels; cycling does not snap back until the next join.
     /// <para>
-    /// Shows a player list only: role icons (top killer / miner / transporter), rank, profile
-    /// badge, name, and a combined score. No per-stat K/G/P columns. Client presentation only —
-    /// reads <see cref="MinimapBlipAnchor"/> caches from <see cref="MinimapEcsEntitySync"/> (no
-    /// ship-entity gathers) and identity from <see cref="EcsGameBridge.RefreshPlayerDisplayNameCache"/>.
+    /// Shows a player list only: a gold Command Deck for earned commanders (living
+    /// top killer / miner / troop mover), then the crew. Role icons, rank, profile
+    /// badge, name, combined score, and a small Comms Matrix mute toggle. No per-stat K/G/P
+    /// columns. Client presentation only — reads <see cref="MinimapBlipAnchor"/> caches from
+    /// <see cref="MinimapEcsEntitySync"/> (no ship-entity gathers) and identity from
+    /// <see cref="EcsGameBridge.RefreshPlayerDisplayNameCache"/>. Mute is local
+    /// (<see cref="CommsMuteList"/>) — the server still broadcasts; this client drops chips
+    /// and path pings from that <c>GhostOwner.NetworkId</c>.
     /// </para>
     /// <para>
     /// The header tabs are a planet-control bar: the full leaderboard width is every capturable
     /// planet (homes + neutrals). Each team's colored tab is that team's owned share; leftover
-    /// width is still-neutral worlds. Combined player score still uses the old NGO
+    /// width is still-neutral worlds. The title line shows that team's score — the sum of every
+    /// member's combined score. Combined player score still uses the old NGO
     /// <c>ScoreSystem</c> weights: kill=100, deposited gem=2, delivered person=5.
     /// Layout uses the minimap's own rect size (not renderer bounds) so moving blips cannot drift
     /// the panel while the ship flies.
@@ -86,12 +92,27 @@ namespace TitanOrbit.UI
         MinimapEcsEntitySync _entitySync;
 
         int _viewedTeamIndex = -1;
+
+        /// <summary>
+        /// Team we last auto-opened after a join. Stays <see cref="TeamId.None"/> until the
+        /// server assigns one, so an early refresh cannot lock the board on Team A.
+        /// </summary>
+        TeamId _followedLocalTeam = TeamId.None;
+
+        /// <summary>
+        /// <see cref="ClientTeamFlowState.PlaySessionGeneration"/> last seen. A new match
+        /// clears the follow latch so the next join opens that team again.
+        /// </summary>
+        int _seenPlaySession = -1;
+
         float _nextRefreshTime;
         Vector4 _lastLayoutSignature;
 
         readonly List<RowWidgets> _rows = new List<RowWidgets>(16);
         readonly List<MinimapBlipAnchor> _teamShips = new List<MinimapBlipAnchor>(16);
         readonly List<RowData> _sorted = new List<RowData>(16);
+        SectionBanner _commandDeckBanner;
+        SectionBanner _crewBanner;
         /// <summary>Pooled team + unowned slices for the planet-control bar.</summary>
         readonly List<PlanetBarSegment> _planetBarSegments = new List<PlanetBarSegment>(6);
 
@@ -105,17 +126,34 @@ namespace TitanOrbit.UI
         const float HeaderHeight = 24f;
         const float TopChromePad = 4f;
         const float RowHeight = 40f;
+        /// <summary>Command-deck rows sit a little taller so the gold rail and star rank read.</summary>
+        const float CommanderRowHeight = 46f;
+        const float SectionBannerHeight = 20f;
         const float RowSpacing = 3f;
+        const float CommandDeckAfterGap = 7f;
         const float ContentPadding = 4f;
         const float PanelSidePad = 6f;
         const int MaxKeepExtraRows = 4;
         /// <summary>Profile emblem beside the name. Fits the 40px row after 5px vertical padding.</summary>
         const float PlayerBadgeSize = 26f;
+        /// <summary>Comms mute hit target after the score. Small so the name column stays readable.</summary>
+        const float MuteCellSize = 22f;
 
         // Role icon colors — match minimap top-of-team dots.
         static readonly Color BadgeKiller = new Color(0.35f, 0.55f, 1f, 1f);
         static readonly Color BadgeMiner = new Color(0.95f, 0.35f, 0.35f, 1f);
         static readonly Color BadgeTransporter = new Color(0.95f, 0.85f, 0.25f, 1f);
+        static readonly Color CommanderGold = TeamCommanderRules.Gold;
+        static readonly Color CommanderWashA = new Color(0.20f, 0.15f, 0.04f, 0.72f);
+        static readonly Color CommanderWashB = new Color(0.12f, 0.10f, 0.03f, 0.58f);
+        static readonly Color CommanderName = new Color(1f, 0.94f, 0.78f, 1f);
+        static readonly Color CrewCaption = new Color(0.62f, 0.78f, 0.95f, 0.92f);
+        /// <summary>Dark-glass fill on the mute cell — same void as tooltip chrome.</summary>
+        static readonly Color MuteFill = new Color(0.012f, 0.016f, 0.028f, 0.96f);
+        /// <summary>Ice caption when this client still hears that speaker.</summary>
+        static readonly Color MuteOpenCaption = new Color(0.62f, 0.78f, 0.95f, 0.95f);
+        /// <summary>Dimmer caption + slash when that speaker is muted.</summary>
+        static readonly Color MuteClosedCaption = new Color(0.42f, 0.52f, 0.62f, 0.88f);
 
         /// <summary>
         /// One colored slice of the planet-control bar (a team, or the leftover unowned worlds).
@@ -141,12 +179,36 @@ namespace TitanOrbit.UI
         {
             public GameObject Root;
             public Image Background;
+            public Image CommanderRail;
+            public Image CommanderGlow;
             public RectTransform BadgeContainer;
             public RectTransform PlayerBadgeCell;
             public Image PlayerBadgeImage;
             public TextMeshProUGUI RankText;
             public TextMeshProUGUI NameText;
             public TextMeshProUGUI ScoreText;
+            /// <summary>GhostOwner.NetworkId painted this refresh. Mute click reads this, not the sort index.</summary>
+            public int OwnerNetworkId;
+            /// <summary>True when this row is the local ship. Mute stays hidden even if NetworkId is still 0.</summary>
+            public bool IsLocalPlayer;
+            /// <summary>22px comms mute cell. Hidden on the local player's row.</summary>
+            public GameObject MuteRoot;
+            public Button MuteButton;
+            public Image MuteFill;
+            public TextMeshProUGUI MuteMark;
+            /// <summary>Diagonal slash over the speaker mark while muted.</summary>
+            public Image MuteSlash;
+        }
+
+        /// <summary>
+        /// In-list banner that splits the Command Deck from the crew. Not a player row.
+        /// </summary>
+        sealed class SectionBanner
+        {
+            public GameObject Root;
+            public Image Fill;
+            public Image Accent;
+            public TextMeshProUGUI Label;
         }
 
         /// <summary>One sorted scoreboard entry for the current refresh.</summary>
@@ -159,6 +221,14 @@ namespace TitanOrbit.UI
             public int Gems;
             public int People;
             public int Score;
+            /// <summary>True when this hull is the local player's ship (minimap anchor flag).</summary>
+            public bool IsLocalPlayer;
+            /// <summary>Dead hulls stay on the list but cannot hold a command seat.</summary>
+            public bool IsDead;
+            /// <summary>True when this owner holds a living killer / miner / troop title.</summary>
+            public bool IsCommander;
+            /// <summary>1-based place by combined score. Gold chrome uses <see cref="IsCommander"/>, not this.</summary>
+            public int ScoreRank;
         }
 
         // =========================================================================
@@ -194,7 +264,7 @@ namespace TitanOrbit.UI
             if (_accentStripe != null)
                 _accentStripe.color = new Color(teamColor.r, teamColor.g, teamColor.b, 0.95f);
             if (_titleText != null)
-                _titleText.text = "Team A  <size=80%><color=#9EB6D8>4/10  [TAB]</color></size>";
+                _titleText.text = "Team A  <size=80%><color=#F2DB8C>SCORE 2170</color>  <color=#9EB6D8>4/10  [TAB]</color></size>";
 
             // Demo: 10 capturable worlds — A leads, some still neutral.
             int[] demoCounts = { 4, 2, 1, 0, 0 };
@@ -208,17 +278,22 @@ namespace TitanOrbit.UI
             {
                 RowWidgets w = _rows[i];
                 w.Root.SetActive(true);
-                w.RankText.text = "#" + (i + 1);
-                w.NameText.text = names[i];
-                w.ScoreText.text = scores[i].ToString();
-                w.Background.color = new Color(0f, 0f, 0f, i % 2 == 0 ? 0.28f : 0.18f);
-                PopulateBadges(w.BadgeContainer, i == 0, i == 1, i == 2);
+                bool commander = TeamCommanderRules.IsCommanderRank(i + 1);
+                PaintPlayerRow(
+                    w,
+                    i + 1,
+                    names[i],
+                    scores[i],
+                    commander,
+                    i == 0,
+                    i == 1,
+                    i == 2);
                 ApplyPlayerBadge(w, demoBadgeIds[i]);
             }
 
             if (_emptyText != null)
                 _emptyText.gameObject.SetActive(false);
-            LayoutRows(names.Length);
+                LayoutScoreboard(names.Length, Mathf.Min(TeamCommanderRules.Slots, names.Length));
         }
 #endif
 
@@ -239,6 +314,7 @@ namespace TitanOrbit.UI
                 hide = true;
             if (hideWhenMinimapExpanded &&
                 (HUDController.MinimapExpandedObscuresHud ||
+                 HUDController.CommsMatrixObscuresHud ||
                  (_minimapController != null && _minimapController.IsExpanded)))
                 hide = true;
             // [TITAN-ORBIT] Same death hide as minimap / rockets — keep the explosion unobstructed.
@@ -248,8 +324,12 @@ namespace TitanOrbit.UI
             if (_canvasGroup != null)
             {
                 _canvasGroup.alpha = hide ? 0f : 1f;
-                _canvasGroup.blocksRaycasts = false; // never steal clicks / UI nav from gameplay
-                _canvasGroup.interactable = false;
+                // [TITAN-ORBIT] Mute is the only Graphic with raycastTarget = true.
+                // Enable the group only while visible so a faded panel cannot steal
+                // combat clicks. Names, scores, and the plate stay click-through.
+                bool allowMuteClicks = !hide;
+                _canvasGroup.blocksRaycasts = allowMuteClicks;
+                _canvasGroup.interactable = allowMuteClicks;
             }
 
             if (hide)
@@ -313,7 +393,8 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// Advances the viewed team within the match's active team count (2–5).
-        /// Empty teams stay empty — we do not snap back to the local team (that made TAB look broken).
+        /// Empty teams stay empty — TAB does not snap back to the local team.
+        /// A later join still opens that team via <see cref="FollowJoinedTeamIfNeeded"/>.
         /// </summary>
         void CycleViewedTeam()
         {
@@ -328,6 +409,84 @@ namespace TitanOrbit.UI
 
             _nextRefreshTime = 0f;
             RefreshRows();
+        }
+
+        /// <summary>
+        /// Opens the leaderboard on the team this player joined. Runs every refresh, but
+        /// only moves the selection when the joined team changes (or a new match starts).
+        /// TAB browsing in between is left alone.
+        /// </summary>
+        /// <param name="teamCount">Active teams this match (2–5).</param>
+        void FollowJoinedTeamIfNeeded(int teamCount)
+        {
+            // --- New match: forget the previous join so we do not reopen last match's tab ---
+            int generation = ClientTeamFlowState.PlaySessionGeneration;
+            if (generation != _seenPlaySession)
+            {
+                _seenPlaySession = generation;
+                _followedLocalTeam = TeamId.None;
+                _viewedTeamIndex = -1;
+            }
+
+            // Still on the team-pick screen, or the ack has not arrived yet.
+            if (!TryGetJoinedLocalTeam(out TeamId joined))
+                return;
+
+            // Same team as last latch — player may be TABing through other rosters.
+            if (joined == _followedLocalTeam)
+                return;
+
+            _followedLocalTeam = joined;
+            _viewedTeamIndex = TeamToIndex(joined, teamCount);
+        }
+
+        /// <summary>
+        /// Team this client has actually joined. The Join Team ack is first: it is written
+        /// when the server accepts the click, before the ship ghost's Team field replicates.
+        /// Reading the hull first used to see None (or a stale Team A) and lock the board there.
+        /// </summary>
+        /// <param name="team">Joined team when this returns true.</param>
+        /// <returns>False while the player is still choosing a team.</returns>
+        bool TryGetJoinedLocalTeam(out TeamId team)
+        {
+            team = TeamId.None;
+
+            // --- Join ack (server accepted this click or a rejoin) ---
+            // [TITAN-ORBIT] AssignedTeam is set in LatchTeamChoiceSuccess.
+            // LastRequestedTeam is not used — a rejected click must not move the board.
+            if (ClientTeamFlowState.AssignedTeam != TeamId.None)
+            {
+                team = ClientTeamFlowState.AssignedTeam;
+                return true;
+            }
+
+            // --- Live hull, when no ack was stored (ship already has a team) ---
+            if (EcsGameBridge.TryGetLocalShipState(out var ship)
+                && ship.Team != TeamId.None
+                && !ship.AwaitingTeamSelection)
+            {
+                team = ship.Team;
+                return true;
+            }
+
+            // --- Minimap blip, when ship gathers are skipped during join settle ---
+            IReadOnlyList<MinimapBlipAnchor> ships = _entitySync != null ? _entitySync.Ships : null;
+            if (ships == null)
+                return false;
+
+            for (int i = 0; i < ships.Count; i++)
+            {
+                MinimapBlipAnchor anchor = ships[i];
+                if (anchor == null || !anchor.IsLocalPlayer || anchor.AwaitingTeamSelection)
+                    continue;
+                if (anchor.Team == TeamId.None)
+                    continue;
+
+                team = anchor.Team;
+                return true;
+            }
+
+            return false;
         }
 
         /// <summary>Active teams this match (meta / TeamState).</summary>
@@ -356,6 +515,43 @@ namespace TitanOrbit.UI
         static int ComputeCombinedScore(int kills, int gemsDeposited, int peopleDelivered)
         {
             return ShipMatchScoreLogic.ComputeCombinedScore(kills, gemsDeposited, peopleDelivered);
+        }
+
+        /// <summary>
+        /// Sum of combined scores for the ships already filtered to the viewed team.
+        /// Dead hulls stay in the sum — they are still on the roster.
+        /// </summary>
+        static int SumAnchorScores(List<MinimapBlipAnchor> ships)
+        {
+            int total = 0;
+            for (int i = 0; i < ships.Count; i++)
+            {
+                MinimapBlipAnchor anchor = ships[i];
+                if (anchor == null)
+                    continue;
+                total += ComputeCombinedScore(
+                    Mathf.Max(0, anchor.Kills),
+                    Mathf.Max(0, anchor.GemsDeposited),
+                    Mathf.Max(0, anchor.PeopleDelivered));
+            }
+
+            return total;
+        }
+
+        /// <summary>
+        /// Title line: team name, team score (gold), worlds owned, and the TAB hint.
+        /// Score is the sum of every member on this team, not one player's row.
+        /// </summary>
+        void ApplyViewedTeamHeader(TeamId viewedTeam, int teamScore, int viewedOwned, int capturableTotal)
+        {
+            if (_titleText == null)
+                return;
+
+            // Gold score matches the row score color so the total reads as the same stat.
+            _titleText.text = viewedTeam.ToDisplayName()
+                + "  <size=80%><color=#F2DB8C>SCORE " + teamScore + "</color>"
+                + "  <color=#9EB6D8>" + viewedOwned + "/" + capturableTotal
+                + "  [TAB]</color></size>";
         }
 
         // =========================================================================
@@ -420,14 +616,10 @@ namespace TitanOrbit.UI
 
             int teamCount = GetActiveTeamCount();
 
-            // --- Default viewed team = local player's team (first time only) ---
+            // --- Open on the joined team; do not commit Team A before the pick lands ---
+            FollowJoinedTeamIfNeeded(teamCount);
             if (_viewedTeamIndex < 0)
-            {
-                TeamId localTeam = TeamId.TeamA;
-                if (EcsGameBridge.TryGetLocalShipState(out var localShip) && localShip.Team != TeamId.None)
-                    localTeam = localShip.Team;
-                _viewedTeamIndex = TeamToIndex(localTeam, teamCount);
-            }
+                _viewedTeamIndex = 0;
 
             _viewedTeamIndex = Mathf.Clamp(_viewedTeamIndex, 0, teamCount - 1);
             TeamId viewedTeam = IndexToTeam(_viewedTeamIndex);
@@ -447,8 +639,6 @@ namespace TitanOrbit.UI
             int viewedOwned = _viewedTeamIndex >= 0 && _viewedTeamIndex < _planetCountsByTeam.Length
                 ? _planetCountsByTeam[_viewedTeamIndex]
                 : 0;
-            _titleText.text = viewedTeam.ToDisplayName()
-                + "  <size=80%><color=#9EB6D8>" + viewedOwned + "/" + capturableTotal + "  [TAB]</color></size>";
 
             // --- Collect ships from presentation cache ---
             // [TITAN-ORBIT] Anchors are filled by MinimapEcsEntitySync under join-safe rules.
@@ -467,6 +657,11 @@ namespace TitanOrbit.UI
                 }
             }
 
+            // Team score is every member's combined score (kills, gems, people), including
+            // an empty roster (0). Painted before the empty-list return so the header stays.
+            int teamScore = SumAnchorScores(_teamShips);
+            ApplyViewedTeamHeader(viewedTeam, teamScore, viewedOwned, capturableTotal);
+
             if (_teamShips.Count == 0)
             {
                 for (int i = 0; i < _rows.Count; i++)
@@ -476,7 +671,7 @@ namespace TitanOrbit.UI
                     _emptyText.gameObject.SetActive(true);
                     _emptyText.text = "No players on this team.";
                 }
-                LayoutRows(0);
+                LayoutScoreboard(0, 0);
                 return;
             }
 
@@ -505,10 +700,55 @@ namespace TitanOrbit.UI
                     Gems = gems,
                     People = people,
                     Score = ComputeCombinedScore(kills, gems, people),
+                    IsLocalPlayer = a.IsLocalPlayer,
+                    IsDead = a.IsDead,
                 });
             }
 
-            // Sort by combined score, then kills, then network id.
+            // --- Earned category titles (same rules as nameplates / server snapshot) ---
+            // Zero scores never win. Dead hulls stay on the list but cannot sit Command Deck.
+            int bestKills = 0, bestGems = 0, bestPeople = 0;
+            int bestKillerId = 0, bestMinerId = 0, bestTransporterId = 0;
+            for (int i = 0; i < _sorted.Count; i++)
+            {
+                RowData r = _sorted[i];
+                if (r.IsDead || r.OwnerNetworkId <= 0)
+                    continue;
+
+                if (TeamCommandRoleRules.IsBetterTop(r.Kills, r.OwnerNetworkId, bestKills, bestKillerId))
+                {
+                    bestKills = r.Kills;
+                    bestKillerId = r.OwnerNetworkId;
+                }
+
+                if (TeamCommandRoleRules.IsBetterTop(r.Gems, r.OwnerNetworkId, bestGems, bestMinerId))
+                {
+                    bestGems = r.Gems;
+                    bestMinerId = r.OwnerNetworkId;
+                }
+
+                if (TeamCommandRoleRules.IsBetterTop(r.People, r.OwnerNetworkId, bestPeople, bestTransporterId))
+                {
+                    bestPeople = r.People;
+                    bestTransporterId = r.OwnerNetworkId;
+                }
+            }
+
+            int commanderCount = 0;
+            for (int i = 0; i < _sorted.Count; i++)
+            {
+                RowData r = _sorted[i];
+                r.IsCommander = TeamCommanderRules.HoldsCommandSeat(
+                    r.OwnerNetworkId == bestKillerId,
+                    r.OwnerNetworkId == bestMinerId,
+                    r.OwnerNetworkId == bestTransporterId);
+                _sorted[i] = r;
+                if (r.IsCommander)
+                    commanderCount++;
+            }
+
+            // --- Score rank (leaderboard place) ---
+            // Assigned before we lift commanders to the deck so # still means combined score.
             _sorted.Sort((a, b) =>
             {
                 int c = b.Score.CompareTo(a.Score);
@@ -517,17 +757,24 @@ namespace TitanOrbit.UI
                 if (c != 0) return c;
                 return a.OwnerNetworkId.CompareTo(b.OwnerNetworkId);
             });
-
-            // --- Top-of-team role winners (icons on those rows) ---
-            int bestKills = 0, bestGems = 0, bestPeople = 0;
-            int bestKillerId = 0, bestMinerId = 0, bestTransporterId = 0;
             for (int i = 0; i < _sorted.Count; i++)
             {
                 RowData r = _sorted[i];
-                if (r.Kills > bestKills) { bestKills = r.Kills; bestKillerId = r.OwnerNetworkId; }
-                if (r.Gems > bestGems) { bestGems = r.Gems; bestMinerId = r.OwnerNetworkId; }
-                if (r.People > bestPeople) { bestPeople = r.People; bestTransporterId = r.OwnerNetworkId; }
+                r.ScoreRank = i + 1;
+                _sorted[i] = r;
             }
+
+            // Command Deck first (earned seats), then crew. Inside each slice: score, kills, id.
+            _sorted.Sort((a, b) =>
+            {
+                int c = b.IsCommander.CompareTo(a.IsCommander);
+                if (c != 0) return c;
+                c = b.Score.CompareTo(a.Score);
+                if (c != 0) return c;
+                c = b.Kills.CompareTo(a.Kills);
+                if (c != 0) return c;
+                return a.OwnerNetworkId.CompareTo(b.OwnerNetworkId);
+            });
 
             EnsureRowCount(_sorted.Count);
             for (int i = 0; i < _sorted.Count; i++)
@@ -535,23 +782,150 @@ namespace TitanOrbit.UI
                 RowData r = _sorted[i];
                 RowWidgets w = _rows[i];
                 w.Root.SetActive(true);
-                w.RankText.text = "#" + (i + 1);
-                w.NameText.text = r.Name;
-                w.ScoreText.text = r.Score.ToString();
-                w.Background.color = new Color(0f, 0f, 0f, i % 2 == 0 ? 0.30f : 0.18f);
-
-                PopulateBadges(
-                    w.BadgeContainer,
-                    bestKills > 0 && r.OwnerNetworkId == bestKillerId,
-                    bestGems > 0 && r.OwnerNetworkId == bestMinerId,
-                    bestPeople > 0 && r.OwnerNetworkId == bestTransporterId);
+                w.OwnerNetworkId = r.OwnerNetworkId;
+                w.IsLocalPlayer = r.IsLocalPlayer;
+                PaintPlayerRow(
+                    w,
+                    r.ScoreRank,
+                    r.Name,
+                    r.Score,
+                    r.IsCommander,
+                    r.OwnerNetworkId == bestKillerId,
+                    r.OwnerNetworkId == bestMinerId,
+                    r.OwnerNetworkId == bestTransporterId);
                 ApplyPlayerBadge(w, r.BadgeId);
+                PaintMuteButton(w);
             }
 
             for (int i = _sorted.Count; i < _rows.Count; i++)
                 _rows[i].Root.SetActive(false);
 
-            LayoutRows(_sorted.Count);
+            LayoutScoreboard(_sorted.Count, commanderCount);
+        }
+
+        /// <summary>
+        /// Paints one scoreboard row. Earned Command Deck seats get gold wash,
+        /// a left rail, and a CDR pip. Crew rows stay ice-dark.
+        /// </summary>
+        static void PaintPlayerRow(
+            RowWidgets w,
+            int rank,
+            string name,
+            int score,
+            bool commander,
+            bool isKiller,
+            bool isMiner,
+            bool isTransporter)
+        {
+            if (w == null)
+                return;
+
+            if (w.RankText != null)
+            {
+                w.RankText.text = "#" + rank;
+                w.RankText.color = commander
+                    ? CommanderGold
+                    : new Color(0.85f, 0.90f, 1f);
+                w.RankText.fontStyle = commander ? FontStyles.Bold : FontStyles.Normal;
+            }
+
+            if (w.NameText != null)
+            {
+                w.NameText.text = name;
+                w.NameText.color = commander ? CommanderName : Color.white;
+            }
+
+            if (w.ScoreText != null)
+            {
+                w.ScoreText.text = score.ToString();
+                w.ScoreText.color = commander
+                    ? CommanderGold
+                    : new Color(0.95f, 0.86f, 0.55f);
+            }
+
+            if (w.Background != null)
+            {
+                if (commander)
+                    w.Background.color = rank % 2 == 1 ? CommanderWashA : CommanderWashB;
+                else
+                    w.Background.color = new Color(0f, 0f, 0f, rank % 2 == 1 ? 0.30f : 0.18f);
+            }
+
+            if (w.CommanderRail != null)
+            {
+                w.CommanderRail.enabled = commander;
+                w.CommanderRail.color = CommanderGold;
+            }
+
+            if (w.CommanderGlow != null)
+            {
+                w.CommanderGlow.enabled = commander;
+                w.CommanderGlow.color = new Color(CommanderGold.r, CommanderGold.g, CommanderGold.b, 0.18f);
+            }
+
+            PopulateBadges(w.BadgeContainer, isKiller, isMiner, isTransporter);
+        }
+
+        /// <summary>
+        /// Shows or hides the comms mute cell and paints open vs muted chrome.
+        /// Hidden on the local row and on editor demo rows (OwnerNetworkId ≤ 0).
+        /// </summary>
+        /// <param name="w">Pooled row whose <see cref="RowWidgets.OwnerNetworkId"/> is current.</param>
+        static void PaintMuteButton(RowWidgets w)
+        {
+            if (w == null || w.MuteRoot == null)
+                return;
+
+            int ownerId = w.OwnerNetworkId;
+            int localId = EcsGameBridge.GetLocalNetworkId();
+
+            // --- Who can be muted ---
+            // Hide on self (NetworkId or anchor flag) and on editor demo rows (id ≤ 0).
+            bool show = ownerId > 0 && !w.IsLocalPlayer && (localId <= 0 || ownerId != localId);
+            w.MuteRoot.SetActive(show);
+            if (!show)
+                return;
+
+            // --- Open vs muted chrome ---
+            // "C" = comms still heard. Slash over the mark = this client dropped their chips.
+            bool muted = CommsMuteList.IsMuted(ownerId);
+            if (w.MuteFill != null)
+                w.MuteFill.color = MuteFill;
+
+            if (w.MuteMark != null)
+            {
+                w.MuteMark.text = "C";
+                w.MuteMark.color = muted ? MuteClosedCaption : MuteOpenCaption;
+            }
+
+            if (w.MuteSlash != null)
+            {
+                w.MuteSlash.enabled = muted;
+                w.MuteSlash.color = muted ? MuteClosedCaption : MuteOpenCaption;
+            }
+        }
+
+        /// <summary>
+        /// [UNITY] Mute button click. Toggles <see cref="CommsMuteList"/> for the
+        /// NetworkId stored on this pooled row (not the click index). Live chips
+        /// from that speaker die on the next presenter tick.
+        /// </summary>
+        static void OnMuteClicked(RowWidgets w)
+        {
+            // --- Guard ---
+            // Pooled rows can be reused; OwnerNetworkId is the live occupant, not the
+            // row index. Never mute yourself — hide the button and refuse the click.
+            if (w == null || w.OwnerNetworkId <= 0 || w.IsLocalPlayer)
+                return;
+
+            int localId = EcsGameBridge.GetLocalNetworkId();
+            if (localId > 0 && w.OwnerNetworkId == localId)
+                return;
+
+            // --- Toggle + repaint ---
+            // Inbox drops the next callout. TickBubbles kills chips already on screen.
+            CommsMuteList.Toggle(w.OwnerNetworkId);
+            PaintMuteButton(w);
         }
 
         /// <summary>Grows/shrinks the row pool.</summary>
@@ -569,34 +943,102 @@ namespace TitanOrbit.UI
             }
         }
 
-        /// <summary>Stacks visible rows top-down inside the scroll content.</summary>
-        void LayoutRows(int visibleCount)
+        /// <summary>
+        /// Stacks the Command Deck banner + earned commander rows, then the crew banner +
+        /// remaining rows. Banners hide when that slice is empty. An empty team at match
+        /// start shows no Command Deck — seats are earned, not given to rank 1–3.
+        /// </summary>
+        /// <param name="visibleCount">How many player rows are on this team.</param>
+        /// <param name="commanderCount">How many of those rows hold a living title.</param>
+        void LayoutScoreboard(int visibleCount, int commanderCount)
         {
             if (_contentRect == null || _viewportRect == null)
                 return;
 
-            float y = -ContentPadding;
+            int commanders = Mathf.Clamp(commanderCount, 0, Mathf.Min(TeamCommanderRules.Slots, Mathf.Max(0, visibleCount)));
+            int crew = Mathf.Max(0, visibleCount - commanders);
             float contentWidth = Mathf.Max(1f, _viewportRect.rect.width);
             float rowWidth = Mathf.Max(1f, contentWidth - ContentPadding * 2f);
+            float y = -ContentPadding;
 
-            for (int i = 0; i < visibleCount && i < _rows.Count; i++)
+            y = PlaceSectionBanner(_commandDeckBanner, y, rowWidth, commanders > 0, true);
+            for (int i = 0; i < commanders && i < _rows.Count; i++)
             {
-                var rowRect = _rows[i].Root.transform as RectTransform;
-                if (rowRect == null)
-                    continue;
-                rowRect.anchorMin = new Vector2(0f, 1f);
-                rowRect.anchorMax = new Vector2(0f, 1f);
-                rowRect.pivot = new Vector2(0f, 1f);
-                rowRect.anchoredPosition = new Vector2(ContentPadding, y);
-                rowRect.sizeDelta = new Vector2(rowWidth, RowHeight);
-                y -= RowHeight + RowSpacing;
+                y = PlaceScoreRow(_rows[i], y, rowWidth, CommanderRowHeight);
             }
 
-            float needed = ContentPadding * 2f;
-            if (visibleCount > 0)
-                needed += visibleCount * RowHeight + (visibleCount - 1) * RowSpacing;
+            if (commanders > 0 && crew > 0)
+                y -= CommandDeckAfterGap - RowSpacing;
+
+            y = PlaceSectionBanner(_crewBanner, y, rowWidth, crew > 0, false);
+            for (int i = commanders; i < visibleCount && i < _rows.Count; i++)
+            {
+                y = PlaceScoreRow(_rows[i], y, rowWidth, RowHeight);
+            }
+
+            float needed = ContentPadding - y + ContentPadding;
             float viewportH = Mathf.Max(1f, _viewportRect.rect.height);
             _contentRect.sizeDelta = new Vector2(contentWidth, Mathf.Max(viewportH, needed));
+        }
+
+        /// <summary>
+        /// Pins a Command Deck / CREW banner under the current cursor. Hidden banners
+        /// take no height so a solo team does not leave a dead CREW strip.
+        /// </summary>
+        static float PlaceSectionBanner(
+            SectionBanner banner,
+            float y,
+            float width,
+            bool show,
+            bool commandDeck)
+        {
+            if (banner == null || banner.Root == null)
+                return y;
+
+            banner.Root.SetActive(show);
+            if (!show)
+                return y;
+
+            var rt = banner.Root.transform as RectTransform;
+            if (rt == null)
+                return y;
+
+            rt.anchorMin = new Vector2(0f, 1f);
+            rt.anchorMax = new Vector2(0f, 1f);
+            rt.pivot = new Vector2(0f, 1f);
+            rt.anchoredPosition = new Vector2(ContentPadding, y);
+            rt.sizeDelta = new Vector2(width, SectionBannerHeight);
+
+            if (banner.Label != null)
+            {
+                banner.Label.text = commandDeck ? "COMMANDERS" : "CREW";
+                banner.Label.color = commandDeck ? CommanderGold : CrewCaption;
+            }
+
+            if (banner.Accent != null)
+                banner.Accent.color = commandDeck
+                    ? CommanderGold
+                    : new Color(0.35f, 0.72f, 0.95f, 0.85f);
+
+            return y - SectionBannerHeight - RowSpacing;
+        }
+
+        /// <summary>Pins one player row and advances the layout cursor.</summary>
+        static float PlaceScoreRow(RowWidgets row, float y, float width, float height)
+        {
+            if (row == null || row.Root == null)
+                return y;
+
+            var rowRect = row.Root.transform as RectTransform;
+            if (rowRect == null)
+                return y;
+
+            rowRect.anchorMin = new Vector2(0f, 1f);
+            rowRect.anchorMax = new Vector2(0f, 1f);
+            rowRect.pivot = new Vector2(0f, 1f);
+            rowRect.anchoredPosition = new Vector2(ContentPadding, y);
+            rowRect.sizeDelta = new Vector2(width, height);
+            return y - height - RowSpacing;
         }
 
         // =========================================================================
@@ -636,7 +1078,11 @@ namespace TitanOrbit.UI
         /// Rebuilds K / G / T role icons for team leaders. Collapses width to 0 when none apply
         /// so an empty badge slot cannot leave a blank square beside the name.
         /// </summary>
-        static void PopulateBadges(RectTransform parent, bool isKiller, bool isMiner, bool isTransporter)
+        static void PopulateBadges(
+            RectTransform parent,
+            bool isKiller,
+            bool isMiner,
+            bool isTransporter)
         {
             if (parent == null)
                 return;
@@ -893,7 +1339,12 @@ namespace TitanOrbit.UI
         /// </summary>
         void EnsurePanelExists()
         {
-            if (_panelRoot != null && _titleText != null && _contentRect != null && _planetBarRoot != null)
+            if (_panelRoot != null
+                && _titleText != null
+                && _contentRect != null
+                && _planetBarRoot != null
+                && _commandDeckBanner != null
+                && _crewBanner != null)
                 return;
 
             // Clean up a half-built tree after domain reload / script recompile.
@@ -901,6 +1352,8 @@ namespace TitanOrbit.UI
             if (existing != null)
                 Destroy(existing.gameObject);
             _planetBarSegments.Clear();
+            _commandDeckBanner = null;
+            _crewBanner = null;
 
             _panelRoot = new GameObject("TeamLeaderboardPanel", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(CanvasGroup));
             _panelRoot.transform.SetParent(transform, false);
@@ -1004,11 +1457,52 @@ namespace TitanOrbit.UI
             _scrollRect.content = _contentRect;
             _scrollRect.verticalNormalizedPosition = 1f;
 
+            _commandDeckBanner = CreateSectionBanner(_contentRect, "CommandDeckBanner");
+            _crewBanner = CreateSectionBanner(_contentRect, "CrewBanner");
+
             UpdatePanelLayoutIfNeeded();
         }
 
         /// <summary>
-        /// One pooled row: role icons | rank | profile badge | name | combined score.
+        /// Dark-glass section rail with a thin accent stripe. Used for COMMAND DECK
+        /// (gold) and CREW (ice) so the list reads as a cockpit roster, not a table.
+        /// </summary>
+        SectionBanner CreateSectionBanner(Transform parent, string name)
+        {
+            var go = new GameObject(name, typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            go.transform.SetParent(parent, false);
+            var fill = go.GetComponent<Image>();
+            fill.sprite = GetWhiteSprite();
+            fill.color = new Color(0.018f, 0.028f, 0.045f, 0.96f);
+            fill.raycastTarget = false;
+
+            var accent = CreateUiImage(go.transform, "Accent", CommanderGold);
+            var accentRt = accent.rectTransform;
+            accentRt.anchorMin = new Vector2(0f, 1f);
+            accentRt.anchorMax = new Vector2(1f, 1f);
+            accentRt.pivot = new Vector2(0.5f, 1f);
+            accentRt.anchoredPosition = Vector2.zero;
+            accentRt.sizeDelta = new Vector2(-8f, 1.4f);
+
+            var label = CreateTmp(go.transform, "Label", 11f, TextAlignmentOptions.Center, CommanderGold);
+            StretchFull(label.rectTransform);
+            label.fontStyle = FontStyles.Bold;
+            label.characterSpacing = 1.6f;
+            label.text = "COMMAND DECK";
+
+            go.SetActive(false);
+            return new SectionBanner
+            {
+                Root = go,
+                Fill = fill,
+                Accent = accent,
+                Label = label,
+            };
+        }
+
+        /// <summary>
+        /// One pooled row: role icons | rank | profile badge | name | combined score | mute.
+        /// Mute is the only Graphic that can receive pointer hits.
         /// </summary>
         RowWidgets CreateRow(int index)
         {
@@ -1018,6 +1512,25 @@ namespace TitanOrbit.UI
             bg.sprite = GetWhiteSprite();
             bg.color = new Color(0f, 0f, 0f, 0.25f);
             bg.raycastTarget = false;
+
+            // Overlay chrome — ignoreLayout so the gold rail is not a HLG cell.
+            var glow = CreateUiImage(rowGo.transform, "CommanderGlow", new Color(1f, 0.84f, 0.38f, 0.16f));
+            var glowRt = glow.rectTransform;
+            StretchFull(glowRt);
+            glowRt.offsetMin = new Vector2(4f, 1f);
+            glowRt.offsetMax = new Vector2(-1f, -1f);
+            glow.enabled = false;
+            IgnoreLayout(glow.gameObject);
+
+            var rail = CreateUiImage(rowGo.transform, "CommanderRail", CommanderGold);
+            var railRt = rail.rectTransform;
+            railRt.anchorMin = new Vector2(0f, 0f);
+            railRt.anchorMax = new Vector2(0f, 1f);
+            railRt.pivot = new Vector2(0f, 0.5f);
+            railRt.anchoredPosition = Vector2.zero;
+            railRt.sizeDelta = new Vector2(3.5f, 0f);
+            rail.enabled = false;
+            IgnoreLayout(rail.gameObject);
 
             var hlg = rowGo.AddComponent<HorizontalLayoutGroup>();
             hlg.padding = new RectOffset(6, 8, 5, 5);
@@ -1038,7 +1551,7 @@ namespace TitanOrbit.UI
             badgesLayout.childForceExpandWidth = false;
             badgesLayout.childForceExpandHeight = false;
 
-            var rank = CreateRowLabel(CreateCell(rowGo.transform, "Rank", 30f), 13, TextAlignmentOptions.Center);
+            var rank = CreateRowLabel(CreateCell(rowGo.transform, "Rank", 36f), 13, TextAlignmentOptions.Center);
             rank.color = new Color(0.85f, 0.90f, 1f);
 
             var playerBadgeCell = CreateCell(rowGo.transform, "PlayerBadge", 0f);
@@ -1057,17 +1570,75 @@ namespace TitanOrbit.UI
             score.color = new Color(0.95f, 0.86f, 0.55f);
             score.fontStyle = FontStyles.Bold;
 
-            return new RowWidgets
+            // --- Comms mute (after score so names and scores stay aligned) ---
+            // [TITAN-ORBIT] Local presentation mute. Click reads OwnerNetworkId on the
+            // pooled widget so a reused row never toggles the previous occupant.
+            var muteCell = CreateCell(rowGo.transform, "Mute", MuteCellSize);
+            var muteFill = muteCell.gameObject.AddComponent<Image>();
+            muteFill.sprite = GetWhiteSprite();
+            muteFill.color = MuteFill;
+            muteFill.raycastTarget = true;
+
+            var muteButton = muteCell.gameObject.AddComponent<Button>();
+            muteButton.targetGraphic = muteFill;
+            muteButton.transition = Selectable.Transition.ColorTint;
+            var muteColors = muteButton.colors;
+            muteColors.normalColor = Color.white;
+            muteColors.highlightedColor = new Color(0.85f, 0.92f, 1f, 1f);
+            muteColors.pressedColor = new Color(0.70f, 0.80f, 0.92f, 1f);
+            muteColors.selectedColor = Color.white;
+            muteButton.colors = muteColors;
+            muteButton.navigation = new Navigation { mode = Navigation.Mode.None };
+
+            var muteMark = CreateRowLabel(muteCell, 11, TextAlignmentOptions.Center);
+            muteMark.text = "C";
+            muteMark.fontStyle = FontStyles.Bold;
+            muteMark.color = MuteOpenCaption;
+
+            var slash = CreateUiImage(muteCell, "Slash", MuteClosedCaption);
+            var slashRt = slash.rectTransform;
+            StretchFull(slashRt);
+            slashRt.offsetMin = new Vector2(5f, 8f);
+            slashRt.offsetMax = new Vector2(-5f, -8f);
+            slash.rectTransform.localEulerAngles = new Vector3(0f, 0f, -38f);
+            slash.raycastTarget = false;
+            slash.enabled = false;
+
+            muteCell.gameObject.SetActive(false);
+
+            var widgets = new RowWidgets
             {
                 Root = rowGo,
                 Background = bg,
+                CommanderRail = rail,
+                CommanderGlow = glow,
                 BadgeContainer = badges,
                 PlayerBadgeCell = playerBadgeCell,
                 PlayerBadgeImage = playerBadgeImage,
                 RankText = rank,
                 NameText = name,
                 ScoreText = score,
+                MuteRoot = muteCell.gameObject,
+                MuteButton = muteButton,
+                MuteFill = muteFill,
+                MuteMark = muteMark,
+                MuteSlash = slash,
             };
+
+            muteButton.onClick.AddListener(() => OnMuteClicked(widgets));
+            return widgets;
+        }
+
+        /// <summary>
+        /// Marks a child so <see cref="HorizontalLayoutGroup"/> does not treat it as a cell.
+        /// Used for the gold command rail overlaid on the row.
+        /// </summary>
+        static void IgnoreLayout(GameObject go)
+        {
+            var le = go.GetComponent<LayoutElement>();
+            if (le == null)
+                le = go.AddComponent<LayoutElement>();
+            le.ignoreLayout = true;
         }
 
         /// <summary>Fixed- or flexible-width cell under a horizontal row layout.</summary>

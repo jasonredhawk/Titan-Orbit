@@ -24,7 +24,9 @@ namespace TitanOrbit.UI
     /// Chrome + one GEAR grid per ship family are built on the join loading screen
     /// (<see cref="TickJoinLoadWarmup"/>) so first spawn / first land do not Instantiates widgets.
     /// <see cref="TickIdleOrbitMenuCache"/> is a leftover fallback while flying if join warmup
-    /// timed out. Landing only reveals the already-built overlay. GameManager debug toggles
+    /// timed out. <see cref="TickLandedMoonTreePrepare"/> paints this moon's hull screenshots
+    /// during the 0.5s land delay so Show does not swap 24 thumbnails on the first visible frame.
+    /// Landing only reveals the already-built overlay. GameManager debug toggles
     /// (<see cref="GameManager.DebugFreeShipUpgradeTree"/>, <see cref="GameManager.DebugFreeGear"/>,
     /// <see cref="GameManager.DebugFreeCards"/>) paint Free prices and skip gem afford checks.
     /// </summary>
@@ -67,24 +69,49 @@ namespace TitanOrbit.UI
         private const float SidebarSlotCardWidth = 262f;
         private const float SidebarSlotCardHeight = 68f;
         private const float SidebarSlotCellSpacing = 5f;
-        /// <summary>Filled equipment card without mount-adjust panel (icon + power bar + subline).</summary>
-        private const float SidebarEquipmentSlotCardHeight = 88f;
-        /// <summary>Empty equipment slot — title row only so unused slots do not waste scroll space.</summary>
-        private const float SidebarEquipmentSlotCardHeightEmpty = 40f;
+        /// <summary>Filled equipment card: icon + title/type row + power bar (no mount panel).</summary>
+        private const float SidebarEquipmentSlotCardHeight = 102f;
+        /// <summary>
+        /// Empty equipment slot: accent rail + "Empty" + one hint line.
+        /// Earlier 38px cards crushed those two TMP lines into the 3px top rail.
+        /// </summary>
+        private const float SidebarEquipmentSlotCardHeightEmpty = 56f;
+        /// <summary>Header row when the slot is empty (title + one-line store hint, no icon).</summary>
+        private const float SidebarEquipmentHeaderHeightEmpty = 38f;
+        /// <summary>Single-line hint under "Empty" ("Buy from store" / bonus copy). Filled meta stays taller.</summary>
+        private const float SidebarEquipmentEmptySublineHeight = 14f;
+        /// <summary>Bumps <see cref="SetEquipmentSlotLayoutMode"/> so existing sessions rebuild the new glance cards.</summary>
+        private const int EquipmentSlotCardLayoutVersion = 3;
         /// <summary>
         /// Locked +1 row: accent + "+1 SLOT" + a full-width WATCH AD button (no power bar).
         /// Taller than empty so the button has a usable hit target inside the same card chrome.
         /// </summary>
-        private const float SidebarEquipmentSlotCardHeightLocked = 64f;
+        private const float SidebarEquipmentSlotCardHeightLocked = 78f;
         /// <summary>Extra height when the player expands mount Move/Turn controls on a component.</summary>
         private const float SidebarEquipmentPlacementPanelHeight = 118f;
         /// <summary>Height of the collapsed "Adjust mount" toggle row on component cards.</summary>
         private const float SidebarEquipmentPlacementToggleHeight = 18f;
-        private const float SidebarEquipmentIconHeight = 34f;
-        private const float SidebarEquipmentIconMinHeight = 28f;
+        private const float SidebarEquipmentIconHeight = 52f;
+        private const float SidebarEquipmentIconMinHeight = 44f;
         /// <summary>Stats footer holds only the colourful category power bar (no ability text, no dark track chrome).</summary>
-        private const float SidebarEquipmentStatsFooterHeight = 10f;
+        private const float SidebarEquipmentStatsFooterHeight = 14f;
+        private const float SidebarEquipmentHeaderHeight = 54f;
         private static readonly Color SidebarEquipmentEmptyAccent = new Color(0.35f, 0.4f, 0.48f, 0.85f);
+        /// <summary>
+        /// Gold rail on the extra loadout row (Orbit Unlocked or a claimed match bonus).
+        /// Level-capped empties stay ice-grey; this slot must read as a permanent extra.
+        /// </summary>
+        private static readonly Color SidebarEquipmentBonusAccent = new Color(0.92f, 0.72f, 0.28f, 0.95f);
+        /// <summary>Warm dark glass — slightly different from the cool navy used by regular gear cards.</summary>
+        private static readonly Color SidebarEquipmentBonusBg = new Color(0.16f, 0.13f, 0.07f, 0.98f);
+        /// <summary>Gold outline so the bonus row stays distinct even when a component is mounted in it.</summary>
+        private static readonly Color SidebarEquipmentBonusOutline = new Color(0.85f, 0.68f, 0.28f, 0.78f);
+        /// <summary>Empty-bonus title / subline — same gold family as Orbit Unlocked chrome.</summary>
+        private static readonly Color SidebarEquipmentBonusTitle = new Color(0.96f, 0.86f, 0.52f, 1f);
+        /// <summary>Regular empty-slot meta line (reset when a row stops being the bonus slot).</summary>
+        private static readonly Color SidebarEquipmentSublineColor = new Color(0.82f, 0.88f, 0.96f, 0.92f);
+        const string BonusSlotEmptyTitle = "+1 BONUS";
+        const string BonusSlotEmptySubline = "Permanent extra slot";
         private const float MoonDockUpgradeSpinCardHeight = 280f;
         private const float MoonDockUpgradeSpinCardMinWidth = 210f;
         private const float MoonDockUpgradeSpinIconHeight = 88f;
@@ -182,7 +209,7 @@ namespace TitanOrbit.UI
         private const int ShipTreeMaxColumns = 6;
         /// <summary>Left/right inset from canvas edge to the node layout area (matches <see cref="BuildShipUpgradeTreeVisualFull"/> margin).</summary>
         private const float ShipTreeCanvasInnerMargin = 8f;
-        private const float ShipTreeNodeHeight = 188f;
+        private const float ShipTreeNodeHeight = 216f;
         /// <summary>Vertical distance between node centers; must exceed <see cref="ShipTreeNodeHeight"/> so rows do not overlap.</summary>
         private const float ShipTreeLevelSpacing = ShipTreeNodeHeight + 44f;
         private const string ShipTreeStructureKey = "vertical_tree_prefab_v1";
@@ -229,6 +256,17 @@ namespace TitanOrbit.UI
         MoonDockWarmupPhase _moonDockWarmupPhase;
         /// <summary>True after the 24-node moon-dock ship tree has been spawned once (structure is shared across families).</summary>
         bool _moonDockTreeWarmed;
+        /// <summary>
+        /// Store planet id whose hull screenshots are currently on the shared tree.
+        /// Join warmup paints a dummy / first-known planet; land prepare overwrites this.
+        /// </summary>
+        int _landPreparePlanetId;
+        /// <summary>Next tree-node index to paint during the landing-delay stagger.</summary>
+        int _landPrepareNodeIndex;
+        /// <summary>True when every tree card (and the sidebar Your Ship hero) has this moon's screenshots.</summary>
+        bool _landPrepareComplete;
+        /// <summary>How many tree cards to screenshot-paint per landing-delay frame.</summary>
+        const int LandPrepareNodesPerTick = 6;
         /// <summary>Planet ids scratch for idle family-store caching. Filled from <see cref="EcsGameBridge.CopyKnownPlanetIds"/>.</summary>
         readonly List<int> _idlePlanetIdScratch = new List<int>(16);
         /// <summary>
@@ -313,6 +351,8 @@ namespace TitanOrbit.UI
         {
             /// <summary>LayoutElement on the card root — preferredHeight updates when empty/filled/placement expands.</summary>
             public LayoutElement cardLayout;
+            /// <summary>Card-edge outline. Gold on the bonus row, ice-white on regular slots.</summary>
+            public Outline outline;
             public Image accentImage;
             public Image iconImage;
             public TextMeshProUGUI iconGlyph;
@@ -320,6 +360,7 @@ namespace TitanOrbit.UI
             public ShipUpgradeTreePowerBarUI powerBar;
             public GameObject statsFooter;
             public GameObject iconRoot;
+            public GameObject headerRow;
             /// <summary>Small "Adjust mount" control; only shown for ship components.</summary>
             public GameObject placementToggleRow;
             public TextMeshProUGUI placementToggleLabel;
@@ -331,6 +372,7 @@ namespace TitanOrbit.UI
 
         private SidebarEquipmentSlotUi[] _sidebarEquipmentSlotUi;
         private bool _equipmentSlotRichLayoutActive;
+        private int _equipmentSlotCardLayoutVersionBuilt;
 
         /// <summary>
         /// Runtime wiring for one compact Upgrade Card slot in the left Orbit Menu dock.
@@ -433,6 +475,11 @@ namespace TitanOrbit.UI
             var canvas = canvasGo.AddComponent<Canvas>();
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
             canvas.sortingOrder = 200;
+            // [UNITY] TMP body text on the STAT TELEMETRY card needs TexCoord1 on this canvas.
+            canvas.additionalShaderChannels =
+                AdditionalCanvasShaderChannels.TexCoord1
+                | AdditionalCanvasShaderChannels.Normal
+                | AdditionalCanvasShaderChannels.Tangent;
             var scaler = canvasGo.AddComponent<CanvasScaler>();
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
             scaler.referenceResolution = new Vector2(1920, 1080);
@@ -580,7 +627,9 @@ namespace TitanOrbit.UI
 
             // --- Restore overlay ---
             _moonDockMenuClosedByUser = false;
-            SetMoonDockCenterView(upgradesPanel ? MoonDockCenterView.Ships : MoonDockCenterView.Gear);
+            SetMoonDockCenterView(
+                upgradesPanel ? MoonDockCenterView.Ships : MoonDockCenterView.Gear,
+                reuseWarmedTree: true);
         }
 
         public bool IsMoonDockMenuOpen =>
@@ -1525,6 +1574,7 @@ namespace TitanOrbit.UI
                 _moonDockBackdropGroup.blocksRaycasts = false;
                 _moonDockBackdropGroup.interactable = false;
             }
+            ShipPowerBarStatTooltip.Hide();
         }
 
         /// <summary>
@@ -2391,13 +2441,17 @@ namespace TitanOrbit.UI
             {
                 _shipTreeStructureKey = "";
                 shipUpgradeTree.Clear();
-                if (shipUpgradeTree.Hint != null)
-                    shipUpgradeTree.Hint.text = "Upgrade tree unavailable.";
+                shipUpgradeTree.HideHint();
                 UpdateShipsTabContentHeight();
                 return;
             }
 
             string expectedStructureKey = _moonDockShipTreeHorizontal ? MoonDockShipTreeStructureKey : ShipTreeStructureKey;
+            // Paint FAMILY BONUSES before node geometry so the tree can subtract the matrix height.
+            shipUpgradeTree.ApplyFamilyIdentity(
+                ResolveUpgradeTreeFamily(),
+                currentShip != null ? currentShip.ShipLevel : 1,
+                ResolveStoreFamilyBulletBankIndex());
             shipUpgradeTree.RebuildIfNeeded(_moonDockShipTreeHorizontal, expectedStructureKey);
             _shipTreeStructureKey = expectedStructureKey;
 
@@ -2701,10 +2755,14 @@ namespace TitanOrbit.UI
             if (equipmentGridRoot == null)
                 return;
 
-            if (_equipmentSlotRichLayoutActive == richLayout && equipmentBoxes != null && equipmentBoxes[0] != null)
+            if (_equipmentSlotRichLayoutActive == richLayout
+                && equipmentBoxes != null
+                && equipmentBoxes[0] != null
+                && _equipmentSlotCardLayoutVersionBuilt == EquipmentSlotCardLayoutVersion)
                 return;
 
             _equipmentSlotRichLayoutActive = richLayout;
+            _equipmentSlotCardLayoutVersionBuilt = EquipmentSlotCardLayoutVersion;
             _sidebarEquipmentSlotUi = richLayout ? new SidebarEquipmentSlotUi[MaxSlotRows] : null;
 
             for (int i = 0; i < MaxSlotRows; i++)
@@ -2807,10 +2865,13 @@ namespace TitanOrbit.UI
             var cardOutline = boxRoot.AddComponent<Outline>();
             cardOutline.effectColor = MoonDockStoreCardFrameColor;
             cardOutline.effectDistance = new Vector2(1f, 1f);
+            slotUi.outline = cardOutline;
 
             var cardVlg = boxRoot.AddComponent<VerticalLayoutGroup>();
-            cardVlg.spacing = 2f;
-            cardVlg.padding = new RectOffset(4, 4, 3, 3);
+            // [TITAN-ORBIT] Extra top pad + spacing after the 3px accent so empty-slot
+            // titles sit below the rail instead of drawing through it.
+            cardVlg.spacing = 4f;
+            cardVlg.padding = new RectOffset(4, 4, 6, 4);
             cardVlg.childAlignment = TextAnchor.UpperCenter;
             cardVlg.childControlWidth = true;
             cardVlg.childControlHeight = true;
@@ -2827,27 +2888,29 @@ namespace TitanOrbit.UI
             slotUi.accentImage.color = SidebarEquipmentEmptyAccent;
             slotUi.accentImage.raycastTarget = false;
 
-            // --- Title ---
-            var titleGo = new GameObject("Title");
-            titleGo.transform.SetParent(boxRoot.transform, false);
-            var titleLe = titleGo.AddComponent<LayoutElement>();
-            titleLe.preferredHeight = 13f;
-            titleLe.minHeight = 12f;
-            titleText = titleGo.AddComponent<TextMeshProUGUI>();
-            titleText.text = "Empty";
-            titleText.fontSize = 10f;
-            titleText.fontStyle = FontStyles.Bold;
-            titleText.alignment = TextAlignmentOptions.Center;
-            titleText.color = Color.white;
-            titleText.overflowMode = TextOverflowModes.Ellipsis;
-            titleText.raycastTarget = false;
-            if (fontAsset != null) titleText.font = fontAsset;
+            // --- Header: icon left, title + type/level right ---
+            slotUi.headerRow = new GameObject("Header");
+            slotUi.headerRow.transform.SetParent(boxRoot.transform, false);
+            var headerLe = slotUi.headerRow.AddComponent<LayoutElement>();
+            headerLe.flexibleHeight = 0f;
+            headerLe.minHeight = SidebarEquipmentHeaderHeight;
+            headerLe.preferredHeight = SidebarEquipmentHeaderHeight;
+            var headerHlg = slotUi.headerRow.AddComponent<HorizontalLayoutGroup>();
+            headerHlg.spacing = 8f;
+            headerHlg.padding = new RectOffset(2, 2, 4, 2);
+            headerHlg.childAlignment = TextAnchor.MiddleLeft;
+            headerHlg.childControlWidth = true;
+            headerHlg.childControlHeight = true;
+            headerHlg.childForceExpandWidth = false;
+            headerHlg.childForceExpandHeight = true;
 
-            // --- Icon / glyph (hidden when slot is empty) ---
             slotUi.iconRoot = new GameObject("Icon");
-            slotUi.iconRoot.transform.SetParent(boxRoot.transform, false);
+            slotUi.iconRoot.transform.SetParent(slotUi.headerRow.transform, false);
             var iconLe = slotUi.iconRoot.AddComponent<LayoutElement>();
+            iconLe.flexibleWidth = 0f;
             iconLe.flexibleHeight = 0f;
+            iconLe.minWidth = SidebarEquipmentIconMinHeight;
+            iconLe.preferredWidth = SidebarEquipmentIconHeight;
             iconLe.minHeight = SidebarEquipmentIconMinHeight;
             iconLe.preferredHeight = SidebarEquipmentIconHeight;
             slotUi.iconImage = slotUi.iconRoot.AddComponent<Image>();
@@ -2863,11 +2926,57 @@ namespace TitanOrbit.UI
             glyphRt.offsetMin = Vector2.zero;
             glyphRt.offsetMax = Vector2.zero;
             slotUi.iconGlyph = glyphGo.AddComponent<TextMeshProUGUI>();
-            slotUi.iconGlyph.fontSize = 22f;
+            slotUi.iconGlyph.fontSize = 26f;
             slotUi.iconGlyph.alignment = TextAlignmentOptions.Center;
             slotUi.iconGlyph.color = new Color(1f, 1f, 1f, 0.95f);
             slotUi.iconGlyph.raycastTarget = false;
             if (fontAsset != null) slotUi.iconGlyph.font = fontAsset;
+
+            var textCol = new GameObject("Text");
+            textCol.transform.SetParent(slotUi.headerRow.transform, false);
+            var textColLe = textCol.AddComponent<LayoutElement>();
+            textColLe.flexibleWidth = 1f;
+            textColLe.minWidth = 80f;
+            var textVlg = textCol.AddComponent<VerticalLayoutGroup>();
+            textVlg.spacing = 1f;
+            textVlg.padding = new RectOffset(0, 0, 0, 0);
+            textVlg.childAlignment = TextAnchor.MiddleLeft;
+            textVlg.childControlWidth = true;
+            textVlg.childControlHeight = true;
+            textVlg.childForceExpandWidth = true;
+            textVlg.childForceExpandHeight = false;
+
+            var titleGo = new GameObject("Title");
+            titleGo.transform.SetParent(textCol.transform, false);
+            var titleLe = titleGo.AddComponent<LayoutElement>();
+            titleLe.preferredHeight = 16f;
+            titleLe.minHeight = 14f;
+            titleText = titleGo.AddComponent<TextMeshProUGUI>();
+            titleText.text = "Empty";
+            titleText.fontSize = 12f;
+            titleText.fontStyle = FontStyles.Bold;
+            // [UNITY] TMP Left is top-left — MidlineLeft keeps glyphs off the accent rail.
+            titleText.alignment = TextAlignmentOptions.MidlineLeft;
+            titleText.color = Color.white;
+            titleText.overflowMode = TextOverflowModes.Ellipsis;
+            titleText.raycastTarget = false;
+            if (fontAsset != null) titleText.font = fontAsset;
+
+            var sublineGo = new GameObject("Meta");
+            sublineGo.transform.SetParent(textCol.transform, false);
+            var sublineLe = sublineGo.AddComponent<LayoutElement>();
+            sublineLe.preferredHeight = 24f;
+            sublineLe.minHeight = 18f;
+            slotUi.sublineText = sublineGo.AddComponent<TextMeshProUGUI>();
+            slotUi.sublineText.fontSize = 10f;
+            slotUi.sublineText.fontStyle = FontStyles.Normal;
+            slotUi.sublineText.alignment = TextAlignmentOptions.MidlineLeft;
+            slotUi.sublineText.color = new Color(0.82f, 0.88f, 0.96f, 0.92f);
+            slotUi.sublineText.enableWordWrapping = true;
+            slotUi.sublineText.overflowMode = TextOverflowModes.Ellipsis;
+            slotUi.sublineText.maxVisibleLines = 2;
+            slotUi.sublineText.raycastTarget = false;
+            if (fontAsset != null) slotUi.sublineText.font = fontAsset;
 
             // --- Power-bar-only footer (no duplicated ability lines, no dark track plate) ---
             // [TITAN-ORBIT] Earlier builds wrapped the bar in a near-black StatsFooter + PowerBarTrack;
@@ -2900,21 +3009,6 @@ namespace TitanOrbit.UI
                 MoonDockEquipmentPowerBarPairGap,
                 trackWidth);
 
-            // --- Equipped / charges subline ---
-            var sublineGo = new GameObject("Subline");
-            sublineGo.transform.SetParent(boxRoot.transform, false);
-            var sublineLe = sublineGo.AddComponent<LayoutElement>();
-            sublineLe.preferredHeight = 10f;
-            sublineLe.minHeight = 9f;
-            slotUi.sublineText = sublineGo.AddComponent<TextMeshProUGUI>();
-            slotUi.sublineText.fontSize = 8f;
-            slotUi.sublineText.fontStyle = FontStyles.Bold;
-            slotUi.sublineText.alignment = TextAlignmentOptions.Center;
-            slotUi.sublineText.color = new Color(1f, 1f, 1f, 0.82f);
-            slotUi.sublineText.overflowMode = TextOverflowModes.Ellipsis;
-            slotUi.sublineText.raycastTarget = false;
-            if (fontAsset != null) slotUi.sublineText.font = fontAsset;
-
             // --- Adjust mount toggle (collapsed by default to keep the list short) ---
             slotUi.placementToggleRow = new GameObject("PlacementToggle");
             slotUi.placementToggleRow.transform.SetParent(boxRoot.transform, false);
@@ -2941,6 +3035,9 @@ namespace TitanOrbit.UI
             toggleLabelRt.offsetMax = new Vector2(-4f, 0f);
             slotUi.placementToggleLabel = toggleLabelGo.AddComponent<TextMeshProUGUI>();
             slotUi.placementToggleLabel.text = "Adjust mount ▸";
+            // #region agent log
+            TitanOrbit.MaterialCloneProbe.StoreLabelSets++;
+            // #endregion
             slotUi.placementToggleLabel.fontSize = 8f;
             slotUi.placementToggleLabel.fontStyle = FontStyles.Bold;
             slotUi.placementToggleLabel.alignment = TextAlignmentOptions.Center;
@@ -4354,7 +4451,10 @@ namespace TitanOrbit.UI
             ShipFamilyDefinition sidebarFamily = CardShopSystem.Instance != null && currentShip != null
                 ? CardShopSystem.Instance.GetShipFamilyForShip(currentShip)
                 : null;
-            orbitDockSidebar.RefreshFamilyIdentity(sidebarFamily, currentShip != null ? currentShip.ShipLevel : 1);
+            orbitDockSidebar.RefreshFamilyIdentity(
+                sidebarFamily,
+                currentShip != null ? currentShip.ShipLevel : 1,
+                EcsGameBridge.ResolvePlanetFamilyBulletBankIndex(storePlanetId));
             if (includeStore)
                 RefreshMoonDockStore();
         }
@@ -4450,22 +4550,32 @@ namespace TitanOrbit.UI
                     bool owned = currentShip != null && currentShip.HasComponentEquipped(card.componentId);
                     canBuy = currentShip != null && !owned && (debugFreeGear || contributedGems >= price) && currentShip.HasEmptyEquipmentSlot;
                     float power = componentEntry != null
-                        ? ShipComponentStoreData.GetComponentPowerScore(componentEntry, shipLevel, family)
+                        ? ShipComponentStoreData.GetComponentPowerScore(
+                            componentEntry, shipLevel, family, ResolveStoreFamilyBulletBankIndex())
                         : 0f;
                     subline = FormatMoonDockEquipmentSubline(shipLevel, power, owned);
                     if (ShipComponentAbilityStats.IsWeaponComponent(card.componentId))
                     {
-                        string bankName = BulletBankProfileUtility.FormatComponentBulletTypeName(componentEntry, family);
+                        string bankName = BulletBankProfileUtility.FormatComponentBulletTypeName(
+                            componentEntry,
+                            family,
+                            EcsGameBridge.ResolvePlanetFamilyBulletBankIndex(
+                                storePlanet != null ? storePlanet.PlanetId : 0));
                         if (!string.IsNullOrEmpty(bankName))
                             subline = bankName + " · " + subline;
                     }
                     if (card.descriptionText != null && componentEntry != null)
-                        ApplyEquipmentCardAbilityDescription(card.descriptionText, componentEntry, shipLevel, family);
+                        ApplyEquipmentCardAbilityDescription(
+                            card.descriptionText, componentEntry, shipLevel, family);
                     if (card.powerBar != null && componentEntry != null)
                     {
                         ApplyMoonDockGearPowerBar(
                             card.powerBar,
-                            ShipComponentStoreData.GetPowerBreakdown(componentEntry, shipLevel, family));
+                            ShipComponentStoreData.GetPowerBreakdown(
+                                componentEntry, shipLevel, family, ResolveStoreFamilyBulletBankIndex()),
+                            family != null ? family.familyId : null,
+                            componentEntry.componentId,
+                            shipLevel);
                     }
                     ApplyMoonDockEquipmentTileIcon(
                         card.iconImage,
@@ -4778,18 +4888,42 @@ namespace TitanOrbit.UI
             _cardsContentHeight = contentHeight;
         }
 
-        private void ApplyMoonDockGearPowerBar(ShipUpgradeTreePowerBarUI powerBar, ShipFamilyPowerScoreBreakdown breakdown)
+        /// <summary>
+        /// Paints a gear card’s power bar against every family’s components at
+        /// <paramref name="shipLevel"/>, not against a whole ship.
+        /// </summary>
+        private void ApplyMoonDockGearPowerBar(
+            ShipUpgradeTreePowerBarUI powerBar,
+            ShipFamilyPowerScoreBreakdown breakdown,
+            string familyId,
+            string componentId,
+            int shipLevel)
         {
             if (powerBar == null)
                 return;
 
-            ShipPowerBarStatMaxes maxes = shipUpgradeTree != null
-                ? shipUpgradeTree.GetPowerBarStatMaxes()
-                : ShipFamilyPowerBarNorm.GetGlobalMaxPerStat();
+            // --- Component ceiling ---
+            // [TITAN-ORBIT] Store tiles and owned gear share this ceiling.
+            // Each lane is this part divided by the best part in any family.
+            ShipPowerBarStatMaxes maxes = ShipFamilyPowerBarNorm.GetComponentMaxPerStat(
+                shipLevel,
+                s_ComponentFamilyBankResolver);
             float trackW = Mathf.Max(40f, GetMoonDockItemTileWidth() - 10f);
             powerBar.ConfigureLayoutScale(1f, 1f);
-            powerBar.ApplyBreakdown(breakdown, in maxes, trackW);
+            powerBar.ApplyEquipmentBreakdown(
+                breakdown,
+                in maxes,
+                trackW,
+                ShipFamilyPowerBarNorm.FormatComponentLeaderKey(familyId, componentId),
+                shipLevel);
         }
+
+        /// <summary>
+        /// One delegate for the whole session. Passing the method fresh on every
+        /// card would allocate, and the gear list repaints when gems or the loadout change.
+        /// </summary>
+        static readonly Func<int, int> s_ComponentFamilyBankResolver =
+            EcsGameBridge.ResolvePlanetBulletBankForFamilyConfigIndex;
 
         private void CreateMoonDockEquipmentStoreCard(Transform parent, ShipFamilyComponentEntry entry, int shipLevel)
         {
@@ -4797,11 +4931,15 @@ namespace TitanOrbit.UI
 
             Color accentColor = ShipAbilityCategoryColors.GetPowerBreakdownStatColorForHud(
                 ShipComponentStoreData.GetAbilityColorStatIndex(entry), 0.92f);
-            ShipFamilyDefinition family = CardShopSystem.Instance != null && currentShip != null
-                ? CardShopSystem.Instance.GetShipFamilyForShip(currentShip)
-                : null;
+            Planet storePlanet = GetShipUpgradeStorePlanet();
+            ShipFamilyDefinition family = null;
+            if (CardShopSystem.Instance != null && storePlanet != null)
+                family = CardShopSystem.Instance.GetShipFamilyForStorePlanet(storePlanet.PlanetId, currentShip);
+            else if (CardShopSystem.Instance != null && currentShip != null)
+                family = CardShopSystem.Instance.GetShipFamilyForShip(currentShip);
+            int familyBank = ResolveStoreFamilyBulletBankIndex();
             float price = ShipComponentStoreData.GetComponentGemPrice(entry, shipLevel);
-            float power = ShipComponentStoreData.GetComponentPowerScore(entry, shipLevel, family);
+            float power = ShipComponentStoreData.GetComponentPowerScore(entry, shipLevel, family, familyBank);
 
             CreateMoonDockEquipmentItemTile(
                 parent,
@@ -4831,7 +4969,10 @@ namespace TitanOrbit.UI
                 string sub = FormatMoonDockEquipmentSubline(shipLevel, power, owned: false);
                 if (ShipComponentAbilityStats.IsWeaponComponent(entry.componentId))
                 {
-                    string bankName = BulletBankProfileUtility.FormatComponentBulletTypeName(entry, family);
+                    string bankName = BulletBankProfileUtility.FormatComponentBulletTypeName(
+                        entry,
+                        family,
+                        familyBank);
                     if (!string.IsNullOrEmpty(bankName))
                         sub = bankName + " · " + sub;
                 }
@@ -4848,13 +4989,20 @@ namespace TitanOrbit.UI
             if (tip == null)
                 tip = root.AddComponent<MoonDockHoverTip>();
             tip.Caption = "GEAR";
-            var extra = ShipComponentStoreData.BuildExtraLevelTooltipRichText(entry, shipLevel, family);
+            var extra = ShipComponentStoreData.BuildExtraLevelTooltipRichText(
+                entry, shipLevel, family, familyBank);
             if (ShipComponentAbilityStats.IsWeaponComponent(entry.componentId))
-                extra = extra + "\n\n" + BulletBankHudCopy.BuildComponentOrdnanceTooltip(entry, family, shipLevel);
+                extra = extra + "\n\n" + BulletBankHudCopy.BuildComponentOrdnanceTooltip(
+                    entry, family, shipLevel, familyBank);
             tip.Body = extra;
 
             if (powerBar != null)
-                ApplyMoonDockGearPowerBar(powerBar, ShipComponentStoreData.GetPowerBreakdown(entry, shipLevel, family));
+                ApplyMoonDockGearPowerBar(
+                    powerBar,
+                    ShipComponentStoreData.GetPowerBreakdown(entry, shipLevel, family, familyBank),
+                    family != null ? family.familyId : null,
+                    entry.componentId,
+                    shipLevel);
 
             _moonDockStoreCards.Add(BindMoonDockEquipmentTile(
                 new MoonDockStoreCardBinding
@@ -5120,10 +5268,105 @@ namespace TitanOrbit.UI
             return $"Lv {level} · PWR {power:F0}";
         }
 
-        private static string BuildMoonDockComponentStatRichText(ShipFamilyComponentEntry entry, int shipLevel, ShipFamilyDefinition family, int maxLines = 14)
+        /// <summary>Owned gear glance: bullet type on weapons, then level and power.</summary>
+        static string FormatEquippedComponentMeta(
+            ShipFamilyComponentEntry entry,
+            ShipFamilyDefinition family,
+            int shipLevel,
+            float power,
+            int sourceBank)
+        {
+            int level = Mathf.Max(1, shipLevel);
+            string typeName = entry != null && ShipComponentAbilityStats.IsWeaponComponent(entry.componentId)
+                ? BulletBankProfileUtility.FormatComponentBulletTypeName(entry, family, sourceBank)
+                : string.Empty;
+            if (!string.IsNullOrEmpty(typeName))
+                return $"{typeName}\nLv {level} · PWR {power:F0}";
+            return $"Lv {level} · PWR {power:F0}";
+        }
+
+        /// <summary>
+        /// Gun the family sold at this moon uses. Homes stay Laserbolt; neutrals use
+        /// the planet's rolled <c>PlanetState.BulletBankIndex</c>. −1 falls back to
+        /// the family asset default.
+        /// </summary>
+        static int ResolveStoreFamilyBulletBankIndex()
+        {
+            return EcsGameBridge.ResolvePlanetFamilyBulletBankIndex(OrbitStationEcsContext.StorePlanetId);
+        }
+
+        /// <summary>
+        /// Gun the docked hull actually fires. Prefers the ghosted hull stamp so gear
+        /// bought at another world still previews that planet's type.
+        /// </summary>
+        static int ResolveEquippedFamilyBulletBankIndex()
+        {
+            if (EcsGameBridge.TryGetLocalShipState(out ShipState ship))
+                return PlanetShipFamilyAssignment.SanitizeSelectableDamageBank(ship.HullBulletBankIndex);
+            return ResolveStoreFamilyBulletBankIndex();
+        }
+
+        /// <summary>
+        /// Catalog row for an equipped part. Current hull family first, then any
+        /// family — a Cosmic Shark gun bought on an Astro Eagle hull still resolves.
+        /// </summary>
+        static bool TryResolveEquippedComponent(
+            string componentId,
+            ShipFamilyDefinition hullFamily,
+            out ShipFamilyComponentEntry entry,
+            out ShipFamilyDefinition family)
+        {
+            entry = null;
+            family = hullFamily;
+            if (string.IsNullOrWhiteSpace(componentId))
+                return false;
+            if (hullFamily != null && hullFamily.TryGetComponentEntry(componentId, out entry) && entry != null)
+                return true;
+            return BulletBankProfileUtility.TryFindComponentInAnyFamily(
+                componentId, out entry, out family, out _);
+        }
+
+        /// <summary>
+        /// Gun stamped on the planet that rolled <paramref name="componentFamily"/> this match.
+        /// Hull stamp is the fallback when that world is unknown.
+        /// </summary>
+        static int ResolveComponentSourceBulletBankIndex(ShipFamilyDefinition componentFamily)
+        {
+            if (componentFamily == null)
+                return ResolveEquippedFamilyBulletBankIndex();
+
+            var config = PlanetShipFamilyConfig.LoadDefault();
+            if (config?.families != null)
+            {
+                for (int i = 0; i < config.families.Count; i++)
+                {
+                    var candidate = config.families[i]?.shipFamilyDefinition;
+                    if (candidate == null)
+                        continue;
+                    if (candidate != componentFamily
+                        && (string.IsNullOrEmpty(candidate.familyId)
+                            || !string.Equals(candidate.familyId, componentFamily.familyId, StringComparison.Ordinal)))
+                        continue;
+                    int planetBank = EcsGameBridge.ResolvePlanetBulletBankForFamilyConfigIndex(i);
+                    if (planetBank >= 0)
+                        return planetBank;
+                    break;
+                }
+            }
+
+            return ResolveEquippedFamilyBulletBankIndex();
+        }
+
+        private static string BuildMoonDockComponentStatRichText(
+            ShipFamilyComponentEntry entry,
+            int shipLevel,
+            ShipFamilyDefinition family,
+            int maxLines = 14,
+            int planetOrHullBankIndex = -1)
         {
             // [TITAN-ORBIT] Compact Extra Level list (family muls already baked into the numbers).
-            return ShipComponentStoreData.BuildAbilityDescriptionRichText(entry, shipLevel, family, maxLines);
+            return ShipComponentStoreData.BuildAbilityDescriptionRichText(
+                entry, shipLevel, family, maxLines, planetOrHullBankIndex);
         }
 
         private static void ApplyEquipmentCardAbilityDescription(
@@ -5136,7 +5379,8 @@ namespace TitanOrbit.UI
                 return;
 
             descriptionTmp.text = entry != null
-                ? BuildMoonDockComponentStatRichText(entry, shipLevel, family)
+                ? BuildMoonDockComponentStatRichText(
+                    entry, shipLevel, family, planetOrHullBankIndex: ResolveStoreFamilyBulletBankIndex())
                 : string.Empty;
             descriptionTmp.ForceMeshUpdate(true);
 
@@ -5148,26 +5392,6 @@ namespace TitanOrbit.UI
                 if (layoutRoot is RectTransform parentRt)
                     LayoutRebuilder.ForceRebuildLayoutImmediate(parentRt);
             }
-        }
-
-        private float GetMoonDockComponentMaxDisplayPower(ShipFamilyDefinition family, int shipLevel)
-        {
-            float max = 0.001f;
-            if (family?.components == null)
-                return max;
-
-            for (int i = 0; i < family.components.Count; i++)
-            {
-                ShipFamilyComponentEntry entry = family.components[i];
-                if (entry == null)
-                    continue;
-                float total = ShipUpgradeTreePowerBarUI.GetEquipmentBarDisplayTotal(
-                    ShipComponentStoreData.GetPowerBreakdown(entry, shipLevel, family));
-                if (total > max)
-                    max = total;
-            }
-
-            return max;
         }
 
         private void CreateMoonDockEquipmentItemTile(
@@ -6134,8 +6358,11 @@ namespace TitanOrbit.UI
                 {
                     itemLabel = equipment[slotIndex].ComponentId;
                     if (CardShopSystem.Instance != null &&
-                        CardShopSystem.Instance.GetShipFamilyForShip(currentShip) is ShipFamilyDefinition family &&
-                        family.TryGetComponentEntry(equipment[slotIndex].ComponentId, out ShipFamilyComponentEntry componentEntry))
+                        TryResolveEquippedComponent(
+                            equipment[slotIndex].ComponentId,
+                            CardShopSystem.Instance.GetShipFamilyForShip(currentShip),
+                            out ShipFamilyComponentEntry componentEntry,
+                            out _))
                     {
                         itemLabel = ShipComponentStoreData.GetDisplayName(componentEntry);
                     }
@@ -6373,9 +6600,18 @@ namespace TitanOrbit.UI
             ApplyMoonDockUpgradeCardsSectionHeight();
         }
 
+        /// <summary>
+        /// Rebuilds the left-dock gear list from the docked hull's loadout.
+        /// Filled components come first, then empty level-capped rows, then either
+        /// the locked WATCH AD row or the granted gold "+1 BONUS" plate.
+        /// Called from store refresh / claim callbacks — not per frame.
+        /// </summary>
         private void RefreshEquipmentSlots()
         {
             if (currentShip == null || equipmentBoxes == null) return;
+            // #region agent log
+            TitanOrbit.MaterialCloneProbe.StoreRefreshes++;
+            // #endregion
 
             int cap = currentShip.SlotCount;
             int cardCount = currentShip.EquippedCards != null ? currentShip.EquippedCards.Count : 0;
@@ -6389,6 +6625,12 @@ namespace TitanOrbit.UI
                 && (TitanOrbitRewardedAds.CanOfferRewarded || !TitanOrbitAdsGate.ShouldShowAds);
             int slotCount = gearCount + emptyNeeded + (showLockedExtra ? 1 : 0);
             int lockedIndex = showLockedExtra ? slotCount - 1 : -1;
+            // Granted extra capacity always sits on the last visible gear row so
+            // Orbit Unlocked / claimed-ad players still see a gold "+1 BONUS" plate
+            // instead of another ice-grey Empty.
+            int bonusIndex = currentShip.LoadoutBonusSlots > 0 && slotCount > 0
+                ? slotCount - 1
+                : -1;
 
             if (equipmentSectionLabel != null)
                 equipmentSectionLabel.text = OrbitDockSidebarPanelUI.SectionTitleEquipment;
@@ -6396,9 +6638,6 @@ namespace TitanOrbit.UI
                 ? CardShopSystem.Instance.GetShipFamilyForShip(currentShip)
                 : null;
             int shipLevel = currentShip.ShipLevel;
-            float maxComponentPower = shipFamily != null
-                ? GetMoonDockComponentMaxDisplayPower(shipFamily, shipLevel)
-                : 0.001f;
             float sidebarPowerTrackWidth = Mathf.Max(40f, SidebarSlotCardWidth - 22f);
 
             for (int i = 0; i < equipmentBoxes.Length; i++)
@@ -6424,8 +6663,9 @@ namespace TitanOrbit.UI
                 bool filled = i < gearCount;
                 StoreItemType itemType = filled ? entry.ItemType : default;
                 ShipFamilyComponentEntry componentEntry = null;
-                if (filled && entry.IsShipComponent && shipFamily != null)
-                    shipFamily.TryGetComponentEntry(entry.ComponentId, out componentEntry);
+                ShipFamilyDefinition componentFamily = shipFamily;
+                if (filled && entry.IsShipComponent)
+                    TryResolveEquippedComponent(entry.ComponentId, shipFamily, out componentEntry, out componentFamily);
 
                 SidebarEquipmentSlotUi slotUi = _equipmentSlotRichLayoutActive && _sidebarEquipmentSlotUi != null && i < _sidebarEquipmentSlotUi.Length
                     ? _sidebarEquipmentSlotUi[i]
@@ -6439,11 +6679,11 @@ namespace TitanOrbit.UI
                         entry,
                         itemType,
                         componentEntry,
-                        shipFamily,
+                        componentFamily,
                         shipLevel,
-                        maxComponentPower,
                         sidebarPowerTrackWidth,
-                        slotUi);
+                        slotUi,
+                        isPermanentBonus: i == bonusIndex);
                     continue;
                 }
 
@@ -6457,6 +6697,7 @@ namespace TitanOrbit.UI
                         equipmentTitleTexts[i].text = ShipComponentStoreData.FormatComponentId(entry.ComponentId);
                     else
                         equipmentTitleTexts[i].text = StoreItemData.GetShortDisplayName(itemType);
+                    equipmentTitleTexts[i].color = Color.white;
                 }
                 if (equipmentDescTexts != null && i < equipmentDescTexts.Length && equipmentDescTexts[i] != null)
                 {
@@ -6465,7 +6706,12 @@ namespace TitanOrbit.UI
                     else if (entry.IsShipComponent && componentEntry != null)
                     {
                         int componentLevel = entry.itemLevel > 0 ? entry.itemLevel : shipLevel;
-                        equipmentDescTexts[i].text = ShipComponentStoreData.GetStatsDescription(componentEntry, componentLevel, shipFamily, 2);
+                        equipmentDescTexts[i].text = ShipComponentStoreData.GetStatsDescription(
+                            componentEntry,
+                            componentLevel,
+                            componentFamily,
+                            2,
+                            ResolveComponentSourceBulletBankIndex(componentFamily));
                     }
                     else
                         equipmentDescTexts[i].text = StoreItemData.GetDescription(itemType);
@@ -6507,6 +6753,9 @@ namespace TitanOrbit.UI
                     equipmentDeleteButtons[i].gameObject.SetActive(filled);
                     equipmentDeleteButtons[i].interactable = filled;
                 }
+
+                if (i == bonusIndex)
+                    ApplyEquipmentSlotPermanentBonusLook(i, slotUi: null, filled);
             }
 
             // Relayout after per-card heights are known (empty / filled / mount expanded).
@@ -6517,13 +6766,17 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Dim locked row under the level-capped slots. Clicking WATCH AD / UNLOCK
-        /// plays a rewarded video then RPCs <see cref="MoonOrbitRpcClient.ClaimRewardedBonusSlot"/>.
+        /// Dim locked row under the level-capped slots. Same gold plate as the
+        /// granted "+1 BONUS" row, plus WATCH AD / UNLOCK. Clicking plays a
+        /// rewarded video then RPCs <see cref="MoonOrbitRpcClient.ClaimRewardedBonusSlot"/>.
         /// </summary>
         void PaintLockedBonusEquipmentSlot(int index)
         {
             if (equipmentTitleTexts != null && index < equipmentTitleTexts.Length && equipmentTitleTexts[index] != null)
+            {
                 equipmentTitleTexts[index].text = "+1 SLOT";
+                equipmentTitleTexts[index].color = SidebarEquipmentBonusTitle;
+            }
             if (equipmentDescTexts != null && index < equipmentDescTexts.Length && equipmentDescTexts[index] != null)
                 equipmentDescTexts[index].text = string.Empty;
             if (equipmentChargeTexts != null && index < equipmentChargeTexts.Length && equipmentChargeTexts[index] != null)
@@ -6533,11 +6786,11 @@ namespace TitanOrbit.UI
                     bubble.gameObject.SetActive(false);
             }
             if (equipmentBgImages != null && index < equipmentBgImages.Length && equipmentBgImages[index] != null)
-                equipmentBgImages[index].color = new Color(0.10f, 0.12f, 0.18f, 0.92f);
+                equipmentBgImages[index].color = SidebarEquipmentBonusBg;
             if (equipmentBorderImages != null && index < equipmentBorderImages.Length && equipmentBorderImages[index] != null)
             {
                 equipmentBorderImages[index].enabled = true;
-                equipmentBorderImages[index].color = new Color(0.55f, 0.42f, 0.22f, 0.85f);
+                equipmentBorderImages[index].color = SidebarEquipmentBonusOutline;
             }
             if (equipmentDeleteButtons != null && index < equipmentDeleteButtons.Length && equipmentDeleteButtons[index] != null)
             {
@@ -6551,13 +6804,23 @@ namespace TitanOrbit.UI
             if (slotUi != null)
             {
                 if (slotUi.accentImage != null)
-                    slotUi.accentImage.color = new Color(0.85f, 0.62f, 0.28f, 0.9f);
+                    slotUi.accentImage.color = SidebarEquipmentBonusAccent;
+                ApplyEquipmentSlotOutline(slotUi, index, bonusLook: true);
                 // Locked row is title + watch-ad button only — hide the empty-slot power bar,
                 // icon, charges, and mount chrome so the button can fill the card body.
                 if (slotUi.sublineText != null)
                     slotUi.sublineText.gameObject.SetActive(false);
                 if (slotUi.iconRoot != null)
                     slotUi.iconRoot.SetActive(false);
+                if (slotUi.headerRow != null)
+                {
+                    var headerLe = slotUi.headerRow.GetComponent<LayoutElement>();
+                    if (headerLe != null)
+                    {
+                        headerLe.preferredHeight = 22f;
+                        headerLe.minHeight = 18f;
+                    }
+                }
                 if (slotUi.statsFooter != null)
                     slotUi.statsFooter.SetActive(false);
                 if (slotUi.powerBar != null)
@@ -6684,6 +6947,8 @@ namespace TitanOrbit.UI
         /// Paints one compact owned Equipment card: accent, title, icon, colorful power bar, subline.
         /// Ability line-by-line stats are omitted (store purchase cards already show them).
         /// Mount Move/Turn controls stay behind Adjust mount until the player expands them.
+        /// <paramref name="isPermanentBonus"/> is the extra capacity row (last visible
+        /// slot when <c>LoadoutBonusSlots</c> is 1) — gold glass instead of navy Empty.
         /// </summary>
         private void RefreshSidebarEquipmentSlotRich(
             int index,
@@ -6693,10 +6958,15 @@ namespace TitanOrbit.UI
             ShipFamilyComponentEntry componentEntry,
             ShipFamilyDefinition family,
             int shipLevel,
-            float maxComponentPower,
             float trackWidth,
-            SidebarEquipmentSlotUi slotUi)
+            SidebarEquipmentSlotUi slotUi,
+            bool isPermanentBonus)
         {
+            // --- Standard chrome first ---
+            // A row that used to be the bonus slot must drop gold outline / title colour
+            // before we paint this refresh, or the gold sticks after the extra moves.
+            ApplyEquipmentSlotStandardFrame(index, slotUi);
+
             if (equipmentBgImages != null && index < equipmentBgImages.Length && equipmentBgImages[index] != null)
                 equipmentBgImages[index].color = MoonDockEquipmentCardBg;
 
@@ -6720,6 +6990,8 @@ namespace TitanOrbit.UI
 
             if (equipmentTitleTexts != null && index < equipmentTitleTexts.Length && equipmentTitleTexts[index] != null)
             {
+                // Midline keeps "Empty" off the 3px accent — TMP Left is top-left and drew through it.
+                equipmentTitleTexts[index].alignment = TextAlignmentOptions.MidlineLeft;
                 if (!filled)
                     equipmentTitleTexts[index].text = "Empty";
                 else if (entry.IsShipComponent && componentEntry != null)
@@ -6748,8 +7020,11 @@ namespace TitanOrbit.UI
                 if (filled && entry.IsShipComponent && componentEntry != null)
                 {
                     int componentLevel = entry.itemLevel > 0 ? entry.itemLevel : shipLevel;
-                    float power = ShipComponentStoreData.GetComponentPowerScore(componentEntry, componentLevel, family);
-                    slotUi.sublineText.text = FormatMoonDockEquipmentSubline(componentLevel, power, owned: true);
+                    int sourceBank = ResolveComponentSourceBulletBankIndex(family);
+                    float power = ShipComponentStoreData.GetComponentPowerScore(
+                        componentEntry, componentLevel, family, sourceBank);
+                    slotUi.sublineText.text = FormatEquippedComponentMeta(
+                        componentEntry, family, componentLevel, power, sourceBank);
                     slotUi.sublineText.gameObject.SetActive(true);
                 }
                 else if (filled && StoreItemData.IsDrone(itemType))
@@ -6799,12 +7074,24 @@ namespace TitanOrbit.UI
                 slotUi.powerBar.gameObject.SetActive(showComponentPowerBar);
                 if (showComponentPowerBar)
                 {
+                    // Same Extra Level as the numbers on this card, then the all-families part ceiling.
                     int componentLevel = entry.itemLevel > 0 ? entry.itemLevel : shipLevel;
+                    ShipPowerBarStatMaxes componentMaxes = ShipFamilyPowerBarNorm.GetComponentMaxPerStat(
+                        componentLevel,
+                        s_ComponentFamilyBankResolver);
                     slotUi.powerBar.ConfigureLayoutScale(1f, 1f);
                     slotUi.powerBar.ApplyEquipmentBreakdown(
-                        ShipComponentStoreData.GetPowerBreakdown(componentEntry, componentLevel, family),
-                        maxComponentPower,
-                        trackWidth);
+                        ShipComponentStoreData.GetPowerBreakdown(
+                            componentEntry,
+                            componentLevel,
+                            family,
+                            ResolveComponentSourceBulletBankIndex(family)),
+                        in componentMaxes,
+                        trackWidth,
+                        ShipFamilyPowerBarNorm.FormatComponentLeaderKey(
+                            family != null ? family.familyId : null,
+                            componentEntry.componentId),
+                        componentLevel);
                 }
             }
 
@@ -6838,6 +7125,8 @@ namespace TitanOrbit.UI
                 }
                 else if (slotUi.iconRoot != null)
                     slotUi.iconRoot.SetActive(false);
+
+                ApplyEquipmentSlotHeaderMetrics(slotUi, filled);
             }
 
             if (equipmentDeleteButtons != null && index < equipmentDeleteButtons.Length && equipmentDeleteButtons[index] != null)
@@ -6856,7 +7145,12 @@ namespace TitanOrbit.UI
             {
                 slotUi.placementToggleRow.SetActive(canAdjustMount);
                 if (slotUi.placementToggleLabel != null)
+                {
                     slotUi.placementToggleLabel.text = showPlacement ? "Hide mount ▾" : "Adjust mount ▸";
+                    // #region agent log
+                    TitanOrbit.MaterialCloneProbe.StoreLabelSets++;
+                    // #endregion
+                }
             }
             if (slotUi?.placementPanel != null)
                 slotUi.placementPanel.SetActive(showPlacement);
@@ -6865,7 +7159,8 @@ namespace TitanOrbit.UI
                 slotUi.placementReadout.text = FormatEquipmentPlacementCompact(entry.LocalPosition, entry.LocalEulerAngles);
 
             // --- Variable card height ---
-            // Empty = short title row; filled = glance card; expanded mount adds placement panel height.
+            // Empty = accent + title + one hint line (tall enough that text clears the rail).
+            // Filled = glance card; expanded mount adds placement panel height.
             if (slotUi?.cardLayout != null)
             {
                 float h;
@@ -6885,6 +7180,137 @@ namespace TitanOrbit.UI
                 slotUi.cardLayout.preferredHeight = h;
                 slotUi.cardLayout.minHeight = h;
             }
+
+            // --- Permanent bonus plate ---
+            // Last after item copy so we only override chrome (and empty title / subline).
+            if (isPermanentBonus)
+                ApplyEquipmentSlotPermanentBonusLook(index, slotUi, filled);
+        }
+
+        /// <summary>
+        /// Sizes the title/meta header for a filled glance card vs a short empty slot.
+        /// Empty slots keep one hint line; filled slots keep the two-line item meta.
+        /// Called from <see cref="RefreshSidebarEquipmentSlotRich"/> after icon visibility is set.
+        /// </summary>
+        /// <param name="slotUi">Rich-layout refs for this row.</param>
+        /// <param name="filled">True when a card / component occupies the slot.</param>
+        void ApplyEquipmentSlotHeaderMetrics(SidebarEquipmentSlotUi slotUi, bool filled)
+        {
+            if (slotUi == null)
+                return;
+
+            // --- Header row ---
+            // Empty: no icon, so the row only needs title + one hint line.
+            // Filled: icon column is ~52px; header matches that so the name sits mid-row.
+            if (slotUi.headerRow != null)
+            {
+                var headerLe = slotUi.headerRow.GetComponent<LayoutElement>();
+                if (headerLe != null)
+                {
+                    float hh = filled ? SidebarEquipmentHeaderHeight : SidebarEquipmentHeaderHeightEmpty;
+                    headerLe.preferredHeight = hh;
+                    headerLe.minHeight = filled ? SidebarEquipmentIconMinHeight : SidebarEquipmentHeaderHeightEmpty;
+                }
+            }
+
+            // --- Hint / meta line ---
+            // The same TMP is "Buy from store" when empty and "Lv.3 · Weapon" when filled.
+            // Empty uses one short line so it cannot shove "Empty" up into the accent rail.
+            if (slotUi.sublineText == null)
+                return;
+
+            var subLe = slotUi.sublineText.GetComponent<LayoutElement>();
+            if (subLe != null)
+            {
+                subLe.preferredHeight = filled ? 24f : SidebarEquipmentEmptySublineHeight;
+                subLe.minHeight = filled ? 18f : 12f;
+            }
+            slotUi.sublineText.maxVisibleLines = filled ? 2 : 1;
+            slotUi.sublineText.enableWordWrapping = filled;
+            slotUi.sublineText.alignment = TextAlignmentOptions.MidlineLeft;
+        }
+
+        /// <summary>
+        /// Restores cool-navy card chrome after a row stops being the extra bonus slot.
+        /// Title / subline colour reset here; callers still write the actual copy.
+        /// </summary>
+        /// <param name="index">Zero-based equipment row.</param>
+        /// <param name="slotUi">Rich-layout refs, or null on the legacy grid.</param>
+        void ApplyEquipmentSlotStandardFrame(int index, SidebarEquipmentSlotUi slotUi)
+        {
+            ApplyEquipmentSlotOutline(slotUi, index, bonusLook: false);
+            if (equipmentTitleTexts != null && index < equipmentTitleTexts.Length && equipmentTitleTexts[index] != null)
+                equipmentTitleTexts[index].color = Color.white;
+            if (slotUi?.sublineText != null)
+                slotUi.sublineText.color = SidebarEquipmentSublineColor;
+        }
+
+        /// <summary>
+        /// Gold glass on the extra loadout row so it never reads as another Empty.
+        /// Filled items keep their name and category accent — only the plate changes.
+        /// Empty rows show "+1 BONUS" / "Permanent extra slot".
+        /// </summary>
+        /// <param name="index">Zero-based equipment row (last visible when bonus is granted).</param>
+        /// <param name="slotUi">Rich-layout refs, or null on the legacy grid.</param>
+        /// <param name="filled">True when a card / component already occupies the extra slot.</param>
+        void ApplyEquipmentSlotPermanentBonusLook(int index, SidebarEquipmentSlotUi slotUi, bool filled)
+        {
+            // --- Warm plate ---
+            if (equipmentBgImages != null && index < equipmentBgImages.Length && equipmentBgImages[index] != null)
+                equipmentBgImages[index].color = SidebarEquipmentBonusBg;
+
+            if (slotUi?.accentImage != null && !filled)
+                slotUi.accentImage.color = SidebarEquipmentBonusAccent;
+
+            ApplyEquipmentSlotOutline(slotUi, index, bonusLook: true);
+
+            if (equipmentBorderImages != null && index < equipmentBorderImages.Length && equipmentBorderImages[index] != null)
+            {
+                equipmentBorderImages[index].enabled = true;
+                equipmentBorderImages[index].color = SidebarEquipmentBonusOutline;
+            }
+
+            // --- Empty copy ---
+            // Occupied bonus rows keep the item name; only the empty extra needs a label.
+            if (filled)
+                return;
+
+            if (equipmentTitleTexts != null && index < equipmentTitleTexts.Length && equipmentTitleTexts[index] != null)
+            {
+                equipmentTitleTexts[index].text = BonusSlotEmptyTitle;
+                equipmentTitleTexts[index].color = SidebarEquipmentBonusTitle;
+            }
+            if (slotUi?.sublineText != null)
+            {
+                // Orbit Unlocked keeps the extra every match; an ad claim lasts this match only.
+                slotUi.sublineText.text = TitanOrbitEntitlements.IsOrbitUnlockedOwned
+                    ? BonusSlotEmptySubline
+                    : "Match bonus slot";
+                slotUi.sublineText.color = SidebarEquipmentBonusTitle;
+                slotUi.sublineText.gameObject.SetActive(true);
+            }
+        }
+
+        /// <summary>
+        /// Sets the UGUI Outline on one equipment card. Gold + a slightly thicker
+        /// stroke for the bonus row; ice-white hairline for regular slots.
+        /// </summary>
+        void ApplyEquipmentSlotOutline(SidebarEquipmentSlotUi slotUi, int index, bool bonusLook)
+        {
+            Outline outline = slotUi != null ? slotUi.outline : null;
+            if (outline == null
+                && equipmentBoxes != null
+                && index >= 0
+                && index < equipmentBoxes.Length
+                && equipmentBoxes[index] != null)
+            {
+                outline = equipmentBoxes[index].GetComponent<Outline>();
+            }
+            if (outline == null)
+                return;
+
+            outline.effectColor = bonusLook ? SidebarEquipmentBonusOutline : MoonDockStoreCardFrameColor;
+            outline.effectDistance = bonusLook ? new Vector2(1.5f, 1.5f) : new Vector2(1f, 1f);
         }
 
         private void UpdateLegacyOrbitStorePanelTop(int cardSlotCount, int equipmentSlotCount)
@@ -7296,7 +7722,18 @@ namespace TitanOrbit.UI
 
             _moonDockCenterView = MoonDockCenterView.None;
             _moonDockShipTreeHorizontal = false;
-            if (moonDockCenterBackdrop != null) moonDockCenterBackdrop.SetActive(false);
+            // --- Keep a hidden land-prepare backdrop ---
+            // [TITAN-ORBIT] TickLandedMoonTreePrepare turns the backdrop on at
+            // CanvasGroup alpha 0 so layout can measure. SetActive(false) here used
+            // to wipe those tray rects, then a warmed Show skipped ForceUpdateCanvases
+            // and power-bar hover died on the second land. Join warmup still hides a
+            // leftover visible overlay (active + alpha 1, or no CanvasGroup yet).
+            bool hiddenPrepareArmed = moonDockCenterBackdrop != null
+                && moonDockCenterBackdrop.activeSelf
+                && _moonDockBackdropGroup != null
+                && _moonDockBackdropGroup.alpha <= 0.01f;
+            if (moonDockCenterBackdrop != null && !hiddenPrepareArmed)
+                moonDockCenterBackdrop.SetActive(false);
             ApplyShipTreeHudObscuring(false);
         }
 
@@ -7752,13 +8189,16 @@ namespace TitanOrbit.UI
                 // --- Warmed SHIPS ---
                 // Nodes already exist. RefreshStoreTabVisibility → EnsureShipsTabPopulated
                 // would call RefreshShipsTab and ForceUpdateCanvases again.
+                // Landing-delay prepare already wrote this moon's screenshots — skip a
+                // second 24-card paint on the first visible frame.
                 activeStoreTab = 1;
                 _moonDockShipTreeHorizontal = true;
                 if (shipsTabContent != null)
                     shipsTabContent.SetActive(true);
                 if (cardsTabContent != null)
                     cardsTabContent.SetActive(false);
-                RefreshShipTreeVisualStateOnly();
+                if (!IsLandedMoonTreePreparedForCurrentPlanet())
+                    RefreshShipTreeVisualStateOnly();
                 RefreshSidebar(includeStore: false);
             }
             else
@@ -7775,8 +8215,12 @@ namespace TitanOrbit.UI
             if (moonDockCenterBackdrop != null) moonDockCenterBackdrop.transform.SetAsLastSibling();
             if (moonDockCloseButton != null) moonDockCloseButton.transform.SetAsLastSibling();
             ApplyMoonDockShipTreeRowLayout();
-            if (!reuseWarmedTree)
-                Canvas.ForceUpdateCanvases();
+            // --- Hover trays + STAT TELEMETRY overlay ---
+            // [UNITY] Hide() deactivates this backdrop. Flush layout, then rebuild
+            // the dedicated tooltip overlay and LateUpdate probe so the second
+            // Orbit Menu open always gets a live hover card.
+            Canvas.ForceUpdateCanvases();
+            ShipPowerBarStatHoverRelay.NotifyMenuShown();
         }
 
         private void RebuildMoonDockLayoutsAfterShow()

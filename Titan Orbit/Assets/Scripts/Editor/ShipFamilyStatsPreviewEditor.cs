@@ -63,7 +63,7 @@ namespace TitanOrbit.Editor
                 EditorGUILayout.HelpBox(
                     "No stats found yet. Assign a ShipFamilyDefinition and ensure child names follow 'Family_ComponentId' (e.g. AstroEagle_Cockpit). " +
                     "Non-weapons: most stats scale by average scale (x+y+z)/3. Engines own authored move speed (and Energy Cap/Regen); thrusters own acceleration cap and turn speed (with Tail/Fin) — none scaled by part size. " +
-                    "Weapons: catalog fire power, fire rate, and bullet speed — not scaled by part size.",
+                    "Weapons: fire power × average |X|+|Y|, fire rate × 1/|Z|; bullet speed / range stay catalog.",
                     MessageType.Info);
             }
 
@@ -209,7 +209,7 @@ namespace TitanOrbit.Editor
                     if (scales != null && i < scales.Count && scales[i] != 1f)
                         label += " (scale " + scales[i].ToString("F2") + "├ù)";
                     if (isWeapon)
-                        label += " [weapon: catalog stats, no scale; offense only]";
+                        label += " [weapon: XY fire power, 1/Z fire rate; speed/range catalog]";
                     if (isPropulsion)
                         label += " [engine = Move; thruster = Accel; extras add that role’s PerExtra]";
                     EditorGUILayout.LabelField("- " + label);

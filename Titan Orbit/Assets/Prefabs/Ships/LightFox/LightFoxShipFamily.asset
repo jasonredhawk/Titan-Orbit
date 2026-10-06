@@ -72,7 +72,7 @@ MonoBehaviour:
     tractorDistanceMul: 1
     tractorPowerMul: 1
     cameraHeightMul: 1
-  bulletPrefabIndex: 6
+  bulletPrefabIndex: 0
   weaponFireMode: 0
   planetaryDefense: {fileID: 0}
   cameraFollowSettings: {fileID: 11400000, guid: 90d7e8197d9477d40bc1400865e6a4af, type: 2}
@@ -171,8 +171,8 @@ MonoBehaviour:
       bulletRangePerExtraLevel: 0
       fireRate: 0
       fireRatePerExtraLevel: 0
-      rammingPower: 1
-      rammingPowerPerExtraLevel: 0.25
+      rammingPower: 3
+      rammingPowerPerExtraLevel: 0.5
       healthCap: 6.3
       healthCapPerExtraLevel: 6.3
       healthRegen: 0.22500002
@@ -198,7 +198,7 @@ MonoBehaviour:
       tractorBeamPower: 0
       tractorBeamPowerPerExtraLevel: 0
       maxPeople: 10
-      maxPeoplePerExtraLevel: 5
+      maxPeoplePerExtraLevel: 2
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: 886ebba236f280c4fbb9aedd63f32c15, type: 3}
     theatricalMenuPreviewSprite: {fileID: 21300000, guid: 886ebba236f280c4fbb9aedd63f32c15, type: 3}
@@ -336,7 +336,7 @@ MonoBehaviour:
       energyRegen: 3
       energyRegenPerExtraLevel: 1
       moveSpeed: 6
-      moveSpeedPerExtraLevel: 0.2
+      moveSpeedPerExtraLevel: 0.1
       accelerationCap: 0
       accelerationCapPerExtraLevel: 0
       extraSpeedPercent: 0.25
@@ -409,11 +409,11 @@ MonoBehaviour:
       healthRegen: 0
       healthRegenPerExtraLevel: 0
       energyCap: 24
-      energyCapPerExtraLevel: 8
+      energyCapPerExtraLevel: 7
       energyRegen: 4
       energyRegenPerExtraLevel: 1.3333334
-      moveSpeed: 8
-      moveSpeedPerExtraLevel: 0.3
+      moveSpeed: 7
+      moveSpeedPerExtraLevel: 0.15
       accelerationCap: 0
       accelerationCapPerExtraLevel: 0
       extraSpeedPercent: 0.25
@@ -582,8 +582,8 @@ MonoBehaviour:
       tractorBeamDistancePerExtraLevel: 0.75
       tractorBeamPower: 4
       tractorBeamPowerPerExtraLevel: 1
-      maxPeople: 5
-      maxPeoplePerExtraLevel: 2
+      maxPeople: 4
+      maxPeoplePerExtraLevel: 1
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: 00045bb772c6c2642887edf6455e30bd, type: 3}
     theatricalMenuPreviewSprite: {fileID: 21300000, guid: 00045bb772c6c2642887edf6455e30bd, type: 3}
@@ -659,8 +659,8 @@ MonoBehaviour:
       tractorBeamDistancePerExtraLevel: 1.5
       tractorBeamPower: 8
       tractorBeamPowerPerExtraLevel: 2
-      maxPeople: 8
-      maxPeoplePerExtraLevel: 3
+      maxPeople: 6
+      maxPeoplePerExtraLevel: 2
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: fa7e4a93d20394f47a91816c16ca5e7b, type: 3}
     theatricalMenuPreviewSprite: {fileID: 21300000, guid: fa7e4a93d20394f47a91816c16ca5e7b, type: 3}
@@ -736,8 +736,8 @@ MonoBehaviour:
       tractorBeamDistancePerExtraLevel: 2.25
       tractorBeamPower: 12
       tractorBeamPowerPerExtraLevel: 3
-      maxPeople: 11
-      maxPeoplePerExtraLevel: 4
+      maxPeople: 8
+      maxPeoplePerExtraLevel: 3
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: 3dff0f9d5019e4d4587364af2168369a, type: 3}
     theatricalMenuPreviewSprite: {fileID: 21300000, guid: 3dff0f9d5019e4d4587364af2168369a, type: 3}
@@ -813,8 +813,8 @@ MonoBehaviour:
       tractorBeamDistancePerExtraLevel: 3
       tractorBeamPower: 16
       tractorBeamPowerPerExtraLevel: 4
-      maxPeople: 14
-      maxPeoplePerExtraLevel: 5
+      maxPeople: 10
+      maxPeoplePerExtraLevel: 4
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: ba09fad725484f94ab9cdec0ab1872c5, type: 3}
     theatricalMenuPreviewSprite: {fileID: 21300000, guid: ba09fad725484f94ab9cdec0ab1872c5, type: 3}
@@ -891,46 +891,46 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 65e602185d8b28546bcb27da458900ee, type: 3}
     minHomePlanetLevel: 1
-    powerScore: 210.83757
-    powerScoreAtMaxLevel: 297.24072
+    powerScore: 196.00317
+    powerScoreAtMaxLevel: 272.57193
     powerScoreBreakdown:
-      offense: 19.86
+      offense: 22.36
       defense: 57.5473
-      energy: 20.7585
-      mobility: 27.800001
-      capacity: 89.942154
+      energy: 19.86885
+      mobility: 26.500002
+      capacity: 77.4086
       firePower: 3
       bulletSpeed: 12
       fireRate: 3.3600001
       sustainedDps: 0
-      rammingPower: 1.5
+      rammingPower: 4
       healthCap: 55.302864
       healthRegen: 2.244434
-      energyCap: 17.793
+      energyCap: 16.90335
       energyRegen: 2.9655
-      moveSpeed: 8.6
+      moveSpeed: 7.3
       turnSpeed: 16.800001
       gemCap: 45.999958
-      peopleCap: 43.9422
+      peopleCap: 31.408644
     powerScoreBreakdownAtShipLevel:
-      offense: 20.36
+      offense: 23.36
       defense: 96.72905
-      energy: 29.061897
-      mobility: 28.400002
-      capacity: 126.18431
+      energy: 27.2826
+      mobility: 26.800001
+      capacity: 105.1172
       firePower: 3
       bulletSpeed: 12
       fireRate: 3.3600001
       sustainedDps: 0
-      rammingPower: 2
+      rammingPower: 5
       healthCap: 92.95647
       healthRegen: 3.7725837
-      energyCap: 24.910198
+      energyCap: 23.130901
       energyRegen: 4.1517
-      moveSpeed: 9.200001
+      moveSpeed: 7.6000004
       turnSpeed: 16.800001
       gemCap: 62.299915
-      peopleCap: 63.884396
+      peopleCap: 42.817287
     componentMass: 8.912645
     lockedInUpgradeTree: 0
   - chassisId: LightFox_02
@@ -971,46 +971,46 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: bc9498dde1d41ac4eb4bf9a6af93f8a2, type: 3}
     minHomePlanetLevel: 2
-    powerScore: 258.01874
-    powerScoreAtMaxLevel: 624.66174
+    powerScore: 237.5735
+    powerScoreAtMaxLevel: 547.10223
     powerScoreBreakdown:
-      offense: 20.86
+      offense: 24.36
       defense: 59.378597
       energy: 64.02818
-      mobility: 25.400002
-      capacity: 89.53197
+      mobility: 25.300001
+      capacity: 69.18672
       firePower: 3
       bulletSpeed: 12
       fireRate: 3.3600001
       sustainedDps: 0
-      rammingPower: 2.5
+      rammingPower: 6
       healthCap: 57.06274
       healthRegen: 2.3158581
       energyCap: 54.8813
       energyRegen: 9.146884
-      moveSpeed: 6.2
+      moveSpeed: 6.1
       turnSpeed: 16.800001
       gemCap: 40.620033
-      peopleCap: 48.911934
+      peopleCap: 28.566685
     powerScoreBreakdownAtShipLevel:
-      offense: 25.36
+      offense: 33.36
       defense: 201.2118
       energy: 112.04933
-      mobility: 26.000002
-      capacity: 265.7206
+      mobility: 25.600002
+      capacity: 188.56107
       firePower: 3
       bulletSpeed: 12
       fireRate: 3.3600001
       sustainedDps: 0
-      rammingPower: 7
+      rammingPower: 15
       healthCap: 193.36423
       healthRegen: 7.847574
       energyCap: 96.04228
       energyRegen: 16.007046
-      moveSpeed: 6.8
+      moveSpeed: 6.4
       turnSpeed: 16.800001
       gemCap: 115.55149
-      peopleCap: 150.16911
+      peopleCap: 73.00957
     componentMass: 16.66678
     lockedInUpgradeTree: 0
   - chassisId: LightFox_01
@@ -1051,46 +1051,46 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 58956baa2098fe943b7e0187388c7ba3, type: 3}
     minHomePlanetLevel: 2
-    powerScore: 231.77077
-    powerScoreAtMaxLevel: 480.61594
+    powerScore: 219.08444
+    powerScoreAtMaxLevel: 441.8706
     powerScoreBreakdown:
-      offense: 19.61
+      offense: 21.86
       defense: 48.37115
-      energy: 63.37217
-      mobility: 27.800001
-      capacity: 72.54745
+      energy: 60.65622
+      mobility: 26.500002
+      capacity: 63.877068
       firePower: 3
       bulletSpeed: 12
       fireRate: 3.3600001
       sustainedDps: 0
-      rammingPower: 1.25
+      rammingPower: 3.5
       healthCap: 46.4846
       healthRegen: 1.8865503
-      energyCap: 54.319
+      energyCap: 51.60305
       energyRegen: 9.053167
-      moveSpeed: 8.6
+      moveSpeed: 7.3
       turnSpeed: 16.800001
       gemCap: 37.206684
-      peopleCap: 35.340763
+      peopleCap: 26.670382
     powerScoreBreakdownAtShipLevel:
-      offense: 20.36
+      offense: 23.36
       defense: 140.32738
-      energy: 139.41876
-      mobility: 29.6
-      capacity: 151.5898
+      energy: 128.55496
+      mobility: 27.400002
+      capacity: 125.90827
       firePower: 3
       bulletSpeed: 12
       fireRate: 3.3600001
       sustainedDps: 0
-      rammingPower: 2
+      rammingPower: 5
       healthCap: 134.85439
       healthRegen: 5.472986
-      energyCap: 119.5018
+      energyCap: 108.638
       energyRegen: 19.916967
-      moveSpeed: 10.4
+      moveSpeed: 8.2
       turnSpeed: 16.800001
       gemCap: 73.226746
-      peopleCap: 78.36305
+      peopleCap: 52.681526
     componentMass: 8.386332
     lockedInUpgradeTree: 0
   - chassisId: LightFox_06
@@ -1131,46 +1131,46 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 314962c9d7f0b0f428c94a50f0debb45, type: 3}
     minHomePlanetLevel: 3
-    powerScore: 266.4704
-    powerScoreAtMaxLevel: 841.86176
+    powerScore: 251.1787
+    powerScoreAtMaxLevel: 770.11163
     powerScoreBreakdown:
-      offense: 40.61
+      offense: 43.11
       defense: 67.25921
       energy: 52.958626
-      mobility: 25.6
-      capacity: 103.1879
+      mobility: 25.400002
+      capacity: 88.09621
       firePower: 3.75
       bulletSpeed: 10
       fireRate: 3.3600001
       sustainedDps: 12.6
-      rammingPower: 1.5
+      rammingPower: 4
       healthCap: 64.635994
       healthRegen: 2.623214
       energyCap: 49.25025
       energyRegen: 3.708375
-      moveSpeed: 6.3999996
+      moveSpeed: 6.2
       turnSpeed: 16.800001
       gemCap: 51.781803
-      peopleCap: 51.40609
+      peopleCap: 36.314404
     powerScoreBreakdownAtShipLevel:
-      offense: 53.86
+      offense: 58.86
       defense: 302.91995
       energy: 149.87589
-      mobility: 27.6
-      capacity: 325.6659
+      mobility: 26.400002
+      capacity: 255.11575
       firePower: 7.5
       bulletSpeed: 13
       fireRate: 3.3600001
       sustainedDps: 25.2
-      rammingPower: 4
+      rammingPower: 9
       healthCap: 291.1056
       healthRegen: 11.814351
       energyCap: 138.75076
       energyRegen: 11.125126
-      moveSpeed: 8.4
+      moveSpeed: 7.2
       turnSpeed: 16.800001
       gemCap: 151.74184
-      peopleCap: 173.92406
+      peopleCap: 103.373924
     componentMass: 11.17373
     lockedInUpgradeTree: 0
   - chassisId: LightFox_05
@@ -1211,46 +1211,46 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 29a53d78b35ef0240b92e29d36946372, type: 3}
     minHomePlanetLevel: 3
-    powerScore: 283.17645
-    powerScoreAtMaxLevel: 853.7742
+    powerScore: 271.98267
+    powerScoreAtMaxLevel: 801.61145
     powerScoreBreakdown:
-      offense: 47.47
+      offense: 49.72
       defense: 60.220707
       energy: 89
-      mobility: 25.6
-      capacity: 85.25574
+      mobility: 25.400002
+      capacity: 74.26195
       firePower: 7.5
       bulletSpeed: 10
       fireRate: 6.7200003
       sustainedDps: 25.2
-      rammingPower: 1.25
+      rammingPower: 3.5
       healthCap: 57.872005
       healthRegen: 2.3487017
       energyCap: 84
       energyRegen: 5
-      moveSpeed: 6.3999996
+      moveSpeed: 6.2
       turnSpeed: 16.800001
       gemCap: 42.84357
-      peopleCap: 42.412167
+      peopleCap: 31.418379
     powerScoreBreakdownAtShipLevel:
-      offense: 63.22
+      offense: 66.72
       defense: 264.95807
       energy: 249
-      mobility: 27.6
-      capacity: 257.36612
+      mobility: 26.400002
+      capacity: 206.40338
       firePower: 15
       bulletSpeed: 13
       fireRate: 6.7200003
       sustainedDps: 50.4
-      rammingPower: 2.5
+      rammingPower: 6
       healthCap: 254.6243
       healthRegen: 10.333779
       energyCap: 234
       energyRegen: 15
-      moveSpeed: 8.4
+      moveSpeed: 7.2
       turnSpeed: 16.800001
       gemCap: 121.36307
-      peopleCap: 136.00305
+      peopleCap: 85.04031
     componentMass: 11.383149
     lockedInUpgradeTree: 0
   - chassisId: LightFox_04
@@ -1291,46 +1291,46 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 15fde840f6b6f9342929a409db86d813, type: 3}
     minHomePlanetLevel: 3
-    powerScore: 304.41522
-    powerScoreAtMaxLevel: 924.96814
+    powerScore: 292.19278
+    powerScoreAtMaxLevel: 861.6334
     powerScoreBreakdown:
-      offense: 61.690002
+      offense: 71.45162
       defense: 44.322495
-      energy: 146.07417
-      mobility: 28.400002
-      capacity: 55
-      firePower: 15
+      energy: 143.7431
+      mobility: 26.800001
+      capacity: 47
+      firePower: 6.986438
       bulletSpeed: 10
-      fireRate: 13.440001
+      fireRate: 28.965187
       sustainedDps: 50.4
-      rammingPower: 1.25
+      rammingPower: 3.5
       healthCap: 42.59385
       healthRegen: 1.7286465
-      energyCap: 140.63501
+      energyCap: 138.30394
       energyRegen: 5.439168
-      moveSpeed: 9.200001
+      moveSpeed: 7.6000004
       turnSpeed: 16.800001
       gemCap: 27
-      peopleCap: 28
+      peopleCap: 20
     powerScoreBreakdownAtShipLevel:
-      offense: 84.94
+      offense: 87.938065
       defense: 198.39624
-      energy: 434.85754
-      mobility: 34.4
-      capacity: 174
-      firePower: 30
+      energy: 420.87112
+      mobility: 29.800001
+      capacity: 131
+      firePower: 13.972876
       bulletSpeed: 13
-      fireRate: 13.440001
+      fireRate: 28.965187
       sustainedDps: 100.8
-      rammingPower: 2.5
+      rammingPower: 6
       healthCap: 190.65848
       healthRegen: 7.7377625
-      energyCap: 413.8779
+      energyCap: 399.89148
       energyRegen: 20.979649
-      moveSpeed: 15.200001
+      moveSpeed: 10.599999
       turnSpeed: 16.800001
       gemCap: 81
-      peopleCap: 93
+      peopleCap: 50
     componentMass: 10.876995
     lockedInUpgradeTree: 0
   - chassisId: LightFox_10
@@ -1371,46 +1371,46 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 8f31da71e9d37b74286110649a244c5f, type: 3}
     minHomePlanetLevel: 4
-    powerScore: 349.40112
-    powerScoreAtMaxLevel: 1567.7241
+    powerScore: 330.17673
+    powerScoreAtMaxLevel: 1465.1829
     powerScoreBreakdown:
-      offense: 19.61
+      offense: 21.86
       defense: 94.09951
-      energy: 72.209724
-      mobility: 28.600002
-      capacity: 134.8119
+      energy: 70.209724
+      mobility: 26.900002
+      capacity: 119.2875
       firePower: 3
       bulletSpeed: 12
       fireRate: 3.3600001
       sustainedDps: 0
-      rammingPower: 1.25
+      rammingPower: 3.5
       healthCap: 90.42948
       healthRegen: 3.6700277
-      energyCap: 61.89405
+      energyCap: 59.89405
       energyRegen: 10.315675
-      moveSpeed: 9.400001
+      moveSpeed: 7.7000003
       turnSpeed: 16.800001
       gemCap: 70.672455
-      peopleCap: 64.13945
+      peopleCap: 48.615044
     powerScoreBreakdownAtShipLevel:
-      offense: 21.36
+      offense: 25.36
       defense: 573.6888
-      energy: 381.6778
-      mobility: 38.4
-      capacity: 554.2775
+      energy: 365.6778
+      mobility: 31.800001
+      capacity: 474.33624
       firePower: 3
       bulletSpeed: 12
       fireRate: 3.3600001
       sustainedDps: 0
-      rammingPower: 3
+      rammingPower: 7
       healthCap: 551.314
       healthRegen: 22.37476
-      energyCap: 327.1524
+      energyCap: 311.1524
       energyRegen: 54.5254
-      moveSpeed: 19.199999
+      moveSpeed: 12.599999
       turnSpeed: 16.800001
       gemCap: 266.0509
-      peopleCap: 288.22662
+      peopleCap: 208.28535
     componentMass: 14.851418
     lockedInUpgradeTree: 0
   - chassisId: LightFox_09
@@ -1451,46 +1451,46 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 551c13712988a1c47a6c4d7cb3728f21, type: 3}
     minHomePlanetLevel: 4
-    powerScore: 397.804
-    powerScoreAtMaxLevel: 1733.2865
+    powerScore: 379.28857
+    powerScoreAtMaxLevel: 1623.9532
     powerScoreBreakdown:
-      offense: 47.47
+      offense: 49.72
       defense: 94.9147
-      energy: 125.399994
-      mobility: 28.2
-      capacity: 117.08927
+      energy: 122.94
+      mobility: 26.7
+      capacity: 102.84134
       firePower: 7.5
       bulletSpeed: 10
       fireRate: 6.7200003
       sustainedDps: 25.2
-      rammingPower: 1.25
+      rammingPower: 3.5
       healthCap: 91.21288
       healthRegen: 3.7018218
-      energyCap: 115.2
+      energyCap: 112.740005
       energyRegen: 10.200001
-      moveSpeed: 9
+      moveSpeed: 7.5
       turnSpeed: 16.800001
       gemCap: 59.749054
-      peopleCap: 57.340218
+      peopleCap: 43.092285
     powerScoreBreakdownAtShipLevel:
-      offense: 69.72
+      offense: 73.72
       defense: 604.06506
-      energy: 510.12003
-      mobility: 35.2
-      capacity: 511.82147
+      energy: 490.44003
+      mobility: 30.2
+      capacity: 427.1682
       firePower: 18
       bulletSpeed: 14
       fireRate: 6.7200003
       sustainedDps: 60.48
-      rammingPower: 3
+      rammingPower: 7
       healthCap: 580.50555
       healthRegen: 23.55948
-      energyCap: 462.96002
+      energyCap: 443.28003
       energyRegen: 47.160004
-      moveSpeed: 16
+      moveSpeed: 11
       turnSpeed: 16.800001
       gemCap: 242.83424
-      peopleCap: 268.98724
+      peopleCap: 184.33398
     componentMass: 18.512968
     lockedInUpgradeTree: 0
   - chassisId: LightFox_07
@@ -1531,46 +1531,46 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 424f3530f28f86e4d990ebd7f0fc31f3, type: 3}
     minHomePlanetLevel: 4
-    powerScore: 344.71674
-    powerScoreAtMaxLevel: 1461.499
+    powerScore: 326.9391
+    powerScoreAtMaxLevel: 1355.6257
     powerScoreBreakdown:
-      offense: 47.72
+      offense: 55.268585
       defense: 71.55709
-      energy: 111.32804
-      mobility: 28.400002
-      capacity: 104.7496
-      firePower: 7.5
+      energy: 109.98011
+      mobility: 26.800001
+      capacity: 90.08836
+      firePower: 3.1212602
       bulletSpeed: 10
-      fireRate: 6.7200003
+      fireRate: 16.147324
       sustainedDps: 25.2
-      rammingPower: 1.5
+      rammingPower: 4
       healthCap: 68.76625
       healthRegen: 2.790838
-      energyCap: 103.13832
+      energyCap: 101.79039
       energyRegen: 8.18972
-      moveSpeed: 9.200001
+      moveSpeed: 7.6000004
       turnSpeed: 16.800001
       gemCap: 52.466568
-      peopleCap: 52.28304
+      peopleCap: 37.621796
     powerScoreBreakdownAtShipLevel:
-      offense: 71.72
+      offense: 76.63835
       defense: 423.6012
-      energy: 506.5266
-      mobility: 36.800003
-      capacity: 422.4913
-      firePower: 18
+      energy: 495.74313
+      mobility: 31.000002
+      capacity: 333.20135
+      firePower: 7.491024
       bulletSpeed: 14
-      fireRate: 6.7200003
-      sustainedDps: 60.48
-      rammingPower: 5
+      fireRate: 16.147324
+      sustainedDps: 60.479996
+      rammingPower: 11
       healthCap: 407.08008
       healthRegen: 16.521107
-      energyCap: 459.87994
+      energyCap: 449.09647
       energyRegen: 46.646656
-      moveSpeed: 17.6
+      moveSpeed: 11.8
       turnSpeed: 16.800001
       gemCap: 195.25348
-      peopleCap: 227.23782
+      peopleCap: 137.94786
     componentMass: 15.880217
     lockedInUpgradeTree: 0
   - chassisId: LightFox_08
@@ -1611,46 +1611,46 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 027c63146f23850458c152c2d6b514e3, type: 3}
     minHomePlanetLevel: 4
-    powerScore: 368.65945
-    powerScoreAtMaxLevel: 1585.8453
+    powerScore: 350.0453
+    powerScoreAtMaxLevel: 1464.9319
     powerScoreBreakdown:
-      offense: 47.72
+      offense: 50.22
       defense: 74.67315
-      energy: 135.44687
-      mobility: 28.2
-      capacity: 97.53944
+      energy: 132.55629
+      mobility: 26.7
+      capacity: 83.31584
       firePower: 7.5
       bulletSpeed: 10
       fireRate: 6.7200003
       sustainedDps: 25.2
-      rammingPower: 1.5
+      rammingPower: 4
       healthCap: 71.76078
       healthRegen: 2.9123697
-      energyCap: 123.8116
+      energyCap: 120.92102
       energyRegen: 11.635267
-      moveSpeed: 9
+      moveSpeed: 7.5
       turnSpeed: 16.800001
       gemCap: 48.571312
-      peopleCap: 48.968124
+      peopleCap: 34.744526
     powerScoreBreakdownAtShipLevel:
-      offense: 71.72
+      offense: 77.72
       defense: 473.35175
-      energy: 548.2981
-      mobility: 35.2
-      capacity: 456.91547
+      energy: 525.17346
+      mobility: 30.2
+      capacity: 364.12665
       firePower: 18
       bulletSpeed: 14
       fireRate: 6.7200003
       sustainedDps: 60.48
-      rammingPower: 5
+      rammingPower: 11
       healthCap: 454.8903
       healthRegen: 18.461456
-      energyCap: 495.68408
+      energyCap: 472.55945
       energyRegen: 52.614014
-      moveSpeed: 16
+      moveSpeed: 11
       turnSpeed: 16.800001
       gemCap: 212.17049
-      peopleCap: 244.745
+      peopleCap: 151.95618
     componentMass: 16.394756
     lockedInUpgradeTree: 0
   - chassisId: LightFox_15
@@ -1691,46 +1691,46 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 678d15120e690544191e52df7676cf9d, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 473.6504
-    powerScoreAtMaxLevel: 2894.278
+    powerScore: 449.47604
+    powerScoreAtMaxLevel: 2721.1345
     powerScoreBreakdown:
-      offense: 47.47
+      offense: 50.602776
       defense: 141.70193
-      energy: 104.28334
-      mobility: 28.000002
-      capacity: 172.7443
-      firePower: 7.5
+      energy: 102.683334
+      mobility: 26.600002
+      capacity: 151.76996
+      firePower: 10.125
       bulletSpeed: 10
-      fireRate: 6.7200003
-      sustainedDps: 25.2
-      rammingPower: 1.25
+      fireRate: 4.9777775
+      sustainedDps: 25.199999
+      rammingPower: 3.5
       healthCap: 136.17534
       healthRegen: 5.5265965
-      energyCap: 97.100006
+      energyCap: 95.5
       energyRegen: 7.1833334
-      moveSpeed: 8.8
+      moveSpeed: 7.4
       turnSpeed: 16.800001
       gemCap: 88.872604
-      peopleCap: 83.87169
+      peopleCap: 62.89735
     powerScoreBreakdownAtShipLevel:
-      offense: 76.22
+      offense: 86.32778
       defense: 1197.4175
-      energy: 517.23334
-      mobility: 35.2
-      capacity: 1061.2671
-      firePower: 21
+      energy: 501.23334
+      mobility: 30.2
+      capacity: 909.1238
+      firePower: 28.350002
       bulletSpeed: 15
-      fireRate: 6.7200003
+      fireRate: 4.9777775
       sustainedDps: 70.56
-      rammingPower: 3.5
+      rammingPower: 8
       healthCap: 1150.7163
       healthRegen: 46.70115
-      energyCap: 474.2
+      energyCap: 458.2
       energyRegen: 43.033337
-      moveSpeed: 16
+      moveSpeed: 11
       turnSpeed: 16.800001
       gemCap: 505.8804
-      peopleCap: 555.3867
+      peopleCap: 403.24335
     componentMass: 20.908112
     lockedInUpgradeTree: 0
   - chassisId: LightFox_17
@@ -1771,46 +1771,46 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 53e243861b1376a4a846bd28872af187, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 474.72147
-    powerScoreAtMaxLevel: 2787.6492
+    powerScore: 458.62393
+    powerScoreAtMaxLevel: 2669.0947
     powerScoreBreakdown:
-      offense: 61.690002
+      offense: 63.940002
       defense: 132.1558
       energy: 143
-      mobility: 25.6
-      capacity: 144.11566
+      mobility: 25.400002
+      capacity: 128.21811
       firePower: 15
       bulletSpeed: 10
       fireRate: 13.440001
       sustainedDps: 50.4
-      rammingPower: 1.25
+      rammingPower: 3.5
       healthCap: 127.001526
       healthRegen: 5.1542826
       energyCap: 138
       energyRegen: 5
-      moveSpeed: 6.3999996
+      moveSpeed: 6.2
       turnSpeed: 16.800001
       gemCap: 73.17063
-      peopleCap: 70.94502
+      peopleCap: 55.04748
     powerScoreBreakdownAtShipLevel:
-      offense: 103.94
+      offense: 108.44
       defense: 1139.0192
       energy: 593
-      mobility: 29.2
-      capacity: 919.57996
+      mobility: 27.2
+      capacity: 803.0255
       firePower: 42
       bulletSpeed: 15
       fireRate: 13.440001
       sustainedDps: 141.12
-      rammingPower: 3.5
+      rammingPower: 8
       healthCap: 1094.5956
       healthRegen: 44.42353
       energyCap: 570
       energyRegen: 23
-      moveSpeed: 10
+      moveSpeed: 8
       turnSpeed: 16.800001
       gemCap: 436.79214
-      peopleCap: 482.7878
+      peopleCap: 366.2334
     componentMass: 21.983665
     lockedInUpgradeTree: 0
   - chassisId: LightFox_13
@@ -1851,46 +1851,46 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 168e77ced05de484aa3117ff1daf2730, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 405.30524
-    powerScoreAtMaxLevel: 2474.5376
+    powerScore: 383.054
+    powerScoreAtMaxLevel: 2298.7751
     powerScoreBreakdown:
-      offense: 47.47
+      offense: 50.97577
       defense: 119.66058
-      energy: 100.666664
-      mobility: 28.2
-      capacity: 130.76132
-      firePower: 7.5
+      energy: 99.26666
+      mobility: 26.7
+      capacity: 111.58507
+      firePower: 4.6597576
       bulletSpeed: 10
-      fireRate: 6.7200003
+      fireRate: 10.816013
       sustainedDps: 25.2
-      rammingPower: 1.25
+      rammingPower: 3.5
       healthCap: 114.99364
       healthRegen: 4.6669497
-      energyCap: 94
+      energyCap: 92.6
       energyRegen: 6.666667
-      moveSpeed: 9
+      moveSpeed: 7.5
       turnSpeed: 16.800001
       gemCap: 65.72904
-      peopleCap: 65.03227
+      peopleCap: 45.85603
     powerScoreBreakdownAtShipLevel:
-      offense: 76.22
+      offense: 76.863335
       defense: 1023.5978
-      energy: 506.26666
-      mobility: 37.2
-      capacity: 824.31305
-      firePower: 21
+      energy: 492.26666
+      mobility: 31.2
+      capacity: 668.55066
+      firePower: 13.047321
       bulletSpeed: 15
-      fireRate: 6.7200003
-      sustainedDps: 70.56
-      rammingPower: 3.5
+      fireRate: 10.816013
+      sustainedDps: 70.560005
+      rammingPower: 8
       healthCap: 983.67584
       healthRegen: 39.92191
-      energyCap: 464.8
+      energyCap: 450.8
       energyRegen: 41.466663
-      moveSpeed: 18
+      moveSpeed: 12
       turnSpeed: 16.800001
       gemCap: 389.9904
-      peopleCap: 434.32266
+      peopleCap: 278.5603
     componentMass: 20.275246
     lockedInUpgradeTree: 0
   - chassisId: LightFox_11
@@ -1931,46 +1931,46 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 56b06add6181bc841a5467531befbc75, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 438.01718
-    powerScoreAtMaxLevel: 2233.6099
+    powerScore: 420.89398
+    powerScoreAtMaxLevel: 2100.1777
     powerScoreBreakdown:
-      offense: 61.690002
+      offense: 64.27985
       defense: 98.350464
       energy: 154.3471
-      mobility: 25.6
-      capacity: 127.03286
-      firePower: 15
+      mobility: 25.400002
+      capacity: 110.109634
+      firePower: 14.842079
       bulletSpeed: 10
-      fireRate: 13.440001
+      fireRate: 13.937767
       sustainedDps: 50.4
-      rammingPower: 1.25
+      rammingPower: 3.5
       healthCap: 94.51464
       healthRegen: 3.8358216
       energyCap: 147.72609
       energyRegen: 6.621015
-      moveSpeed: 6.3999996
+      moveSpeed: 6.2
       turnSpeed: 16.800001
       gemCap: 63.299774
-      peopleCap: 63.733086
+      peopleCap: 46.809864
     powerScoreBreakdownAtShipLevel:
-      offense: 103.94
+      offense: 108.49559
       defense: 769.3305
       energy: 645.19666
-      mobility: 29.2
-      capacity: 669.98364
-      firePower: 42
+      mobility: 27.2
+      capacity: 538.5514
+      firePower: 41.557823
       bulletSpeed: 15
-      fireRate: 13.440001
+      fireRate: 13.937767
       sustainedDps: 141.12
-      rammingPower: 3.5
+      rammingPower: 8
       healthCap: 739.32544
       healthRegen: 30.005087
       energyCap: 614.74
       energyRegen: 30.456669
-      moveSpeed: 10
+      moveSpeed: 8
       turnSpeed: 16.800001
       gemCap: 313.4528
-      peopleCap: 356.53088
+      peopleCap: 225.09863
     componentMass: 20.836893
     lockedInUpgradeTree: 0
   - chassisId: LightFox_12
@@ -2011,46 +2011,46 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 357501848e485204aa3a1c61271f640d, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 407.99042
-    powerScoreAtMaxLevel: 2166.1838
+    powerScore: 390.94397
+    powerScoreAtMaxLevel: 2031.7196
     powerScoreBreakdown:
-      offense: 61.940002
+      offense: 66.115654
       defense: 93.24206
       energy: 143
-      mobility: 25.6
-      capacity: 116.298355
-      firePower: 15
+      mobility: 25.400002
+      capacity: 99.451935
+      firePower: 10.04403
       bulletSpeed: 10
-      fireRate: 13.440001
-      sustainedDps: 50.4
-      rammingPower: 1.5
+      fireRate: 20.071627
+      sustainedDps: 50.400005
+      rammingPower: 4
       healthCap: 89.60547
       healthRegen: 3.6365855
       energyCap: 138
       energyRegen: 5
-      moveSpeed: 6.3999996
+      moveSpeed: 6.2
       turnSpeed: 16.800001
       gemCap: 58.46099
-      peopleCap: 57.837368
+      peopleCap: 40.99094
     powerScoreBreakdownAtShipLevel:
-      offense: 106.44
+      offense: 106.19491
       defense: 757.45026
       energy: 593
-      mobility: 29.2
-      capacity: 679.6836
-      firePower: 42
+      mobility: 27.2
+      capacity: 547.21936
+      firePower: 28.123283
       bulletSpeed: 15
-      fireRate: 13.440001
-      sustainedDps: 141.12
-      rammingPower: 6
+      fireRate: 20.071627
+      sustainedDps: 141.12001
+      rammingPower: 13
       healthCap: 727.9085
       healthRegen: 29.541739
       energyCap: 570
       energyRegen: 23
-      moveSpeed: 10
+      moveSpeed: 8
       turnSpeed: 16.800001
       gemCap: 317.30994
-      peopleCap: 362.3737
+      peopleCap: 229.90942
     componentMass: 16.450035
     lockedInUpgradeTree: 0
   - chassisId: LightFox_20
@@ -2091,46 +2091,46 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: b8c75a61eb5e5fb468069b6469c84af4, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 609.7037
-    powerScoreAtMaxLevel: 4900.911
+    powerScore: 577.4644
+    powerScoreAtMaxLevel: 4595.2383
     powerScoreBreakdown:
-      offense: 47.47
+      offense: 49.72
       defense: 193.78049
-      energy: 135.57333
-      mobility: 29.400002
-      capacity: 218.14981
+      energy: 131.33333
+      mobility: 27.300001
+      capacity: 192.25058
       firePower: 7.5
       bulletSpeed: 10
       fireRate: 6.7200003
       sustainedDps: 25.2
-      rammingPower: 1.25
+      rammingPower: 3.5
       healthCap: 186.22275
       healthRegen: 7.557741
-      energyCap: 123.920006
+      energyCap: 119.67999
       energyRegen: 11.653335
-      moveSpeed: 10.200001
+      moveSpeed: 8.1
       turnSpeed: 16.800001
       gemCap: 110.22604
-      peopleCap: 107.923775
+      peopleCap: 82.024536
     powerScoreBreakdownAtShipLevel:
-      offense: 82.72
+      offense: 87.72
       defense: 2042.1536
-      energy: 922.88
-      mobility: 53.600002
-      capacity: 1788.0374
+      energy: 872
+      mobility: 39.4
+      capacity: 1547.4446
       firePower: 24
       bulletSpeed: 16
       fireRate: 6.7200003
       sustainedDps: 80.64
-      rammingPower: 4
+      rammingPower: 9
       healthCap: 1962.5063
       healthRegen: 79.64716
-      energyCap: 827.04004
+      energyCap: 776.16003
       energyRegen: 95.84
-      moveSpeed: 34.4
+      moveSpeed: 20.199999
       turnSpeed: 16.800001
       gemCap: 848.6465
-      peopleCap: 939.3909
+      peopleCap: 698.79816
     componentMass: 28.517788
     lockedInUpgradeTree: 0
   - chassisId: LightFox_19
@@ -2171,46 +2171,46 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 1eb7b5e1e87639d438ee3ddae06cbc79, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 543.40936
-    powerScoreAtMaxLevel: 3967.4224
+    powerScore: 515.33435
+    powerScoreAtMaxLevel: 3715.8223
     powerScoreBreakdown:
-      offense: 47.47
+      offense: 49.72
       defense: 165.42604
-      energy: 121.666664
-      mobility: 28.000002
-      capacity: 197.04999
+      energy: 119.06666
+      mobility: 26.600002
+      capacity: 173.3
       firePower: 7.5
       bulletSpeed: 10
       fireRate: 6.7200003
       sustainedDps: 25.2
-      rammingPower: 1.25
+      rammingPower: 3.5
       healthCap: 158.97417
       healthRegen: 6.451875
-      energyCap: 112
+      energyCap: 109.399994
       energyRegen: 9.666667
-      moveSpeed: 8.8
+      moveSpeed: 7.4
       turnSpeed: 16.800001
       gemCap: 99.899994
-      peopleCap: 97.15
+      peopleCap: 73.40001
     powerScoreBreakdownAtShipLevel:
-      offense: 82.72
+      offense: 87.72
       defense: 1687.0824
-      energy: 663.6
-      mobility: 36.800003
-      capacity: 1485.7
+      energy: 632.39996
+      mobility: 31.000002
+      capacity: 1271.1
       firePower: 24
       bulletSpeed: 16
       fireRate: 6.7200003
       sustainedDps: 80.64
-      rammingPower: 4
+      rammingPower: 9
       healthCap: 1621.2836
       healthRegen: 65.79884
-      energyCap: 604.8
+      energyCap: 573.6
       energyRegen: 58.8
-      moveSpeed: 17.6
+      moveSpeed: 11.8
       turnSpeed: 16.800001
       gemCap: 703.8
-      peopleCap: 781.9
+      peopleCap: 567.3
     componentMass: 23.75
     lockedInUpgradeTree: 0
   - chassisId: LightFox_16
@@ -2251,46 +2251,46 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 0479c5f6b2f3d7047adce90182fa5f71, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 655.29816
-    powerScoreAtMaxLevel: 4543.368
+    powerScore: 623.1549
+    powerScoreAtMaxLevel: 4257.8677
     powerScoreBreakdown:
-      offense: 61.690002
+      offense: 64.16169
       defense: 151.59563
-      energy: 234.74667
-      mobility: 29.400002
-      capacity: 186.76921
-      firePower: 15
+      energy: 228.06665
+      mobility: 27.300001
+      capacity: 164.24088
+      firePower: 12.388395
       bulletSpeed: 10
-      fireRate: 13.440001
-      sustainedDps: 50.4
-      rammingPower: 1.25
+      fireRate: 16.273294
+      sustainedDps: 50.400005
+      rammingPower: 3.5
       healthCap: 145.68317
       healthRegen: 5.9124665
-      energyCap: 216.64001
+      energyCap: 209.95999
       energyRegen: 18.106667
-      moveSpeed: 10.200001
+      moveSpeed: 8.1
       turnSpeed: 16.800001
       gemCap: 96.42752
-      peopleCap: 90.34169
+      peopleCap: 67.813354
     powerScoreBreakdownAtShipLevel:
-      offense: 113.44
+      offense: 112.91616
       defense: 1514.9978
-      energy: 1470.5599
-      mobility: 53.600002
-      capacity: 1329.3306
-      firePower: 48
+      energy: 1390.3999
+      mobility: 39.4
+      capacity: 1138.1906
+      firePower: 39.642864
       bulletSpeed: 16
-      fireRate: 13.440001
-      sustainedDps: 161.28
-      rammingPower: 4
+      fireRate: 16.273294
+      sustainedDps: 161.28001
+      rammingPower: 9
       healthCap: 1455.9105
       healthRegen: 59.087273
-      energyCap: 1332.48
+      energyCap: 1252.32
       energyRegen: 138.08
-      moveSpeed: 34.4
+      moveSpeed: 20.199999
       turnSpeed: 16.800001
       gemCap: 632.4303
-      peopleCap: 696.9003
+      peopleCap: 505.76022
     componentMass: 26.410124
     lockedInUpgradeTree: 0
   - chassisId: LightFox_18
@@ -2331,46 +2331,46 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 868141935c78cdd418aabecae4d5d3a9, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 530.1277
-    powerScoreAtMaxLevel: 3667.8281
+    powerScore: 506.9143
+    powerScoreAtMaxLevel: 3462.1821
     powerScoreBreakdown:
-      offense: 61.690002
+      offense: 65.229485
       defense: 125.75102
-      energy: 179.78998
-      mobility: 29.400002
-      capacity: 156.13919
-      firePower: 15
+      energy: 176.64648
+      mobility: 27.300001
+      capacity: 138.56223
+      firePower: 18.375
       bulletSpeed: 10
-      fireRate: 13.440001
+      fireRate: 11.354484
       sustainedDps: 50.4
-      rammingPower: 1.25
+      rammingPower: 3.5
       healthCap: 120.846535
       healthRegen: 4.904487
-      energyCap: 169.53427
+      energyCap: 166.39078
       energyRegen: 10.255714
-      moveSpeed: 10.200001
+      moveSpeed: 8.1
       turnSpeed: 16.800001
       gemCap: 79.10014
-      peopleCap: 77.03905
+      peopleCap: 59.46208
     powerScoreBreakdownAtShipLevel:
-      offense: 113.44
+      offense: 127.15449
       defense: 1252.6835
-      energy: 1052.5243
-      mobility: 53.600002
-      capacity: 1134.1404
-      firePower: 48
+      energy: 1014.802
+      mobility: 39.4
+      capacity: 980.4166
+      firePower: 58.800003
       bulletSpeed: 16
-      fireRate: 13.440001
+      fireRate: 11.354484
       sustainedDps: 161.28
-      rammingPower: 4
+      rammingPower: 9
       healthCap: 1203.8269
       healthRegen: 48.8566
-      energyCap: 974.16364
+      energyCap: 936.4414
       energyRegen: 78.3606
-      moveSpeed: 34.4
+      moveSpeed: 20.199999
       turnSpeed: 16.800001
       gemCap: 536.37177
-      peopleCap: 597.7686
+      peopleCap: 444.04483
     componentMass: 21.714724
     lockedInUpgradeTree: 0
   - chassisId: LightFox_18B
@@ -2411,46 +2411,46 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 359413dcd2647fc4c83d41db2b55bc14, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 530.1277
-    powerScoreAtMaxLevel: 3667.8281
+    powerScore: 506.9143
+    powerScoreAtMaxLevel: 3462.1821
     powerScoreBreakdown:
-      offense: 61.690002
+      offense: 65.229485
       defense: 125.75102
-      energy: 179.78998
-      mobility: 29.400002
-      capacity: 156.13919
-      firePower: 15
+      energy: 176.64648
+      mobility: 27.300001
+      capacity: 138.56223
+      firePower: 18.375
       bulletSpeed: 10
-      fireRate: 13.440001
+      fireRate: 11.354484
       sustainedDps: 50.4
-      rammingPower: 1.25
+      rammingPower: 3.5
       healthCap: 120.846535
       healthRegen: 4.904487
-      energyCap: 169.53427
+      energyCap: 166.39078
       energyRegen: 10.255714
-      moveSpeed: 10.200001
+      moveSpeed: 8.1
       turnSpeed: 16.800001
       gemCap: 79.10014
-      peopleCap: 77.03905
+      peopleCap: 59.46208
     powerScoreBreakdownAtShipLevel:
-      offense: 113.44
+      offense: 127.15449
       defense: 1252.6835
-      energy: 1052.5243
-      mobility: 53.600002
-      capacity: 1134.1404
-      firePower: 48
+      energy: 1014.802
+      mobility: 39.4
+      capacity: 980.4166
+      firePower: 58.800003
       bulletSpeed: 16
-      fireRate: 13.440001
+      fireRate: 11.354484
       sustainedDps: 161.28
-      rammingPower: 4
+      rammingPower: 9
       healthCap: 1203.8269
       healthRegen: 48.8566
-      energyCap: 974.16364
+      energyCap: 936.4414
       energyRegen: 78.3606
-      moveSpeed: 34.4
+      moveSpeed: 20.199999
       turnSpeed: 16.800001
       gemCap: 536.37177
-      peopleCap: 597.7686
+      peopleCap: 444.04483
     componentMass: 21.714724
     lockedInUpgradeTree: 0
   - chassisId: LightFox_14
@@ -2491,46 +2491,46 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: e6b457b78717cec48abbd1d17fd0012a, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 483.11472
-    powerScoreAtMaxLevel: 3823.8015
+    powerScore: 458.7101
+    powerScoreAtMaxLevel: 3587.8367
     powerScoreBreakdown:
-      offense: 47.47
+      offense: 49.72
       defense: 150.14087
-      energy: 119.100006
-      mobility: 29.000002
-      capacity: 154.24884
+      energy: 117.84
+      mobility: 27.100002
+      capacity: 133.16177
       firePower: 7.5
       bulletSpeed: 10
       fireRate: 6.7200003
       sustainedDps: 25.2
-      rammingPower: 1.25
+      rammingPower: 3.5
       healthCap: 144.28514
       healthRegen: 5.855727
-      energyCap: 109.8
+      energyCap: 108.53999
       energyRegen: 9.300001
-      moveSpeed: 9.8
+      moveSpeed: 7.9
       turnSpeed: 16.800001
       gemCap: 76.81347
-      peopleCap: 77.43538
+      peopleCap: 56.3483
     powerScoreBreakdownAtShipLevel:
-      offense: 82.72
+      offense: 87.72
       defense: 1586.8071
-      energy: 839.16003
-      mobility: 48.800003
-      capacity: 1254.7946
+      energy: 824.04004
+      mobility: 37
+      capacity: 1045.7496
       firePower: 24
       bulletSpeed: 16
       fireRate: 6.7200003
       sustainedDps: 80.64
-      rammingPower: 4
+      rammingPower: 9
       healthCap: 1524.9192
       healthRegen: 61.887966
-      energyCap: 755.28
+      energyCap: 740.16003
       energyRegen: 83.88
-      moveSpeed: 29.6
+      moveSpeed: 17.8
       turnSpeed: 16.800001
       gemCap: 592.7628
-      peopleCap: 662.03174
+      peopleCap: 452.98685
     componentMass: 28.23098
     lockedInUpgradeTree: 0
   teamMaterials:

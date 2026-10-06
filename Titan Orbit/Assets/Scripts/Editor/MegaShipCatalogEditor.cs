@@ -95,6 +95,26 @@ namespace TitanOrbit.Editor
 
             EditorGUILayout.Space(8);
             EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            EditorGUILayout.LabelField("Hull pool", EditorStyles.boldLabel);
+            EditorGUILayout.HelpBox(
+                "Refresh Hull Pool From Folders scans Prefabs/MEGA_Ships (CraizanStar, GalacticLeopard, " +
+                "GalacticOkamoto) and appends prefabs that are not already in Entries. " +
+                "Existing rows keep their catalogIndex (MEGA_###), display names, and menu previews. " +
+                "It then refreshes Unique Components and every hull's summed stats, keeping hand-edited " +
+                "component numbers. Use Titan Orbit → Titan Ships → Rebuild Catalog From Folders only when " +
+                "you want a full resorted, re-indexed list.",
+                MessageType.Info);
+
+            if (GUILayout.Button("Refresh Hull Pool From Folders", GUILayout.Height(28)))
+            {
+                MegaShipCatalogEditorMenu.RefreshHullPoolFromFolders();
+                serializedObject.Update();
+            }
+
+            EditorGUILayout.EndVertical();
+
+            EditorGUILayout.Space(8);
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
             EditorGUILayout.LabelField("Unique component library", EditorStyles.boldLabel);
             EditorGUILayout.HelpBox(
                 "Unique Components is one row per part name (Armor1, TurretBarrel, …) shared by every MEGA. " +
@@ -103,14 +123,18 @@ namespace TitanOrbit.Editor
                 "Orange rows have a raw 0 on a non-firepower stat. Those zeros stay in the catalog. " +
                 "In-game, 0 becomes the listed Default Stats, then every non-firepower value is raised to Minimum Stats. " +
                 "Cyan wins when a hull is both unarmed and missing other stats. " +
-                "Cruise speed is fastest engine or thruster + Extra Engine Speed Percent of the rest.\n\n" +
+                "Cruise speed is fastest unique part with moveSpeed + Extra Engine Speed Percent of the rest " +
+                "(any part type — not only Engine / Thruster).\n\n" +
                 "Weapon Bullet Banks (Gun / Cannon / Missile / Sniper) pick the BulletVfxBank category those MEGA " +
-                "weapon types fire. Unique weapon rows can override; Type table default inherits the type-table bank. " +
-                "MEGAs no longer use the store planet's family bank.\n\n" +
+                "weapon types fire. Each type also has a Bank Scale (default 1) for tracer / impact size. " +
+                "Unique weapon rows can override the bank; Type table default inherits the type-table bank. " +
+                "MEGAs no longer use the store planet's family bank. " +
+                "Is Laser on a unique weapon makes that barrel a hitscan beam. Refresh keeps the toggle.\n\n" +
                 "Apply Default Type-Table Stats seeds the type table plus the In-game Default/Minimum Stats blocks " +
                 "(move 12, accel 8, health 800, energy 1400, people 600, gun range 32, cannon 40, missile 36, sniper 48). " +
                 "It also writes those ranges onto unique weapon rows, seeds inherit weapon banks from the type table, " +
-                "and energy/people onto cockpit/engine/wing rows, then recalculates hull sums. " +
+                "energy/people onto cockpit/engine/wing rows, and cargo-hold stats onto Cargo / Hold / " +
+                "Storage unique rows, then recalculates hull sums. " +
                 "Then click Refresh Unique Components + Recalc Ship Sums so stored hull sums stay raw " +
                 "(zeros stay 0; orange rows stay honest). Refresh adds new names and keeps hand-edited stats " +
                 "except the ranges just written. " +

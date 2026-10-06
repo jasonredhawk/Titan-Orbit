@@ -7,9 +7,10 @@ using UnityEngine.UI;
 namespace TitanOrbit.UI
 {
     /// <summary>
-    /// Small planet-name tooltip for minimap blips and edge markers.
-    /// The player hovers a planet disc (or the off-screen arrow) and sees the same family name
-    /// that floats above the planet in the world (<see cref="Game.PlanetWorldStatsLabel"/>).
+    /// Small planet tooltip for minimap blips and edge markers.
+    /// The player hovers a planet disc (or the off-screen arrow) and sees the same proper world
+    /// name that floats above the planet in the world (<see cref="Game.PlanetWorldStatsLabel"/>),
+    /// then family + weapon type. Home worlds also stamp <c>HOME PLANET</c> under the name.
     /// <para>
     /// Client presentation only — reads <see cref="MinimapBlipAnchor"/> plus
     /// <see cref="PlanetShipFamilyConfig"/>. No ECS gathers, no sim writes.
@@ -33,7 +34,7 @@ namespace TitanOrbit.UI
         /// <summary>Which hover pad currently owns the tip (so Exit from an old pad cannot hide a newer hover).</summary>
         static MinimapPlanetHoverTip s_Active;
 
-        /// <summary>Cached ScriptableObject that maps planet id → ship-family display name.</summary>
+        /// <summary>Cached ScriptableObject that maps planet id → world name and ship family.</summary>
         static PlanetShipFamilyConfig s_FamilyConfig;
 
         /// <summary>True after we tried Resources.Load so we do not retry every hover.</summary>
@@ -42,8 +43,38 @@ namespace TitanOrbit.UI
         /// <summary>Reused by GetWorldCorners so hover placement does not allocate every LateUpdate.</summary>
         static readonly Vector3[] s_WorldCorners = new Vector3[4];
 
+        /// <summary>World-name title on the hover card — same size the old single-line tip used.</summary>
+        const float PlanetNameFontSize = 11f;
+
+        /// <summary>Ship-family subtitle — smaller and lighter so the place name stays primary.</summary>
+        const float FamilyNameFontSize = 8f;
+
+        /// <summary>Weapon-type line under the family — smallest identity line on the card.</summary>
+        const float WeaponNameFontSize = 7.5f;
+
         /// <summary>
-        /// Tiny HUD card: dark glass fill, thin ice-blue rail, planet name only.
+        /// Home-capital stamp on the hover card. Smaller than the place name, larger and heavier
+        /// than the family line so it reads as a rank.
+        /// </summary>
+        const float HomeRoleFontSize = 9f;
+
+        /// <summary>Same uppercase stamp the world-space planet label uses.</summary>
+        const string HomePlanetRoleLabel = "HOME PLANET";
+
+        /// <summary>Horizontal padding inside the card (left + right each).</summary>
+        const float CardPadX = 8f;
+
+        /// <summary>Top padding under the ice-blue rail.</summary>
+        const float CardPadTop = 5f;
+
+        /// <summary>Bottom padding under the last subtitle (or the name when none are shown).</summary>
+        const float CardPadBottom = 4f;
+
+        /// <summary>Gap between stacked identity lines on the hover card.</summary>
+        const float LineGap = 1f;
+
+        /// <summary>
+        /// Tiny HUD card: dark glass fill, thin ice-blue rail, world name + smaller family subtitle.
         /// Kept smaller than the ship-stat calculation cards on purpose.
         /// </summary>
         struct TipChrome
@@ -51,6 +82,9 @@ namespace TitanOrbit.UI
             public GameObject Root;
             public RectTransform RootRect;
             public TextMeshProUGUI NameLabel;
+            public TextMeshProUGUI HomeRoleLabel;
+            public TextMeshProUGUI FamilyLabel;
+            public TextMeshProUGUI WeaponLabel;
             public Canvas HostCanvas;
         }
 
@@ -111,7 +145,7 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Enables pointer hits on an existing Graphic (edge-marker arrow) and binds the planet name.
+        /// Enables pointer hits on an existing Graphic (edge-marker arrow) and binds the planet.
         /// Edge markers live outside the circular mask, so we reuse their Image instead of adding a child.
         /// </summary>
         /// <param name="markerRoot">Edge-marker GameObject with an Image.</param>
@@ -126,8 +160,8 @@ namespace TitanOrbit.UI
             if (img == null)
                 return;
 
-            // [TITAN-ORBIT] Marker clicks still go through HandleMinimapClicks (Input System),
-            // not EventSystem, so enabling raycast here does not block attack/defend placement.
+            // [TITAN-ORBIT] Death-picker / comms Here clicks go through HandleMinimapClicks
+            // (Input System), not EventSystem, so enabling raycast here does not steal those hits.
             img.raycastTarget = true;
 
             var tip = markerRoot.GetComponent<MinimapPlanetHoverTip>();
@@ -147,11 +181,14 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// [UNITY] EventSystem hover enter. Builds the shared tip if needed, writes the name, and shows it.
+        /// [UNITY] EventSystem hover enter. Builds the shared tip if needed, writes the world name
+        /// plus home stamp / family / weapon subtitles, and shows the card.
         /// </summary>
         public void OnPointerEnter(PointerEventData eventData)
         {
-            // --- Resolve name ---
+            // --- Resolve names ---
+            // Planet name is required — no card without a place name. Family can be blank
+            // (missing catalog row) and the subtitle simply hides.
             string planetName = ResolvePlanetName(_anchor);
             if (string.IsNullOrWhiteSpace(planetName))
                 return;
@@ -162,6 +199,7 @@ namespace TitanOrbit.UI
 
             s_Active = this;
             s_Chrome.NameLabel.text = planetName;
+            ApplyIdentityLines(_anchor);
             s_Chrome.Root.SetActive(true);
             FitToText();
             PlaceBesideHoveredPlanet();
@@ -207,7 +245,7 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Same name the world-space planet label shows: designer <c>familyName</c>, else camel-split familyId.
+        /// Same proper world name the world-space planet label shows (not the ship family).
         /// </summary>
         /// <param name="anchor">Planet blip anchor (null-safe).</param>
         /// <returns>Display name, or empty when config / family is missing.</returns>
@@ -220,12 +258,116 @@ namespace TitanOrbit.UI
             if (config == null)
                 return string.Empty;
 
-            // [TITAN-ORBIT] Homes always resolve to AstroEagle (config index 0). Neutrals use the
-            // ghosted ShipFamilyConfigIndex rolled at spawn — do not key only on PlanetId.
+            // [TITAN-ORBIT] Homes name by team id (Helios, Thalassa, …). Neutrals name by
+            // PlanetId (100+). Family index only matters if the designer filled planetName.
             return config.GetPlanetDisplayName(
                 anchor.PlanetId,
                 anchor.IsHomePlanet,
                 anchor.ShipFamilyConfigIndex);
+        }
+
+        /// <summary>
+        /// Ship-tree label for this planet (Astro Eagle, Cosmic Shark, …).
+        /// Same catalog string hulls and the upgrade tree use — not the gun-type subtitle
+        /// the world label shows under the place name.
+        /// </summary>
+        /// <param name="anchor">Planet blip anchor (null-safe).</param>
+        /// <returns>Family display name, or empty when the catalog row is missing.</returns>
+        static string ResolveFamilyName(MinimapBlipAnchor anchor)
+        {
+            if (anchor == null)
+                return string.Empty;
+
+            PlanetShipFamilyConfig config = GetFamilyConfig();
+            if (config == null)
+                return string.Empty;
+
+            // [TITAN-ORBIT] Homes always resolve to the home family (index 0 / Astro Eagle).
+            // Neutrals use the ghosted ShipFamilyConfigIndex written by MinimapEcsEntitySync.
+            return config.GetFamilyDisplayName(
+                anchor.PlanetId,
+                anchor.IsHomePlanet,
+                anchor.ShipFamilyConfigIndex);
+        }
+
+        /// <summary>
+        /// Weapon-type label for this planet (Fireballs, Rift, …).
+        /// Same catalog string the world-space planet and moon labels show under the family.
+        /// </summary>
+        static string ResolveWeaponName(MinimapBlipAnchor anchor)
+        {
+            if (anchor == null)
+                return string.Empty;
+
+            PlanetShipFamilyConfig config = GetFamilyConfig();
+            if (config == null)
+                return string.Empty;
+
+            return config.GetPlanetBulletTypeName(
+                anchor.PlanetId,
+                anchor.IsHomePlanet,
+                anchor.ShipFamilyConfigIndex,
+                anchor.BulletBankIndex);
+        }
+
+        /// <summary>
+        /// Writes the identity stack under the world name: HOME PLANET on capitals,
+        /// then family and weapon on every planet.
+        /// </summary>
+        /// <param name="anchor">Hovered planet blip (null-safe).</param>
+        static void ApplyIdentityLines(MinimapBlipAnchor anchor)
+        {
+            bool isHome = anchor != null && anchor.IsHomePlanet;
+            ApplyLine(
+                s_Chrome.HomeRoleLabel,
+                isHome ? HomePlanetRoleLabel : string.Empty,
+                HomeRoleFontSize,
+                FontStyles.Bold,
+                FontWeight.Black,
+                1.6f,
+                new Color(0.88f, 0.92f, 0.98f, 1f));
+            ApplyLine(
+                s_Chrome.FamilyLabel,
+                ResolveFamilyName(anchor),
+                FamilyNameFontSize,
+                FontStyles.Bold,
+                FontWeight.Regular,
+                0f,
+                new Color(0.72f, 0.84f, 0.96f, 0.92f));
+            ApplyLine(
+                s_Chrome.WeaponLabel,
+                ResolveWeaponName(anchor),
+                WeaponNameFontSize,
+                FontStyles.Bold,
+                FontWeight.Regular,
+                0f,
+                new Color(0.62f, 0.78f, 0.95f, 0.82f));
+        }
+
+        /// <summary>Shows or hides one hover-card line and applies its type style.</summary>
+        static void ApplyLine(
+            TextMeshProUGUI label,
+            string text,
+            float fontSize,
+            FontStyles style,
+            FontWeight weight,
+            float tracking,
+            Color color)
+        {
+            if (label == null)
+                return;
+
+            bool show = !string.IsNullOrWhiteSpace(text);
+            label.gameObject.SetActive(show);
+            if (!show)
+                return;
+
+            label.text = text;
+            label.fontSize = fontSize;
+            label.fontStyle = style;
+            label.fontWeight = weight;
+            label.characterSpacing = tracking;
+            label.color = color;
         }
 
         /// <summary>Loads <c>Resources/PlanetShipFamilyConfig</c> once.</summary>
@@ -242,15 +384,27 @@ namespace TitanOrbit.UI
         /// <summary>
         /// Builds the shared card under the minimap root (outside the circular Mask) so the
         /// name is not clipped and is not faded when the expanded map hides sibling HUD.
+        /// Rebuilds if this session still has the older name-only card from a domain reload.
         /// </summary>
         void EnsureChrome()
         {
             if (s_Chrome.Root != null)
             {
-                // Hot-reload: keep the sit-on-top pivot even if this card was built with the old (0,0) pivot.
-                if (s_Chrome.RootRect != null)
-                    s_Chrome.RootRect.pivot = new Vector2(0.5f, 0f);
-                return;
+                // --- Reuse current identity card ---
+                if (s_Chrome.FamilyLabel != null &&
+                    s_Chrome.HomeRoleLabel != null &&
+                    s_Chrome.WeaponLabel != null)
+                {
+                    // Hot-reload: keep the sit-on-top pivot even if this card was built with the old (0,0) pivot.
+                    if (s_Chrome.RootRect != null)
+                        s_Chrome.RootRect.pivot = new Vector2(0.5f, 0f);
+                    return;
+                }
+
+                // --- Stale name-only chrome ---
+                // [UNITY] Destroy the leftover GameObject so we do not leak a second tooltip.
+                Destroy(s_Chrome.Root);
+                s_Chrome = default;
             }
 
             // --- Host: minimap root, not canvas ---
@@ -268,7 +422,7 @@ namespace TitanOrbit.UI
             rootRt.anchorMax = new Vector2(0.5f, 0.5f);
             // Bottom-centre: the card sits on the planet's top, not under the cursor.
             rootRt.pivot = new Vector2(0.5f, 0f);
-            rootRt.sizeDelta = new Vector2(80f, 22f);
+            rootRt.sizeDelta = new Vector2(80f, 28f);
 
             // [TITAN-ORBIT] Same void glass as ShipStatTooltipChrome — small nameplate, not a calc card.
             Image fill = root.AddComponent<Image>();
@@ -287,22 +441,32 @@ namespace TitanOrbit.UI
             accent.color = new Color(0.35f, 0.72f, 0.95f, 0.95f);
             accent.raycastTarget = false;
 
-            var textGo = new GameObject("Name", typeof(RectTransform));
-            textGo.transform.SetParent(root.transform, false);
-            var textRt = textGo.GetComponent<RectTransform>();
-            textRt.anchorMin = Vector2.zero;
-            textRt.anchorMax = Vector2.one;
-            textRt.offsetMin = new Vector2(8f, 3f);
-            textRt.offsetMax = new Vector2(-8f, -5f);
-            var label = textGo.AddComponent<TextMeshProUGUI>();
-            label.fontSize = 11f;
-            label.fontStyle = FontStyles.Bold;
-            label.alignment = TextAlignmentOptions.MidlineLeft;
-            label.color = new Color(0.88f, 0.92f, 0.98f, 1f);
-            label.raycastTarget = false;
-            label.enableWordWrapping = false;
-            label.overflowMode = TextOverflowModes.Overflow;
-            ApplyHudFont(label);
+            // --- Identity stack: place name, optional HOME PLANET, family, weapon ---
+            // Labels hang from the top so FitToText can grow the card downward.
+            TextMeshProUGUI nameLabel = CreateLineLabel(
+                "Name",
+                root.transform,
+                PlanetNameFontSize,
+                FontStyles.Bold,
+                new Color(0.88f, 0.92f, 0.98f, 1f));
+            TextMeshProUGUI homeRoleLabel = CreateLineLabel(
+                "HomeRole",
+                root.transform,
+                HomeRoleFontSize,
+                FontStyles.Bold,
+                new Color(0.88f, 0.92f, 0.98f, 1f));
+            TextMeshProUGUI familyLabel = CreateLineLabel(
+                "Family",
+                root.transform,
+                FamilyNameFontSize,
+                FontStyles.Bold,
+                new Color(0.72f, 0.84f, 0.96f, 0.92f));
+            TextMeshProUGUI weaponLabel = CreateLineLabel(
+                "Weapon",
+                root.transform,
+                WeaponNameFontSize,
+                FontStyles.Bold,
+                new Color(0.62f, 0.78f, 0.95f, 0.82f));
 
             root.transform.SetAsLastSibling();
             root.SetActive(false);
@@ -311,9 +475,49 @@ namespace TitanOrbit.UI
             {
                 Root = root,
                 RootRect = rootRt,
-                NameLabel = label,
+                NameLabel = nameLabel,
+                HomeRoleLabel = homeRoleLabel,
+                FamilyLabel = familyLabel,
+                WeaponLabel = weaponLabel,
                 HostCanvas = canvas
             };
+        }
+
+        /// <summary>
+        /// Builds one left-aligned HUD line under the tooltip root.
+        /// Anchored to the top so the family line can sit under the world name without a layout group.
+        /// </summary>
+        /// <param name="objectName">Child name (Name / Family).</param>
+        /// <param name="parent">Tooltip root.</param>
+        /// <param name="fontSize">TMP point size.</param>
+        /// <param name="style">Bold for the place name, Normal for the family subtitle.</param>
+        /// <param name="color">Near-white title vs cooler caption blue.</param>
+        static TextMeshProUGUI CreateLineLabel(
+            string objectName,
+            Transform parent,
+            float fontSize,
+            FontStyles style,
+            Color color)
+        {
+            var go = new GameObject(objectName, typeof(RectTransform));
+            go.transform.SetParent(parent, false);
+            var rt = go.GetComponent<RectTransform>();
+            rt.anchorMin = new Vector2(0f, 1f);
+            rt.anchorMax = new Vector2(1f, 1f);
+            rt.pivot = new Vector2(0.5f, 1f);
+            rt.anchoredPosition = Vector2.zero;
+            rt.sizeDelta = new Vector2(-(CardPadX * 2f), fontSize + 4f);
+
+            var label = go.AddComponent<TextMeshProUGUI>();
+            label.fontSize = fontSize;
+            label.fontStyle = style;
+            label.alignment = TextAlignmentOptions.MidlineLeft;
+            label.color = color;
+            label.raycastTarget = false;
+            label.enableWordWrapping = false;
+            label.overflowMode = TextOverflowModes.Overflow;
+            ApplyHudFont(label);
+            return label;
         }
 
         /// <summary>Prefers Shift Rajdhani so the tip matches other HUD chrome.</summary>
@@ -329,17 +533,90 @@ namespace TitanOrbit.UI
                 tmp.font = TMP_Settings.defaultFontAsset;
         }
 
-        /// <summary>Shrinks or grows the card to the current planet name plus padding.</summary>
+        /// <summary>
+        /// Shrinks or grows the card to the world name plus any visible identity lines.
+        /// Parks each line from the top: name, HOME PLANET, family, weapon.
+        /// </summary>
         static void FitToText()
         {
             if (s_Chrome.NameLabel == null || s_Chrome.RootRect == null)
                 return;
 
-            s_Chrome.NameLabel.ForceMeshUpdate();
-            Vector2 preferred = s_Chrome.NameLabel.GetPreferredValues(s_Chrome.NameLabel.text);
-            float width = Mathf.Clamp(preferred.x + 16f, 48f, 220f);
-            float height = Mathf.Max(20f, preferred.y + 10f);
+            // --- Measure visible lines ---
+            Vector2 namePref = MeasureLine(s_Chrome.NameLabel);
+            bool showHome = IsShown(s_Chrome.HomeRoleLabel);
+            bool showFamily = IsShown(s_Chrome.FamilyLabel);
+            bool showWeapon = IsShown(s_Chrome.WeaponLabel);
+            Vector2 homePref = showHome ? MeasureLine(s_Chrome.HomeRoleLabel) : Vector2.zero;
+            Vector2 familyPref = showFamily ? MeasureLine(s_Chrome.FamilyLabel) : Vector2.zero;
+            Vector2 weaponPref = showWeapon ? MeasureLine(s_Chrome.WeaponLabel) : Vector2.zero;
+
+            float textWidth = namePref.x;
+            if (showHome)
+                textWidth = Mathf.Max(textWidth, homePref.x);
+            if (showFamily)
+                textWidth = Mathf.Max(textWidth, familyPref.x);
+            if (showWeapon)
+                textWidth = Mathf.Max(textWidth, weaponPref.x);
+
+            int extraLines = (showHome ? 1 : 0) + (showFamily ? 1 : 0) + (showWeapon ? 1 : 0);
+            float gaps = extraLines * LineGap;
+            float extraHeight = homePref.y + familyPref.y + weaponPref.y;
+            float width = Mathf.Clamp(textWidth + (CardPadX * 2f), 48f, 220f);
+            float height = Mathf.Max(20f, CardPadTop + namePref.y + gaps + extraHeight + CardPadBottom);
             s_Chrome.RootRect.sizeDelta = new Vector2(width, height);
+
+            // --- Park lines from the top ---
+            float lineWidth = -(CardPadX * 2f);
+            float y = -CardPadTop;
+            PlaceLine(s_Chrome.NameLabel.rectTransform, y, namePref.y, lineWidth);
+            y -= namePref.y;
+            if (showHome)
+            {
+                y -= LineGap;
+                PlaceLine(s_Chrome.HomeRoleLabel.rectTransform, y, homePref.y, lineWidth);
+                y -= homePref.y;
+            }
+
+            if (showFamily)
+            {
+                y -= LineGap;
+                PlaceLine(s_Chrome.FamilyLabel.rectTransform, y, familyPref.y, lineWidth);
+                y -= familyPref.y;
+            }
+
+            if (showWeapon)
+            {
+                y -= LineGap;
+                PlaceLine(s_Chrome.WeaponLabel.rectTransform, y, weaponPref.y, lineWidth);
+            }
+        }
+
+        /// <summary>True when this hover-card line exists and is currently shown.</summary>
+        static bool IsShown(TextMeshProUGUI label) =>
+            label != null && label.gameObject.activeSelf;
+
+        /// <summary>Preferred size for one hover-card TMP after a mesh update.</summary>
+        static Vector2 MeasureLine(TextMeshProUGUI label)
+        {
+            label.ForceMeshUpdate();
+            return label.GetPreferredValues(label.text);
+        }
+
+        /// <summary>
+        /// Sets one top-anchored line's local Y and height inside the card.
+        /// </summary>
+        /// <param name="rt">Name or Family RectTransform.</param>
+        /// <param name="anchoredY">Negative offset from the card top (under the rail).</param>
+        /// <param name="height">Preferred TMP height for this line.</param>
+        /// <param name="widthDelta">Negative width inset so left/right padding stays even.</param>
+        static void PlaceLine(RectTransform rt, float anchoredY, float height, float widthDelta)
+        {
+            if (rt == null)
+                return;
+
+            rt.anchoredPosition = new Vector2(0f, anchoredY);
+            rt.sizeDelta = new Vector2(widthDelta, Mathf.Max(8f, height));
         }
 
         /// <summary>

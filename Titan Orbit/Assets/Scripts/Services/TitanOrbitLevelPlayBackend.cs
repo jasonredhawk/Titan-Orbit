@@ -87,7 +87,9 @@ namespace TitanOrbit.Services
                     IsInitialized = true;
                     s_rewarded = new LevelPlayRewardedAd(s_adUnitId);
                     s_rewarded.OnAdRewarded += (_, _) => Finish(TitanOrbitRewardedAdResult.Completed);
-                    s_rewarded.OnAdDisplayFailed += _ => Finish(TitanOrbitRewardedAdResult.Failed);
+                    // Display failure is "try again", not a deliberate close. Death UI
+                    // treats Failed as "player declined" and opens the planet picker.
+                    s_rewarded.OnAdDisplayFailed += _ => Finish(TitanOrbitRewardedAdResult.Unavailable);
                     s_rewarded.OnAdClosed += _ =>
                     {
                         // Closed without OnAdRewarded — treat as fail if still waiting.

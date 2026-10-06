@@ -179,7 +179,7 @@ namespace TitanOrbit.ECS
                     continue;
                 }
 
-                if (lifetime <= 0f || traveled >= math.max(0.5f, req.MaxDistance))
+                if (lifetime <= 0f || BulletFlight.IsRangeExpired(traveled, req.MaxDistance))
                 {
                     Results[i] = new CosmeticSweepResult
                     {
@@ -434,11 +434,12 @@ namespace TitanOrbit.ECS
             switch (filter)
             {
                 case BulletDamageFilter.AsteroidsOnly:
-                    return kind == KindAsteroid;
+                    return kind == KindAsteroid || kind == KindDrone;
                 case BulletDamageFilter.ShipsOnly:
                     return kind == KindShip || kind == KindDrone || kind == KindDefense;
                 case BulletDamageFilter.ShipsAndTransports:
-                    return kind == KindShip || kind == KindTransport || kind == KindAsteroid;
+                    return kind == KindShip || kind == KindTransport || kind == KindAsteroid ||
+                           kind == KindDrone;
                 default:
                     return true;
             }

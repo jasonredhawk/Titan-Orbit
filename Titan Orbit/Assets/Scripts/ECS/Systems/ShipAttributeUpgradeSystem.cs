@@ -5,10 +5,10 @@ using Unity.NetCode;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Server RPC handler for bottom-bar ship attribute gem upgrades. Processes
-    /// PurchaseAttributeUpgradeCommand entities created when the client calls
-    /// MoonOrbitRpcClient.PurchaseAttributeUpgrade. Resolves sender NetworkId from
-    /// ReceiveRpcCommandRequest, delegates to ShipAttributeUpgradeLogic, then destroys the RPC entity.
+    /// Server RPC handler for bottom-bar ship attribute gem upgrades and hold-to-reset.
+    /// Processes PurchaseAttributeUpgradeCommand and ResetAttributeUpgradeCommand entities
+    /// from MoonOrbitRpcClient. Resolves sender NetworkId from ReceiveRpcCommandRequest,
+    /// delegates to ShipAttributeUpgradeLogic, then destroys the RPC entity.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
@@ -26,6 +26,19 @@ namespace TitanOrbit.ECS
             {
                 int networkId = GetSenderNetworkId(state.EntityManager, req.ValueRO.SourceConnection);
                 ShipAttributeUpgradeLogic.TryPurchaseForNetworkId(
+                    state.EntityManager,
+                    networkId,
+                    cmd.ValueRO.AttributeIndex,
+                    out _);
+                ecb.DestroyEntity(entity);
+            }
+
+            foreach (var (cmd, req, entity) in SystemAPI
+                         .Query<RefRO<ResetAttributeUpgradeCommand>, RefRO<ReceiveRpcCommandRequest>>()
+                         .WithEntityAccess())
+            {
+                int networkId = GetSenderNetworkId(state.EntityManager, req.ValueRO.SourceConnection);
+                ShipAttributeUpgradeLogic.TryResetForNetworkId(
                     state.EntityManager,
                     networkId,
                     cmd.ValueRO.AttributeIndex,

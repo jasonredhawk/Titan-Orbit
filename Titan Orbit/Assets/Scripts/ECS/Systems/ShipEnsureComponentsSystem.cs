@@ -73,7 +73,7 @@ namespace TitanOrbit.ECS
                 {
                     HealthRegenPerSecond = 6f,
                     EnergyRegenPerSecond = 5f,
-                    HealthRegenDelayAfterDamage = 0.35f,
+                    HealthRegenDelayAfterDamage = ShipVitalsSettingsCache.HealthRegenDelayAfterDamage,
                 });
             }
 
@@ -85,7 +85,14 @@ namespace TitanOrbit.ECS
             foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
                          .WithNone<ShipWeaponState>()
                          .WithEntityAccess())
-                ecb.AddComponent(entity, new ShipWeaponState());
+                ecb.AddComponent(entity, new ShipWeaponState { LastFiredMountIndex = -1 });
+
+            // [NETCODE] Prefer baking ShipWeaponArmState. Runtime add covers older
+            // SubScenes; GhostFields will not replicate until the ship ghost is rebaked.
+            foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
+                         .WithNone<ShipWeaponArmState>()
+                         .WithEntityAccess())
+                ecb.AddComponent(entity, ShipWeaponArmState.AllOn);
 
             // --- Weapon mounts and wing tractor beams (DynamicBuffer for multi-mount ships) ---
             // [TITAN-ORBIT] Empty mount buffer = intentional unarmed ship — never inject a fake muzzle.
@@ -93,6 +100,9 @@ namespace TitanOrbit.ECS
             {
                 if (!state.EntityManager.HasBuffer<ShipWeaponMountElement>(entity))
                     ecb.AddBuffer<ShipWeaponMountElement>(entity);
+
+                if (!state.EntityManager.HasBuffer<ShipWeaponReadyElement>(entity))
+                    ecb.AddBuffer<ShipWeaponReadyElement>(entity);
 
                 if (!state.EntityManager.HasBuffer<ShipWingTractorBeamElement>(entity))
                     ecb.AddBuffer<ShipWingTractorBeamElement>(entity);

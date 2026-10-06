@@ -24,7 +24,77 @@ namespace TitanOrbit.Editor
             (MegaShipVisualFamily.GalacticOkamoto, "GalacticOkamoto (Mega)"),
         };
 
-        /// <summary>Creates or refreshes the MEGA catalog from the three visual-family folders.</summary>
+        /// <summary>
+        /// Appends MEGA prefabs that are not already in the hull pool, then refreshes
+        /// unique components (keeps hand-edited stats) and every hull's summed stats.
+        /// Existing <c>catalogIndex</c> values stay put so <c>MEGA_###</c> ids do not shift.
+        /// </summary>
+        [MenuItem("Titan Orbit/Titan Ships/Refresh Hull Pool From Folders")]
+        public static void RefreshHullPoolFromFolders()
+        {
+            var catalog = LoadOrCreateCatalog();
+            if (catalog.weaponBulletStats.firePower <= 0.01f
+                && catalog.hullStats.healthCap <= 0.01f)
+            {
+                catalog.ApplyDefaultStaticStats();
+            }
+
+            Undo.RecordObject(catalog, "Refresh MEGA Hull Pool From Folders");
+
+            var knownPaths = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
+            for (int i = 0; i < catalog.entries.Count; i++)
+            {
+                MegaShipCatalogEntry existing = catalog.entries[i];
+                if (existing?.prefab == null)
+                    continue;
+                string path = AssetDatabase.GetAssetPath(existing.prefab);
+                if (!string.IsNullOrEmpty(path))
+                    knownPaths.Add(path);
+            }
+
+            int added = 0;
+            ushort nextIndex = (ushort)catalog.entries.Count;
+
+            for (int f = 0; f < VisualFolders.Length; f++)
+            {
+                List<string> paths = FindPrefabPathsInFolder(VisualFolders[f].folder);
+                for (int i = 0; i < paths.Count; i++)
+                {
+                    if (knownPaths.Contains(paths[i]))
+                        continue;
+
+                    var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(paths[i]);
+                    if (prefab == null)
+                        continue;
+
+                    catalog.entries.Add(new MegaShipCatalogEntry
+                    {
+                        catalogIndex = nextIndex,
+                        visualFamily = VisualFolders[f].family,
+                        displayName = prefab.name,
+                        prefab = prefab,
+                        teamMenuPreviewSprites = new List<ShipFamilyTeamMenuPreview>(),
+                    });
+                    knownPaths.Add(paths[i]);
+                    nextIndex++;
+                    added++;
+                }
+            }
+
+            int components = MegaShipComponentInventory.RefreshAll(catalog, keepManualStats: true);
+            EditorUtility.SetDirty(catalog);
+            AssetDatabase.SaveAssets();
+            MegaShipCatalog.InvalidateCache();
+            Debug.Log(
+                $"[MegaShipCatalog] Hull pool now {catalog.entries.Count} MEGA hulls " +
+                $"(+{added} new). Unique components={components}.");
+        }
+
+        /// <summary>
+        /// Recreates the hull list from the three visual-family folders (sorted paths,
+        /// re-indexed). Preview sprites and display names are kept. Unique-component
+        /// rows are reset from the type table — use Refresh Hull Pool to keep hand-edits.
+        /// </summary>
         [MenuItem("Titan Orbit/Titan Ships/Rebuild Catalog From Folders")]
         public static void RebuildCatalogFromFolders()
         {
@@ -60,13 +130,7 @@ namespace TitanOrbit.Editor
 
             for (int f = 0; f < VisualFolders.Length; f++)
             {
-                string folder = Path.Combine(MegaRoot, VisualFolders[f].folder).Replace('\\', '/');
-                string[] guids = AssetDatabase.FindAssets("t:Prefab", new[] { folder });
-                var paths = new List<string>(guids.Length);
-                for (int i = 0; i < guids.Length; i++)
-                    paths.Add(AssetDatabase.GUIDToAssetPath(guids[i]));
-                paths.Sort(System.StringComparer.OrdinalIgnoreCase);
-
+                List<string> paths = FindPrefabPathsInFolder(VisualFolders[f].folder);
                 for (int i = 0; i < paths.Count; i++)
                 {
                     var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(paths[i]);
@@ -214,6 +278,17 @@ namespace TitanOrbit.Editor
             EditorUtility.SetDirty(visual);
             AssetDatabase.SaveAssets();
             Debug.Log($"[MegaShipCatalog] Baked {baked} MEGA visual entries.");
+        }
+
+        static List<string> FindPrefabPathsInFolder(string familyFolder)
+        {
+            string folder = Path.Combine(MegaRoot, familyFolder).Replace('\\', '/');
+            string[] guids = AssetDatabase.FindAssets("t:Prefab", new[] { folder });
+            var paths = new List<string>(guids.Length);
+            for (int i = 0; i < guids.Length; i++)
+                paths.Add(AssetDatabase.GUIDToAssetPath(guids[i]));
+            paths.Sort(System.StringComparer.OrdinalIgnoreCase);
+            return paths;
         }
 
         static MegaShipCatalog LoadOrCreateCatalog()

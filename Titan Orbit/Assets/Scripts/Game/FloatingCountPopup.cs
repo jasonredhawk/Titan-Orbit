@@ -28,6 +28,16 @@ namespace TitanOrbit.Game
         const float FadeInDuration = 0.08f;
         const float FadeRiseSpeed = 1.15f;
 
+        /// <summary>Gap past the hull edge so ship numbers sit aft of the nose.</summary>
+        const float ShipAftPad = 0.85f;
+
+        /// <summary>
+        /// Low play-plane height. A tall world-Y lift pulls top-down text back over the hull.
+        /// </summary>
+        const float LocalShipPopupHeight = 0.4f;
+        const float LocalShipTextClearanceMin = 0.45f;
+        const float LocalShipTextClearanceMax = 2.4f;
+
         enum Phase
         {
             Hot = 0,
@@ -58,6 +68,7 @@ namespace TitanOrbit.Game
         Vector3 _worldOffset;
         float _hotAge;
         float _fontSize = 32f;
+        float _baseIconScale = 2f;
         float _textLeft;
         float _textRight;
         float _bodyRadius;
@@ -117,9 +128,11 @@ namespace TitanOrbit.Game
             int stackLane,
             float stackSpacing,
             float bodyRadius = 0f,
-            bool clearShipHull = false)
+            bool clearShipHull = false,
+            float magnitude = 1f)
         {
             ApplySettings(settings);
+            ApplyMagnitudeScale(magnitude);
             _hasLockedWorldPos = false;
             _cachedTargetHeight = 0f;
             _cachedHullLift = 0f;
@@ -191,9 +204,11 @@ namespace TitanOrbit.Game
             Sprite iconSprite = null,
             float bodyRadius = -1f,
             bool clearShipHull = false,
-            bool replayPop = true)
+            bool replayPop = true,
+            float magnitude = -1f)
         {
             _clearShipHull = clearShipHull;
+            bool fontChanged = magnitude >= 0f && ApplyMagnitudeScale(magnitude);
             SetFollow(followAnchor, followWorldOffset, stackLane, stackSpacing, bodyRadius);
             worldMotionOffset = Vector3.zero;
             _phase = Phase.Hot;
@@ -208,7 +223,7 @@ namespace TitanOrbit.Game
                 _popScaleSettled = false;
             }
 
-            ApplyMessageIfChanged(message, forceMesh: true);
+            ApplyMessageIfChanged(message, forceMesh: fontChanged);
 
             if (iconSprite != null)
                 ApplyIcon(iconSprite, 1f);
@@ -240,7 +255,8 @@ namespace TitanOrbit.Game
                 return;
 
             _fontSize = settings.FontSize;
-            _iconScale = settings.IconScale;
+            _baseIconScale = settings.IconScale;
+            _iconScale = _baseIconScale;
             _iconLeftPadding = settings.IconLeftPadding;
             _extraHeight = settings.ExtraHeight;
             _shipExtraHeight = settings.ShipExtraHeight;
@@ -361,6 +377,51 @@ namespace TitanOrbit.Game
             fadeDuration = Mathf.Max(0.08f, duration);
         }
 
+        /// <summary>
+        /// Grows the TMP point size (and matching icon) with the live shown amount.
+        /// Returns true when the font size changed and the mesh bounds need a rebuild.
+        /// </summary>
+        bool ApplyMagnitudeScale(float magnitude)
+        {
+            magnitude = Mathf.Max(0f, magnitude);
+            var settings = WorldFloatingCountManager.Instance != null
+                ? WorldFloatingCountManager.Instance.Settings
+                : null;
+
+            float nextFont = settings != null ? settings.ResolveFontSize(magnitude) : Mathf.Max(1f, _fontSize);
+            float nextIcon = settings != null ? settings.ResolveIconScale(nextFont) : _baseIconScale;
+            bool fontChanged = Mathf.Abs(nextFont - _fontSize) > 0.05f;
+            if (tmpText != null)
+                fontChanged |= Mathf.Abs(tmpText.fontSize - nextFont) > 0.05f;
+            bool iconChanged = Mathf.Abs(nextIcon - _iconScale) > 0.001f;
+
+            _fontSize = nextFont;
+            _iconScale = nextIcon;
+
+            if (tmpText != null && fontChanged)
+            {
+                tmpText.fontSize = _fontSize;
+                _layoutDirty = true;
+            }
+
+            if (iconChanged)
+            {
+                _layoutDirty = true;
+                _popScaleSettled = false;
+                ApplySettledIconScale();
+            }
+
+            return fontChanged || iconChanged;
+        }
+
+        /// <summary>Writes the magnitude icon size when the pop bounce is not running.</summary>
+        void ApplySettledIconScale()
+        {
+            if (iconRenderer == null || !iconRenderer.enabled || _popElapsed < PopDuration)
+                return;
+            iconRenderer.transform.localScale = Vector3.one * _iconScale;
+        }
+
         void ApplyMessage(string message, TMP_FontAsset font, float fontSize)
         {
             if (font != null)
@@ -376,7 +437,7 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Skip TMP assign + ForceMeshUpdate when the visible string did not change.
+        /// Skip TMP assign + ForceMeshUpdate when the visible string and font size did not change.
         /// [TITAN-ORBIT] Profiler: heal / remaining-HP ticks rebuilt the mesh on every +N.
         /// </summary>
         void ApplyMessageIfChanged(string message, bool forceMesh)
@@ -385,13 +446,18 @@ namespace TitanOrbit.Game
                 return;
 
             string next = message ?? string.Empty;
-            if (string.Equals(next, _cachedMessage, StringComparison.Ordinal))
+            bool textChanged = !string.Equals(next, _cachedMessage, StringComparison.Ordinal);
+            if (!textChanged && !forceMesh)
                 return;
 
-            _cachedMessage = next;
-            tmpText.text = next;
-            tmpText.alignment = TextAlignmentOptions.Left;
-            if (forceMesh)
+            if (textChanged)
+            {
+                _cachedMessage = next;
+                tmpText.text = next;
+                tmpText.alignment = TextAlignmentOptions.Left;
+            }
+
+            if (textChanged || forceMesh)
                 tmpText.ForceMeshUpdate();
             CacheTextLeft();
             _layoutDirty = true;
@@ -497,7 +563,11 @@ namespace TitanOrbit.Game
             if (text == null)
                 return;
 
+            Material sharedBefore = text.fontSharedMaterial;
             Material mat = text.fontMaterial;
+            // #region agent log
+            TitanOrbit.MaterialCloneProbe.NoteFontMaterial(sharedBefore, mat);
+            // #endregion
             if (mat == null)
                 return;
 
@@ -584,7 +654,12 @@ namespace TitanOrbit.Game
                 transform.rotation = Quaternion.LookRotation(cam.transform.forward, cam.transform.up);
 
             if (_phase == Phase.Fading)
-                worldMotionOffset += GetRiseDirectionOnPlayPlane(cam) * FadeRiseSpeed * Time.deltaTime;
+            {
+                Vector3 drift = _clearShipHull && IsUsableAnchor(followAnchor)
+                    ? ResolveShipAftDirection(followAnchor)
+                    : GetRiseDirectionOnPlayPlane(cam);
+                worldMotionOffset += drift * FadeRiseSpeed * Time.deltaTime;
+            }
 
             ApplyZoomScale();
 
@@ -628,16 +703,109 @@ namespace TitanOrbit.Game
                 _cachedCamera = Camera.main;
 
             Vector3 pos = followAnchor.position + followWorldOffset + _worldOffset;
+            bool parkAft = TryGetShipAftOffset(out Vector3 aftOffset, out Vector3 aftDir);
             if (stackLane > 0 && stackSpacing > 0.001f)
             {
                 float zoom = WorldFloatingCountManager.ResolveCameraZoomScale();
-                pos += GetRiseDirectionOnPlayPlane(_cachedCamera) * (stackLane * stackSpacing * zoom);
+                Vector3 stackDir = parkAft ? aftDir : GetRiseDirectionOnPlayPlane(_cachedCamera);
+                pos += stackDir * (stackLane * stackSpacing * zoom);
             }
 
             pos += worldMotionOffset;
-            pos.y = followAnchor.position.y + ResolveLiftY() + _worldOffset.y;
-            pos.y = LiftAboveLocalShipIfOverlapping(pos);
+
+            // [TITAN-ORBIT] Ship numbers sit aft of the nose on the play plane. A world-Y
+            // lift still lands on the mesh from the top-down camera, and a fixed screen
+            // side disappears into the asteroid the ship is grinding.
+            if (parkAft)
+            {
+                pos += aftOffset;
+                pos.y = followAnchor.position.y + LocalShipPopupHeight + _worldOffset.y;
+            }
+            else
+            {
+                pos.y = followAnchor.position.y + ResolveLiftY() + _worldOffset.y;
+                pos.y = LiftAboveLocalShipIfOverlapping(pos);
+            }
+
             transform.position = pos;
+        }
+
+        /// <summary>
+        /// Aft of the hull on the play plane, opposite <see cref="Transform.forward"/>.
+        /// False when this popup is not following a ship.
+        /// </summary>
+        bool TryGetShipAftOffset(out Vector3 offset, out Vector3 aftDir)
+        {
+            offset = Vector3.zero;
+            aftDir = Vector3.back;
+            if (!_clearShipHull || !IsUsableAnchor(followAnchor))
+                return false;
+
+            aftDir = ResolveShipAftDirection(followAnchor);
+
+            Vector3 center = followAnchor.position;
+            float radius = Mathf.Max(0.35f, _bodyRadius);
+            if (ShipWeaponProxyRegistry.TryGetCachedHullFootprint(
+                    followAnchor, out float xzRadius, out Vector3 localCenter))
+            {
+                Vector3 parked = followAnchor.TransformPoint(localCenter);
+                parked.y = followAnchor.position.y;
+                center = parked;
+                radius = Mathf.Max(radius, xzRadius);
+            }
+
+            float reach = radius + EstimateGroupExtentAlong(aftDir) + ShipAftPad;
+            offset = center - followAnchor.position;
+            offset.y = 0f;
+            offset += aftDir * reach;
+            return true;
+        }
+
+        /// <summary>Unit XZ direction opposite the hull nose. Falls back to screen-above.</summary>
+        Vector3 ResolveShipAftDirection(Transform hull)
+        {
+            Vector3 aft = Vector3.zero;
+            if (hull != null)
+            {
+                aft = -hull.forward;
+                aft.y = 0f;
+            }
+
+            if (aft.sqrMagnitude < 1e-6f)
+                return GetRiseDirectionOnPlayPlane(_cachedCamera);
+            return aft.normalized;
+        }
+
+        /// <summary>How far the billboard reaches back toward the ship along <paramref name="aftDir"/>.</summary>
+        float EstimateGroupExtentAlong(Vector3 aftDir)
+        {
+            float halfW = 0f;
+            float halfH = 0f;
+            if (tmpText != null)
+            {
+                Vector3 size = tmpText.textBounds.size;
+                halfW = Mathf.Max(0f, size.x) * 0.5f;
+                halfH = Mathf.Max(0f, size.y) * 0.5f;
+            }
+
+            if (iconRenderer != null && iconRenderer.enabled && iconRenderer.sprite != null)
+            {
+                Vector3 ext = iconRenderer.sprite.bounds.extents;
+                halfW += ext.x * _iconScale + _iconLeftPadding * 0.5f;
+                halfH = Mathf.Max(halfH, ext.y * _iconScale);
+            }
+
+            if (halfW < 0.01f && halfH < 0.01f)
+            {
+                float fallback = Mathf.Max(4f, _fontSize * 0.5f);
+                halfW = fallback;
+                halfH = fallback;
+            }
+
+            float scale = _baseWorldScale * Mathf.Max(0.01f, WorldFloatingCountManager.ResolveCameraZoomScale());
+            float along = Mathf.Abs(Vector3.Dot(aftDir, transform.right)) * halfW * scale
+                        + Mathf.Abs(Vector3.Dot(aftDir, transform.up)) * halfH * scale;
+            return Mathf.Clamp(along, LocalShipTextClearanceMin, LocalShipTextClearanceMax);
         }
 
         float LiftAboveLocalShipIfOverlapping(Vector3 worldPos)
@@ -669,7 +837,9 @@ namespace TitanOrbit.Game
         {
             if (_popElapsed >= PopDuration)
             {
-                if (_popScaleSettled)
+                bool iconNeedsScale = iconRenderer != null && iconRenderer.enabled &&
+                    Mathf.Abs(iconRenderer.transform.localScale.x - _iconScale) > 0.001f;
+                if (_popScaleSettled && !iconNeedsScale)
                     return;
                 _popScaleSettled = true;
                 if (tmpText != null)

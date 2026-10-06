@@ -70,6 +70,26 @@ namespace TitanOrbit.Game
                 out primaryTeam);
         }
 
+        /// <summary>
+        /// True when a <see cref="TeamId.None"/> result from <see cref="GetOwnershipAtPosition"/>
+        /// means the rock is really outside every triangle. False while map size is missing or
+        /// planet vertices are still unresolved — latching None in that window freezes rocks
+        /// gray after the fill appears, because graph revision does not change again.
+        /// </summary>
+        public static bool IsOwnershipAuthoritative()
+        {
+            if (!ToroidalMap.TryGetMapSize(out _, out _) &&
+                !ToroidalMapEcs.TryGetMapSize(out _, out _))
+                return false;
+
+            int published = PlanetConnectionGraphCache.CurrentTriangles?.Count ?? 0;
+            if (published <= 0)
+                return true;
+
+            EnsureFresh();
+            return s_Native.IsCreated && s_Native.Length >= published;
+        }
+
         /// <summary>Clears topology + Persistent native (leave session / domain reload).</summary>
         public static void Clear()
         {

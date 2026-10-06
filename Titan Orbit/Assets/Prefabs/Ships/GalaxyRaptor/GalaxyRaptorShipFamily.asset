@@ -72,7 +72,7 @@ MonoBehaviour:
     tractorDistanceMul: 1
     tractorPowerMul: 1
     cameraHeightMul: 1
-  bulletPrefabIndex: 16
+  bulletPrefabIndex: 0
   weaponFireMode: 0
   planetaryDefense: {fileID: 0}
   cameraFollowSettings: {fileID: 11400000, guid: 90d7e8197d9477d40bc1400865e6a4af, type: 2}
@@ -248,8 +248,8 @@ MonoBehaviour:
       bulletRangePerExtraLevel: 0
       fireRate: 0
       fireRatePerExtraLevel: 0
-      rammingPower: 1
-      rammingPowerPerExtraLevel: 0.25
+      rammingPower: 3
+      rammingPowerPerExtraLevel: 0.5
       healthCap: 6.3
       healthCapPerExtraLevel: 6.3
       healthRegen: 0.22500002
@@ -275,7 +275,7 @@ MonoBehaviour:
       tractorBeamPower: 0
       tractorBeamPowerPerExtraLevel: 0
       maxPeople: 10
-      maxPeoplePerExtraLevel: 5
+      maxPeoplePerExtraLevel: 2
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: 508b6a5b57399f04aa0b17f4fafb87f1, type: 3}
     theatricalMenuPreviewSprite: {fileID: 21300000, guid: 508b6a5b57399f04aa0b17f4fafb87f1, type: 3}
@@ -490,7 +490,7 @@ MonoBehaviour:
       energyRegen: 3
       energyRegenPerExtraLevel: 1
       moveSpeed: 6
-      moveSpeedPerExtraLevel: 0.2
+      moveSpeedPerExtraLevel: 0.1
       accelerationCap: 0
       accelerationCapPerExtraLevel: 0
       extraSpeedPercent: 0.25
@@ -1044,8 +1044,8 @@ MonoBehaviour:
       tractorBeamDistancePerExtraLevel: 0.75
       tractorBeamPower: 4
       tractorBeamPowerPerExtraLevel: 1
-      maxPeople: 5
-      maxPeoplePerExtraLevel: 2
+      maxPeople: 4
+      maxPeoplePerExtraLevel: 1
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: f7fa0653ba8b7494b98d6c4afe0ccf1d, type: 3}
     theatricalMenuPreviewSprite: {fileID: 21300000, guid: f7fa0653ba8b7494b98d6c4afe0ccf1d, type: 3}
@@ -1121,8 +1121,8 @@ MonoBehaviour:
       tractorBeamDistancePerExtraLevel: 1.5
       tractorBeamPower: 8
       tractorBeamPowerPerExtraLevel: 2
-      maxPeople: 8
-      maxPeoplePerExtraLevel: 3
+      maxPeople: 6
+      maxPeoplePerExtraLevel: 2
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: 15cda7b4d339a414ba38c3a7f05c7326, type: 3}
     theatricalMenuPreviewSprite: {fileID: 21300000, guid: 15cda7b4d339a414ba38c3a7f05c7326, type: 3}
@@ -1198,8 +1198,8 @@ MonoBehaviour:
       tractorBeamDistancePerExtraLevel: 2.25
       tractorBeamPower: 12
       tractorBeamPowerPerExtraLevel: 3
-      maxPeople: 11
-      maxPeoplePerExtraLevel: 4
+      maxPeople: 8
+      maxPeoplePerExtraLevel: 3
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: e049ef9d96047be438f4f2a668070a32, type: 3}
     theatricalMenuPreviewSprite: {fileID: 21300000, guid: e049ef9d96047be438f4f2a668070a32, type: 3}
@@ -1275,8 +1275,8 @@ MonoBehaviour:
       tractorBeamDistancePerExtraLevel: 3
       tractorBeamPower: 16
       tractorBeamPowerPerExtraLevel: 4
-      maxPeople: 14
-      maxPeoplePerExtraLevel: 5
+      maxPeople: 10
+      maxPeoplePerExtraLevel: 4
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: 851a422f2ac8a5049b201a8720e00429, type: 3}
     theatricalMenuPreviewSprite: {fileID: 21300000, guid: 851a422f2ac8a5049b201a8720e00429, type: 3}
@@ -1430,46 +1430,46 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 7df6dcce6414f5a4386bd780712d9722, type: 3}
     minHomePlanetLevel: 1
-    powerScore: 305.78293
-    powerScoreAtMaxLevel: 451.90155
+    powerScore: 297.17435
+    powerScoreAtMaxLevel: 436.09204
     powerScoreBreakdown:
-      offense: 47.05
+      offense: 49.49406
       defense: 101.14193
       energy: 91.13352
-      mobility: 22.8
-      capacity: 66.48984
-      firePower: 6.6
+      mobility: 22.6
+      capacity: 58.081257
+      firePower: 8.196375
       bulletSpeed: 10
-      fireRate: 7.2000003
+      fireRate: 5.797685
       sustainedDps: 23.76
-      rammingPower: 1.25
+      rammingPower: 3.5
       healthCap: 97.961365
       healthRegen: 3.1805637
       energyCap: 85.160995
       energyRegen: 5.972525
-      moveSpeed: 6.3999996
+      moveSpeed: 6.2
       turnSpeed: 14
       gemCap: 35.264084
-      peopleCap: 31.225758
+      peopleCap: 22.817173
     powerScoreBreakdownAtShipLevel:
-      offense: 49.62
+      offense: 52.633335
       defense: 179.43524
       energy: 123.98693
-      mobility: 23.2
-      capacity: 93.8647
-      firePower: 7.92
+      mobility: 22.8
+      capacity: 78.4552
+      firePower: 9.83565
       bulletSpeed: 11
-      fireRate: 7.2000003
+      fireRate: 5.797685
       sustainedDps: 28.512001
-      rammingPower: 1.5
+      rammingPower: 4
       healthCap: 173.79262
       healthRegen: 5.6426167
       energyCap: 115.6254
       energyRegen: 8.361534
-      moveSpeed: 6.8
+      moveSpeed: 6.3999996
       turnSpeed: 14
       gemCap: 48.451515
-      peopleCap: 45.41319
+      peopleCap: 30.003681
     componentMass: 17.713984
     lockedInUpgradeTree: 0
   - chassisId: GalaxyRaptor_02
@@ -1510,46 +1510,46 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 62646a7440e0b2b41b90c3bd51279a45, type: 3}
     minHomePlanetLevel: 2
-    powerScore: 365.4656
-    powerScoreAtMaxLevel: 894.4828
+    powerScore: 352.93665
+    powerScoreAtMaxLevel: 853.36707
     powerScoreBreakdown:
-      offense: 53.95
+      offense: 56.983955
       defense: 107.68955
       energy: 113.341095
-      mobility: 22.8
-      capacity: 95.315796
-      firePower: 9.9
+      mobility: 22.6
+      capacity: 82.98685
+      firePower: 7.983793
       bulletSpeed: 10
-      fireRate: 10.8
+      fireRate: 13.500163
       sustainedDps: 35.64
-      rammingPower: 1.25
+      rammingPower: 3.5
       healthCap: 104.303085
       healthRegen: 3.3864634
       energyCap: 108.13938
       energyRegen: 5.2017145
-      moveSpeed: 6.3999996
+      moveSpeed: 6.2
       turnSpeed: 14
       gemCap: 50.657898
-      peopleCap: 44.657898
+      peopleCap: 32.32895
     powerScoreBreakdownAtShipLevel:
-      offense: 64.64
+      offense: 67.27423
       defense: 354.31213
       energy: 233.1504
-      mobility: 24
-      capacity: 234.26318
-      firePower: 15.84
+      mobility: 23.2
+      capacity: 193.94739
+      firePower: 12.774069
       bulletSpeed: 12
-      fireRate: 10.8
+      fireRate: 13.500163
       sustainedDps: 57.024002
-      rammingPower: 2
+      rammingPower: 5
       healthCap: 343.17026
       healthRegen: 11.14189
       energyCap: 221.70663
       energyRegen: 11.443771
-      moveSpeed: 7.6000004
+      moveSpeed: 6.8
       turnSpeed: 14
       gemCap: 118.63159
-      peopleCap: 115.63159
+      peopleCap: 75.315796
     componentMass: 21.774118
     lockedInUpgradeTree: 0
   - chassisId: GalaxyRaptor_06
@@ -1590,46 +1590,46 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: ca8e2e05fb7bec6479e5e029b2f953ce, type: 3}
     minHomePlanetLevel: 2
-    powerScore: 316.80508
-    powerScoreAtMaxLevel: 771.50354
+    powerScore: 308.88553
+    powerScoreAtMaxLevel: 744.4449
     powerScoreBreakdown:
-      offense: 47.05
+      offense: 49.790997
       defense: 108.56334
       energy: 97.03835
-      mobility: 23
-      capacity: 62.41662
-      firePower: 6.6
+      mobility: 22.7
+      capacity: 54.79706
+      firePower: 9.02649
       bulletSpeed: 10
-      fireRate: 7.2000003
-      sustainedDps: 23.76
-      rammingPower: 1.25
+      fireRate: 5.264505
+      sustainedDps: 23.760002
+      rammingPower: 3.5
       healthCap: 105.1494
       healthRegen: 3.4139416
       energyCap: 90.116104
       energyRegen: 6.922252
-      moveSpeed: 6.5999994
+      moveSpeed: 6.2999997
       turnSpeed: 14
       gemCap: 33.55794
-      peopleCap: 28.858675
+      peopleCap: 21.239117
     powerScoreBreakdownAtShipLevel:
-      offense: 55.76
+      offense: 60.70689
       defense: 356.91107
       energy: 215.8034
-      mobility: 24.800001
-      capacity: 126.37309
-      firePower: 10.559999
+      mobility: 23.6
+      capacity: 100.51441
+      firePower: 14.442385
       bulletSpeed: 12
-      fireRate: 7.2000003
+      fireRate: 5.264505
       sustainedDps: 38.016003
-      rammingPower: 2
+      rammingPower: 5
       healthCap: 345.68744
       healthRegen: 11.223618
       energyCap: 198.4644
       energyRegen: 17.33901
-      moveSpeed: 8.400001
+      moveSpeed: 7.2000003
       turnSpeed: 14
       gemCap: 64.03618
-      peopleCap: 62.33691
+      peopleCap: 36.478233
     componentMass: 19.042362
     lockedInUpgradeTree: 0
   - chassisId: GalaxyRaptor_08
@@ -1670,46 +1670,46 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 410e0f272f0ff884cb4ecadf3f7820d2, type: 3}
     minHomePlanetLevel: 3
-    powerScore: 380.3536
-    powerScoreAtMaxLevel: 1452.6163
+    powerScore: 369.05896
+    powerScoreAtMaxLevel: 1394.8485
     powerScoreBreakdown:
-      offense: 47.05
+      offense: 49.3
       defense: 148.76431
       energy: 96.27215
-      mobility: 23
-      capacity: 86.73399
+      mobility: 22.7
+      capacity: 75.73935
       firePower: 6.6
       bulletSpeed: 10
       fireRate: 7.2000003
       sustainedDps: 23.76
-      rammingPower: 1.25
+      rammingPower: 3.5
       healthCap: 144.0862
       healthRegen: 4.678123
       energyCap: 89.47313
       energyRegen: 6.799016
-      moveSpeed: 6.5999994
+      moveSpeed: 6.2999997
       turnSpeed: 14
       gemCap: 45.337975
-      peopleCap: 41.396023
+      peopleCap: 30.401377
     powerScoreBreakdownAtShipLevel:
-      offense: 61.9
+      offense: 65.4
       defense: 776.90265
       energy: 277.93115
-      mobility: 26
-      capacity: 313.6625
+      mobility: 24.2
+      capacity: 257.6946
       firePower: 13.2
       bulletSpeed: 13
       fireRate: 7.2000003
       sustainedDps: 47.52
-      rammingPower: 2.5
+      rammingPower: 6
       healthCap: 752.47174
       healthRegen: 24.4309
       energyCap: 256.38977
       energyRegen: 21.541372
-      moveSpeed: 9.599999
+      moveSpeed: 7.7999997
       turnSpeed: 14
       gemCap: 156.25385
-      peopleCap: 157.40866
+      peopleCap: 101.440765
     componentMass: 27.392818
     lockedInUpgradeTree: 0
   - chassisId: GalaxyRaptor_03
@@ -1750,46 +1750,46 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 50ee9e334d540e048ab0eb0da90882c0, type: 3}
     minHomePlanetLevel: 3
-    powerScore: 392.43494
-    powerScoreAtMaxLevel: 1274.3197
+    powerScore: 381.9555
+    powerScoreAtMaxLevel: 1226.4431
     powerScoreBreakdown:
-      offense: 60.85
+      offense: 63.1
       defense: 104.724724
       energy: 149.62997
-      mobility: 22.8
-      capacity: 83.11774
+      mobility: 22.6
+      capacity: 72.8383
       firePower: 13.2
       bulletSpeed: 10
       fireRate: 14.400001
       sustainedDps: 47.52
-      rammingPower: 1.25
+      rammingPower: 3.5
       healthCap: 101.431496
       healthRegen: 3.2932303
       energyCap: 142.93425
       energyRegen: 6.6957307
-      moveSpeed: 6.3999996
+      moveSpeed: 6.2
       turnSpeed: 14
       gemCap: 44.55887
-      peopleCap: 38.55887
+      peopleCap: 28.279434
     powerScoreBreakdownAtShipLevel:
-      offense: 82.3
+      offense: 85.8
       defense: 503.1358
       energy: 412.88992
-      mobility: 24.8
-      capacity: 253.70648
+      mobility: 23.6
+      capacity: 207.02986
       firePower: 26.4
       bulletSpeed: 13
       fireRate: 14.400001
       sustainedDps: 95.04
-      rammingPower: 2.5
+      rammingPower: 6
       healthCap: 487.31393
       healthRegen: 15.82188
       energyCap: 392.80273
       energyRegen: 20.087193
-      moveSpeed: 8.4
+      moveSpeed: 7.2
       turnSpeed: 14
       gemCap: 127.35324
-      peopleCap: 126.35324
+      peopleCap: 79.67662
     componentMass: 18.389687
     lockedInUpgradeTree: 0
   - chassisId: GalaxyRaptor_15
@@ -1830,46 +1830,46 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 2560c829bc3cbd14f9cb2cb9b94ba94a, type: 3}
     minHomePlanetLevel: 3
-    powerScore: 389.98276
-    powerScoreAtMaxLevel: 1189.402
+    powerScore: 386.38275
+    powerScoreAtMaxLevel: 1167.8019
     powerScoreBreakdown:
-      offense: 81.55
+      offense: 87.47261
       defense: 48.539333
       energy: 244.79247
-      mobility: 23.599998
-      capacity: 27
-      firePower: 23.1
+      mobility: 23
+      capacity: 24
+      firePower: 19.911055
       bulletSpeed: 10
-      fireRate: 25.2
-      sustainedDps: 83.16
-      rammingPower: 1.25
+      fireRate: 32.061558
+      sustainedDps: 83.15998
+      rammingPower: 3.5
       healthCap: 47.01294
       healthRegen: 1.5263942
       energyCap: 235.81885
       energyRegen: 8.973611
-      moveSpeed: 7.1999993
+      moveSpeed: 6.5999994
       turnSpeed: 14
       gemCap: 12
-      peopleCap: 15
+      peopleCap: 12
     powerScoreBreakdownAtShipLevel:
-      offense: 112.9
+      offense: 116.88367
       defense: 222.2414
       energy: 731.50476
-      mobility: 29.6
-      capacity: 72
-      firePower: 46.2
+      mobility: 26.000002
+      capacity: 54
+      firePower: 39.82211
       bulletSpeed: 13
-      fireRate: 25.2
-      sustainedDps: 166.32
-      rammingPower: 2.5
+      fireRate: 32.061558
+      sustainedDps: 166.31996
+      rammingPower: 6
       healthCap: 215.25267
       healthRegen: 6.9887223
       energyCap: 694.9131
       energyRegen: 36.591667
-      moveSpeed: 13.2
+      moveSpeed: 9.600001
       turnSpeed: 14
       gemCap: 32
-      peopleCap: 40
+      peopleCap: 22
     componentMass: 13.794848
     lockedInUpgradeTree: 0
   - chassisId: GalaxyRaptor_12
@@ -1910,46 +1910,46 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 5eccd76b6f672b14a8b0025f42a69480, type: 3}
     minHomePlanetLevel: 4
-    powerScore: 437.36588
-    powerScoreAtMaxLevel: 2277.4314
+    powerScore: 421.0612
+    powerScoreAtMaxLevel: 2174.994
     powerScoreBreakdown:
-      offense: 47.05
+      offense: 49.3
       defense: 176.35857
       energy: 93.97893
-      mobility: 23.199999
-      capacity: 118.854614
+      mobility: 22.8
+      capacity: 102.94993
       firePower: 6.6
       bulletSpeed: 10
       fireRate: 7.2000003
       sustainedDps: 23.76
-      rammingPower: 1.25
+      rammingPower: 3.5
       healthCap: 170.8127
       healthRegen: 5.5458684
       energyCap: 87.54875
       energyRegen: 6.4301763
-      moveSpeed: 6.799999
+      moveSpeed: 6.3999996
       turnSpeed: 14
       gemCap: 63.707436
-      peopleCap: 55.147175
+      peopleCap: 39.242493
     powerScoreBreakdownAtShipLevel:
-      offense: 68.04
+      offense: 72.04
       defense: 1230.6149
       energy: 374.02493
-      mobility: 28.800001
-      capacity: 575.3678
+      mobility: 25.6
+      capacity: 476.13028
       firePower: 15.84
       bulletSpeed: 14
       fireRate: 7.2000003
       sustainedDps: 57.024002
-      rammingPower: 3
+      rammingPower: 7
       healthCap: 1191.9163
       healthRegen: 38.698578
       energyCap: 342.8181
       energyRegen: 31.206804
-      moveSpeed: 12.400001
+      moveSpeed: 9.200001
       turnSpeed: 14
       gemCap: 289.11768
-      peopleCap: 286.25012
+      peopleCap: 187.0126
     componentMass: 33.367165
     lockedInUpgradeTree: 0
   - chassisId: GalaxyRaptor_10
@@ -1990,46 +1990,46 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 2eb9d371b85ff7749b601844e7f35729, type: 3}
     minHomePlanetLevel: 4
-    powerScore: 425.06726
-    powerScoreAtMaxLevel: 2204.3958
+    powerScore: 408.58887
+    powerScoreAtMaxLevel: 2094.5896
     powerScoreBreakdown:
-      offense: 47.05
+      offense: 49.37698
       defense: 161.4149
       energy: 96.20681
-      mobility: 23.199999
-      capacity: 118.67976
-      firePower: 6.6
+      mobility: 22.8
+      capacity: 102.601364
+      firePower: 7.7275696
       bulletSpeed: 10
-      fireRate: 7.2000003
+      fireRate: 6.1494107
       sustainedDps: 23.76
-      rammingPower: 1.25
+      rammingPower: 3.5
       healthCap: 156.33896
       healthRegen: 5.07594
       energyCap: 89.418304
       energyRegen: 6.788507
-      moveSpeed: 6.799999
+      moveSpeed: 6.3999996
       turnSpeed: 14
       gemCap: 62.16541
-      peopleCap: 56.51436
+      peopleCap: 40.435955
     powerScoreBreakdownAtShipLevel:
-      offense: 68.04
+      offense: 73.69558
       defense: 1115.7246
       energy: 382.51257
-      mobility: 28.800001
-      capacity: 608.7348
-      firePower: 15.84
+      mobility: 25.6
+      capacity: 502.12848
+      firePower: 18.54617
       bulletSpeed: 14
-      fireRate: 7.2000003
-      sustainedDps: 57.024002
-      rammingPower: 3
+      fireRate: 6.1494107
+      sustainedDps: 57.024006
+      rammingPower: 7
       healthCap: 1080.6389
       healthRegen: 35.085682
       energyCap: 349.9406
       energyRegen: 32.57195
-      moveSpeed: 12.400001
+      moveSpeed: 9.200001
       turnSpeed: 14
       gemCap: 303.69293
-      peopleCap: 305.04187
+      peopleCap: 198.43553
     componentMass: 21.966803
     lockedInUpgradeTree: 0
   - chassisId: GalaxyRaptor_20
@@ -2070,46 +2070,46 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 9aee8a434c8f0ea4b89551d65a207629, type: 3}
     minHomePlanetLevel: 4
-    powerScore: 411.4475
-    powerScoreAtMaxLevel: 1931.8323
+    powerScore: 398.07718
+    powerScoreAtMaxLevel: 1852.8695
     powerScoreBreakdown:
-      offense: 47.05
+      offense: 53.39036
       defense: 129.48447
       energy: 125.06451
-      mobility: 23.4
-      capacity: 102.138535
-      firePower: 6.6
+      mobility: 22.9
+      capacity: 89.26819
+      firePower: 14.645729
       bulletSpeed: 10
-      fireRate: 7.2000003
-      sustainedDps: 23.76
-      rammingPower: 1.25
+      fireRate: 3.244632
+      sustainedDps: 23.759998
+      rammingPower: 3.5
       healthCap: 125.412636
       healthRegen: 4.0718384
       energyCap: 113.63455
       energyRegen: 11.429957
-      moveSpeed: 6.9999995
+      moveSpeed: 6.5
       turnSpeed: 14
       gemCap: 55.322563
-      peopleCap: 46.815968
+      peopleCap: 33.945625
     powerScoreBreakdownAtShipLevel:
-      offense: 68.04
+      offense: 87.39438
       defense: 861.8809
       energy: 531.5419
-      mobility: 30.4
-      capacity: 439.3854
-      firePower: 15.84
+      mobility: 26.400002
+      capacity: 364.42267
+      firePower: 35.14975
       bulletSpeed: 14
-      fireRate: 7.2000003
-      sustainedDps: 57.024002
-      rammingPower: 3
+      fireRate: 3.244632
+      sustainedDps: 57.024
+      rammingPower: 7
       healthCap: 834.7778
       healthRegen: 27.103172
       energyCap: 475.00015
       energyRegen: 56.5417
-      moveSpeed: 14
+      moveSpeed: 10.000001
       turnSpeed: 14
       gemCap: 221.03703
-      peopleCap: 218.34837
+      peopleCap: 143.38564
     componentMass: 27.819622
     lockedInUpgradeTree: 0
   - chassisId: GalaxyRaptor_20B
@@ -2150,46 +2150,46 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 04f625f8233ffba4b8f7efed29af2761, type: 3}
     minHomePlanetLevel: 4
-    powerScore: 411.4475
-    powerScoreAtMaxLevel: 1931.8323
+    powerScore: 398.07718
+    powerScoreAtMaxLevel: 1852.8695
     powerScoreBreakdown:
-      offense: 47.05
+      offense: 53.39036
       defense: 129.48447
       energy: 125.06451
-      mobility: 23.4
-      capacity: 102.138535
-      firePower: 6.6
+      mobility: 22.9
+      capacity: 89.26819
+      firePower: 14.645729
       bulletSpeed: 10
-      fireRate: 7.2000003
-      sustainedDps: 23.76
-      rammingPower: 1.25
+      fireRate: 3.244632
+      sustainedDps: 23.759998
+      rammingPower: 3.5
       healthCap: 125.412636
       healthRegen: 4.0718384
       energyCap: 113.63455
       energyRegen: 11.429957
-      moveSpeed: 6.9999995
+      moveSpeed: 6.5
       turnSpeed: 14
       gemCap: 55.322563
-      peopleCap: 46.815968
+      peopleCap: 33.945625
     powerScoreBreakdownAtShipLevel:
-      offense: 68.04
+      offense: 87.39438
       defense: 861.8809
       energy: 531.5419
-      mobility: 30.4
-      capacity: 439.3854
-      firePower: 15.84
+      mobility: 26.400002
+      capacity: 364.42267
+      firePower: 35.14975
       bulletSpeed: 14
-      fireRate: 7.2000003
-      sustainedDps: 57.024002
-      rammingPower: 3
+      fireRate: 3.244632
+      sustainedDps: 57.024
+      rammingPower: 7
       healthCap: 834.7778
       healthRegen: 27.103172
       energyCap: 475.00015
       energyRegen: 56.5417
-      moveSpeed: 14
+      moveSpeed: 10.000001
       turnSpeed: 14
       gemCap: 221.03703
-      peopleCap: 218.34837
+      peopleCap: 143.38564
     componentMass: 27.819622
     lockedInUpgradeTree: 0
   - chassisId: GalaxyRaptor_04
@@ -2230,46 +2230,46 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: a295c093ce888d6409210c8ac90f8dc9, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 452.29114
-    powerScoreAtMaxLevel: 2683.5376
+    powerScore: 434.70813
+    powerScoreAtMaxLevel: 2557.5059
     powerScoreBreakdown:
-      offense: 47.05
+      offense: 54.400627
       defense: 176.06824
       energy: 85.920456
-      mobility: 22.6
-      capacity: 144.87009
-      firePower: 6.6
+      mobility: 22.5
+      capacity: 127.387085
+      firePower: 15.914712
       bulletSpeed: 10
-      fireRate: 7.2000003
+      fireRate: 2.9859164
       sustainedDps: 23.76
-      rammingPower: 1.25
+      rammingPower: 3.5
       healthCap: 170.5315
       healthRegen: 5.5367365
       energyCap: 80.7864
       energyRegen: 5.13406
-      moveSpeed: 6.2
+      moveSpeed: 6.1
       turnSpeed: 14
       gemCap: 78.54315
-      peopleCap: 66.32694
+      peopleCap: 48.843933
     powerScoreBreakdownAtShipLevel:
-      offense: 74.18
+      offense: 100.54711
       defense: 1471.0631
       energy: 319.7415
-      mobility: 24.4
-      capacity: 801.16547
-      firePower: 18.48
+      mobility: 23.4
+      capacity: 676.13385
+      firePower: 44.561195
       bulletSpeed: 15
-      fireRate: 7.2000003
+      fireRate: 2.9859164
       sustainedDps: 66.528
-      rammingPower: 3.5
+      rammingPower: 8
       healthCap: 1424.8032
       healthRegen: 46.259842
       energyCap: 303.0558
       energyRegen: 16.685694
-      moveSpeed: 8
+      moveSpeed: 7
       turnSpeed: 14
       gemCap: 402.19086
-      peopleCap: 398.9746
+      peopleCap: 273.943
     componentMass: 24.90298
     lockedInUpgradeTree: 0
   - chassisId: GalaxyRaptor_05
@@ -2310,46 +2310,46 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 7355a74ad933de1478c49b1c8099629c, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 470.75055
-    powerScoreAtMaxLevel: 2744.9412
+    powerScore: 457.35452
+    powerScoreAtMaxLevel: 2637.9807
     powerScoreBreakdown:
-      offense: 60.85
+      offense: 63.1
       defense: 154.99033
       energy: 151.20341
-      mobility: 22.8
-      capacity: 109.17621
+      mobility: 22.6
+      capacity: 95.98018
       firePower: 13.2
       bulletSpeed: 10
       fireRate: 14.400001
       sustainedDps: 47.52
-      rammingPower: 1.25
+      rammingPower: 3.5
       healthCap: 150.11642
       healthRegen: 4.873909
       energyCap: 144.25461
       energyRegen: 6.9488
-      moveSpeed: 6.3999996
+      moveSpeed: 6.2
       turnSpeed: 14
       gemCap: 57.588108
-      peopleCap: 51.588104
+      peopleCap: 38.392075
     powerScoreBreakdownAtShipLevel:
-      offense: 99.86
+      offense: 104.36
       defense: 1333.72
       energy: 618.0257
-      mobility: 26.4
-      capacity: 650.7622
+      mobility: 24.4
+      capacity: 545.80176
       firePower: 36.96
       bulletSpeed: 15
       fireRate: 14.400001
       sustainedDps: 133.056
-      rammingPower: 3.5
+      rammingPower: 8
       healthCap: 1291.779
       healthRegen: 41.940876
       energyCap: 588.10547
       energyRegen: 29.92021
-      moveSpeed: 10
+      moveSpeed: 8
       turnSpeed: 14
       gemCap: 323.88107
-      peopleCap: 326.8811
+      peopleCap: 221.92072
     componentMass: 21.5667
     lockedInUpgradeTree: 0
   - chassisId: GalaxyRaptor_14
@@ -2390,46 +2390,46 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 471863b1a7e1ac84fb57d6faa4d65c1b, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 490.61563
-    powerScoreAtMaxLevel: 2803.224
+    powerScore: 476.6791
+    powerScoreAtMaxLevel: 2695.2568
     powerScoreBreakdown:
-      offense: 60.85
+      offense: 63.418285
       defense: 121.90604
       energy: 195.01741
-      mobility: 23.599998
-      capacity: 105.8687
-      firePower: 13.2
+      mobility: 23
+      capacity: 92.53215
+      firePower: 15.179504
       bulletSpeed: 10
-      fireRate: 14.400001
+      fireRate: 12.738782
       sustainedDps: 47.52
-      rammingPower: 1.25
+      rammingPower: 3.5
       healthCap: 118.07251
       healthRegen: 3.833523
       energyCap: 181.0216
       energyRegen: 13.9958105
-      moveSpeed: 7.199999
+      moveSpeed: 6.5999994
       turnSpeed: 14
       gemCap: 56.985294
-      peopleCap: 48.883408
+      peopleCap: 35.54686
     powerScoreBreakdownAtShipLevel:
-      offense: 99.86
+      offense: 108.241394
       defense: 993.1871
       energy: 1023.4101
-      mobility: 34.4
-      capacity: 606.57104
-      firePower: 36.96
+      mobility: 28.4
+      capacity: 504.60376
+      firePower: 42.502613
       bulletSpeed: 15
-      fireRate: 14.400001
+      fireRate: 12.738782
       sustainedDps: 133.056
-      rammingPower: 3.5
+      rammingPower: 8
       healthCap: 961.9548
       healthRegen: 31.232296
       energyCap: 928.2882
       energyRegen: 95.1219
-      moveSpeed: 18
+      moveSpeed: 12
       turnSpeed: 14
       gemCap: 303.79013
-      peopleCap: 302.78088
+      peopleCap: 200.81363
     componentMass: 19.676792
     lockedInUpgradeTree: 0
   - chassisId: GalaxyRaptor_09
@@ -2470,46 +2470,46 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: fd0df138697c4064491803dc84cc8c93, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 443.9507
-    powerScoreAtMaxLevel: 2541.3298
+    powerScore: 430.8731
+    powerScoreAtMaxLevel: 2437.5537
     powerScoreBreakdown:
-      offense: 60.85
+      offense: 63.1
       defense: 127.59031
       energy: 158.05
-      mobility: 23.199999
-      capacity: 100.71042
+      mobility: 22.8
+      capacity: 88.032814
       firePower: 13.2
       bulletSpeed: 10
       fireRate: 14.400001
       sustainedDps: 47.52
-      rammingPower: 1.25
+      rammingPower: 3.5
       healthCap: 123.57803
       healthRegen: 4.0122733
       energyCap: 150
       energyRegen: 8.05
-      moveSpeed: 6.799999
+      moveSpeed: 6.3999996
       turnSpeed: 14
       gemCap: 53.35521
-      peopleCap: 47.35521
+      peopleCap: 34.677605
     powerScoreBreakdownAtShipLevel:
-      offense: 99.86
+      offense: 104.36
       defense: 1059.7196
       energy: 739.45
-      mobility: 30.4
-      capacity: 566.1042
+      mobility: 26.4
+      capacity: 466.32812
       firePower: 36.96
       bulletSpeed: 15
       fireRate: 14.400001
       sustainedDps: 133.056
-      rammingPower: 3.5
+      rammingPower: 8
       healthCap: 1026.3951
       healthRegen: 33.324516
       energyCap: 690
       energyRegen: 49.45
-      moveSpeed: 14
+      moveSpeed: 10
       turnSpeed: 14
       gemCap: 281.5521
-      peopleCap: 284.5521
+      peopleCap: 184.77605
     componentMass: 20.754736
     lockedInUpgradeTree: 0
   - chassisId: GalaxyRaptor_07
@@ -2550,46 +2550,46 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 6e42c47c9d7bd334ab4ab9b6e7f3d700, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 478.19244
-    powerScoreAtMaxLevel: 2582.7969
+    powerScore: 467.60605
+    powerScoreAtMaxLevel: 2494.933
     powerScoreBreakdown:
-      offense: 74.65
+      offense: 84.888916
       defense: 137.10803
       energy: 205.49323
-      mobility: 22.8
-      capacity: 73.383514
-      firePower: 19.8
+      mobility: 22.6
+      capacity: 62.997135
+      firePower: 38.190243
       bulletSpeed: 10
-      fireRate: 21.6
-      sustainedDps: 71.28
-      rammingPower: 1.25
+      fireRate: 11.198672
+      sustainedDps: 71.27999
+      rammingPower: 3.5
       healthCap: 132.79646
       healthRegen: 4.311574
       energyCap: 198.49782
       energyRegen: 6.9954147
-      moveSpeed: 6.3999996
+      moveSpeed: 6.2
       turnSpeed: 14
       gemCap: 38.907955
-      peopleCap: 34.475555
+      peopleCap: 24.08918
     powerScoreBreakdownAtShipLevel:
-      offense: 125.54
+      offense: 171.13133
       defense: 1173.378
       energy: 848.06885
-      mobility: 26.4
-      capacity: 388.18463
-      firePower: 55.44
+      mobility: 24.4
+      capacity: 302.32086
+      firePower: 106.93266
       bulletSpeed: 15
-      fireRate: 21.6
-      sustainedDps: 199.584
-      rammingPower: 3.5
+      fireRate: 11.198672
+      sustainedDps: 199.58398
+      rammingPower: 8
       healthCap: 1136.4794
       healthRegen: 36.898674
       energyCap: 815.88995
       energyRegen: 32.17891
-      moveSpeed: 10
+      moveSpeed: 8
       turnSpeed: 14
       gemCap: 192.45712
-      peopleCap: 195.72751
+      peopleCap: 109.863754
     componentMass: 28.99816
     lockedInUpgradeTree: 0
   - chassisId: GalaxyRaptor_17
@@ -2630,46 +2630,46 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 58a0cd734c901834486b0ed81480a392, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 591.99695
-    powerScoreAtMaxLevel: 4474.5513
+    powerScore: 561.98676
+    powerScoreAtMaxLevel: 4167.5957
     powerScoreBreakdown:
-      offense: 61.85
+      offense: 65.691925
       defense: 215.52008
       energy: 150.95706
-      mobility: 23
-      capacity: 170.00464
-      firePower: 13.2
+      mobility: 22.7
+      capacity: 140.2945
+      firePower: 17.0313
       bulletSpeed: 10
-      fireRate: 14.400001
-      sustainedDps: 47.52
-      rammingPower: 2.25
+      fireRate: 11.160629
+      sustainedDps: 47.520004
+      rammingPower: 5.5
       healthCap: 208.74272
       healthRegen: 6.777361
       energyCap: 144.04788
       energyRegen: 6.909177
-      moveSpeed: 6.5999994
+      moveSpeed: 6.2999997
       turnSpeed: 14
       gemCap: 88.86299
-      peopleCap: 81.141655
+      peopleCap: 51.431496
     powerScoreBreakdownAtShipLevel:
-      offense: 120.64
+      offense: 146.6608
       defense: 2235.195
       energy: 769.8378
-      mobility: 29.599998
-      capacity: 1292.6766
-      firePower: 42.239998
+      mobility: 26
+      capacity: 989.32043
+      firePower: 54.50016
       bulletSpeed: 16
-      fireRate: 14.400001
+      fireRate: 11.160629
       sustainedDps: 152.06401
-      rammingPower: 16
+      rammingPower: 33
       healthCap: 2164.906
       healthRegen: 70.289154
       energyCap: 727.0807
       energyRegen: 42.757126
-      moveSpeed: 13.199999
+      moveSpeed: 9.599999
       turnSpeed: 14
       gemCap: 623.9177
-      peopleCap: 668.7589
+      peopleCap: 365.4027
     componentMass: 29.153925
     lockedInUpgradeTree: 0
   - chassisId: GalaxyRaptor_11
@@ -2710,46 +2710,46 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 58498a5275b9ebc49b83141ea6de2a15, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 596.1619
-    powerScoreAtMaxLevel: 4604.9277
+    powerScore: 576.4707
+    powerScoreAtMaxLevel: 4424.127
     powerScoreBreakdown:
-      offense: 53.95
+      offense: 57.980232
       defense: 229.2071
       energy: 146.80373
-      mobility: 23
-      capacity: 161.93982
-      firePower: 9.9
+      mobility: 22.7
+      capacity: 142.54858
+      firePower: 15.64695
       bulletSpeed: 10
-      fireRate: 10.8
+      fireRate: 6.833281
       sustainedDps: 35.64
-      rammingPower: 1.25
+      rammingPower: 3.5
       healthCap: 221.99933
       healthRegen: 7.207772
       energyCap: 136.21991
       energyRegen: 10.583814
-      moveSpeed: 6.5999994
+      moveSpeed: 6.2999997
       turnSpeed: 14
       gemCap: 86.618515
-      peopleCap: 75.32131
+      peopleCap: 55.930065
     powerScoreBreakdownAtShipLevel:
-      offense: 94.48
+      offense: 113.90352
       defense: 2425.465
       energy: 790.0364
-      mobility: 29.599998
-      capacity: 1232.1787
-      firePower: 31.68
+      mobility: 26
+      capacity: 1054.9775
+      firePower: 50.07024
       bulletSpeed: 16
-      fireRate: 10.8
+      fireRate: 6.833281
       sustainedDps: 114.048004
-      rammingPower: 4
+      rammingPower: 9
       healthCap: 2349.1926
       healthRegen: 76.27249
       energyCap: 723.7648
       energyRegen: 66.271576
-      moveSpeed: 13.199999
+      moveSpeed: 9.599999
       turnSpeed: 14
       gemCap: 617.0148
-      peopleCap: 615.1639
+      peopleCap: 437.96277
     componentMass: 35.29731
     lockedInUpgradeTree: 0
   - chassisId: GalaxyRaptor_16
@@ -2790,46 +2790,46 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 50c873960af13434aaff18066ad1a415, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 615.0244
-    powerScoreAtMaxLevel: 4327.6387
+    powerScore: 589.841
+    powerScoreAtMaxLevel: 4058.4382
     powerScoreBreakdown:
-      offense: 75.15
+      offense: 77.9
       defense: 188.70279
       energy: 213.50807
-      mobility: 22.8
-      capacity: 148.47609
+      mobility: 22.6
+      capacity: 123.4927
       firePower: 19.8
       bulletSpeed: 10
       fireRate: 21.6
       sustainedDps: 71.28
-      rammingPower: 1.75
+      rammingPower: 4.5
       healthCap: 182.76874
       healthRegen: 5.9340506
       energyCap: 205.22356
       energyRegen: 8.284513
-      moveSpeed: 6.3999996
+      moveSpeed: 6.2
       turnSpeed: 14
       gemCap: 75.258156
-      peopleCap: 73.21793
+      peopleCap: 48.234543
     powerScoreBreakdownAtShipLevel:
-      offense: 142.96
+      offense: 153.96
       defense: 1960.5505
       energy: 1034.1436
-      mobility: 27.199999
-      capacity: 1123.7324
+      mobility: 24.8
+      capacity: 856.9319
       firePower: 63.36
       bulletSpeed: 16
       fireRate: 21.6
       sustainedDps: 228.09601
-      rammingPower: 10
+      rammingPower: 21
       healthCap: 1898.898
       healthRegen: 61.652542
       energyCap: 989.40717
       energyRegen: 44.736378
-      moveSpeed: 10.799999
+      moveSpeed: 8.4
       turnSpeed: 14
       gemCap: 542.2176
-      peopleCap: 581.5149
+      peopleCap: 314.7143
     componentMass: 36.907417
     lockedInUpgradeTree: 0
   - chassisId: GalaxyRaptor_13
@@ -2870,46 +2870,46 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 12d194483c8bbc143b7650b9d122dc38, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 527.465
-    powerScoreAtMaxLevel: 3861.4087
+    powerScore: 506.95755
+    powerScoreAtMaxLevel: 3659.4934
     powerScoreBreakdown:
-      offense: 60.85
+      offense: 63.361706
       defense: 170.78378
       energy: 157.22003
-      mobility: 23.4
-      capacity: 141.88177
-      firePower: 13.2
+      mobility: 22.9
+      capacity: 121.874306
+      firePower: 13.216301
       bulletSpeed: 10
-      fireRate: 14.400001
-      sustainedDps: 47.52
-      rammingPower: 1.25
+      fireRate: 14.645406
+      sustainedDps: 47.519997
+      rammingPower: 3.5
       healthCap: 165.41322
       healthRegen: 5.370559
       energyCap: 149.30353
       energyRegen: 7.9165087
-      moveSpeed: 6.999999
+      moveSpeed: 6.4999995
       turnSpeed: 14
       gemCap: 75.4647
-      peopleCap: 66.41707
+      peopleCap: 46.409607
     powerScoreBreakdownAtShipLevel:
-      offense: 108.64
+      offense: 113.93758
       defense: 1754.5441
       energy: 858.6904
-      mobility: 34.399998
-      capacity: 1048.1101
-      firePower: 42.239998
+      mobility: 28.4
+      capacity: 852.19507
+      firePower: 42.292168
       bulletSpeed: 16
-      fireRate: 14.400001
+      fireRate: 14.645406
       sustainedDps: 152.06401
-      rammingPower: 4
+      rammingPower: 9
       healthCap: 1699.3698
       healthRegen: 55.17435
       energyCap: 801.64233
       energyRegen: 57.04811
-      moveSpeed: 17.999998
+      moveSpeed: 11.999999
       turnSpeed: 14
       gemCap: 523.07886
-      peopleCap: 525.03125
+      peopleCap: 329.11618
     componentMass: 22.87552
     lockedInUpgradeTree: 0
   - chassisId: GalaxyRaptor_19
@@ -2950,46 +2950,46 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 67fb2893333650247a8f5b91784ca92d, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 531.16205
-    powerScoreAtMaxLevel: 4158.9644
+    powerScore: 511.36862
+    powerScoreAtMaxLevel: 3954.634
     powerScoreBreakdown:
-      offense: 54.2
+      offense: 57.67155
       defense: 202.411
       energy: 142.03157
-      mobility: 23.8
-      capacity: 128.97633
-      firePower: 9.9
+      mobility: 23.1
+      capacity: 109.88288
+      firePower: 13.935207
       bulletSpeed: 10
-      fireRate: 10.8
+      fireRate: 7.736343
       sustainedDps: 35.64
-      rammingPower: 1.5
+      rammingPower: 4
       healthCap: 196.04587
       healthRegen: 6.3651257
       energyCap: 132.2153
       energyRegen: 9.816266
-      moveSpeed: 7.3999996
+      moveSpeed: 6.7
       turnSpeed: 14
       gemCap: 67.019356
-      peopleCap: 61.956974
+      peopleCap: 42.863525
     powerScoreBreakdownAtShipLevel:
-      offense: 97.48
+      offense: 115.329
       defense: 2150.2893
       energy: 841.2715
-      mobility: 39.2
-      capacity: 1000.5558
-      firePower: 31.68
+      mobility: 30.8
+      capacity: 804.62537
+      firePower: 44.592663
       bulletSpeed: 16
-      fireRate: 10.8
+      fireRate: 7.736343
       sustainedDps: 114.048004
-      rammingPower: 7
+      rammingPower: 15
       healthCap: 2082.6702
       healthRegen: 67.619156
       energyCap: 766.7593
       energyRegen: 74.5122
-      moveSpeed: 22.8
+      moveSpeed: 14.4
       turnSpeed: 14
       gemCap: 492.20935
-      peopleCap: 508.3464
+      peopleCap: 312.416
     componentMass: 35.550163
     lockedInUpgradeTree: 0
   - chassisId: GalaxyRaptor_18
@@ -3030,46 +3030,46 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: f79ca23bda6e834458628315c0fa1121, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 509.93314
-    powerScoreAtMaxLevel: 3705.3264
+    powerScore: 495.06244
+    powerScoreAtMaxLevel: 3566.9966
     powerScoreBreakdown:
-      offense: 60.85
+      offense: 63.1
       defense: 178.95215
       energy: 156.8931
-      mobility: 23.199999
-      capacity: 116.79532
+      mobility: 22.8
+      capacity: 102.32461
       firePower: 13.2
       bulletSpeed: 10
       fireRate: 14.400001
       sustainedDps: 47.52
-      rammingPower: 1.25
+      rammingPower: 3.5
       healthCap: 173.32472
       healthRegen: 5.627426
       energyCap: 149.02917
       energyRegen: 7.863924
-      moveSpeed: 6.799999
+      moveSpeed: 6.3999996
       turnSpeed: 14
       gemCap: 61.912476
-      peopleCap: 54.88284
+      peopleCap: 40.412132
     powerScoreBreakdownAtShipLevel:
-      offense: 108.64
+      offense: 113.64
       defense: 1862.3655
       energy: 834.2218
-      mobility: 31.999998
-      capacity: 812.388
+      mobility: 27.199999
+      capacity: 678.85803
       firePower: 42.239998
       bulletSpeed: 16
       fireRate: 14.400001
       sustainedDps: 152.06401
-      rammingPower: 4
+      rammingPower: 9
       healthCap: 1803.8005
       healthRegen: 58.56495
       energyCap: 781.1092
       energyRegen: 53.11259
-      moveSpeed: 15.599998
+      moveSpeed: 10.799999
       turnSpeed: 14
       gemCap: 404.2088
-      peopleCap: 408.1792
+      peopleCap: 274.6492
     componentMass: 33.945663
     lockedInUpgradeTree: 0
   teamMaterials:

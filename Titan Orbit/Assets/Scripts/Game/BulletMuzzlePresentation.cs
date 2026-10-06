@@ -52,6 +52,9 @@ namespace TitanOrbit.Game
         /// <summary>Scratch list for live weapon discovery (main thread only).</summary>
         static readonly List<LiveWeaponMount> s_LiveMountScratch = new List<LiveWeaponMount>(8);
 
+        /// <summary>Scratch for <see cref="MegaShipPartClassifier.CollectWeaponAssemblies"/> (main thread only).</summary>
+        static readonly List<Transform> s_AssemblyScratch = new List<Transform>(8);
+
         /// <summary>
         /// Last ghosted / AimWorld / Shift world yaw per MEGA mount. Owner-predicted
         /// <c>TargetDistance</c> flickers to 0 between snapshots — hold the fire heading
@@ -67,12 +70,6 @@ namespace TitanOrbit.Game
         {
             public Transform Weapon;
             public float DirectionAngleDeg;
-            public int CannonIndex;
-            /// <summary>
-            /// Discovery order before sort — secondary key so equal CannonIndex stays stable
-            /// (List.Sort is unstable; ties used to reshuffle barrels → random aim).
-            /// </summary>
-            public int CollectOrder;
         }
 
         /// <summary>
@@ -111,11 +108,10 @@ namespace TitanOrbit.Game
                 return true;
 
             // --- Preferred: live weapon component (position + unbanked aim) ---
-            int cannonIndex = 0;
-            if (TryGetMountElementFromBuffer(em, shipEntity, mountIndex, out ShipWeaponMountElement ecsMount))
-                cannonIndex = ecsMount.CannonIndex;
-
-            if (TryResolveLiveWeaponMuzzle(em, shipEntity, mountIndex, cannonIndex,
+            // Pair by mount buffer index. CannonIndex on the authoring is often 0 on every
+            // barrel after a B-key mesh swap, and a unique-index match then sends both shots
+            // through the first gun.
+            if (TryResolveLiveWeaponMuzzle(em, shipEntity, mountIndex,
                     out fireOrigin, out fireForward, out float3 hullPosForVel))
             {
                 // Live GO is display-tiled on remotes. Flight is always logical.
@@ -560,7 +556,6 @@ namespace TitanOrbit.Game
             EntityManager em,
             Entity shipEntity,
             int mountIndex,
-            int cannonIndex,
             out float3 fireOrigin,
             out float3 fireForward,
             out float3 hullPosForVel)
@@ -576,26 +571,10 @@ namespace TitanOrbit.Game
             if (count <= 0)
                 return false;
 
-            // Unique CannonIndex → exact barrel. Duplicate/default 0s → sorted list index.
-            int matchCount = 0;
-            int matchIdx = -1;
-            for (int i = 0; i < count; i++)
-            {
-                if (s_LiveMountScratch[i].CannonIndex != cannonIndex)
-                    continue;
-                matchCount++;
-                matchIdx = i;
-            }
-
-            int idx;
-            if (matchCount == 1)
-                idx = matchIdx;
-            else
-            {
-                idx = mountIndex % count;
-                if (idx < 0)
-                    idx = 0;
-            }
+            // Buffer slot i is the i-th live barrel (same order as the chassis bake).
+            int idx = mountIndex % count;
+            if (idx < 0)
+                idx = 0;
 
             LiveWeaponMount live = s_LiveMountScratch[idx];
             if (live.Weapon == null)
@@ -675,9 +654,10 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Discovers offensive barrels on the drawn hull: authoring markers first, then weapon-named
-        /// children (<see cref="ShipComponentAbilityStatsMath.IsWeaponComponent"/> / "Weapon").
-        /// Order matches ECS buffer: CannonIndex, then discovery order (stable ties).
+        /// One live barrel per weapon assembly, in the same walk order as the chassis bake.
+        /// Skips the hidden original-part stash and inactive copies. Those duplicates share a
+        /// side with the first gun; binding mount 1 to them draws both bullets from one barrel
+        /// while the server still hits from both baked muzzles.
         /// </summary>
         static bool TryCollectLiveWeaponMounts(
             EntityManager em,
@@ -688,99 +668,48 @@ namespace TitanOrbit.Game
             if (!TryGetLocalHullRoot(em, shipEntity, out Transform hullRoot) || hullRoot == null)
                 return false;
 
-            int collectOrder = 0;
-
-            // --- Authoring markers (preferred) ---
-            var authorings = hullRoot.GetComponentsInChildren<ShipWeaponMountAuthoring>(true);
-            if (authorings != null)
-            {
-                for (int i = 0; i < authorings.Length; i++)
-                {
-                    var a = authorings[i];
-                    if (a == null || a.transform == hullRoot)
-                        continue;
-                    into.Add(new LiveWeaponMount
-                    {
-                        Weapon = a.transform,
-                        DirectionAngleDeg = a.DirectionAngleDeg,
-                        CannonIndex = a.CannonIndex,
-                        CollectOrder = collectOrder++,
-                    });
-                }
-            }
-
-            if (into.Count > 0)
-            {
-                EnsureUniqueLiveCannonIndices(into);
-                into.Sort(CompareLiveMountStable);
-                return true;
-            }
-
-            // --- Name / family id scan (same rules as chassis bake) ---
-            var assemblies = new List<Transform>(16);
-            MegaShipPartClassifier.CollectWeaponAssemblies(hullRoot, assemblies);
+            MegaShipPartClassifier.CollectWeaponAssemblies(hullRoot, s_AssemblyScratch);
+            var assemblies = s_AssemblyScratch;
             for (int i = 0; i < assemblies.Count; i++)
             {
                 Transform t = assemblies[i];
-                if (t == null || t == hullRoot)
+                if (!IsLiveBarrelTransform(t, hullRoot))
                     continue;
+
+                float directionAngleDeg = 0f;
+                var auth = t.GetComponent<ShipWeaponMountAuthoring>();
+                if (auth != null)
+                    directionAngleDeg = auth.DirectionAngleDeg;
 
                 into.Add(new LiveWeaponMount
                 {
                     Weapon = t,
-                    DirectionAngleDeg = 0f,
-                    CannonIndex = collectOrder,
-                    CollectOrder = collectOrder,
+                    DirectionAngleDeg = directionAngleDeg,
                 });
-                collectOrder++;
             }
-
-            if (into.Count > 0)
-                into.Sort(CompareLiveMountStable);
 
             return into.Count > 0;
         }
 
         /// <summary>
-        /// [STANDARD] CannonIndex primary, CollectOrder secondary — List.Sort is unstable on ties.
+        /// Drawn barrel only. Hidden stash copies and inactive leftovers are not muzzles.
         /// </summary>
-        static int CompareLiveMountStable(LiveWeaponMount a, LiveWeaponMount b)
+        static bool IsLiveBarrelTransform(Transform t, Transform hullRoot)
         {
-            int byCannon = a.CannonIndex.CompareTo(b.CannonIndex);
-            if (byCannon != 0)
-                return byCannon;
-            return a.CollectOrder.CompareTo(b.CollectOrder);
-        }
+            if (t == null || t == hullRoot)
+                return false;
+            if (!t.gameObject.activeInHierarchy)
+                return false;
 
-        /// <summary>
-        /// When every live barrel still has the same authored CannonIndex (usually 0), rewrite
-        /// to discovery order so slots align with the ECS mount buffer after bake uniquify.
-        /// </summary>
-        static void EnsureUniqueLiveCannonIndices(List<LiveWeaponMount> mounts)
-        {
-            if (mounts == null || mounts.Count <= 1)
-                return;
-
-            bool allSame = true;
-            int first = mounts[0].CannonIndex;
-            for (int i = 1; i < mounts.Count; i++)
+            Transform walk = t;
+            while (walk != null)
             {
-                if (mounts[i].CannonIndex != first)
-                {
-                    allSame = false;
-                    break;
-                }
+                if (walk.name == ShipFamilyPartMatch.OriginalStashName)
+                    return false;
+                walk = walk.parent;
             }
 
-            if (!allSame)
-                return;
-
-            for (int i = 0; i < mounts.Count; i++)
-            {
-                var m = mounts[i];
-                m.CannonIndex = m.CollectOrder;
-                mounts[i] = m;
-            }
+            return true;
         }
 
         /// <summary>ECS mount buffer only (no GO recomposition).</summary>

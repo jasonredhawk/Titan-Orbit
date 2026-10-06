@@ -241,6 +241,9 @@ namespace TitanOrbit.Game
 
         static PlanetaryDefenseVisualDriver s_Instance;
 
+        /// <summary>Live hybrid driver. Null on dedicated server / before bootstrap.</summary>
+        public static PlanetaryDefenseVisualDriver Active => s_Instance;
+
         PlanetShipFamilyConfig _familyConfig;
         PlanetaryDefenseConfig _defaultConfig;
         TMP_FontAsset _font;
@@ -533,7 +536,7 @@ namespace TitanOrbit.Game
                     _familyConfig, planet.ShipFamilyConfigIndex);
                 ShipFamilyDefinition familyDef = PlanetaryDefenseConfig.ResolveFamilyDefinition(
                     _familyConfig, planet.ShipFamilyConfigIndex);
-                int bankIndex = config.ResolveBulletBankIndex(familyDef);
+                int bankIndex = config.ResolveBulletBankIndex(familyDef, planet.BulletBankIndex);
 
                 if (!_groupsByPlanetId.TryGetValue(planet.PlanetId, out var group))
                 {
@@ -723,7 +726,15 @@ namespace TitanOrbit.Game
                     float turretScaleForBar = 0f;
                     if (vis.TurretInstance != null && vis.TurretInstance.activeSelf)
                         turretScaleForBar = vis.TurretInstance.transform.localScale.x;
-                    UpdateHealthBar(ref vis, slot, turretScaleForBar, planet.PlanetId, i);
+                    float regenPerSecond = config != null && config.regenerateHealth
+                        ? math.max(0f, config.healthRegenPerSecond)
+                        : 0f;
+                    float regenDelay = config != null
+                        ? math.max(0f, config.healthRegenDelayAfterDamage)
+                        : 0f;
+                    UpdateHealthBar(
+                        ref vis, slot, turretScaleForBar, planet.PlanetId, i,
+                        regenPerSecond, regenDelay);
 
                     group.Slots[i] = vis;
                 }
@@ -1358,12 +1369,16 @@ namespace TitanOrbit.Game
         /// </param>
         /// <param name="planetId">Stable planet id for the HitRpc HP store.</param>
         /// <param name="slotIndex">Slot index for the HitRpc HP store.</param>
+        /// <param name="regenPerSecond">Same HP/s as server turret regen. 0 hides the climb.</param>
+        /// <param name="regenDelaySeconds">Seconds after the last hit before the bar climbs.</param>
         void UpdateHealthBar(
             ref SlotVisual vis,
             PlanetaryDefenseSlotElement slot,
             float turretWorldScale,
             int planetId,
-            int slotIndex)
+            int slotIndex,
+            float regenPerSecond,
+            float regenDelaySeconds)
         {
             if (vis.HealthBarRoot == null)
                 return;
@@ -1380,7 +1395,10 @@ namespace TitanOrbit.Game
                 Time.time,
                 out bool hitFlash,
                 out float flashT,
-                out bool overlayDestroyed);
+                out bool overlayDestroyed,
+                regenPerSecond,
+                regenDelaySeconds,
+                Time.deltaTime);
 
             // Show bar while the turret is alive on the ghost, or while we still drain a
             // destroy-to-empty transition (bar empties before the mesh hides).
@@ -1785,6 +1803,149 @@ namespace TitanOrbit.Game
         /// Closest friendly pad zone this ship is inside that can still accept gems.
         /// Toroidal shortest path — same placement as server deposit.
         /// </summary>
+        /// <summary>
+        /// Closest live pad or turret to <paramref name="aim"/> on the torus.
+        /// Walks hybrid slot roots only — no ECS gather. Optional team filter uses
+        /// the last applied planet-ownership skin; falls back to any slot.
+        /// </summary>
+        public static bool TryFindClosestDefenseSlot(
+            Vector3 aim,
+            TeamId teamFilter,
+            bool turretOnly,
+            out int planetId,
+            out Vector3 worldPos,
+            out float radius,
+            TeamId excludeTeam = TeamId.None,
+            bool allowFallback = true)
+        {
+            if (TryFindClosestDefenseSlotFiltered(
+                    aim, teamFilter, turretOnly, requiredPlanetId: 0, excludeTeam,
+                    out planetId, out worldPos, out radius))
+                return true;
+            if (allowFallback && teamFilter != TeamId.None && excludeTeam == TeamId.None)
+                return TryFindClosestDefenseSlotFiltered(
+                    aim, TeamId.None, turretOnly, requiredPlanetId: 0, excludeTeam,
+                    out planetId, out worldPos, out radius);
+            return false;
+        }
+
+        /// <summary>
+        /// Live pad/turret pose on <paramref name="planetId"/> nearest <paramref name="near"/>.
+        /// </summary>
+        public static bool TryGetDefenseSlotPose(
+            int planetId,
+            Vector3 near,
+            bool turretOnly,
+            out Vector3 worldPos,
+            out float radius)
+        {
+            return TryFindClosestDefenseSlotFiltered(
+                near, TeamId.None, turretOnly, planetId, TeamId.None, out _, out worldPos, out radius);
+        }
+
+        /// <summary>
+        /// Turret mesh (pad root if the gun is hidden) for a floating damage number.
+        /// Hybrid slot list only — no ECS gather.
+        /// </summary>
+        public static bool TryGetTurretFloatAnchor(
+            int planetId,
+            int slotIndex,
+            out Transform anchor,
+            out float bodyRadius,
+            out TeamId ownerTeam)
+        {
+            anchor = null;
+            bodyRadius = 0f;
+            ownerTeam = TeamId.None;
+            if (s_Instance == null || planetId <= 0 || slotIndex < 0)
+                return false;
+            if (!s_Instance._groupsByPlanetId.TryGetValue(planetId, out PlanetDefenseGroup group) ||
+                group == null ||
+                slotIndex >= group.Slots.Count)
+                return false;
+
+            SlotVisual vis = group.Slots[slotIndex];
+            if (vis.SlotIndex != slotIndex)
+                return false;
+
+            bool turretLive = vis.TurretInstance != null && vis.TurretInstance.activeInHierarchy;
+            anchor = turretLive ? vis.TurretInstance.transform : vis.SlotRoot;
+            if (anchor == null)
+                return false;
+
+            bodyRadius = ResolveSlotRadius(in vis, turretLive);
+            ownerTeam = vis.AppliedTeam;
+            return true;
+        }
+
+        static bool TryFindClosestDefenseSlotFiltered(
+            Vector3 aim,
+            TeamId teamFilter,
+            bool turretOnly,
+            int requiredPlanetId,
+            TeamId excludeTeam,
+            out int planetId,
+            out Vector3 worldPos,
+            out float radius)
+        {
+            planetId = 0;
+            worldPos = default;
+            radius = 0f;
+            if (s_Instance == null)
+                return false;
+
+            float best = float.MaxValue;
+            bool found = false;
+            foreach (var kv in s_Instance._groupsByPlanetId)
+            {
+                PlanetDefenseGroup group = kv.Value;
+                if (group == null)
+                    continue;
+                if (requiredPlanetId > 0 && group.PlanetId != requiredPlanetId)
+                    continue;
+
+                for (int i = 0; i < group.Slots.Count; i++)
+                {
+                    SlotVisual vis = group.Slots[i];
+                    if (vis.SlotRoot == null)
+                        continue;
+                    if (turretOnly
+                        && (vis.TurretInstance == null || !vis.TurretInstance.activeInHierarchy))
+                        continue;
+                    if (teamFilter != TeamId.None
+                        && vis.AppliedTeam != TeamId.None
+                        && vis.AppliedTeam != teamFilter)
+                        continue;
+                    if (excludeTeam != TeamId.None && vis.AppliedTeam == excludeTeam)
+                        continue;
+
+                    Vector3 pos = turretOnly && vis.TurretInstance != null
+                        ? vis.TurretInstance.transform.position
+                        : vis.SlotRoot.position;
+                    float d = ToroidalMap.ToroidalDistance(aim, pos);
+                    if (d >= best)
+                        continue;
+
+                    best = d;
+                    planetId = group.PlanetId;
+                    worldPos = pos;
+                    radius = ResolveSlotRadius(in vis, turretOnly);
+                    found = true;
+                }
+            }
+
+            return found;
+        }
+
+        static float ResolveSlotRadius(in SlotVisual vis, bool turretOnly)
+        {
+            if (turretOnly && vis.TurretInstance != null)
+                return Mathf.Max(0.2f, vis.TurretInstance.transform.lossyScale.x * 0.55f);
+            if (vis.ZoneVisual != null)
+                return Mathf.Max(0.25f, vis.ZoneVisual.RadiusLocal);
+            return 1.1f;
+        }
+
         bool TryFindClosestDepositSlotForShip(
             EntityManager em,
             TeamId shipTeam,

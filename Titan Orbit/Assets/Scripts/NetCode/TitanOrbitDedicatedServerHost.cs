@@ -5,6 +5,7 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using TitanOrbit.Diagnostics;
+using TitanOrbit.ECS;
 using Unity.Services.Lobbies;
 using Unity.Services.Lobbies.Models;
 using UnityEngine;
@@ -23,8 +24,10 @@ namespace TitanOrbit.NetCode
     ///   (IsOpen=1). Age rotation may spawn a successor and demote IsLatest, but must not close
     ///   or wipe an occupied conquest map.
     /// - Idle teardown / in-process recreate starts only when player count hits zero; the empty
-    ///   countdown resets at that moment (last player left). Until then, keep the sim alive
-    ///   until empty-idle timeout or a real game-end condition (e.g. team wins).
+    ///   countdown resets at that moment (last player left). Until then, keep the sim alive.
+    /// - A real game end (one team left) closes this lobby for new joiners immediately, spawns
+    ///   a fresh IsLatest process, and exits this process once the end-screen players leave.
+    ///   The next Join Game is that new match — never the finished map.
     /// - When the last player leaves, orphan ship ghosts are wiped immediately so a new joiner
     ///   cannot be offered a previous player's ship via NetworkId reuse.
     /// - After N successful 30‑minute idle recreates only (default 6 ≈ 3h empty), exit so
@@ -81,6 +84,10 @@ namespace TitanOrbit.NetCode
         Coroutine _selfHealCoroutine;
         Coroutine _handoffCoroutine;
         Coroutine _memoryHealthCoroutine;
+        Coroutine _relayWatchCoroutine;
+
+        /// <summary>Consecutive failed Relay rebinds. Three failures exit so systemd can republish.</summary>
+        int _relayRebindFailures;
 
         /// <summary>Unix seconds of last periodic memory log (throttles MemoryLogIntervalSeconds).</summary>
         int _lastMemoryLogUnixSeconds;
@@ -106,6 +113,12 @@ namespace TitanOrbit.NetCode
 
         /// <summary>Set when we intentionally exit so the hang thread does not race another Exit.</summary>
         volatile bool _processExitRequested;
+
+        /// <summary>1 after a match win has started lobby close + fresh-process spawn.</summary>
+        bool _matchEndCloseStarted;
+
+        /// <summary>1 after a successor lobby for the next game is browseable.</summary>
+        bool _matchEndSuccessorReady;
 
         /// <summary>
         /// [TITAN-ORBIT] 1 while Relay/lobby recreate is in flight — hang watchdog must not kill
@@ -181,6 +194,7 @@ namespace TitanOrbit.NetCode
             if (_netcodeHealthCoroutine != null) StopCoroutine(_netcodeHealthCoroutine);
             if (_selfHealCoroutine != null) StopCoroutine(_selfHealCoroutine);
             if (_memoryHealthCoroutine != null) StopCoroutine(_memoryHealthCoroutine);
+            if (_relayWatchCoroutine != null) StopCoroutine(_relayWatchCoroutine);
 
             _rotationCoroutine = StartCoroutine(RotationLoop());
             _presenceCoroutine = StartCoroutine(LobbyPresenceWatchdogLoop());
@@ -188,6 +202,7 @@ namespace TitanOrbit.NetCode
             _netcodeHealthCoroutine = StartCoroutine(NetcodeHealthLoop());
             _selfHealCoroutine = StartCoroutine(JoinableLobbySelfHealLoop());
             _memoryHealthCoroutine = StartCoroutine(MemoryHealthLoop());
+            _relayWatchCoroutine = StartCoroutine(RelayAllocationWatchLoop());
             EnsureHangWatchdogStarted();
 
             DedicatedServerFileLog.Append(
@@ -211,10 +226,12 @@ namespace TitanOrbit.NetCode
 
         /// <summary>
         /// [UNITY] Main-thread tick stamp for the hang watchdog. Must stay cheap — no ECS queries.
+        /// Match-end close only reads <see cref="MatchEndServerSignal"/> (a bool the sim already set).
         /// </summary>
         void Update()
         {
             StampMainThreadHeartbeat();
+            TryBeginMatchEndClose();
         }
 
         public void NotifyLobbyReplaced(string newLobbyId, long createdAtEpochSeconds, bool isLatest)
@@ -247,6 +264,125 @@ namespace TitanOrbit.NetCode
                 s_Instance.StampMainThreadHeartbeat();
         }
 
+        /// <summary>
+        /// Starts lobby close + a fresh server process the first time this match is won.
+        /// Players already connected stay so they can leave from the congrats card.
+        /// </summary>
+        void TryBeginMatchEndClose()
+        {
+            if (_matchEndCloseStarted || _processExitRequested || _config == null)
+                return;
+            if (!MatchEndServerSignal.IsMatchWon)
+                return;
+            // Age/full handoff in flight — retry next tick rather than spawning twice at once.
+            if (_handoffInProgress)
+                return;
+
+            _matchEndCloseStarted = true;
+            _handoffInProgress = true;
+            if (_handoffCoroutine != null)
+                StopCoroutine(_handoffCoroutine);
+            _handoffCoroutine = StartCoroutine(RunMatchEndClose());
+        }
+
+        /// <summary>
+        /// Closes this lobby so Join Game cannot re-enter the finished map, then spawns a
+        /// new IsLatest process. Exits immediately if nobody is left on the end screen.
+        /// </summary>
+        IEnumerator RunMatchEndClose()
+        {
+            string lobbyId = _activeLobbyId;
+            DedicatedServerFileLog.Append(
+                "match",
+                "Match won — closing this game and spawning a fresh one lobby=" + lobbyId);
+            Debug.Log("[TitanOrbitDedicatedServerHost] Match won — closing lobby " + lobbyId +
+                      " and starting a new game.");
+
+            if (TitanOrbitSessionManager.Instance != null && !string.IsNullOrWhiteSpace(lobbyId))
+            {
+                Task closeTask = TitanOrbitSessionManager.Instance.CloseLobbyForNewJoinersAsync(lobbyId, "match_won");
+                while (!closeTask.IsCompleted)
+                    yield return null;
+            }
+
+            _matchIsLatest = false;
+
+            bool successorReady = false;
+            for (int attempt = 1; attempt <= MaxSpawnAttemptsPerHandoff && !successorReady; attempt++)
+            {
+                if (!TrySpawnNextMatch(nextIsLatest: true))
+                {
+                    DedicatedServerFileLog.Append(
+                        "match",
+                        "Match-end SpawnNextMatch failed attempt=" + attempt + "/" + MaxSpawnAttemptsPerHandoff);
+                    yield return new WaitForSeconds(SpawnRetryDelaySeconds);
+                    continue;
+                }
+
+                Task<bool> waitTask = WaitForSuccessorLobbyAsync(
+                    lobbyId,
+                    requireLatest: true,
+                    TimeSpan.FromSeconds(SuccessorWaitSecondsPerSpawnAttempt));
+                while (!waitTask.IsCompleted)
+                    yield return null;
+
+                successorReady = !waitTask.IsFaulted && waitTask.Result;
+                if (!successorReady)
+                {
+                    DedicatedServerFileLog.Append(
+                        "match",
+                        "Match-end successor wait failed attempt=" + attempt + "/" + MaxSpawnAttemptsPerHandoff);
+                    yield return new WaitForSeconds(SpawnRetryDelaySeconds);
+                }
+            }
+
+            _matchEndSuccessorReady = successorReady;
+            _handoffInProgress = false;
+            _handoffCoroutine = null;
+
+            // Players still on the congrats card wait for this before the main menu.
+            MatchCloseNetNotify.BroadcastCompleted();
+
+            int players = TitanOrbitSessionManager.Instance != null
+                ? TitanOrbitSessionManager.Instance.GetServerConnectedPlayerCount()
+                : 0;
+            DedicatedServerFileLog.Append(
+                "match",
+                "Match-end handoff successorReady=" + successorReady + " playersOnEndScreen=" + players);
+
+            if (players == 0)
+                ExitFinishedMatchProcess(successorReady);
+        }
+
+        /// <summary>
+        /// Leaves this finished process. Exit 0 when a fresh game is already browseable so
+        /// systemd does not start a duplicate. Exit 1 when the spawn failed so a cold
+        /// restart becomes the next game.
+        /// </summary>
+        /// <param name="successorReady">True when a new IsLatest lobby was confirmed.</param>
+        void ExitFinishedMatchProcess(bool successorReady)
+        {
+            if (_processExitRequested)
+                return;
+
+            _processExitRequested = true;
+            if (successorReady)
+            {
+                DedicatedServerFileLog.Append(
+                    "match",
+                    "Finished match empty — exit 0 (the next game is the successor process)");
+                Debug.Log("[TitanOrbitDedicatedServerHost] Finished match empty — exiting. Next game is live.");
+                Application.Quit(0);
+                return;
+            }
+
+            DedicatedServerFileLog.Append(
+                "match",
+                "Finished match empty — successor missing, exit 1 so a fresh process becomes the next game");
+            Debug.LogWarning("[TitanOrbitDedicatedServerHost] Finished match empty — no successor, exiting for a fresh process.");
+            Application.Quit(1);
+        }
+
         IEnumerator RotationLoop()
         {
             // --- RotationLoop ---
@@ -257,13 +393,21 @@ namespace TitanOrbit.NetCode
                 bool pendingStaleRecreate = false;
                 try
                 {
-                    if (!_handoffInProgress)
-                    {
-                        string lobbyId = _activeLobbyId;
+                        TryBeginMatchEndClose();
                         int playerCount = TitanOrbitSessionManager.Instance != null
                             ? TitanOrbitSessionManager.Instance.GetServerConnectedPlayerCount()
                             : 0;
-                        TrackEmptyMatchTime(playerCount);
+
+                        // Finished match: do not republish this map. Exit once end-screen players are gone.
+                        if (_matchEndCloseStarted)
+                        {
+                            if (playerCount == 0 && !_handoffInProgress && !_processExitRequested)
+                                ExitFinishedMatchProcess(_matchEndSuccessorReady);
+                        }
+                        else if (!_handoffInProgress)
+                        {
+                            string lobbyId = _activeLobbyId;
+                            TrackEmptyMatchTime(playerCount);
 
                         bool isFull = playerCount >= _config.MaxPlayers;
                         long nowEpoch = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
@@ -717,6 +861,53 @@ namespace TitanOrbit.NetCode
             catch (Exception e)
             {
                 Debug.LogWarning("[TitanOrbitDedicatedServerHost] Match request watchdog: " + e.Message);
+            }
+        }
+
+        /// <summary>
+        /// When Relay invalidates the host allocation, the lobby heartbeat can still look fresh
+        /// and Join Game lists a match whose join code never loads the map. Replace the allocation
+        /// and keep this conquest map.
+        /// </summary>
+        IEnumerator RelayAllocationWatchLoop()
+        {
+            var wait = new WaitForSeconds(5f);
+            while (true)
+            {
+                yield return wait;
+                if (_processExitRequested || IsRecreateInProgress() || _handoffInProgress)
+                    continue;
+                if (TitanOrbitSessionManager.Instance == null)
+                    continue;
+                if (!TitanOrbitRelayAllocationSignal.ConsumeServerInvalid())
+                    continue;
+
+                DedicatedServerFileLog.Append(
+                    "netcode",
+                    "Relay allocation invalid — rebinding join code without wiping the match");
+                Debug.LogWarning("[TitanOrbitDedicatedServerHost] Relay allocation invalid — rebinding.");
+
+                Task<bool> rebind = TitanOrbitSessionManager.Instance.RebindDedicatedRelayKeepMatchAsync();
+                while (!rebind.IsCompleted)
+                    yield return null;
+
+                if (rebind.IsFaulted || !rebind.Result)
+                {
+                    _relayRebindFailures++;
+                    DedicatedServerFileLog.Append(
+                        "netcode",
+                        "Relay rebind failed " + _relayRebindFailures + "/3");
+                    if (_relayRebindFailures >= 3)
+                    {
+                        Debug.LogError("[TitanOrbitDedicatedServerHost] Relay rebind failed 3 times; exiting.");
+                        _ = CloseLobbyAndExitAsync(_activeLobbyId, "relay_rebind_failed");
+                        yield break;
+                    }
+                }
+                else
+                {
+                    _relayRebindFailures = 0;
+                }
             }
         }
 

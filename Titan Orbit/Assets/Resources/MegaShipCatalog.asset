@@ -16,11 +16,12 @@ MonoBehaviour:
   - displayName: CraizanStar_TurretBarrel
     partType: Weapon Bullet
     isWeapon: 1
+    isLaser: 0
     bulletPrefabIndex: -1
     stats:
-      firePower: 15
-      bulletSpeed: 14
-      bulletRange: 25
+      firePower: 20
+      bulletSpeed: 12
+      bulletRange: 30
       fireRate: 2
       rammingPower: 0
       healthCap: 0
@@ -35,11 +36,12 @@ MonoBehaviour:
   - displayName: GalacticLeopard_Parts_Gun
     partType: Weapon Bullet
     isWeapon: 1
+    isLaser: 0
     bulletPrefabIndex: -1
     stats:
-      firePower: 15
-      bulletSpeed: 14
-      bulletRange: 25
+      firePower: 20
+      bulletSpeed: 12
+      bulletRange: 30
       fireRate: 2
       rammingPower: 0
       healthCap: 0
@@ -54,11 +56,12 @@ MonoBehaviour:
   - displayName: GalacticLeopard_Parts_Turret_Single
     partType: Weapon Bullet
     isWeapon: 1
+    isLaser: 0
     bulletPrefabIndex: -1
     stats:
-      firePower: 15
-      bulletSpeed: 14
-      bulletRange: 25
+      firePower: 20
+      bulletSpeed: 12
+      bulletRange: 30
       fireRate: 2
       rammingPower: 0
       healthCap: 0
@@ -73,11 +76,52 @@ MonoBehaviour:
   - displayName: GalacticOkamoto_Turret1
     partType: Weapon Bullet
     isWeapon: 1
+    isLaser: 0
     bulletPrefabIndex: -1
     stats:
-      firePower: 15
-      bulletSpeed: 14
-      bulletRange: 25
+      firePower: 20
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 2
+      rammingPower: 0
+      healthCap: 0
+      healthRegen: 0
+      energyCap: 12
+      energyRegen: 0
+      moveSpeed: 0
+      accelerationCap: 0
+      turnSpeed: 0
+      weaponRotationSpeed: 90
+      maxPeople: 0
+  - displayName: GalacticOkamoto_Turret3
+    partType: Weapon Bullet
+    isWeapon: 1
+    isLaser: 0
+    bulletPrefabIndex: -1
+    stats:
+      firePower: 20
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 2
+      rammingPower: 0
+      healthCap: 0
+      healthRegen: 0
+      energyCap: 12
+      energyRegen: 0
+      moveSpeed: 0
+      accelerationCap: 0
+      turnSpeed: 0
+      weaponRotationSpeed: 90
+      maxPeople: 0
+  - displayName: Turret
+    partType: Weapon Bullet
+    isWeapon: 1
+    isLaser: 0
+    bulletPrefabIndex: -1
+    stats:
+      firePower: 20
+      bulletSpeed: 12
+      bulletRange: 30
       fireRate: 2
       rammingPower: 0
       healthCap: 0
@@ -92,12 +136,13 @@ MonoBehaviour:
   - displayName: GalacticLeopard_Parts_Turret_Dual
     partType: Weapon Cannon
     isWeapon: 1
+    isLaser: 1
     bulletPrefabIndex: -1
     stats:
-      firePower: 50
+      firePower: 40
       bulletSpeed: 12
-      bulletRange: 25
-      fireRate: 0.5
+      bulletRange: 12
+      fireRate: 1
       rammingPower: 0
       healthCap: 0
       healthRegen: 0
@@ -111,31 +156,13 @@ MonoBehaviour:
   - displayName: GalacticOkamoto_Cannon
     partType: Weapon Cannon
     isWeapon: 1
+    isLaser: 1
     bulletPrefabIndex: -1
     stats:
-      firePower: 50
+      firePower: 40
       bulletSpeed: 12
-      bulletRange: 25
-      fireRate: 0.5
-      rammingPower: 0
-      healthCap: 0
-      healthRegen: 0
-      energyCap: 40
-      energyRegen: 0
-      moveSpeed: 0
-      accelerationCap: 0
-      turnSpeed: 0
-      weaponRotationSpeed: 90
-      maxPeople: 0
-  - displayName: GalacticOkamoto_Turret3
-    partType: Weapon Cannon
-    isWeapon: 1
-    bulletPrefabIndex: -1
-    stats:
-      firePower: 50
-      bulletSpeed: 12
-      bulletRange: 25
-      fireRate: 0.5
+      bulletRange: 12
+      fireRate: 1
       rammingPower: 0
       healthCap: 0
       healthRegen: 0
@@ -149,12 +176,13 @@ MonoBehaviour:
   - displayName: CraizanStar_MissileLauncher
     partType: Weapon Missile
     isWeapon: 1
+    isLaser: 0
     bulletPrefabIndex: -1
     stats:
-      firePower: 30
+      firePower: 50
       bulletSpeed: 10
-      bulletRange: 25
-      fireRate: 0.75
+      bulletRange: 30
+      fireRate: 0.5
       rammingPower: 0
       healthCap: 0
       healthRegen: 0
@@ -168,12 +196,13 @@ MonoBehaviour:
   - displayName: GalacticLeopard_Parts_Turret_Quad
     partType: Weapon Missile
     isWeapon: 1
+    isLaser: 0
     bulletPrefabIndex: -1
     stats:
-      firePower: 30
+      firePower: 50
       bulletSpeed: 10
-      bulletRange: 25
-      fireRate: 0.75
+      bulletRange: 30
+      fireRate: 0.5
       rammingPower: 0
       healthCap: 0
       healthRegen: 0
@@ -187,12 +216,13 @@ MonoBehaviour:
   - displayName: GalacticLeopard_Parts_Turret_Sniper
     partType: Weapon Sniper
     isWeapon: 1
+    isLaser: 0
     bulletPrefabIndex: -1
     stats:
-      firePower: 100
-      bulletSpeed: 28
+      firePower: 200
+      bulletSpeed: 20
       bulletRange: 40
-      fireRate: 0.2
+      fireRate: 0.3
       rammingPower: 0
       healthCap: 0
       healthRegen: 0
@@ -203,9 +233,70 @@ MonoBehaviour:
       turnSpeed: 0
       weaponRotationSpeed: 90
       maxPeople: 0
+  - displayName: GalacticLeopard_Main_Hold
+    partType: Cargo
+    isWeapon: 0
+    isLaser: 0
+    bulletPrefabIndex: -1
+    stats:
+      firePower: 0
+      bulletSpeed: 0
+      bulletRange: 0
+      fireRate: 0
+      rammingPower: 0
+      healthCap: 10
+      healthRegen: 0
+      energyCap: 0
+      energyRegen: 0
+      moveSpeed: -0.2
+      accelerationCap: 0
+      turnSpeed: 0
+      weaponRotationSpeed: 0
+      maxPeople: 10
+  - displayName: GalacticLeopard_Main_Storage
+    partType: Cargo
+    isWeapon: 0
+    isLaser: 0
+    bulletPrefabIndex: -1
+    stats:
+      firePower: 0
+      bulletSpeed: 0
+      bulletRange: 0
+      fireRate: 0
+      rammingPower: 0
+      healthCap: 10
+      healthRegen: 0
+      energyCap: 0
+      energyRegen: 0
+      moveSpeed: -0.2
+      accelerationCap: 0
+      turnSpeed: 0
+      weaponRotationSpeed: 0
+      maxPeople: 10
+  - displayName: GalacticLeopard_Parts_Cargo
+    partType: Cargo
+    isWeapon: 0
+    isLaser: 0
+    bulletPrefabIndex: -1
+    stats:
+      firePower: 0
+      bulletSpeed: 0
+      bulletRange: 0
+      fireRate: 0
+      rammingPower: 0
+      healthCap: 10
+      healthRegen: 0
+      energyCap: 0
+      energyRegen: 0
+      moveSpeed: -0.2
+      accelerationCap: 0
+      turnSpeed: 0
+      weaponRotationSpeed: 0
+      maxPeople: 10
   - displayName: GalacticLeopard_Parts_Cockpit
     partType: Cockpit
     isWeapon: 0
+    isLaser: 0
     bulletPrefabIndex: -1
     stats:
       firePower: 0
@@ -213,18 +304,19 @@ MonoBehaviour:
       bulletRange: 0
       fireRate: 0
       rammingPower: 4
-      healthCap: 100
-      healthRegen: 1
-      energyCap: 100
-      energyRegen: 2
-      moveSpeed: 0
+      healthCap: 400
+      healthRegen: 4
+      energyCap: 200
+      energyRegen: 5
+      moveSpeed: 1
       accelerationCap: 0
       turnSpeed: 0
       weaponRotationSpeed: 0
-      maxPeople: 100
+      maxPeople: 150
   - displayName: GalacticOkamoto_Cockpit
     partType: Cockpit
     isWeapon: 0
+    isLaser: 0
     bulletPrefabIndex: -1
     stats:
       firePower: 0
@@ -232,18 +324,19 @@ MonoBehaviour:
       bulletRange: 0
       fireRate: 0
       rammingPower: 4
-      healthCap: 100
-      healthRegen: 1
-      energyCap: 100
-      energyRegen: 2
-      moveSpeed: 0
+      healthCap: 400
+      healthRegen: 4
+      energyCap: 200
+      energyRegen: 5
+      moveSpeed: 1
       accelerationCap: 0
       turnSpeed: 0
       weaponRotationSpeed: 0
-      maxPeople: 100
+      maxPeople: 150
   - displayName: GalacticLeopard_Main_Engine
     partType: Engine
     isWeapon: 0
+    isLaser: 0
     bulletPrefabIndex: -1
     stats:
       firePower: 0
@@ -253,9 +346,9 @@ MonoBehaviour:
       rammingPower: 0
       healthCap: 20
       healthRegen: 0.3
-      energyCap: 140
-      energyRegen: 5
-      moveSpeed: 6
+      energyCap: 100
+      energyRegen: 3
+      moveSpeed: 5
       accelerationCap: 4
       turnSpeed: 0
       weaponRotationSpeed: 0
@@ -263,6 +356,7 @@ MonoBehaviour:
   - displayName: GalacticOkamoto_Engine
     partType: Engine
     isWeapon: 0
+    isLaser: 0
     bulletPrefabIndex: -1
     stats:
       firePower: 0
@@ -272,9 +366,9 @@ MonoBehaviour:
       rammingPower: 0
       healthCap: 20
       healthRegen: 0.3
-      energyCap: 140
-      energyRegen: 5
-      moveSpeed: 6
+      energyCap: 100
+      energyRegen: 3
+      moveSpeed: 5
       accelerationCap: 4
       turnSpeed: 0
       weaponRotationSpeed: 0
@@ -282,6 +376,7 @@ MonoBehaviour:
   - displayName: GalacticOkamoto_Engine_Mirrored
     partType: Engine
     isWeapon: 0
+    isLaser: 0
     bulletPrefabIndex: -1
     stats:
       firePower: 0
@@ -291,9 +386,9 @@ MonoBehaviour:
       rammingPower: 0
       healthCap: 20
       healthRegen: 0.3
-      energyCap: 140
-      energyRegen: 5
-      moveSpeed: 6
+      energyCap: 100
+      energyRegen: 3
+      moveSpeed: 5
       accelerationCap: 4
       turnSpeed: 0
       weaponRotationSpeed: 0
@@ -301,6 +396,7 @@ MonoBehaviour:
   - displayName: CraizanStar_Armor1
     partType: Hull
     isWeapon: 0
+    isLaser: 0
     bulletPrefabIndex: -1
     stats:
       firePower: 0
@@ -309,17 +405,18 @@ MonoBehaviour:
       fireRate: 0
       rammingPower: 1.2
       healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
-      moveSpeed: 0
+      healthRegen: 2
+      energyCap: 30
+      energyRegen: 0.3
+      moveSpeed: -0.5
       accelerationCap: 0
       turnSpeed: 0
       weaponRotationSpeed: 0
-      maxPeople: 0
+      maxPeople: 3
   - displayName: CraizanStar_Armor2
     partType: Hull
     isWeapon: 0
+    isLaser: 0
     bulletPrefabIndex: -1
     stats:
       firePower: 0
@@ -328,17 +425,18 @@ MonoBehaviour:
       fireRate: 0
       rammingPower: 1.2
       healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
-      moveSpeed: 0
+      healthRegen: 2
+      energyCap: 30
+      energyRegen: 0.3
+      moveSpeed: -0.5
       accelerationCap: 0
       turnSpeed: 0
       weaponRotationSpeed: 0
-      maxPeople: 0
+      maxPeople: 3
   - displayName: CraizanStar_Base1
     partType: Hull
     isWeapon: 0
+    isLaser: 0
     bulletPrefabIndex: -1
     stats:
       firePower: 0
@@ -347,17 +445,18 @@ MonoBehaviour:
       fireRate: 0
       rammingPower: 1.2
       healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
-      moveSpeed: 0
+      healthRegen: 2
+      energyCap: 30
+      energyRegen: 0.3
+      moveSpeed: -0.5
       accelerationCap: 0
       turnSpeed: 0
       weaponRotationSpeed: 0
-      maxPeople: 0
+      maxPeople: 3
   - displayName: CraizanStar_Base2
     partType: Hull
     isWeapon: 0
+    isLaser: 0
     bulletPrefabIndex: -1
     stats:
       firePower: 0
@@ -366,17 +465,18 @@ MonoBehaviour:
       fireRate: 0
       rammingPower: 1.2
       healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
-      moveSpeed: 0
+      healthRegen: 2
+      energyCap: 30
+      energyRegen: 0.3
+      moveSpeed: -0.5
       accelerationCap: 0
       turnSpeed: 0
       weaponRotationSpeed: 0
-      maxPeople: 0
+      maxPeople: 3
   - displayName: CraizanStar_Base3
     partType: Hull
     isWeapon: 0
+    isLaser: 0
     bulletPrefabIndex: -1
     stats:
       firePower: 0
@@ -385,17 +485,18 @@ MonoBehaviour:
       fireRate: 0
       rammingPower: 1.2
       healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
-      moveSpeed: 0
+      healthRegen: 2
+      energyCap: 30
+      energyRegen: 0.3
+      moveSpeed: -0.5
       accelerationCap: 0
       turnSpeed: 0
       weaponRotationSpeed: 0
-      maxPeople: 0
+      maxPeople: 3
   - displayName: CraizanStar_Bridge
     partType: Hull
     isWeapon: 0
+    isLaser: 0
     bulletPrefabIndex: -1
     stats:
       firePower: 0
@@ -404,17 +505,18 @@ MonoBehaviour:
       fireRate: 0
       rammingPower: 1.2
       healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
-      moveSpeed: 0
+      healthRegen: 2
+      energyCap: 30
+      energyRegen: 0.3
+      moveSpeed: -0.5
       accelerationCap: 0
       turnSpeed: 0
       weaponRotationSpeed: 0
-      maxPeople: 0
+      maxPeople: 3
   - displayName: CraizanStar_Detector
     partType: Hull
     isWeapon: 0
+    isLaser: 0
     bulletPrefabIndex: -1
     stats:
       firePower: 0
@@ -423,17 +525,18 @@ MonoBehaviour:
       fireRate: 0
       rammingPower: 1.2
       healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
-      moveSpeed: 0
+      healthRegen: 2
+      energyCap: 30
+      energyRegen: 0.3
+      moveSpeed: -0.5
       accelerationCap: 0
       turnSpeed: 0
       weaponRotationSpeed: 0
-      maxPeople: 0
+      maxPeople: 3
   - displayName: CraizanStar_Sensor
     partType: Hull
     isWeapon: 0
+    isLaser: 0
     bulletPrefabIndex: -1
     stats:
       firePower: 0
@@ -442,17 +545,18 @@ MonoBehaviour:
       fireRate: 0
       rammingPower: 1.2
       healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
-      moveSpeed: 0
+      healthRegen: 2
+      energyCap: 30
+      energyRegen: 0.3
+      moveSpeed: -0.5
       accelerationCap: 0
       turnSpeed: 0
       weaponRotationSpeed: 0
-      maxPeople: 0
+      maxPeople: 3
   - displayName: Deck
     partType: Hull
     isWeapon: 0
+    isLaser: 0
     bulletPrefabIndex: -1
     stats:
       firePower: 0
@@ -461,17 +565,18 @@ MonoBehaviour:
       fireRate: 0
       rammingPower: 1.2
       healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
-      moveSpeed: 0
+      healthRegen: 2
+      energyCap: 30
+      energyRegen: 0.3
+      moveSpeed: -0.5
       accelerationCap: 0
       turnSpeed: 0
       weaponRotationSpeed: 0
-      maxPeople: 0
+      maxPeople: 3
   - displayName: GalacticLeopard_Main_Arch
     partType: Hull
     isWeapon: 0
+    isLaser: 0
     bulletPrefabIndex: -1
     stats:
       firePower: 0
@@ -480,17 +585,18 @@ MonoBehaviour:
       fireRate: 0
       rammingPower: 1.2
       healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
-      moveSpeed: 0
+      healthRegen: 2
+      energyCap: 30
+      energyRegen: 0.3
+      moveSpeed: -0.5
       accelerationCap: 0
       turnSpeed: 0
       weaponRotationSpeed: 0
-      maxPeople: 0
+      maxPeople: 3
   - displayName: GalacticLeopard_Main_Core
     partType: Hull
     isWeapon: 0
+    isLaser: 0
     bulletPrefabIndex: -1
     stats:
       firePower: 0
@@ -499,17 +605,18 @@ MonoBehaviour:
       fireRate: 0
       rammingPower: 1.2
       healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
-      moveSpeed: 0
+      healthRegen: 2
+      energyCap: 30
+      energyRegen: 0.3
+      moveSpeed: -0.5
       accelerationCap: 0
       turnSpeed: 0
       weaponRotationSpeed: 0
-      maxPeople: 0
+      maxPeople: 3
   - displayName: GalacticLeopard_Main_Forepart
     partType: Hull
     isWeapon: 0
+    isLaser: 0
     bulletPrefabIndex: -1
     stats:
       firePower: 0
@@ -518,55 +625,18 @@ MonoBehaviour:
       fireRate: 0
       rammingPower: 1.2
       healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
-      moveSpeed: 0
+      healthRegen: 2
+      energyCap: 30
+      energyRegen: 0.3
+      moveSpeed: -0.5
       accelerationCap: 0
       turnSpeed: 0
       weaponRotationSpeed: 0
-      maxPeople: 0
-  - displayName: GalacticLeopard_Main_Hold
-    partType: Hull
-    isWeapon: 0
-    bulletPrefabIndex: -1
-    stats:
-      firePower: 0
-      bulletSpeed: 0
-      bulletRange: 0
-      fireRate: 0
-      rammingPower: 1.2
-      healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
-      moveSpeed: 0
-      accelerationCap: 0
-      turnSpeed: 0
-      weaponRotationSpeed: 0
-      maxPeople: 0
-  - displayName: GalacticLeopard_Main_Storage
-    partType: Hull
-    isWeapon: 0
-    bulletPrefabIndex: -1
-    stats:
-      firePower: 0
-      bulletSpeed: 0
-      bulletRange: 0
-      fireRate: 0
-      rammingPower: 1.2
-      healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
-      moveSpeed: 0
-      accelerationCap: 0
-      turnSpeed: 0
-      weaponRotationSpeed: 0
-      maxPeople: 0
+      maxPeople: 3
   - displayName: GalacticLeopard_Parts_Bend
     partType: Hull
     isWeapon: 0
+    isLaser: 0
     bulletPrefabIndex: -1
     stats:
       firePower: 0
@@ -575,17 +645,18 @@ MonoBehaviour:
       fireRate: 0
       rammingPower: 1.2
       healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
-      moveSpeed: 0
+      healthRegen: 2
+      energyCap: 30
+      energyRegen: 0.3
+      moveSpeed: -0.5
       accelerationCap: 0
       turnSpeed: 0
       weaponRotationSpeed: 0
-      maxPeople: 0
+      maxPeople: 3
   - displayName: GalacticLeopard_Parts_Box
     partType: Hull
     isWeapon: 0
+    isLaser: 0
     bulletPrefabIndex: -1
     stats:
       firePower: 0
@@ -594,17 +665,18 @@ MonoBehaviour:
       fireRate: 0
       rammingPower: 1.2
       healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
-      moveSpeed: 0
+      healthRegen: 2
+      energyCap: 30
+      energyRegen: 0.3
+      moveSpeed: -0.5
       accelerationCap: 0
       turnSpeed: 0
       weaponRotationSpeed: 0
-      maxPeople: 0
+      maxPeople: 3
   - displayName: GalacticLeopard_Parts_Bridge
     partType: Hull
     isWeapon: 0
+    isLaser: 0
     bulletPrefabIndex: -1
     stats:
       firePower: 0
@@ -613,36 +685,18 @@ MonoBehaviour:
       fireRate: 0
       rammingPower: 1.2
       healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
-      moveSpeed: 0
+      healthRegen: 2
+      energyCap: 30
+      energyRegen: 0.3
+      moveSpeed: -0.5
       accelerationCap: 0
       turnSpeed: 0
       weaponRotationSpeed: 0
-      maxPeople: 0
-  - displayName: GalacticLeopard_Parts_Cargo
-    partType: Hull
-    isWeapon: 0
-    bulletPrefabIndex: -1
-    stats:
-      firePower: 0
-      bulletSpeed: 0
-      bulletRange: 0
-      fireRate: 0
-      rammingPower: 1.2
-      healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
-      moveSpeed: 0
-      accelerationCap: 0
-      turnSpeed: 0
-      weaponRotationSpeed: 0
-      maxPeople: 0
+      maxPeople: 3
   - displayName: GalacticLeopard_Parts_ControlRoom
     partType: Hull
     isWeapon: 0
+    isLaser: 0
     bulletPrefabIndex: -1
     stats:
       firePower: 0
@@ -651,17 +705,18 @@ MonoBehaviour:
       fireRate: 0
       rammingPower: 1.2
       healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
-      moveSpeed: 0
+      healthRegen: 2
+      energyCap: 30
+      energyRegen: 0.3
+      moveSpeed: -0.5
       accelerationCap: 0
       turnSpeed: 0
       weaponRotationSpeed: 0
-      maxPeople: 0
+      maxPeople: 3
   - displayName: GalacticLeopard_Parts_Cylinder
     partType: Hull
     isWeapon: 0
+    isLaser: 0
     bulletPrefabIndex: -1
     stats:
       firePower: 0
@@ -670,17 +725,18 @@ MonoBehaviour:
       fireRate: 0
       rammingPower: 1.2
       healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
-      moveSpeed: 0
+      healthRegen: 2
+      energyCap: 30
+      energyRegen: 0.3
+      moveSpeed: -0.5
       accelerationCap: 0
       turnSpeed: 0
       weaponRotationSpeed: 0
-      maxPeople: 0
+      maxPeople: 3
   - displayName: GalacticLeopard_Parts_Fender
     partType: Hull
     isWeapon: 0
+    isLaser: 0
     bulletPrefabIndex: -1
     stats:
       firePower: 0
@@ -689,17 +745,18 @@ MonoBehaviour:
       fireRate: 0
       rammingPower: 1.2
       healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
-      moveSpeed: 0
+      healthRegen: 2
+      energyCap: 30
+      energyRegen: 0.3
+      moveSpeed: -0.5
       accelerationCap: 0
       turnSpeed: 0
       weaponRotationSpeed: 0
-      maxPeople: 0
+      maxPeople: 3
   - displayName: GalacticLeopard_Parts_Fork
     partType: Hull
     isWeapon: 0
+    isLaser: 0
     bulletPrefabIndex: -1
     stats:
       firePower: 0
@@ -708,17 +765,18 @@ MonoBehaviour:
       fireRate: 0
       rammingPower: 1.2
       healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
-      moveSpeed: 0
+      healthRegen: 2
+      energyCap: 30
+      energyRegen: 0.3
+      moveSpeed: -0.5
       accelerationCap: 0
       turnSpeed: 0
       weaponRotationSpeed: 0
-      maxPeople: 0
+      maxPeople: 3
   - displayName: GalacticLeopard_Parts_Silo
     partType: Hull
     isWeapon: 0
+    isLaser: 0
     bulletPrefabIndex: -1
     stats:
       firePower: 0
@@ -727,17 +785,18 @@ MonoBehaviour:
       fireRate: 0
       rammingPower: 1.2
       healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
-      moveSpeed: 0
+      healthRegen: 2
+      energyCap: 30
+      energyRegen: 0.3
+      moveSpeed: -0.5
       accelerationCap: 0
       turnSpeed: 0
       weaponRotationSpeed: 0
-      maxPeople: 0
+      maxPeople: 3
   - displayName: GalacticOkamoto_Body
     partType: Hull
     isWeapon: 0
+    isLaser: 0
     bulletPrefabIndex: -1
     stats:
       firePower: 0
@@ -746,17 +805,18 @@ MonoBehaviour:
       fireRate: 0
       rammingPower: 1.2
       healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
-      moveSpeed: 0
+      healthRegen: 2
+      energyCap: 30
+      energyRegen: 0.3
+      moveSpeed: -0.5
       accelerationCap: 0
       turnSpeed: 0
       weaponRotationSpeed: 0
-      maxPeople: 0
+      maxPeople: 3
   - displayName: GalacticOkamoto_Box
     partType: Hull
     isWeapon: 0
+    isLaser: 0
     bulletPrefabIndex: -1
     stats:
       firePower: 0
@@ -765,17 +825,18 @@ MonoBehaviour:
       fireRate: 0
       rammingPower: 1.2
       healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
-      moveSpeed: 0
+      healthRegen: 2
+      energyCap: 30
+      energyRegen: 0.3
+      moveSpeed: -0.5
       accelerationCap: 0
       turnSpeed: 0
       weaponRotationSpeed: 0
-      maxPeople: 0
+      maxPeople: 3
   - displayName: GalacticOkamoto_Bridge
     partType: Hull
     isWeapon: 0
+    isLaser: 0
     bulletPrefabIndex: -1
     stats:
       firePower: 0
@@ -784,17 +845,18 @@ MonoBehaviour:
       fireRate: 0
       rammingPower: 1.2
       healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
-      moveSpeed: 0
+      healthRegen: 2
+      energyCap: 30
+      energyRegen: 0.3
+      moveSpeed: -0.5
       accelerationCap: 0
       turnSpeed: 0
       weaponRotationSpeed: 0
-      maxPeople: 0
+      maxPeople: 3
   - displayName: GalacticOkamoto_Capsule
     partType: Hull
     isWeapon: 0
+    isLaser: 0
     bulletPrefabIndex: -1
     stats:
       firePower: 0
@@ -803,17 +865,18 @@ MonoBehaviour:
       fireRate: 0
       rammingPower: 1.2
       healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
-      moveSpeed: 0
+      healthRegen: 2
+      energyCap: 30
+      energyRegen: 0.3
+      moveSpeed: -0.5
       accelerationCap: 0
       turnSpeed: 0
       weaponRotationSpeed: 0
-      maxPeople: 0
+      maxPeople: 3
   - displayName: GalacticOkamoto_Cylinder
     partType: Hull
     isWeapon: 0
+    isLaser: 0
     bulletPrefabIndex: -1
     stats:
       firePower: 0
@@ -822,17 +885,18 @@ MonoBehaviour:
       fireRate: 0
       rammingPower: 1.2
       healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
-      moveSpeed: 0
+      healthRegen: 2
+      energyCap: 30
+      energyRegen: 0.3
+      moveSpeed: -0.5
       accelerationCap: 0
       turnSpeed: 0
       weaponRotationSpeed: 0
-      maxPeople: 0
+      maxPeople: 3
   - displayName: GalacticOkamoto_Fusiform
     partType: Hull
     isWeapon: 0
+    isLaser: 0
     bulletPrefabIndex: -1
     stats:
       firePower: 0
@@ -841,17 +905,18 @@ MonoBehaviour:
       fireRate: 0
       rammingPower: 1.2
       healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
-      moveSpeed: 0
+      healthRegen: 2
+      energyCap: 30
+      energyRegen: 0.3
+      moveSpeed: -0.5
       accelerationCap: 0
       turnSpeed: 0
       weaponRotationSpeed: 0
-      maxPeople: 0
+      maxPeople: 3
   - displayName: GalacticOkamoto_Head
     partType: Hull
     isWeapon: 0
+    isLaser: 0
     bulletPrefabIndex: -1
     stats:
       firePower: 0
@@ -860,17 +925,18 @@ MonoBehaviour:
       fireRate: 0
       rammingPower: 1.2
       healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
-      moveSpeed: 0
+      healthRegen: 2
+      energyCap: 30
+      energyRegen: 0.3
+      moveSpeed: -0.5
       accelerationCap: 0
       turnSpeed: 0
       weaponRotationSpeed: 0
-      maxPeople: 0
+      maxPeople: 3
   - displayName: GalacticOkamoto_Hemisphere
     partType: Hull
     isWeapon: 0
+    isLaser: 0
     bulletPrefabIndex: -1
     stats:
       firePower: 0
@@ -879,17 +945,18 @@ MonoBehaviour:
       fireRate: 0
       rammingPower: 1.2
       healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
-      moveSpeed: 0
+      healthRegen: 2
+      energyCap: 30
+      energyRegen: 0.3
+      moveSpeed: -0.5
       accelerationCap: 0
       turnSpeed: 0
       weaponRotationSpeed: 0
-      maxPeople: 0
+      maxPeople: 3
   - displayName: GalacticOkamoto_Nozzle
     partType: Hull
     isWeapon: 0
+    isLaser: 0
     bulletPrefabIndex: -1
     stats:
       firePower: 0
@@ -898,17 +965,18 @@ MonoBehaviour:
       fireRate: 0
       rammingPower: 1.2
       healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
-      moveSpeed: 0
+      healthRegen: 2
+      energyCap: 30
+      energyRegen: 0.3
+      moveSpeed: -0.5
       accelerationCap: 0
       turnSpeed: 0
       weaponRotationSpeed: 0
-      maxPeople: 0
+      maxPeople: 3
   - displayName: GalacticOkamoto_Nozzle_Mirrored
     partType: Hull
     isWeapon: 0
+    isLaser: 0
     bulletPrefabIndex: -1
     stats:
       firePower: 0
@@ -917,17 +985,18 @@ MonoBehaviour:
       fireRate: 0
       rammingPower: 1.2
       healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
-      moveSpeed: 0
+      healthRegen: 2
+      energyCap: 30
+      energyRegen: 0.3
+      moveSpeed: -0.5
       accelerationCap: 0
       turnSpeed: 0
       weaponRotationSpeed: 0
-      maxPeople: 0
+      maxPeople: 3
   - displayName: Main
     partType: Hull
     isWeapon: 0
+    isLaser: 0
     bulletPrefabIndex: -1
     stats:
       firePower: 0
@@ -936,17 +1005,18 @@ MonoBehaviour:
       fireRate: 0
       rammingPower: 1.2
       healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
-      moveSpeed: 0
+      healthRegen: 2
+      energyCap: 30
+      energyRegen: 0.3
+      moveSpeed: -0.5
       accelerationCap: 0
       turnSpeed: 0
       weaponRotationSpeed: 0
-      maxPeople: 0
+      maxPeople: 3
   - displayName: Parts
     partType: Hull
     isWeapon: 0
+    isLaser: 0
     bulletPrefabIndex: -1
     stats:
       firePower: 0
@@ -955,17 +1025,18 @@ MonoBehaviour:
       fireRate: 0
       rammingPower: 1.2
       healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
-      moveSpeed: 0
+      healthRegen: 2
+      energyCap: 30
+      energyRegen: 0.3
+      moveSpeed: -0.5
       accelerationCap: 0
       turnSpeed: 0
       weaponRotationSpeed: 0
-      maxPeople: 0
+      maxPeople: 3
   - displayName: StarSparrow1
     partType: Hull
     isWeapon: 0
+    isLaser: 0
     bulletPrefabIndex: -1
     stats:
       firePower: 0
@@ -974,17 +1045,18 @@ MonoBehaviour:
       fireRate: 0
       rammingPower: 1.2
       healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
-      moveSpeed: 0
+      healthRegen: 2
+      energyCap: 30
+      energyRegen: 0.3
+      moveSpeed: -0.5
       accelerationCap: 0
       turnSpeed: 0
       weaponRotationSpeed: 0
-      maxPeople: 0
+      maxPeople: 3
   - displayName: GalacticLeopard_Main_Tail
     partType: Tail
     isWeapon: 0
+    isLaser: 0
     bulletPrefabIndex: -1
     stats:
       firePower: 0
@@ -994,16 +1066,17 @@ MonoBehaviour:
       rammingPower: 0
       healthCap: 16
       healthRegen: 0.1
-      energyCap: 0
-      energyRegen: 0
-      moveSpeed: 0
+      energyCap: 10
+      energyRegen: 1
+      moveSpeed: 2
       accelerationCap: 0
-      turnSpeed: 1
+      turnSpeed: 10
       weaponRotationSpeed: 0
       maxPeople: 0
   - displayName: GalacticOkamoto_Tail
     partType: Tail
     isWeapon: 0
+    isLaser: 0
     bulletPrefabIndex: -1
     stats:
       firePower: 0
@@ -1013,16 +1086,17 @@ MonoBehaviour:
       rammingPower: 0
       healthCap: 16
       healthRegen: 0.1
-      energyCap: 0
-      energyRegen: 0
-      moveSpeed: 0
+      energyCap: 10
+      energyRegen: 1
+      moveSpeed: 2
       accelerationCap: 0
-      turnSpeed: 1
+      turnSpeed: 10
       weaponRotationSpeed: 0
       maxPeople: 0
   - displayName: CraizanStar_Thruster
     partType: Thruster
     isWeapon: 0
+    isLaser: 0
     bulletPrefabIndex: -1
     stats:
       firePower: 0
@@ -1032,16 +1106,17 @@ MonoBehaviour:
       rammingPower: 0
       healthCap: 12
       healthRegen: 0.1
-      energyCap: 0
-      energyRegen: 0
-      moveSpeed: 3
-      accelerationCap: 2
-      turnSpeed: 0.5
+      energyCap: 30
+      energyRegen: 3
+      moveSpeed: 4
+      accelerationCap: 3
+      turnSpeed: 5
       weaponRotationSpeed: 0
       maxPeople: 0
   - displayName: GalacticLeopard_Parts_Thruster
     partType: Thruster
     isWeapon: 0
+    isLaser: 0
     bulletPrefabIndex: -1
     stats:
       firePower: 0
@@ -1051,16 +1126,17 @@ MonoBehaviour:
       rammingPower: 0
       healthCap: 12
       healthRegen: 0.1
-      energyCap: 0
-      energyRegen: 0
-      moveSpeed: 3
-      accelerationCap: 2
-      turnSpeed: 0.5
+      energyCap: 30
+      energyRegen: 3
+      moveSpeed: 4
+      accelerationCap: 3
+      turnSpeed: 5
       weaponRotationSpeed: 0
       maxPeople: 0
   - displayName: GalacticOkamoto_Thruster
     partType: Thruster
     isWeapon: 0
+    isLaser: 0
     bulletPrefabIndex: -1
     stats:
       firePower: 0
@@ -1070,16 +1146,17 @@ MonoBehaviour:
       rammingPower: 0
       healthCap: 12
       healthRegen: 0.1
-      energyCap: 0
-      energyRegen: 0
-      moveSpeed: 3
-      accelerationCap: 2
-      turnSpeed: 0.5
+      energyCap: 30
+      energyRegen: 3
+      moveSpeed: 4
+      accelerationCap: 3
+      turnSpeed: 5
       weaponRotationSpeed: 0
       maxPeople: 0
   - displayName: CraizanStar_Wing
     partType: Wing
     isWeapon: 0
+    isLaser: 0
     bulletPrefabIndex: -1
     stats:
       firePower: 0
@@ -1088,17 +1165,18 @@ MonoBehaviour:
       fireRate: 0
       rammingPower: 0
       healthCap: 36
-      healthRegen: 0.4
-      energyCap: 0
-      energyRegen: 0
-      moveSpeed: 0
+      healthRegen: 2
+      energyCap: 10
+      energyRegen: 0.5
+      moveSpeed: 2
       accelerationCap: 0
-      turnSpeed: 0
+      turnSpeed: 4
       weaponRotationSpeed: 0
-      maxPeople: 20
+      maxPeople: 5
   - displayName: CraizanStar_Wing2
     partType: Wing
     isWeapon: 0
+    isLaser: 0
     bulletPrefabIndex: -1
     stats:
       firePower: 0
@@ -1107,17 +1185,18 @@ MonoBehaviour:
       fireRate: 0
       rammingPower: 0
       healthCap: 36
-      healthRegen: 0.4
-      energyCap: 0
-      energyRegen: 0
-      moveSpeed: 0
+      healthRegen: 2
+      energyCap: 10
+      energyRegen: 0.5
+      moveSpeed: 2
       accelerationCap: 0
-      turnSpeed: 0
+      turnSpeed: 4
       weaponRotationSpeed: 0
-      maxPeople: 20
+      maxPeople: 5
   - displayName: CraizanStar_Wing3
     partType: Wing
     isWeapon: 0
+    isLaser: 0
     bulletPrefabIndex: -1
     stats:
       firePower: 0
@@ -1126,17 +1205,18 @@ MonoBehaviour:
       fireRate: 0
       rammingPower: 0
       healthCap: 36
-      healthRegen: 0.4
-      energyCap: 0
-      energyRegen: 0
-      moveSpeed: 0
+      healthRegen: 2
+      energyCap: 10
+      energyRegen: 0.5
+      moveSpeed: 2
       accelerationCap: 0
-      turnSpeed: 0
+      turnSpeed: 4
       weaponRotationSpeed: 0
-      maxPeople: 20
+      maxPeople: 5
   - displayName: GalacticLeopard_Main_Wing
     partType: Wing
     isWeapon: 0
+    isLaser: 0
     bulletPrefabIndex: -1
     stats:
       firePower: 0
@@ -1145,17 +1225,18 @@ MonoBehaviour:
       fireRate: 0
       rammingPower: 0
       healthCap: 36
-      healthRegen: 0.4
-      energyCap: 0
-      energyRegen: 0
-      moveSpeed: 0
+      healthRegen: 2
+      energyCap: 10
+      energyRegen: 0.5
+      moveSpeed: 2
       accelerationCap: 0
-      turnSpeed: 0
+      turnSpeed: 4
       weaponRotationSpeed: 0
-      maxPeople: 20
+      maxPeople: 5
   - displayName: GalacticOkamoto_Wing
     partType: Wing
     isWeapon: 0
+    isLaser: 0
     bulletPrefabIndex: -1
     stats:
       firePower: 0
@@ -1164,14 +1245,14 @@ MonoBehaviour:
       fireRate: 0
       rammingPower: 0
       healthCap: 36
-      healthRegen: 0.4
-      energyCap: 0
-      energyRegen: 0
-      moveSpeed: 0
+      healthRegen: 2
+      energyCap: 10
+      energyRegen: 0.5
+      moveSpeed: 2
       accelerationCap: 0
-      turnSpeed: 0
+      turnSpeed: 4
       weaponRotationSpeed: 0
-      maxPeople: 20
+      maxPeople: 5
   entries:
   - catalogIndex: 0
     visualFamily: 0
@@ -1222,21 +1303,21 @@ MonoBehaviour:
     - displayName: CraizanStar_Wing2
       count: 4
     summedStats:
-      firePower: 195
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 9.75
+      firePower: 310
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 8.5
       rammingPower: 42.000015
       healthCap: 1290
-      healthRegen: 20.099998
-      energyCap: 161
-      energyRegen: 0
-      moveSpeed: 3.06
-      accelerationCap: 4
-      turnSpeed: 1
+      healthRegen: 82.2
+      energyCap: 1331
+      energyRegen: 19.500004
+      moveSpeed: 4.8
+      accelerationCap: 6
+      turnSpeed: 34
       weaponRotationSpeed: 90
-      maxPeople: 120
-    hasMissingStats: 1
+      maxPeople: 135
+    hasMissingStats: 0
   - catalogIndex: 1
     visualFamily: 0
     displayName: Kilnstar
@@ -1278,21 +1359,21 @@ MonoBehaviour:
     - displayName: CraizanStar_Wing3
       count: 2
     summedStats:
-      firePower: 120
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 9.5
+      firePower: 180
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 9
       rammingPower: 22.800003
       healthCap: 666
-      healthRegen: 10.5
-      energyCap: 98
-      energyRegen: 0
-      moveSpeed: 3.06
-      accelerationCap: 4
-      turnSpeed: 1
+      healthRegen: 42.199997
+      energyCap: 748
+      energyRegen: 12.700001
+      moveSpeed: 4.4
+      accelerationCap: 6
+      turnSpeed: 18
       weaponRotationSpeed: 90
-      maxPeople: 40
-    hasMissingStats: 1
+      maxPeople: 67
+    hasMissingStats: 0
   - catalogIndex: 2
     visualFamily: 0
     displayName: Lashstar
@@ -1336,21 +1417,21 @@ MonoBehaviour:
     - displayName: CraizanStar_Wing3
       count: 2
     summedStats:
-      firePower: 90
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 5.5
+      firePower: 140
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 5
       rammingPower: 31.200008
       healthCap: 1008
-      healthRegen: 15.499998
-      energyCap: 74
-      energyRegen: 0
-      moveSpeed: 3
-      accelerationCap: 2
-      turnSpeed: 0.5
+      healthRegen: 64.1
+      energyCap: 944
+      energyRegen: 13.800002
+      moveSpeed: 4.6
+      accelerationCap: 3
+      turnSpeed: 29
       weaponRotationSpeed: 90
-      maxPeople: 120
-    hasMissingStats: 1
+      maxPeople: 108
+    hasMissingStats: 0
   - catalogIndex: 3
     visualFamily: 0
     displayName: Moltenvault
@@ -1392,21 +1473,21 @@ MonoBehaviour:
     - displayName: CraizanStar_Wing3
       count: 2
     summedStats:
-      firePower: 120
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 6.25
+      firePower: 190
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 5.5
       rammingPower: 19.2
       healthCap: 660
-      healthRegen: 9.9
-      energyCap: 99
-      energyRegen: 0
-      moveSpeed: 3.12
-      accelerationCap: 6
-      turnSpeed: 1.5
+      healthRegen: 40.299995
+      energyCap: 709
+      energyRegen: 15.8
+      moveSpeed: 4.8
+      accelerationCap: 9
+      turnSpeed: 31
       weaponRotationSpeed: 90
-      maxPeople: 80
-    hasMissingStats: 1
+      maxPeople: 68
+    hasMissingStats: 0
   - catalogIndex: 4
     visualFamily: 0
     displayName: Pyrecrown
@@ -1444,21 +1525,21 @@ MonoBehaviour:
     - displayName: CraizanStar_Wing3
       count: 2
     summedStats:
-      firePower: 60
-      bulletSpeed: 14
-      bulletRange: 25
+      firePower: 80
+      bulletSpeed: 12
+      bulletRange: 30
       fireRate: 8
       rammingPower: 8.4
       healthCap: 366
-      healthRegen: 5.2000003
-      energyCap: 48
-      energyRegen: 0
-      moveSpeed: 3
-      accelerationCap: 2
-      turnSpeed: 0.5
+      healthRegen: 22.1
+      energyCap: 328
+      energyRegen: 7.1
+      moveSpeed: 4.4
+      accelerationCap: 3
+      turnSpeed: 21
       weaponRotationSpeed: 90
-      maxPeople: 80
-    hasMissingStats: 1
+      maxPeople: 41
+    hasMissingStats: 0
   - catalogIndex: 5
     visualFamily: 0
     displayName: Scorchspire
@@ -1500,21 +1581,21 @@ MonoBehaviour:
     - displayName: CraizanStar_Wing3
       count: 1
     summedStats:
-      firePower: 90
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 5.5
+      firePower: 140
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 5
       rammingPower: 43.200016
       healthCap: 1212
-      healthRegen: 19.4
-      energyCap: 74
-      energyRegen: 0
-      moveSpeed: 3.06
-      accelerationCap: 4
-      turnSpeed: 1
+      healthRegen: 78.2
+      energyCap: 1244
+      energyRegen: 18.300003
+      moveSpeed: 4.5
+      accelerationCap: 6
+      turnSpeed: 22
       weaponRotationSpeed: 90
-      maxPeople: 60
-    hasMissingStats: 1
+      maxPeople: 123
+    hasMissingStats: 0
   - catalogIndex: 6
     visualFamily: 0
     displayName: Slagorbit
@@ -1556,21 +1637,21 @@ MonoBehaviour:
     - displayName: CraizanStar_Wing3
       count: 2
     summedStats:
-      firePower: 150
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 7
+      firePower: 240
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 6
       rammingPower: 21.600002
       healthCap: 780
-      healthRegen: 11.599998
-      energyCap: 124
-      energyRegen: 0
-      moveSpeed: 3.06
-      accelerationCap: 4
-      turnSpeed: 1
+      healthRegen: 48.199997
+      energyCap: 784
+      energyRegen: 14.400001
+      moveSpeed: 4.8
+      accelerationCap: 6
+      turnSpeed: 34
       weaponRotationSpeed: 90
-      maxPeople: 120
-    hasMissingStats: 1
+      maxPeople: 84
+    hasMissingStats: 0
   - catalogIndex: 7
     visualFamily: 0
     displayName: Sunkiln
@@ -1612,21 +1693,21 @@ MonoBehaviour:
     - displayName: CraizanStar_Wing2
       count: 4
     summedStats:
-      firePower: 165
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 9
+      firePower: 260
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 8
       rammingPower: 60.000027
       healthCap: 1680
-      healthRegen: 26.9
-      energyCap: 136
-      energyRegen: 0
-      moveSpeed: 3.12
-      accelerationCap: 6
-      turnSpeed: 1.5
+      healthRegen: 108.299995
+      energyCap: 1766
+      energyRegen: 25.999992
+      moveSpeed: 4.8
+      accelerationCap: 9
+      turnSpeed: 31
       weaponRotationSpeed: 90
-      maxPeople: 80
-    hasMissingStats: 1
+      maxPeople: 170
+    hasMissingStats: 0
   - catalogIndex: 8
     visualFamily: 0
     displayName: Torchvault
@@ -1664,21 +1745,21 @@ MonoBehaviour:
     - displayName: CraizanStar_Wing3
       count: 2
     summedStats:
-      firePower: 150
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 7
+      firePower: 240
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 6
       rammingPower: 4.8
       healthCap: 228
-      healthRegen: 3.1
-      energyCap: 124
-      energyRegen: 0
-      moveSpeed: 3.12
-      accelerationCap: 6
-      turnSpeed: 1.5
+      healthRegen: 12.300001
+      energyCap: 354
+      energyRegen: 11.2
+      moveSpeed: 4.6
+      accelerationCap: 9
+      turnSpeed: 23
       weaponRotationSpeed: 90
-      maxPeople: 40
-    hasMissingStats: 1
+      maxPeople: 22
+    hasMissingStats: 0
   - catalogIndex: 9
     visualFamily: 0
     displayName: Brandspire
@@ -1716,25 +1797,25 @@ MonoBehaviour:
     - displayName: CraizanStar_Thruster
       count: 1
     - displayName: CraizanStar_TurretBarrel
-      count: 17
+      count: 5
     - displayName: CraizanStar_Wing2
       count: 12
     summedStats:
-      firePower: 315
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 35.5
+      firePower: 200
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 11
       rammingPower: 19.2
       healthCap: 924
-      healthRegen: 12.899996
-      energyCap: 254
-      energyRegen: 0
-      moveSpeed: 3
-      accelerationCap: 2
-      turnSpeed: 0.5
+      healthRegen: 56.1
+      energyCap: 740
+      energyRegen: 13.8
+      moveSpeed: 5.2
+      accelerationCap: 3
+      turnSpeed: 53
       weaponRotationSpeed: 90
-      maxPeople: 240
-    hasMissingStats: 1
+      maxPeople: 108
+    hasMissingStats: 0
   - catalogIndex: 10
     visualFamily: 0
     displayName: Wickorbit
@@ -1776,21 +1857,21 @@ MonoBehaviour:
     - displayName: CraizanStar_Wing3
       count: 8
     summedStats:
-      firePower: 150
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 13.5
+      firePower: 220
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 13
       rammingPower: 20.400002
       healthCap: 894
-      healthRegen: 12.699997
-      energyCap: 122
-      energyRegen: 0
-      moveSpeed: 3.06
-      accelerationCap: 4
-      turnSpeed: 1
+      healthRegen: 54.199997
+      energyCap: 792
+      energyRegen: 16.1
+      moveSpeed: 5.2
+      accelerationCap: 6
+      turnSpeed: 50
       weaponRotationSpeed: 90
-      maxPeople: 200
-    hasMissingStats: 1
+      maxPeople: 101
+    hasMissingStats: 0
   - catalogIndex: 11
     visualFamily: 0
     displayName: Forgecrown
@@ -1834,21 +1915,21 @@ MonoBehaviour:
     - displayName: CraizanStar_Wing2
       count: 4
     summedStats:
-      firePower: 60
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 4.75
+      firePower: 90
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 4.5
       rammingPower: 8.4
       healthCap: 450
-      healthRegen: 6.1000004
-      energyCap: 49
-      energyRegen: 0
-      moveSpeed: 3.06
-      accelerationCap: 4
-      turnSpeed: 1
+      healthRegen: 26.2
+      energyCap: 379
+      energyRegen: 11.1
+      moveSpeed: 4.8
+      accelerationCap: 6
+      turnSpeed: 34
       weaponRotationSpeed: 90
-      maxPeople: 120
-    hasMissingStats: 1
+      maxPeople: 51
+    hasMissingStats: 0
   - catalogIndex: 12
     visualFamily: 0
     displayName: Flarekiln
@@ -1890,21 +1971,21 @@ MonoBehaviour:
     - displayName: CraizanStar_Wing3
       count: 2
     summedStats:
-      firePower: 210
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 11.75
+      firePower: 330
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 10.5
       rammingPower: 26.400005
       healthCap: 1044
-      healthRegen: 15.199997
-      energyCap: 173
-      energyRegen: 0
-      moveSpeed: 3.06
-      accelerationCap: 4
-      turnSpeed: 1
+      healthRegen: 64.2
+      energyCap: 993
+      energyRegen: 17.600002
+      moveSpeed: 5.2
+      accelerationCap: 6
+      turnSpeed: 50
       weaponRotationSpeed: 90
-      maxPeople: 200
-    hasMissingStats: 1
+      maxPeople: 116
+    hasMissingStats: 0
   - catalogIndex: 13
     visualFamily: 0
     displayName: Ashspire
@@ -1948,21 +2029,21 @@ MonoBehaviour:
     - displayName: CraizanStar_Wing3
       count: 2
     summedStats:
-      firePower: 90
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 5.5
+      firePower: 140
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 5
       rammingPower: 54.000023
       healthCap: 1686
-      healthRegen: 26.099998
-      energyCap: 74
-      energyRegen: 0
-      moveSpeed: 3.18
-      accelerationCap: 8
-      turnSpeed: 2
+      healthRegen: 106.399994
+      energyCap: 1624
+      energyRegen: 29.499996
+      moveSpeed: 5.4
+      accelerationCap: 12
+      turnSpeed: 52
       weaponRotationSpeed: 90
-      maxPeople: 160
-    hasMissingStats: 1
+      maxPeople: 175
+    hasMissingStats: 0
   - catalogIndex: 14
     visualFamily: 0
     displayName: Brandorbit
@@ -2006,21 +2087,21 @@ MonoBehaviour:
     - displayName: CraizanStar_Wing3
       count: 2
     summedStats:
-      firePower: 135
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 8.25
+      firePower: 210
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 7.5
       rammingPower: 20.400002
       healthCap: 606
-      healthRegen: 9.5
-      energyCap: 111
-      energyRegen: 0
-      moveSpeed: 3.06
-      accelerationCap: 4
-      turnSpeed: 1
+      healthRegen: 38.199997
+      energyCap: 701
+      energyRegen: 12.1
+      moveSpeed: 4.4
+      accelerationCap: 6
+      turnSpeed: 18
       weaponRotationSpeed: 90
-      maxPeople: 40
-    hasMissingStats: 1
+      maxPeople: 61
+    hasMissingStats: 0
   - catalogIndex: 15
     visualFamily: 0
     displayName: Cindervault
@@ -2064,21 +2145,21 @@ MonoBehaviour:
     - displayName: CraizanStar_Wing3
       count: 2
     summedStats:
-      firePower: 120
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 9.5
+      firePower: 180
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 9
       rammingPower: 24.000004
       healthCap: 876
-      healthRegen: 12.9
-      energyCap: 98
-      energyRegen: 0
-      moveSpeed: 3.24
-      accelerationCap: 10
-      turnSpeed: 2.5
+      healthRegen: 52.499992
+      energyCap: 908
+      energyRegen: 24
+      moveSpeed: 5.4
+      accelerationCap: 15
+      turnSpeed: 49
       weaponRotationSpeed: 90
-      maxPeople: 120
-    hasMissingStats: 1
+      maxPeople: 90
+    hasMissingStats: 0
   - catalogIndex: 16
     visualFamily: 0
     displayName: Emberforge
@@ -2120,21 +2201,21 @@ MonoBehaviour:
     - displayName: CraizanStar_Wing3
       count: 2
     summedStats:
-      firePower: 90
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 5.5
+      firePower: 140
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 5
       rammingPower: 22.800003
       healthCap: 810
-      healthRegen: 12.099998
-      energyCap: 74
-      energyRegen: 0
-      moveSpeed: 3.06
-      accelerationCap: 4
-      turnSpeed: 1
+      healthRegen: 50.199997
+      energyCap: 764
+      energyRegen: 14.700001
+      moveSpeed: 4.8
+      accelerationCap: 6
+      turnSpeed: 34
       weaponRotationSpeed: 90
-      maxPeople: 120
-    hasMissingStats: 1
+      maxPeople: 87
+    hasMissingStats: 0
   - catalogIndex: 17
     visualFamily: 0
     displayName: Firekiln
@@ -2178,21 +2259,21 @@ MonoBehaviour:
     - displayName: CraizanStar_Wing3
       count: 2
     summedStats:
-      firePower: 150
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 7
+      firePower: 240
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 6
       rammingPower: 50.40002
       healthCap: 1356
-      healthRegen: 22
-      energyCap: 124
-      energyRegen: 0
-      moveSpeed: 3.06
-      accelerationCap: 4
-      turnSpeed: 1
+      healthRegen: 88.2
+      energyCap: 1464
+      energyRegen: 19.600006
+      moveSpeed: 4.4
+      accelerationCap: 6
+      turnSpeed: 18
       weaponRotationSpeed: 90
-      maxPeople: 40
-    hasMissingStats: 1
+      maxPeople: 136
+    hasMissingStats: 0
   - catalogIndex: 18
     visualFamily: 0
     displayName: Glowkiln
@@ -2236,21 +2317,21 @@ MonoBehaviour:
     - displayName: CraizanStar_Wing3
       count: 2
     summedStats:
-      firePower: 150
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 13.5
+      firePower: 220
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 13
       rammingPower: 38.400013
       healthCap: 1404
-      healthRegen: 20.899996
-      energyCap: 122
-      energyRegen: 0
-      moveSpeed: 3
-      accelerationCap: 2
-      turnSpeed: 0.5
+      healthRegen: 88.1
+      energyCap: 1232
+      energyRegen: 18.600002
+      moveSpeed: 5.2
+      accelerationCap: 3
+      turnSpeed: 53
       weaponRotationSpeed: 90
-      maxPeople: 240
-    hasMissingStats: 1
+      maxPeople: 156
+    hasMissingStats: 0
   - catalogIndex: 19
     visualFamily: 0
     displayName: Heatspire
@@ -2294,21 +2375,21 @@ MonoBehaviour:
     - displayName: CraizanStar_Wing2
       count: 4
     summedStats:
-      firePower: 150
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 10.25
+      firePower: 230
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 9.5
       rammingPower: 32.40001
       healthCap: 990
-      healthRegen: 15.4
-      energyCap: 123
-      energyRegen: 0
-      moveSpeed: 3.12
-      accelerationCap: 6
-      turnSpeed: 1.5
+      healthRegen: 62.299995
+      energyCap: 1063
+      energyRegen: 19.100002
+      moveSpeed: 4.8
+      accelerationCap: 9
+      turnSpeed: 31
       weaponRotationSpeed: 90
-      maxPeople: 80
-    hasMissingStats: 1
+      maxPeople: 101
+    hasMissingStats: 0
   - catalogIndex: 20
     visualFamily: 1
     displayName: Spothunt
@@ -2361,8 +2442,6 @@ MonoBehaviour:
       count: 2
     - displayName: GalacticLeopard_Parts_Fork
       count: 2
-    - displayName: GalacticLeopard_Parts_Gun
-      count: 4
     - displayName: GalacticLeopard_Parts_Silo
       count: 8
     - displayName: GalacticLeopard_Parts_Thruster
@@ -2374,20 +2453,20 @@ MonoBehaviour:
     - displayName: Parts
       count: 1
     summedStats:
-      firePower: 160
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 9
-      rammingPower: 42.80001
-      healthCap: 1226
-      healthRegen: 18.100002
-      energyCap: 468
-      energyRegen: 9
-      moveSpeed: 6.24
+      firePower: 80
+      bulletSpeed: 12
+      bulletRange: 12
+      fireRate: 2
+      rammingPower: 41.60001
+      healthCap: 1806
+      healthRegen: 68.799995
+      energyCap: 1570
+      energyRegen: 35.399986
+      moveSpeed: 6.2
       accelerationCap: 12
-      turnSpeed: 3
+      turnSpeed: 38
       weaponRotationSpeed: 90
-      maxPeople: 240
+      maxPeople: 404
     hasMissingStats: 0
   - catalogIndex: 21
     visualFamily: 1
@@ -2436,7 +2515,7 @@ MonoBehaviour:
     - displayName: GalacticLeopard_Parts_Fender
       count: 2
     - displayName: GalacticLeopard_Parts_Gun
-      count: 10
+      count: 2
     - displayName: GalacticLeopard_Parts_Thruster
       count: 1
     - displayName: GalacticLeopard_Parts_Turret_Dual
@@ -2446,20 +2525,20 @@ MonoBehaviour:
     - displayName: Parts
       count: 1
     summedStats:
-      firePower: 350
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 22
-      rammingPower: 36.800007
-      healthCap: 1044
-      healthRegen: 15.5
-      energyCap: 760
-      energyRegen: 14
-      moveSpeed: 6.18
-      accelerationCap: 10
-      turnSpeed: 0.5
+      firePower: 200
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 8
+      rammingPower: 32.000008
+      healthCap: 1564
+      healthRegen: 52.699997
+      energyCap: 1434
+      energyRegen: 25.999992
+      moveSpeed: 5.75
+      accelerationCap: 3
+      turnSpeed: 13
       weaponRotationSpeed: 90
-      maxPeople: 240
+      maxPeople: 410
     hasMissingStats: 0
   - catalogIndex: 22
     visualFamily: 1
@@ -2503,8 +2582,6 @@ MonoBehaviour:
       count: 18
     - displayName: GalacticLeopard_Parts_Fork
       count: 2
-    - displayName: GalacticLeopard_Parts_Gun
-      count: 8
     - displayName: GalacticLeopard_Parts_Silo
       count: 2
     - displayName: GalacticLeopard_Parts_Thruster
@@ -2516,20 +2593,20 @@ MonoBehaviour:
     - displayName: Parts
       count: 1
     summedStats:
-      firePower: 320
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 18
-      rammingPower: 60.800022
-      healthCap: 1668
-      healthRegen: 25.900002
-      energyCap: 1156
-      energyRegen: 29
-      moveSpeed: 6.72
-      accelerationCap: 28
-      turnSpeed: 2
+      firePower: 160
+      bulletSpeed: 12
+      bulletRange: 12
+      fireRate: 4
+      rammingPower: 51.200016
+      healthCap: 2108
+      healthRegen: 81.899994
+      energyCap: 2260
+      energyRegen: 47.79998
+      moveSpeed: 6.9
+      accelerationCap: 12
+      turnSpeed: 20
       weaponRotationSpeed: 90
-      maxPeople: 200
+      maxPeople: 488
     hasMissingStats: 0
   - catalogIndex: 23
     visualFamily: 1
@@ -2578,20 +2655,20 @@ MonoBehaviour:
     - displayName: Parts
       count: 1
     summedStats:
-      firePower: 30
-      bulletSpeed: 14
-      bulletRange: 25
+      firePower: 40
+      bulletSpeed: 12
+      bulletRange: 30
       fireRate: 4
-      rammingPower: 45.200005
-      healthCap: 1154
-      healthRegen: 15.700001
-      energyCap: 524
-      energyRegen: 10
-      moveSpeed: 3.06
-      accelerationCap: 4
-      turnSpeed: 1
+      rammingPower: 44.000004
+      healthCap: 2634
+      healthRegen: 60.199997
+      energyCap: 1684
+      energyRegen: 36.999992
+      moveSpeed: 4.45
+      accelerationCap: 6
+      turnSpeed: 10
       weaponRotationSpeed: 90
-      maxPeople: 500
+      maxPeople: 820
     hasMissingStats: 0
   - catalogIndex: 24
     visualFamily: 1
@@ -2642,7 +2719,7 @@ MonoBehaviour:
     - displayName: GalacticLeopard_Parts_Fender
       count: 4
     - displayName: GalacticLeopard_Parts_Gun
-      count: 6
+      count: 2
     - displayName: GalacticLeopard_Parts_Thruster
       count: 2
     - displayName: GalacticLeopard_Parts_Turret_Dual
@@ -2652,20 +2729,20 @@ MonoBehaviour:
     - displayName: Parts
       count: 1
     summedStats:
-      firePower: 190
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 13
-      rammingPower: 42.80001
-      healthCap: 1258
-      healthRegen: 18.599998
-      energyCap: 492
-      energyRegen: 9
-      moveSpeed: 6.12
-      accelerationCap: 8
-      turnSpeed: 1
+      firePower: 120
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 6
+      rammingPower: 40.40001
+      healthCap: 1818
+      healthRegen: 70.5
+      energyCap: 1514
+      energyRegen: 29.099995
+      moveSpeed: 5.9
+      accelerationCap: 6
+      turnSpeed: 26
       weaponRotationSpeed: 90
-      maxPeople: 280
+      maxPeople: 421
     hasMissingStats: 0
   - catalogIndex: 25
     visualFamily: 1
@@ -2716,7 +2793,7 @@ MonoBehaviour:
     - displayName: GalacticLeopard_Parts_Fork
       count: 4
     - displayName: GalacticLeopard_Parts_Gun
-      count: 8
+      count: 2
     - displayName: GalacticLeopard_Parts_Thruster
       count: 2
     - displayName: GalacticLeopard_Parts_Turret_Dual
@@ -2726,20 +2803,20 @@ MonoBehaviour:
     - displayName: Parts
       count: 1
     summedStats:
-      firePower: 270
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 17.5
-      rammingPower: 39.20001
-      healthCap: 1040
-      healthRegen: 15.6
-      energyCap: 556
-      energyRegen: 9
-      moveSpeed: 6.12
-      accelerationCap: 8
-      turnSpeed: 2
+      firePower: 160
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 7
+      rammingPower: 33.200005
+      healthCap: 1540
+      healthRegen: 50.6
+      energyCap: 1344
+      energyRegen: 26.299997
+      moveSpeed: 5.6
+      accelerationCap: 6
+      turnSpeed: 20
       weaponRotationSpeed: 90
-      maxPeople: 200
+      maxPeople: 413
     hasMissingStats: 0
   - catalogIndex: 26
     visualFamily: 1
@@ -2787,8 +2864,6 @@ MonoBehaviour:
       count: 4
     - displayName: GalacticLeopard_Parts_Fender
       count: 1
-    - displayName: GalacticLeopard_Parts_Gun
-      count: 8
     - displayName: GalacticLeopard_Parts_Silo
       count: 6
     - displayName: GalacticLeopard_Parts_Thruster
@@ -2800,20 +2875,20 @@ MonoBehaviour:
     - displayName: Parts
       count: 1
     summedStats:
-      firePower: 320
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 18
-      rammingPower: 53.600018
-      healthCap: 1404
-      healthRegen: 21.800001
-      energyCap: 736
-      energyRegen: 14
-      moveSpeed: 6.24
-      accelerationCap: 12
-      turnSpeed: 1
+      firePower: 160
+      bulletSpeed: 12
+      bulletRange: 12
+      fireRate: 4
+      rammingPower: 45.200012
+      healthCap: 1864
+      healthRegen: 70.799995
+      energyCap: 1750
+      energyRegen: 31.29999
+      moveSpeed: 5.75
+      accelerationCap: 6
+      turnSpeed: 10
       weaponRotationSpeed: 90
-      maxPeople: 200
+      maxPeople: 463
     hasMissingStats: 0
   - catalogIndex: 27
     visualFamily: 1
@@ -2857,8 +2932,6 @@ MonoBehaviour:
       count: 4
     - displayName: GalacticLeopard_Parts_Fender
       count: 2
-    - displayName: GalacticLeopard_Parts_Gun
-      count: 8
     - displayName: GalacticLeopard_Parts_Silo
       count: 20
     - displayName: GalacticLeopard_Parts_Thruster
@@ -2870,20 +2943,20 @@ MonoBehaviour:
     - displayName: Parts
       count: 1
     summedStats:
-      firePower: 320
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 18
-      rammingPower: 81.19998
-      healthCap: 2110
-      healthRegen: 33.300003
-      energyCap: 596
-      energyRegen: 9
-      moveSpeed: 6.3
-      accelerationCap: 14
-      turnSpeed: 2.5
+      firePower: 160
+      bulletSpeed: 12
+      bulletRange: 12
+      fireRate: 4
+      rammingPower: 79.999985
+      healthCap: 2690
+      healthRegen: 128.79999
+      energyCap: 2610
+      energyRegen: 45.99998
+      moveSpeed: 6.1
+      accelerationCap: 15
+      turnSpeed: 25
       weaponRotationSpeed: 90
-      maxPeople: 200
+      maxPeople: 490
     hasMissingStats: 0
   - catalogIndex: 28
     visualFamily: 1
@@ -2931,8 +3004,6 @@ MonoBehaviour:
       count: 4
     - displayName: GalacticLeopard_Parts_Fork
       count: 2
-    - displayName: GalacticLeopard_Parts_Gun
-      count: 6
     - displayName: GalacticLeopard_Parts_Thruster
       count: 3
     - displayName: GalacticLeopard_Parts_Turret_Dual
@@ -2942,20 +3013,20 @@ MonoBehaviour:
     - displayName: Parts
       count: 1
     summedStats:
-      firePower: 240
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 13.5
-      rammingPower: 42.80001
-      healthCap: 1202
-      healthRegen: 18.100002
-      energyCap: 952
-      energyRegen: 24
-      moveSpeed: 6.54
-      accelerationCap: 22
-      turnSpeed: 2.5
+      firePower: 120
+      bulletSpeed: 12
+      bulletRange: 12
+      fireRate: 3
+      rammingPower: 41.60001
+      healthCap: 1782
+      healthRegen: 65.6
+      energyCap: 1860
+      energyRegen: 40.399986
+      moveSpeed: 6.55
+      accelerationCap: 9
+      turnSpeed: 25
       weaponRotationSpeed: 90
-      maxPeople: 200
+      maxPeople: 394
     hasMissingStats: 0
   - catalogIndex: 29
     visualFamily: 1
@@ -2997,8 +3068,6 @@ MonoBehaviour:
       count: 2
     - displayName: GalacticLeopard_Parts_Fork
       count: 1
-    - displayName: GalacticLeopard_Parts_Gun
-      count: 6
     - displayName: GalacticLeopard_Parts_Silo
       count: 3
     - displayName: GalacticLeopard_Parts_Thruster
@@ -3010,20 +3079,20 @@ MonoBehaviour:
     - displayName: Parts
       count: 1
     summedStats:
-      firePower: 180
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 24
+      firePower: 120
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 12
       rammingPower: 64.400024
-      healthCap: 1654
-      healthRegen: 26
-      energyCap: 484
-      energyRegen: 9
-      moveSpeed: 6.12
-      accelerationCap: 8
-      turnSpeed: 1
+      healthCap: 2254
+      healthRegen: 102.5
+      energyCap: 2042
+      energyRegen: 33.09998
+      moveSpeed: 5.5
+      accelerationCap: 6
+      turnSpeed: 10
       weaponRotationSpeed: 90
-      maxPeople: 200
+      maxPeople: 441
     hasMissingStats: 0
   - catalogIndex: 30
     visualFamily: 1
@@ -3069,8 +3138,6 @@ MonoBehaviour:
       count: 2
     - displayName: GalacticLeopard_Parts_Fork
       count: 2
-    - displayName: GalacticLeopard_Parts_Gun
-      count: 6
     - displayName: GalacticLeopard_Parts_Thruster
       count: 3
     - displayName: GalacticLeopard_Parts_Turret_Dual
@@ -3080,20 +3147,20 @@ MonoBehaviour:
     - displayName: Parts
       count: 1
     summedStats:
-      firePower: 240
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 13.5
-      rammingPower: 29.600008
-      healthCap: 812
-      healthRegen: 11.700001
-      energyCap: 532
-      energyRegen: 9
-      moveSpeed: 6.18
-      accelerationCap: 10
-      turnSpeed: 2.5
+      firePower: 120
+      bulletSpeed: 12
+      bulletRange: 12
+      fireRate: 3
+      rammingPower: 27.200006
+      healthCap: 1372
+      healthRegen: 40.7
+      energyCap: 1200
+      energyRegen: 27.799994
+      moveSpeed: 5.8
+      accelerationCap: 9
+      turnSpeed: 25
       weaponRotationSpeed: 90
-      maxPeople: 200
+      maxPeople: 368
     hasMissingStats: 0
   - catalogIndex: 31
     visualFamily: 1
@@ -3143,8 +3210,6 @@ MonoBehaviour:
       count: 2
     - displayName: GalacticLeopard_Parts_Fork
       count: 2
-    - displayName: GalacticLeopard_Parts_Gun
-      count: 4
     - displayName: GalacticLeopard_Parts_Silo
       count: 12
     - displayName: GalacticLeopard_Parts_Thruster
@@ -3156,20 +3221,20 @@ MonoBehaviour:
     - displayName: Parts
       count: 1
     summedStats:
-      firePower: 160
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 9
-      rammingPower: 46.400017
-      healthCap: 1340
-      healthRegen: 19.800003
-      energyCap: 468
-      energyRegen: 9
-      moveSpeed: 6.36
-      accelerationCap: 16
-      turnSpeed: 4
+      firePower: 80
+      bulletSpeed: 12
+      bulletRange: 12
+      fireRate: 2
+      rammingPower: 44.000015
+      healthCap: 1900
+      healthRegen: 72.99999
+      energyCap: 1690
+      energyRegen: 41.999985
+      moveSpeed: 6.6
+      accelerationCap: 18
+      turnSpeed: 48
       weaponRotationSpeed: 90
-      maxPeople: 240
+      maxPeople: 420
     hasMissingStats: 0
   - catalogIndex: 32
     visualFamily: 1
@@ -3221,8 +3286,6 @@ MonoBehaviour:
       count: 1
     - displayName: GalacticLeopard_Parts_Fork
       count: 5
-    - displayName: GalacticLeopard_Parts_Gun
-      count: 12
     - displayName: GalacticLeopard_Parts_Thruster
       count: 2
     - displayName: GalacticLeopard_Parts_Turret_Dual
@@ -3232,20 +3295,20 @@ MonoBehaviour:
     - displayName: Parts
       count: 1
     summedStats:
-      firePower: 480
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 27
-      rammingPower: 47.600014
-      healthCap: 1250
-      healthRegen: 19.1
-      energyCap: 724
-      energyRegen: 9
-      moveSpeed: 6.12
-      accelerationCap: 8
-      turnSpeed: 2
+      firePower: 240
+      bulletSpeed: 12
+      bulletRange: 12
+      fireRate: 6
+      rammingPower: 41.600014
+      healthCap: 1750
+      healthRegen: 64.6
+      energyCap: 1650
+      energyRegen: 28.399986
+      moveSpeed: 5.6
+      accelerationCap: 6
+      turnSpeed: 20
       weaponRotationSpeed: 90
-      maxPeople: 200
+      maxPeople: 434
     hasMissingStats: 0
   - catalogIndex: 33
     visualFamily: 1
@@ -3301,8 +3364,6 @@ MonoBehaviour:
       count: 1
     - displayName: GalacticLeopard_Parts_Fork
       count: 1
-    - displayName: GalacticLeopard_Parts_Gun
-      count: 16
     - displayName: GalacticLeopard_Parts_Thruster
       count: 4
     - displayName: GalacticLeopard_Parts_Turret_Quad
@@ -3312,20 +3373,20 @@ MonoBehaviour:
     - displayName: Parts
       count: 1
     summedStats:
-      firePower: 360
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 35
-      rammingPower: 40.40001
-      healthCap: 1314
-      healthRegen: 18.900002
-      energyCap: 1052
-      energyRegen: 24
-      moveSpeed: 6.6
-      accelerationCap: 24
-      turnSpeed: 4
+      firePower: 200
+      bulletSpeed: 10
+      bulletRange: 30
+      fireRate: 2
+      rammingPower: 34.400005
+      healthCap: 1814
+      healthRegen: 61.799995
+      energyCap: 1740
+      energyRegen: 44.599987
+      moveSpeed: 7.25
+      accelerationCap: 12
+      turnSpeed: 56
       weaponRotationSpeed: 90
-      maxPeople: 280
+      maxPeople: 436
     hasMissingStats: 0
   - catalogIndex: 34
     visualFamily: 1
@@ -3375,8 +3436,6 @@ MonoBehaviour:
       count: 8
     - displayName: GalacticLeopard_Parts_Fork
       count: 1
-    - displayName: GalacticLeopard_Parts_Gun
-      count: 2
     - displayName: GalacticLeopard_Parts_Silo
       count: 6
     - displayName: GalacticLeopard_Parts_Thruster
@@ -3388,20 +3447,20 @@ MonoBehaviour:
     - displayName: Parts
       count: 1
     summedStats:
-      firePower: 230
-      bulletSpeed: 28
+      firePower: 400
+      bulletSpeed: 20
       bulletRange: 40
-      fireRate: 4.4
-      rammingPower: 48.00001
-      healthCap: 1280
-      healthRegen: 18.900002
-      energyCap: 774
-      energyRegen: 16
-      moveSpeed: 6.24
-      accelerationCap: 12
-      turnSpeed: 2
+      fireRate: 0.6
+      rammingPower: 44.400013
+      healthCap: 2120
+      healthRegen: 66.899994
+      energyCap: 1850
+      energyRegen: 36.099987
+      moveSpeed: 5.9
+      accelerationCap: 6
+      turnSpeed: 20
       weaponRotationSpeed: 90
-      maxPeople: 300
+      maxPeople: 561
     hasMissingStats: 0
   - catalogIndex: 35
     visualFamily: 1
@@ -3453,8 +3512,6 @@ MonoBehaviour:
       count: 2
     - displayName: GalacticLeopard_Parts_Fork
       count: 1
-    - displayName: GalacticLeopard_Parts_Gun
-      count: 8
     - displayName: GalacticLeopard_Parts_Silo
       count: 4
     - displayName: GalacticLeopard_Parts_Thruster
@@ -3468,20 +3525,20 @@ MonoBehaviour:
     - displayName: Parts
       count: 1
     summedStats:
-      firePower: 250
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 17.75
-      rammingPower: 47.20001
-      healthCap: 1376
-      healthRegen: 19.200003
-      energyCap: 1021
-      energyRegen: 23
-      moveSpeed: 6.48
-      accelerationCap: 20
-      turnSpeed: 3
+      firePower: 130
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 2.5
+      rammingPower: 43.600006
+      healthCap: 2516
+      healthRegen: 67.399994
+      energyCap: 2045
+      energyRegen: 49.899994
+      moveSpeed: 6.8
+      accelerationCap: 12
+      turnSpeed: 38
       weaponRotationSpeed: 90
-      maxPeople: 440
+      maxPeople: 709
     hasMissingStats: 0
   - catalogIndex: 36
     visualFamily: 1
@@ -3529,8 +3586,6 @@ MonoBehaviour:
       count: 2
     - displayName: GalacticLeopard_Parts_Fender
       count: 1
-    - displayName: GalacticLeopard_Parts_Gun
-      count: 8
     - displayName: GalacticLeopard_Parts_Silo
       count: 2
     - displayName: GalacticLeopard_Parts_Thruster
@@ -3542,20 +3597,20 @@ MonoBehaviour:
     - displayName: Parts
       count: 1
     summedStats:
-      firePower: 180
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 17.5
-      rammingPower: 40.40001
-      healthCap: 1114
-      healthRegen: 16.600002
-      energyCap: 626
-      energyRegen: 14
-      moveSpeed: 6.36
-      accelerationCap: 16
-      turnSpeed: 3
+      firePower: 100
+      bulletSpeed: 10
+      bulletRange: 30
+      fireRate: 1
+      rammingPower: 39.20001
+      healthCap: 1694
+      healthRegen: 61.099995
+      energyCap: 1560
+      energyRegen: 36.79999
+      moveSpeed: 6.25
+      accelerationCap: 12
+      turnSpeed: 30
       weaponRotationSpeed: 90
-      maxPeople: 200
+      maxPeople: 388
     hasMissingStats: 0
   - catalogIndex: 37
     visualFamily: 1
@@ -3592,7 +3647,7 @@ MonoBehaviour:
     - displayName: GalacticLeopard_Parts_Bend
       count: 2
     - displayName: GalacticLeopard_Parts_Box
-      count: 6
+      count: 4
     - displayName: GalacticLeopard_Parts_Bridge
       count: 2
     - displayName: GalacticLeopard_Parts_Cargo
@@ -3602,38 +3657,36 @@ MonoBehaviour:
     - displayName: GalacticLeopard_Parts_ControlRoom
       count: 1
     - displayName: GalacticLeopard_Parts_Cylinder
-      count: 14
+      count: 8
     - displayName: GalacticLeopard_Parts_Fork
       count: 1
-    - displayName: GalacticLeopard_Parts_Gun
-      count: 12
     - displayName: GalacticLeopard_Parts_Silo
-      count: 9
+      count: 5
     - displayName: GalacticLeopard_Parts_Thruster
       count: 2
     - displayName: GalacticLeopard_Parts_Turret_Quad
       count: 2
     - displayName: GalacticLeopard_Parts_Turret_Sniper
-      count: 4
+      count: 2
     - displayName: Main
       count: 1
     - displayName: Parts
       count: 1
     summedStats:
-      firePower: 640
-      bulletSpeed: 28
+      firePower: 500
+      bulletSpeed: 20
       bulletRange: 40
-      fireRate: 26.3
-      rammingPower: 56.800022
-      healthCap: 1500
-      healthRegen: 23.900002
-      energyCap: 774
-      energyRegen: 7
-      moveSpeed: 6.12
-      accelerationCap: 8
-      turnSpeed: 1
+      fireRate: 1.6
+      rammingPower: 40.00001
+      healthCap: 1400
+      healthRegen: 66.5
+      energyCap: 1490
+      energyRegen: 23.499989
+      moveSpeed: 5.55
+      accelerationCap: 6
+      turnSpeed: 14
       weaponRotationSpeed: 90
-      maxPeople: 120
+      maxPeople: 265
     hasMissingStats: 0
   - catalogIndex: 38
     visualFamily: 1
@@ -3679,8 +3732,6 @@ MonoBehaviour:
       count: 6
     - displayName: GalacticLeopard_Parts_Fork
       count: 2
-    - displayName: GalacticLeopard_Parts_Gun
-      count: 2
     - displayName: GalacticLeopard_Parts_Silo
       count: 5
     - displayName: GalacticLeopard_Parts_Thruster
@@ -3692,20 +3743,20 @@ MonoBehaviour:
     - displayName: Parts
       count: 1
     summedStats:
-      firePower: 230
-      bulletSpeed: 28
+      firePower: 400
+      bulletSpeed: 20
       bulletRange: 40
-      fireRate: 4.4
-      rammingPower: 32.40001
-      healthCap: 926
-      healthRegen: 14.8
-      energyCap: 334
-      energyRegen: 5
-      moveSpeed: 6.12
-      accelerationCap: 8
-      turnSpeed: 1
+      fireRate: 0.6
+      rammingPower: 30.000008
+      healthCap: 886
+      healthRegen: 54.499996
+      energyCap: 1100
+      energyRegen: 17.500002
+      moveSpeed: 5.6
+      accelerationCap: 6
+      turnSpeed: 18
       weaponRotationSpeed: 90
-      maxPeople: 40
+      maxPeople: 105
     hasMissingStats: 0
   - catalogIndex: 39
     visualFamily: 1
@@ -3748,7 +3799,7 @@ MonoBehaviour:
     - displayName: GalacticLeopard_Parts_Bend
       count: 2
     - displayName: GalacticLeopard_Parts_Box
-      count: 9
+      count: 4
     - displayName: GalacticLeopard_Parts_Bridge
       count: 3
     - displayName: GalacticLeopard_Parts_Cargo
@@ -3758,42 +3809,40 @@ MonoBehaviour:
     - displayName: GalacticLeopard_Parts_ControlRoom
       count: 1
     - displayName: GalacticLeopard_Parts_Cylinder
-      count: 30
+      count: 10
     - displayName: GalacticLeopard_Parts_Fender
       count: 2
     - displayName: GalacticLeopard_Parts_Fork
       count: 2
-    - displayName: GalacticLeopard_Parts_Gun
-      count: 29
     - displayName: GalacticLeopard_Parts_Silo
       count: 3
     - displayName: GalacticLeopard_Parts_Thruster
       count: 2
     - displayName: GalacticLeopard_Parts_Turret_Dual
-      count: 7
+      count: 2
     - displayName: GalacticLeopard_Parts_Turret_Quad
       count: 2
     - displayName: GalacticLeopard_Parts_Turret_Single
-      count: 7
+      count: 2
     - displayName: Main
       count: 1
     - displayName: Parts
       count: 1
     summedStats:
-      firePower: 950
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 77
-      rammingPower: 89.59996
-      healthCap: 2408
-      healthRegen: 37.800003
-      energyCap: 1242
-      energyRegen: 14
-      moveSpeed: 6.24
-      accelerationCap: 12
-      turnSpeed: 3
+      firePower: 220
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 7
+      rammingPower: 51.200016
+      healthCap: 2118
+      healthRegen: 85
+      energyCap: 1934
+      energyRegen: 35.799984
+      moveSpeed: 6.15
+      accelerationCap: 6
+      turnSpeed: 38
       weaponRotationSpeed: 90
-      maxPeople: 240
+      maxPeople: 488
     hasMissingStats: 0
   - catalogIndex: 40
     visualFamily: 1
@@ -3843,8 +3892,6 @@ MonoBehaviour:
       count: 12
     - displayName: GalacticLeopard_Parts_Fork
       count: 3
-    - displayName: GalacticLeopard_Parts_Gun
-      count: 4
     - displayName: GalacticLeopard_Parts_Silo
       count: 2
     - displayName: GalacticLeopard_Parts_Thruster
@@ -3856,20 +3903,20 @@ MonoBehaviour:
     - displayName: Parts
       count: 1
     summedStats:
-      firePower: 120
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 16
-      rammingPower: 53.600018
-      healthCap: 1396
-      healthRegen: 21.6
-      energyCap: 436
-      energyRegen: 9
-      moveSpeed: 6.18
-      accelerationCap: 10
-      turnSpeed: 1.5
+      firePower: 80
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 8
+      rammingPower: 44.00001
+      healthCap: 1836
+      healthRegen: 68.6
+      energyCap: 1538
+      energyRegen: 30.999996
+      moveSpeed: 5.7
+      accelerationCap: 9
+      turnSpeed: 15
       weaponRotationSpeed: 90
-      maxPeople: 200
+      maxPeople: 470
     hasMissingStats: 0
   - catalogIndex: 41
     visualFamily: 1
@@ -3923,8 +3970,6 @@ MonoBehaviour:
       count: 1
     - displayName: GalacticLeopard_Parts_Fork
       count: 1
-    - displayName: GalacticLeopard_Parts_Gun
-      count: 12
     - displayName: GalacticLeopard_Parts_Thruster
       count: 2
     - displayName: GalacticLeopard_Parts_Turret_Quad
@@ -3934,20 +3979,20 @@ MonoBehaviour:
     - displayName: Parts
       count: 1
     summedStats:
-      firePower: 270
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 26.25
-      rammingPower: 26.800005
-      healthCap: 730
-      healthRegen: 11.099999
-      energyCap: 459
-      energyRegen: 7
-      moveSpeed: 6.12
-      accelerationCap: 8
-      turnSpeed: 2
+      firePower: 150
+      bulletSpeed: 10
+      bulletRange: 30
+      fireRate: 1.5
+      rammingPower: 23.200003
+      healthCap: 970
+      healthRegen: 36.600002
+      energyCap: 925
+      energyRegen: 19.799995
+      moveSpeed: 5.55
+      accelerationCap: 6
+      turnSpeed: 20
       weaponRotationSpeed: 90
-      maxPeople: 100
+      maxPeople: 228
     hasMissingStats: 0
   - catalogIndex: 42
     visualFamily: 1
@@ -3997,8 +4042,6 @@ MonoBehaviour:
       count: 2
     - displayName: GalacticLeopard_Parts_Fork
       count: 2
-    - displayName: GalacticLeopard_Parts_Gun
-      count: 4
     - displayName: GalacticLeopard_Parts_Silo
       count: 6
     - displayName: GalacticLeopard_Parts_Thruster
@@ -4010,20 +4053,20 @@ MonoBehaviour:
     - displayName: Parts
       count: 1
     summedStats:
-      firePower: 160
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 9
-      rammingPower: 72.8
-      healthCap: 1956
-      healthRegen: 30.600002
-      energyCap: 608
-      energyRegen: 14
-      moveSpeed: 6.24
-      accelerationCap: 12
-      turnSpeed: 1
+      firePower: 80
+      bulletSpeed: 12
+      bulletRange: 12
+      fireRate: 2
+      rammingPower: 70.40001
+      healthCap: 2516
+      healthRegen: 116.799995
+      energyCap: 2320
+      energyRegen: 38.599987
+      moveSpeed: 5.95
+      accelerationCap: 6
+      turnSpeed: 18
       weaponRotationSpeed: 90
-      maxPeople: 240
+      maxPeople: 486
     hasMissingStats: 0
   - catalogIndex: 43
     visualFamily: 1
@@ -4073,8 +4116,6 @@ MonoBehaviour:
       count: 2
     - displayName: GalacticLeopard_Parts_Fork
       count: 6
-    - displayName: GalacticLeopard_Parts_Gun
-      count: 4
     - displayName: GalacticLeopard_Parts_Silo
       count: 2
     - displayName: GalacticLeopard_Parts_Thruster
@@ -4086,20 +4127,20 @@ MonoBehaviour:
     - displayName: Parts
       count: 1
     summedStats:
-      firePower: 120
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 16
-      rammingPower: 64.80002
-      healthCap: 1788
-      healthRegen: 26.900002
-      energyCap: 956
-      energyRegen: 26
-      moveSpeed: 6.72
-      accelerationCap: 28
-      turnSpeed: 4
+      firePower: 80
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 8
+      rammingPower: 52.80002
+      healthCap: 2488
+      healthRegen: 81.899994
+      energyCap: 2258
+      energyRegen: 56.19998
+      moveSpeed: 7.2
+      accelerationCap: 18
+      turnSpeed: 40
       weaponRotationSpeed: 90
-      maxPeople: 300
+      maxPeople: 652
     hasMissingStats: 0
   - catalogIndex: 44
     visualFamily: 1
@@ -4157,8 +4198,6 @@ MonoBehaviour:
       count: 6
     - displayName: GalacticLeopard_Parts_Fork
       count: 3
-    - displayName: GalacticLeopard_Parts_Gun
-      count: 18
     - displayName: GalacticLeopard_Parts_Silo
       count: 8
     - displayName: GalacticLeopard_Parts_Thruster
@@ -4172,20 +4211,20 @@ MonoBehaviour:
     - displayName: Parts
       count: 1
     summedStats:
-      firePower: 590
-      bulletSpeed: 28
+      firePower: 600
+      bulletSpeed: 20
       bulletRange: 40
-      fireRate: 39.4
-      rammingPower: 108.3999
-      healthCap: 3082
-      healthRegen: 46.499992
-      energyCap: 1446
-      energyRegen: 28
-      moveSpeed: 6.6
-      accelerationCap: 24
-      turnSpeed: 6
+      fireRate: 2.6
+      rammingPower: 96.39993
+      healthCap: 4082
+      healthRegen: 161.99998
+      energyCap: 3690
+      energyRegen: 70.60004
+      moveSpeed: 7.65
+      accelerationCap: 12
+      turnSpeed: 80
       weaponRotationSpeed: 90
-      maxPeople: 500
+      maxPeople: 926
     hasMissingStats: 0
   - catalogIndex: 45
     visualFamily: 1
@@ -4236,20 +4275,20 @@ MonoBehaviour:
     - displayName: Parts
       count: 1
     summedStats:
-      firePower: 15
-      bulletSpeed: 14
-      bulletRange: 25
+      firePower: 20
+      bulletSpeed: 12
+      bulletRange: 30
       fireRate: 2
-      rammingPower: 11.999999
-      healthCap: 528
-      healthRegen: 7.5
-      energyCap: 292
-      energyRegen: 10
-      moveSpeed: 6.18
-      accelerationCap: 10
-      turnSpeed: 2.5
+      rammingPower: 9.599999
+      healthCap: 488
+      healthRegen: 24.9
+      energyCap: 542
+      energyRegen: 15.400001
+      moveSpeed: 6.05
+      accelerationCap: 3
+      turnSpeed: 41
       weaponRotationSpeed: 90
-      maxPeople: 80
+      maxPeople: 64
     hasMissingStats: 0
   - catalogIndex: 46
     visualFamily: 1
@@ -4297,8 +4336,6 @@ MonoBehaviour:
       count: 2
     - displayName: GalacticLeopard_Parts_Fork
       count: 2
-    - displayName: GalacticLeopard_Parts_Gun
-      count: 5
     - displayName: GalacticLeopard_Parts_Silo
       count: 2
     - displayName: GalacticLeopard_Parts_Thruster
@@ -4312,20 +4349,20 @@ MonoBehaviour:
     - displayName: Parts
       count: 1
     summedStats:
-      firePower: 205
-      bulletSpeed: 28
+      firePower: 250
+      bulletSpeed: 20
       bulletRange: 40
-      fireRate: 10.95
-      rammingPower: 30.400005
-      healthCap: 828
-      healthRegen: 12.8
-      energyCap: 410
-      energyRegen: 7
-      moveSpeed: 6.06
-      accelerationCap: 6
-      turnSpeed: 0.5
+      fireRate: 0.8
+      rammingPower: 26.800003
+      healthCap: 1068
+      healthRegen: 44.399998
+      energyCap: 1020
+      energyRegen: 17.2
+      moveSpeed: 5.35
+      accelerationCap: 3
+      turnSpeed: 9
       weaponRotationSpeed: 90
-      maxPeople: 120
+      maxPeople: 242
     hasMissingStats: 0
   - catalogIndex: 47
     visualFamily: 1
@@ -4361,8 +4398,6 @@ MonoBehaviour:
       count: 24
     - displayName: GalacticLeopard_Parts_Fork
       count: 8
-    - displayName: GalacticLeopard_Parts_Gun
-      count: 8
     - displayName: GalacticLeopard_Parts_Turret_Single
       count: 8
     - displayName: Main
@@ -4370,20 +4405,20 @@ MonoBehaviour:
     - displayName: Parts
       count: 1
     summedStats:
-      firePower: 240
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 32
-      rammingPower: 64.800026
-      healthCap: 1620
-      healthRegen: 27
-      energyCap: 192
-      energyRegen: 0
+      firePower: 160
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 16
+      rammingPower: 55.200024
+      healthCap: 1460
+      healthRegen: 92
+      energyCap: 1476
+      energyRegen: 13.800006
       moveSpeed: 0
       accelerationCap: 0
       turnSpeed: 0
       weaponRotationSpeed: 90
-      maxPeople: 0
+      maxPeople: 218
     hasMissingStats: 1
   - catalogIndex: 48
     visualFamily: 1
@@ -4422,37 +4457,35 @@ MonoBehaviour:
     - displayName: GalacticLeopard_Parts_ControlRoom
       count: 1
     - displayName: GalacticLeopard_Parts_Cylinder
-      count: 3
+      count: 9
     - displayName: GalacticLeopard_Parts_Fender
       count: 2
     - displayName: GalacticLeopard_Parts_Fork
       count: 1
-    - displayName: GalacticLeopard_Parts_Gun
-      count: 1
     - displayName: GalacticLeopard_Parts_Thruster
       count: 1
     - displayName: GalacticLeopard_Parts_Turret_Single
-      count: 1
+      count: 3
     - displayName: Main
       count: 1
     - displayName: Parts
       count: 1
     summedStats:
-      firePower: 30
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 4
-      rammingPower: 21.600002
-      healthCap: 552
-      healthRegen: 9.1
-      energyCap: 24
-      energyRegen: 0
-      moveSpeed: 3
-      accelerationCap: 2
-      turnSpeed: 0.5
+      firePower: 60
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 6
+      rammingPower: 26.400005
+      healthCap: 692
+      healthRegen: 44.1
+      energyCap: 726
+      energyRegen: 9.600001
+      moveSpeed: 4
+      accelerationCap: 3
+      turnSpeed: 5
       weaponRotationSpeed: 90
-      maxPeople: 0
-    hasMissingStats: 1
+      maxPeople: 86
+    hasMissingStats: 0
   - catalogIndex: 49
     visualFamily: 1
     displayName: Hollowpounce
@@ -4495,8 +4528,6 @@ MonoBehaviour:
       count: 4
     - displayName: GalacticLeopard_Parts_Fork
       count: 1
-    - displayName: GalacticLeopard_Parts_Gun
-      count: 6
     - displayName: GalacticLeopard_Parts_Silo
       count: 4
     - displayName: GalacticLeopard_Parts_Thruster
@@ -4510,21 +4541,21 @@ MonoBehaviour:
     - displayName: Parts
       count: 1
     summedStats:
-      firePower: 320
-      bulletSpeed: 28
+      firePower: 450
+      bulletSpeed: 20
       bulletRange: 40
-      fireRate: 13.15
-      rammingPower: 42.000015
-      healthCap: 1142
-      healthRegen: 18.800001
-      energyCap: 827
-      energyRegen: 20
-      moveSpeed: 6.42
-      accelerationCap: 18
-      turnSpeed: 0.5
+      fireRate: 1.1
+      rammingPower: 39.600014
+      healthCap: 1102
+      healthRegen: 67.299995
+      energyCap: 1615
+      energyRegen: 24.89999
+      moveSpeed: 5.95
+      accelerationCap: 3
+      turnSpeed: 5
       weaponRotationSpeed: 90
-      maxPeople: 0
-    hasMissingStats: 1
+      maxPeople: 119
+    hasMissingStats: 0
   - catalogIndex: 50
     visualFamily: 1
     displayName: Ivoryspot
@@ -4569,8 +4600,6 @@ MonoBehaviour:
       count: 15
     - displayName: GalacticLeopard_Parts_Fork
       count: 4
-    - displayName: GalacticLeopard_Parts_Gun
-      count: 5
     - displayName: GalacticLeopard_Parts_Silo
       count: 1
     - displayName: GalacticLeopard_Parts_Thruster
@@ -4582,20 +4611,20 @@ MonoBehaviour:
     - displayName: Parts
       count: 1
     summedStats:
-      firePower: 150
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 20
-      rammingPower: 37.200012
-      healthCap: 1230
-      healthRegen: 18.700003
-      energyCap: 260
-      energyRegen: 5
-      moveSpeed: 6.24
+      firePower: 100
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 10
+      rammingPower: 36.00001
+      healthCap: 1210
+      healthRegen: 72.799995
+      energyCap: 1250
+      energyRegen: 27.99999
+      moveSpeed: 6.5
       accelerationCap: 12
-      turnSpeed: 3
+      turnSpeed: 54
       weaponRotationSpeed: 90
-      maxPeople: 120
+      maxPeople: 130
     hasMissingStats: 0
   - catalogIndex: 51
     visualFamily: 1
@@ -4647,8 +4676,6 @@ MonoBehaviour:
       count: 4
     - displayName: GalacticLeopard_Parts_Fork
       count: 2
-    - displayName: GalacticLeopard_Parts_Gun
-      count: 3
     - displayName: GalacticLeopard_Parts_Turret_Single
       count: 3
     - displayName: Main
@@ -4656,21 +4683,21 @@ MonoBehaviour:
     - displayName: Parts
       count: 1
     summedStats:
-      firePower: 90
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 12
-      rammingPower: 52.400017
-      healthCap: 1422
-      healthRegen: 21.900002
-      energyCap: 552
-      energyRegen: 14
-      moveSpeed: 6.12
+      firePower: 60
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 6
+      rammingPower: 47.600014
+      healthCap: 1942
+      healthRegen: 78.6
+      energyCap: 1646
+      energyRegen: 26.89999
+      moveSpeed: 5.55
       accelerationCap: 8
-      turnSpeed: 0
+      turnSpeed: 8
       weaponRotationSpeed: 90
-      maxPeople: 240
-    hasMissingStats: 1
+      maxPeople: 449
+    hasMissingStats: 0
   - catalogIndex: 52
     visualFamily: 1
     displayName: Mossorbit
@@ -4725,8 +4752,6 @@ MonoBehaviour:
       count: 2
     - displayName: GalacticLeopard_Parts_Fork
       count: 7
-    - displayName: GalacticLeopard_Parts_Gun
-      count: 4
     - displayName: GalacticLeopard_Parts_Thruster
       count: 7
     - displayName: GalacticLeopard_Parts_Turret_Single
@@ -4736,20 +4761,20 @@ MonoBehaviour:
     - displayName: Parts
       count: 1
     summedStats:
-      firePower: 120
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 16
-      rammingPower: 57.20002
-      healthCap: 1714
-      healthRegen: 25.500004
-      energyCap: 856
-      energyRegen: 24
-      moveSpeed: 6.78
-      accelerationCap: 30
-      turnSpeed: 6.5
+      firePower: 80
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 8
+      rammingPower: 50.000015
+      healthCap: 2194
+      healthRegen: 84.19998
+      energyCap: 2158
+      energyRegen: 57.499985
+      moveSpeed: 7.75
+      accelerationCap: 21
+      turnSpeed: 73
       weaponRotationSpeed: 90
-      maxPeople: 240
+      maxPeople: 475
     hasMissingStats: 0
   - catalogIndex: 53
     visualFamily: 1
@@ -4801,8 +4826,6 @@ MonoBehaviour:
       count: 2
     - displayName: GalacticLeopard_Parts_Fork
       count: 2
-    - displayName: GalacticLeopard_Parts_Gun
-      count: 4
     - displayName: GalacticLeopard_Parts_Silo
       count: 8
     - displayName: GalacticLeopard_Parts_Thruster
@@ -4814,20 +4837,20 @@ MonoBehaviour:
     - displayName: Parts
       count: 1
     summedStats:
-      firePower: 160
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 9
-      rammingPower: 46.400013
-      healthCap: 1316
-      healthRegen: 19.600002
-      energyCap: 468
-      energyRegen: 9
-      moveSpeed: 6.24
+      firePower: 80
+      bulletSpeed: 12
+      bulletRange: 12
+      fireRate: 2
+      rammingPower: 44.000015
+      healthCap: 1876
+      healthRegen: 72.799995
+      energyCap: 1630
+      energyRegen: 35.999985
+      moveSpeed: 6.2
       accelerationCap: 12
-      turnSpeed: 3
+      turnSpeed: 38
       weaponRotationSpeed: 90
-      maxPeople: 240
+      maxPeople: 420
     hasMissingStats: 0
   - catalogIndex: 54
     visualFamily: 1
@@ -4882,7 +4905,7 @@ MonoBehaviour:
     - displayName: GalacticLeopard_Parts_Fork
       count: 2
     - displayName: GalacticLeopard_Parts_Gun
-      count: 6
+      count: 2
     - displayName: GalacticLeopard_Parts_Silo
       count: 6
     - displayName: GalacticLeopard_Parts_Thruster
@@ -4896,20 +4919,20 @@ MonoBehaviour:
     - displayName: StarSparrow1
       count: 1
     summedStats:
-      firePower: 150
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 20
-      rammingPower: 52.800022
-      healthCap: 1488
-      healthRegen: 23.800001
-      energyCap: 400
-      energyRegen: 10
-      moveSpeed: 6.24
-      accelerationCap: 12
-      turnSpeed: 3
+      firePower: 120
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 12
+      rammingPower: 48.00002
+      healthCap: 1408
+      healthRegen: 85
+      energyCap: 1572
+      energyRegen: 26.99999
+      moveSpeed: 6.05
+      accelerationCap: 6
+      turnSpeed: 38
       weaponRotationSpeed: 90
-      maxPeople: 40
+      maxPeople: 170
     hasMissingStats: 0
   - catalogIndex: 55
     visualFamily: 1
@@ -4964,20 +4987,20 @@ MonoBehaviour:
     - displayName: Parts
       count: 1
     summedStats:
-      firePower: 30
-      bulletSpeed: 14
-      bulletRange: 25
+      firePower: 40
+      bulletSpeed: 12
+      bulletRange: 30
       fireRate: 4
-      rammingPower: 32.40001
-      healthCap: 950
-      healthRegen: 15.000002
-      energyCap: 164
-      energyRegen: 5
-      moveSpeed: 6.24
+      rammingPower: 21.600002
+      healthCap: 770
+      healthRegen: 40.699993
+      energyCap: 804
+      energyRegen: 21.400002
+      moveSpeed: 6
       accelerationCap: 12
-      turnSpeed: 2
+      turnSpeed: 28
       weaponRotationSpeed: 90
-      maxPeople: 40
+      maxPeople: 154
     hasMissingStats: 0
   - catalogIndex: 56
     visualFamily: 1
@@ -5033,8 +5056,6 @@ MonoBehaviour:
       count: 7
     - displayName: GalacticLeopard_Parts_Fender
       count: 4
-    - displayName: GalacticLeopard_Parts_Gun
-      count: 12
     - displayName: GalacticLeopard_Parts_Thruster
       count: 2
     - displayName: GalacticLeopard_Parts_Turret_Quad
@@ -5044,20 +5065,20 @@ MonoBehaviour:
     - displayName: Parts
       count: 1
     summedStats:
-      firePower: 270
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 26.25
-      rammingPower: 107.59994
-      healthCap: 2858
-      healthRegen: 45.299995
-      energyCap: 559
-      energyRegen: 9
-      moveSpeed: 6.12
-      accelerationCap: 8
-      turnSpeed: 2
+      firePower: 150
+      bulletSpeed: 10
+      bulletRange: 30
+      fireRate: 1.5
+      rammingPower: 88.39999
+      healthCap: 3138
+      healthRegen: 148.6
+      energyCap: 2685
+      energyRegen: 41.59998
+      moveSpeed: 5.9
+      accelerationCap: 6
+      turnSpeed: 32
       weaponRotationSpeed: 90
-      maxPeople: 260
+      maxPeople: 676
     hasMissingStats: 0
   - catalogIndex: 57
     visualFamily: 1
@@ -5105,8 +5126,6 @@ MonoBehaviour:
       count: 24
     - displayName: GalacticLeopard_Parts_Fork
       count: 2
-    - displayName: GalacticLeopard_Parts_Gun
-      count: 8
     - displayName: GalacticLeopard_Parts_Thruster
       count: 4
     - displayName: GalacticLeopard_Parts_Turret_Single
@@ -5116,20 +5135,20 @@ MonoBehaviour:
     - displayName: Parts
       count: 1
     summedStats:
-      firePower: 240
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 32
-      rammingPower: 70.40002
-      healthCap: 1900
-      healthRegen: 29.5
-      energyCap: 532
-      energyRegen: 9
-      moveSpeed: 6.24
+      firePower: 160
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 16
+      rammingPower: 53.600018
+      healthCap: 2220
+      healthRegen: 88.7
+      energyCap: 1876
+      energyRegen: 37.4
+      moveSpeed: 6.1
       accelerationCap: 12
-      turnSpeed: 2
+      turnSpeed: 28
       weaponRotationSpeed: 90
-      maxPeople: 240
+      maxPeople: 564
     hasMissingStats: 0
   - catalogIndex: 58
     visualFamily: 1
@@ -5186,20 +5205,20 @@ MonoBehaviour:
     - displayName: Parts
       count: 1
     summedStats:
-      firePower: 60
-      bulletSpeed: 14
-      bulletRange: 25
+      firePower: 80
+      bulletSpeed: 12
+      bulletRange: 30
       fireRate: 8
-      rammingPower: 32.000004
-      healthCap: 952
-      healthRegen: 13.600002
-      energyCap: 388
-      energyRegen: 9
+      rammingPower: 29.600006
+      healthCap: 1512
+      healthRegen: 48.79999
+      energyCap: 1258
+      energyRegen: 34.399994
       moveSpeed: 6.3
-      accelerationCap: 14
-      turnSpeed: 2.5
+      accelerationCap: 15
+      turnSpeed: 33
       weaponRotationSpeed: 90
-      maxPeople: 240
+      maxPeople: 384
     hasMissingStats: 0
   - catalogIndex: 59
     visualFamily: 1
@@ -5248,21 +5267,21 @@ MonoBehaviour:
     - displayName: Parts
       count: 1
     summedStats:
-      firePower: 60
-      bulletSpeed: 14
-      bulletRange: 25
+      firePower: 80
+      bulletSpeed: 12
+      bulletRange: 30
       fireRate: 8
       rammingPower: 25.200005
       healthCap: 726
-      healthRegen: 11.500001
-      energyCap: 48
-      energyRegen: 0
-      moveSpeed: 3.06
-      accelerationCap: 4
-      turnSpeed: 1
+      healthRegen: 46.199997
+      energyCap: 758
+      energyRegen: 13.300001
+      moveSpeed: 4.4
+      accelerationCap: 6
+      turnSpeed: 18
       weaponRotationSpeed: 90
-      maxPeople: 40
-    hasMissingStats: 1
+      maxPeople: 73
+    hasMissingStats: 0
   - catalogIndex: 60
     visualFamily: 2
     displayName: Kintsugi
@@ -5289,8 +5308,6 @@ MonoBehaviour:
       count: 3
     - displayName: GalacticOkamoto_Bridge
       count: 1
-    - displayName: GalacticOkamoto_Cannon
-      count: 9
     - displayName: GalacticOkamoto_Capsule
       count: 6
     - displayName: GalacticOkamoto_Cockpit
@@ -5320,20 +5337,20 @@ MonoBehaviour:
     - displayName: GalacticOkamoto_Wing
       count: 7
     summedStats:
-      firePower: 495
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 10.5
+      firePower: 60
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 6
       rammingPower: 47.600018
-      healthCap: 1550
-      healthRegen: 22.699999
-      energyCap: 1156
-      energyRegen: 24
-      moveSpeed: 6.42
-      accelerationCap: 18
-      turnSpeed: 1.5
+      healthCap: 2150
+      healthRegen: 89.399994
+      energyCap: 1936
+      energyRegen: 39.399982
+      moveSpeed: 6.85
+      accelerationCap: 3
+      turnSpeed: 43
       weaponRotationSpeed: 90
-      maxPeople: 340
+      maxPeople: 434
     hasMissingStats: 0
   - catalogIndex: 61
     visualFamily: 2
@@ -5360,7 +5377,7 @@ MonoBehaviour:
     - displayName: GalacticOkamoto_Body
       count: 2
     - displayName: GalacticOkamoto_Cannon
-      count: 8
+      count: 2
     - displayName: GalacticOkamoto_Capsule
       count: 4
     - displayName: GalacticOkamoto_Cockpit
@@ -5384,20 +5401,20 @@ MonoBehaviour:
     - displayName: GalacticOkamoto_Wing
       count: 3
     summedStats:
-      firePower: 430
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 8
+      firePower: 120
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 6
       rammingPower: 25.600002
-      healthCap: 884
-      healthRegen: 12.800001
-      energyCap: 1004
-      energyRegen: 22
-      moveSpeed: 6.48
-      accelerationCap: 20
-      turnSpeed: 3
+      healthCap: 1184
+      healthRegen: 47.59999
+      energyCap: 1354
+      energyRegen: 31.899998
+      moveSpeed: 6.7
+      accelerationCap: 6
+      turnSpeed: 42
       weaponRotationSpeed: 90
-      maxPeople: 160
+      maxPeople: 219
     hasMissingStats: 0
   - catalogIndex: 62
     visualFamily: 2
@@ -5425,8 +5442,6 @@ MonoBehaviour:
       count: 5
     - displayName: GalacticOkamoto_Bridge
       count: 1
-    - displayName: GalacticOkamoto_Cannon
-      count: 12
     - displayName: GalacticOkamoto_Capsule
       count: 8
     - displayName: GalacticOkamoto_Cockpit
@@ -5456,20 +5471,20 @@ MonoBehaviour:
     - displayName: GalacticOkamoto_Wing
       count: 6
     summedStats:
-      firePower: 660
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 14
+      firePower: 80
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 8
       rammingPower: 56.800022
-      healthCap: 1760
-      healthRegen: 26.899996
-      energyCap: 1188
-      energyRegen: 22
-      moveSpeed: 6.42
-      accelerationCap: 18
-      turnSpeed: 2.5
+      healthCap: 2060
+      healthRegen: 105.50001
+      energyCap: 2078
+      energyRegen: 38.199993
+      moveSpeed: 6.8
+      accelerationCap: 3
+      turnSpeed: 49
       weaponRotationSpeed: 90
-      maxPeople: 220
+      maxPeople: 312
     hasMissingStats: 0
   - catalogIndex: 63
     visualFamily: 2
@@ -5495,8 +5510,6 @@ MonoBehaviour:
     componentCounts:
     - displayName: GalacticOkamoto_Body
       count: 2
-    - displayName: GalacticOkamoto_Cannon
-      count: 6
     - displayName: GalacticOkamoto_Capsule
       count: 3
     - displayName: GalacticOkamoto_Cockpit
@@ -5526,20 +5539,20 @@ MonoBehaviour:
     - displayName: GalacticOkamoto_Wing
       count: 3
     summedStats:
-      firePower: 330
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 7
+      firePower: 40
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 4
       rammingPower: 29.200006
-      healthCap: 918
-      healthRegen: 13.6
-      energyCap: 644
-      energyRegen: 12
-      moveSpeed: 6.24
-      accelerationCap: 12
-      turnSpeed: 2
+      healthCap: 1218
+      healthRegen: 52.9
+      energyCap: 1154
+      energyRegen: 25.799995
+      moveSpeed: 6.1
+      accelerationCap: 6
+      turnSpeed: 32
       weaponRotationSpeed: 90
-      maxPeople: 160
+      maxPeople: 228
     hasMissingStats: 0
   - catalogIndex: 64
     visualFamily: 2
@@ -5563,8 +5576,6 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: b2bd9d9b573628e438c3ae9aad87605a, type: 3}
     componentCounts:
-    - displayName: GalacticOkamoto_Cannon
-      count: 6
     - displayName: GalacticOkamoto_Capsule
       count: 3
     - displayName: GalacticOkamoto_Cockpit
@@ -5590,20 +5601,20 @@ MonoBehaviour:
     - displayName: GalacticOkamoto_Wing
       count: 1
     summedStats:
-      firePower: 330
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 7
+      firePower: 40
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 4
       rammingPower: 20.800001
-      healthCap: 624
-      healthRegen: 9.200001
-      energyCap: 644
-      energyRegen: 12
-      moveSpeed: 6.18
-      accelerationCap: 10
-      turnSpeed: 1.5
+      healthCap: 924
+      healthRegen: 34.799995
+      energyCap: 894
+      energyRegen: 19.7
+      moveSpeed: 5.7
+      accelerationCap: 3
+      turnSpeed: 19
       weaponRotationSpeed: 90
-      maxPeople: 120
+      maxPeople: 197
     hasMissingStats: 0
   - catalogIndex: 65
     visualFamily: 2
@@ -5631,8 +5642,6 @@ MonoBehaviour:
       count: 1
     - displayName: GalacticOkamoto_Bridge
       count: 3
-    - displayName: GalacticOkamoto_Cannon
-      count: 6
     - displayName: GalacticOkamoto_Capsule
       count: 2
     - displayName: GalacticOkamoto_Cockpit
@@ -5656,20 +5665,20 @@ MonoBehaviour:
     - displayName: GalacticOkamoto_Turret1
       count: 2
     summedStats:
-      firePower: 330
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 7
+      firePower: 40
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 4
       rammingPower: 29.600008
-      healthCap: 812
-      healthRegen: 11.8
-      energyCap: 744
-      energyRegen: 14
-      moveSpeed: 6.12
+      healthCap: 1412
+      healthRegen: 44.8
+      energyCap: 1184
+      energyRegen: 23.39999
+      moveSpeed: 5.55
       accelerationCap: 8
-      turnSpeed: 2
+      turnSpeed: 20
       weaponRotationSpeed: 90
-      maxPeople: 200
+      maxPeople: 354
     hasMissingStats: 0
   - catalogIndex: 66
     visualFamily: 2
@@ -5697,8 +5706,6 @@ MonoBehaviour:
       count: 3
     - displayName: GalacticOkamoto_Bridge
       count: 2
-    - displayName: GalacticOkamoto_Cannon
-      count: 21
     - displayName: GalacticOkamoto_Capsule
       count: 2
     - displayName: GalacticOkamoto_Cockpit
@@ -5728,20 +5735,20 @@ MonoBehaviour:
     - displayName: GalacticOkamoto_Wing
       count: 2
     summedStats:
-      firePower: 1155
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 24.5
+      firePower: 140
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 14
       rammingPower: 55.60002
-      healthCap: 1626
-      healthRegen: 25.100002
-      energyCap: 1584
-      energyRegen: 22
-      moveSpeed: 6.54
-      accelerationCap: 22
-      turnSpeed: 4.5
+      healthCap: 1926
+      healthRegen: 95.79999
+      energyCap: 2114
+      energyRegen: 42.89997
+      moveSpeed: 6.9
+      accelerationCap: 9
+      turnSpeed: 53
       weaponRotationSpeed: 90
-      maxPeople: 140
+      maxPeople: 289
     hasMissingStats: 0
   - catalogIndex: 67
     visualFamily: 2
@@ -5767,8 +5774,6 @@ MonoBehaviour:
     componentCounts:
     - displayName: GalacticOkamoto_Body
       count: 1
-    - displayName: GalacticOkamoto_Cannon
-      count: 9
     - displayName: GalacticOkamoto_Capsule
       count: 4
     - displayName: GalacticOkamoto_Cockpit
@@ -5790,21 +5795,21 @@ MonoBehaviour:
     - displayName: GalacticOkamoto_Wing
       count: 3
     summedStats:
-      firePower: 495
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 10.5
+      firePower: 60
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 6
       rammingPower: 33.20001
-      healthCap: 978
-      healthRegen: 14.3
-      energyCap: 876
-      energyRegen: 14
-      moveSpeed: 6.12
+      healthCap: 1578
+      healthRegen: 56.6
+      energyCap: 1296
+      energyRegen: 23.799988
+      moveSpeed: 5.65
       accelerationCap: 8
-      turnSpeed: 0
+      turnSpeed: 12
       weaponRotationSpeed: 90
-      maxPeople: 260
-    hasMissingStats: 1
+      maxPeople: 378
+    hasMissingStats: 0
   - catalogIndex: 68
     visualFamily: 2
     displayName: Fanstar
@@ -5831,8 +5836,6 @@ MonoBehaviour:
       count: 2
     - displayName: GalacticOkamoto_Bridge
       count: 5
-    - displayName: GalacticOkamoto_Cannon
-      count: 12
     - displayName: GalacticOkamoto_Capsule
       count: 1
     - displayName: GalacticOkamoto_Cockpit
@@ -5862,20 +5865,20 @@ MonoBehaviour:
     - displayName: GalacticOkamoto_Wing
       count: 1
     summedStats:
-      firePower: 660
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 14
+      firePower: 80
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 8
       rammingPower: 44.800014
-      healthCap: 1224
-      healthRegen: 19.2
-      energyCap: 908
-      energyRegen: 12
-      moveSpeed: 6.18
-      accelerationCap: 10
-      turnSpeed: 1.5
+      healthCap: 1524
+      healthRegen: 74.799995
+      energyCap: 1518
+      energyRegen: 25.699987
+      moveSpeed: 5.7
+      accelerationCap: 3
+      turnSpeed: 19
       weaponRotationSpeed: 90
-      maxPeople: 120
+      maxPeople: 257
     hasMissingStats: 0
   - catalogIndex: 69
     visualFamily: 2
@@ -5903,8 +5906,6 @@ MonoBehaviour:
       count: 2
     - displayName: GalacticOkamoto_Bridge
       count: 2
-    - displayName: GalacticOkamoto_Cannon
-      count: 24
     - displayName: GalacticOkamoto_Capsule
       count: 3
     - displayName: GalacticOkamoto_Cockpit
@@ -5934,20 +5935,20 @@ MonoBehaviour:
     - displayName: GalacticOkamoto_Wing
       count: 2
     summedStats:
-      firePower: 1320
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 28
+      firePower: 160
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 16
       rammingPower: 68.000015
-      healthCap: 1908
-      healthRegen: 29.400002
-      energyCap: 1816
-      energyRegen: 24
-      moveSpeed: 6.48
-      accelerationCap: 20
-      turnSpeed: 3
+      healthCap: 2508
+      healthRegen: 113.59999
+      energyCap: 2496
+      energyRegen: 45.99997
+      moveSpeed: 6.65
+      accelerationCap: 6
+      turnSpeed: 38
       weaponRotationSpeed: 90
-      maxPeople: 240
+      maxPeople: 460
     hasMissingStats: 0
   - catalogIndex: 70
     visualFamily: 2
@@ -5975,8 +5976,6 @@ MonoBehaviour:
       count: 1
     - displayName: GalacticOkamoto_Bridge
       count: 1
-    - displayName: GalacticOkamoto_Cannon
-      count: 9
     - displayName: GalacticOkamoto_Capsule
       count: 2
     - displayName: GalacticOkamoto_Cockpit
@@ -6002,20 +6001,20 @@ MonoBehaviour:
     - displayName: GalacticOkamoto_Wing
       count: 2
     summedStats:
-      firePower: 495
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 10.5
+      firePower: 60
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 6
       rammingPower: 31.600008
-      healthCap: 958
-      healthRegen: 14.599999
-      energyCap: 1056
-      energyRegen: 22
-      moveSpeed: 6.36
+      healthCap: 1258
+      healthRegen: 55.300003
+      energyCap: 1356
+      energyRegen: 25.899986
+      moveSpeed: 6.1
       accelerationCap: 16
-      turnSpeed: 1
+      turnSpeed: 18
       weaponRotationSpeed: 90
-      maxPeople: 140
+      maxPeople: 229
     hasMissingStats: 0
   - catalogIndex: 71
     visualFamily: 2
@@ -6043,8 +6042,6 @@ MonoBehaviour:
       count: 3
     - displayName: GalacticOkamoto_Box
       count: 2
-    - displayName: GalacticOkamoto_Cannon
-      count: 18
     - displayName: GalacticOkamoto_Capsule
       count: 9
     - displayName: GalacticOkamoto_Cockpit
@@ -6070,20 +6067,20 @@ MonoBehaviour:
     - displayName: GalacticOkamoto_Wing
       count: 5
     summedStats:
-      firePower: 990
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 21
+      firePower: 120
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 12
       rammingPower: 58.000023
-      healthCap: 1714
-      healthRegen: 26.4
-      energyCap: 1172
-      energyRegen: 12
-      moveSpeed: 6.18
-      accelerationCap: 10
-      turnSpeed: 2.5
+      healthCap: 2014
+      healthRegen: 104.899994
+      energyCap: 1922
+      energyRegen: 31.999979
+      moveSpeed: 6.2
+      accelerationCap: 3
+      turnSpeed: 45
       weaponRotationSpeed: 90
-      maxPeople: 200
+      maxPeople: 310
     hasMissingStats: 0
   - catalogIndex: 72
     visualFamily: 2
@@ -6107,8 +6104,6 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 69cba6fef5186ba43adeb1524c62db72, type: 3}
     componentCounts:
-    - displayName: GalacticOkamoto_Cannon
-      count: 12
     - displayName: GalacticOkamoto_Capsule
       count: 3
     - displayName: GalacticOkamoto_Cockpit
@@ -6136,20 +6131,20 @@ MonoBehaviour:
     - displayName: GalacticOkamoto_Turret1
       count: 4
     summedStats:
-      firePower: 660
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 14
+      firePower: 80
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 8
       rammingPower: 36.40001
-      healthCap: 1030
-      healthRegen: 16
-      energyCap: 1188
-      energyRegen: 22
-      moveSpeed: 6.48
-      accelerationCap: 20
-      turnSpeed: 2
+      healthCap: 1330
+      healthRegen: 59.5
+      energyCap: 1528
+      energyRegen: 32.099983
+      moveSpeed: 6.3
+      accelerationCap: 6
+      turnSpeed: 20
       weaponRotationSpeed: 90
-      maxPeople: 100
+      maxPeople: 231
     hasMissingStats: 0
   - catalogIndex: 73
     visualFamily: 2
@@ -6177,8 +6172,6 @@ MonoBehaviour:
       count: 3
     - displayName: GalacticOkamoto_Bridge
       count: 2
-    - displayName: GalacticOkamoto_Cannon
-      count: 18
     - displayName: GalacticOkamoto_Capsule
       count: 7
     - displayName: GalacticOkamoto_Cockpit
@@ -6210,20 +6203,20 @@ MonoBehaviour:
     - displayName: GalacticOkamoto_Wing
       count: 9
     summedStats:
-      firePower: 1030
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 14
+      firePower: 80
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 8
       rammingPower: 62.000023
-      healthCap: 2062
-      healthRegen: 30.4
-      energyCap: 1864
-      energyRegen: 34
-      moveSpeed: 6.78
-      accelerationCap: 30
-      turnSpeed: 3.5
+      healthCap: 2662
+      healthRegen: 118.29999
+      energyCap: 2598
+      energyRegen: 56.999973
+      moveSpeed: 8.05
+      accelerationCap: 9
+      turnSpeed: 71
       weaponRotationSpeed: 90
-      maxPeople: 380
+      maxPeople: 480
     hasMissingStats: 0
   - catalogIndex: 74
     visualFamily: 2
@@ -6249,8 +6242,6 @@ MonoBehaviour:
     componentCounts:
     - displayName: GalacticOkamoto_Body
       count: 5
-    - displayName: GalacticOkamoto_Cannon
-      count: 9
     - displayName: GalacticOkamoto_Capsule
       count: 2
     - displayName: GalacticOkamoto_Cockpit
@@ -6276,20 +6267,20 @@ MonoBehaviour:
     - displayName: GalacticOkamoto_Wing
       count: 5
     summedStats:
-      firePower: 495
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 10.5
+      firePower: 60
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 6
       rammingPower: 34.000008
-      healthCap: 1122
-      healthRegen: 16.5
-      energyCap: 776
-      energyRegen: 12
-      moveSpeed: 6.3
-      accelerationCap: 14
-      turnSpeed: 2.5
+      healthCap: 1422
+      healthRegen: 64.99999
+      energyCap: 1336
+      energyRegen: 30.999996
+      moveSpeed: 6.5
+      accelerationCap: 9
+      turnSpeed: 45
       weaponRotationSpeed: 90
-      maxPeople: 200
+      maxPeople: 250
     hasMissingStats: 0
   - catalogIndex: 75
     visualFamily: 2
@@ -6317,8 +6308,6 @@ MonoBehaviour:
       count: 2
     - displayName: GalacticOkamoto_Bridge
       count: 4
-    - displayName: GalacticOkamoto_Cannon
-      count: 9
     - displayName: GalacticOkamoto_Capsule
       count: 9
     - displayName: GalacticOkamoto_Cockpit
@@ -6348,20 +6337,20 @@ MonoBehaviour:
     - displayName: GalacticOkamoto_Wing
       count: 9
     summedStats:
-      firePower: 495
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 10.5
+      firePower: 60
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 6
       rammingPower: 47.200016
-      healthCap: 1584
-      healthRegen: 23.499998
-      energyCap: 776
-      energyRegen: 12
-      moveSpeed: 6.24
-      accelerationCap: 12
-      turnSpeed: 2
+      healthCap: 1884
+      healthRegen: 94.899994
+      energyCap: 1676
+      energyRegen: 33.299995
+      moveSpeed: 6.7
+      accelerationCap: 6
+      turnSpeed: 56
       weaponRotationSpeed: 90
-      maxPeople: 280
+      maxPeople: 303
     hasMissingStats: 0
   - catalogIndex: 76
     visualFamily: 2
@@ -6389,8 +6378,6 @@ MonoBehaviour:
       count: 2
     - displayName: GalacticOkamoto_Bridge
       count: 2
-    - displayName: GalacticOkamoto_Cannon
-      count: 9
     - displayName: GalacticOkamoto_Capsule
       count: 4
     - displayName: GalacticOkamoto_Cockpit
@@ -6416,20 +6403,20 @@ MonoBehaviour:
     - displayName: GalacticOkamoto_Wing
       count: 3
     summedStats:
-      firePower: 495
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 10.5
+      firePower: 60
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 6
       rammingPower: 42.00001
-      healthCap: 1350
-      healthRegen: 19.000002
-      energyCap: 1536
-      energyRegen: 36
-      moveSpeed: 6.72
-      accelerationCap: 28
-      turnSpeed: 4
+      healthCap: 2250
+      healthRegen: 70.29999
+      energyCap: 2106
+      energyRegen: 50.99999
+      moveSpeed: 7.4
+      accelerationCap: 6
+      turnSpeed: 52
       weaponRotationSpeed: 90
-      maxPeople: 360
+      maxPeople: 540
     hasMissingStats: 0
   - catalogIndex: 77
     visualFamily: 2
@@ -6487,15 +6474,15 @@ MonoBehaviour:
       bulletRange: 0
       fireRate: 0
       rammingPower: 14.799999
-      healthCap: 522
-      healthRegen: 7.2
-      energyCap: 380
-      energyRegen: 12
-      moveSpeed: 6.24
-      accelerationCap: 12
-      turnSpeed: 2
+      healthCap: 822
+      healthRegen: 26.900002
+      energyCap: 760
+      energyRegen: 21.7
+      moveSpeed: 6
+      accelerationCap: 6
+      turnSpeed: 28
       weaponRotationSpeed: 0
-      maxPeople: 140
+      maxPeople: 187
     hasMissingStats: 1
   - catalogIndex: 78
     visualFamily: 2
@@ -6525,8 +6512,6 @@ MonoBehaviour:
       count: 2
     - displayName: GalacticOkamoto_Bridge
       count: 3
-    - displayName: GalacticOkamoto_Cannon
-      count: 15
     - displayName: GalacticOkamoto_Capsule
       count: 4
     - displayName: GalacticOkamoto_Cockpit
@@ -6556,20 +6541,20 @@ MonoBehaviour:
     - displayName: GalacticOkamoto_Wing
       count: 4
     summedStats:
-      firePower: 845
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 14
+      firePower: 80
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 8
       rammingPower: 54.000015
-      healthCap: 1562
-      healthRegen: 22.9
-      energyCap: 1256
-      energyRegen: 16
-      moveSpeed: 6.18
-      accelerationCap: 10
-      turnSpeed: 1.5
+      healthCap: 2462
+      healthRegen: 90.799995
+      energyCap: 1978
+      energyRegen: 37.49998
+      moveSpeed: 6.1
+      accelerationCap: 3
+      turnSpeed: 31
       weaponRotationSpeed: 90
-      maxPeople: 380
+      maxPeople: 575
     hasMissingStats: 0
   - catalogIndex: 79
     visualFamily: 2
@@ -6597,8 +6582,6 @@ MonoBehaviour:
       count: 2
     - displayName: GalacticOkamoto_Bridge
       count: 1
-    - displayName: GalacticOkamoto_Cannon
-      count: 12
     - displayName: GalacticOkamoto_Capsule
       count: 2
     - displayName: GalacticOkamoto_Cockpit
@@ -6626,20 +6609,20 @@ MonoBehaviour:
     - displayName: GalacticOkamoto_Wing
       count: 6
     summedStats:
-      firePower: 660
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 14
+      firePower: 80
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 8
       rammingPower: 35.20001
-      healthCap: 1164
-      healthRegen: 17.199999
-      energyCap: 908
-      energyRegen: 12
-      moveSpeed: 6.18
-      accelerationCap: 10
-      turnSpeed: 1.5
+      healthCap: 1464
+      healthRegen: 68.8
+      energyCap: 1328
+      energyRegen: 25.799988
+      moveSpeed: 6.2
+      accelerationCap: 3
+      turnSpeed: 39
       weaponRotationSpeed: 90
-      maxPeople: 220
+      maxPeople: 258
     hasMissingStats: 0
   - catalogIndex: 80
     visualFamily: 2
@@ -6669,8 +6652,6 @@ MonoBehaviour:
       count: 6
     - displayName: GalacticOkamoto_Bridge
       count: 6
-    - displayName: GalacticOkamoto_Cannon
-      count: 18
     - displayName: GalacticOkamoto_Capsule
       count: 2
     - displayName: GalacticOkamoto_Cockpit
@@ -6700,20 +6681,20 @@ MonoBehaviour:
     - displayName: GalacticOkamoto_Wing
       count: 2
     summedStats:
-      firePower: 990
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 21
+      firePower: 120
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 12
       rammingPower: 71.600006
-      healthCap: 1974
-      healthRegen: 30.400002
-      energyCap: 1272
-      energyRegen: 14
-      moveSpeed: 6.24
-      accelerationCap: 12
-      turnSpeed: 4
+      healthCap: 2574
+      healthRegen: 119.09999
+      energyCap: 2372
+      energyRegen: 41.899975
+      moveSpeed: 6.25
+      accelerationCap: 6
+      turnSpeed: 48
       weaponRotationSpeed: 90
-      maxPeople: 240
+      maxPeople: 469
     hasMissingStats: 0
   - catalogIndex: 81
     visualFamily: 2
@@ -6765,15 +6746,15 @@ MonoBehaviour:
       bulletRange: 0
       fireRate: 0
       rammingPower: 18.800001
-      healthCap: 634
-      healthRegen: 8.4
-      energyCap: 480
-      energyRegen: 14
-      moveSpeed: 6.12
+      healthCap: 1234
+      healthRegen: 32.699997
+      energyCap: 910
+      energyRegen: 21.199997
+      moveSpeed: 5.75
       accelerationCap: 8
-      turnSpeed: 1
+      turnSpeed: 22
       weaponRotationSpeed: 0
-      maxPeople: 260
+      maxPeople: 342
     hasMissingStats: 1
   - catalogIndex: 82
     visualFamily: 2
@@ -6801,8 +6782,6 @@ MonoBehaviour:
       count: 1
     - displayName: GalacticOkamoto_Bridge
       count: 2
-    - displayName: GalacticOkamoto_Cannon
-      count: 6
     - displayName: GalacticOkamoto_Capsule
       count: 5
     - displayName: GalacticOkamoto_Cockpit
@@ -6832,20 +6811,20 @@ MonoBehaviour:
     - displayName: GalacticOkamoto_Wing
       count: 5
     summedStats:
-      firePower: 330
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 7
+      firePower: 40
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 4
       rammingPower: 32.800007
-      healthCap: 1068
-      healthRegen: 15.799999
-      energyCap: 644
-      energyRegen: 12
-      moveSpeed: 6.18
-      accelerationCap: 10
-      turnSpeed: 1.5
+      healthCap: 1368
+      healthRegen: 62.799995
+      energyCap: 1234
+      energyRegen: 24.699995
+      moveSpeed: 6.1
+      accelerationCap: 3
+      turnSpeed: 35
       weaponRotationSpeed: 90
-      maxPeople: 200
+      maxPeople: 247
     hasMissingStats: 0
   - catalogIndex: 83
     visualFamily: 2
@@ -6901,15 +6880,15 @@ MonoBehaviour:
       bulletRange: 0
       fireRate: 0
       rammingPower: 31.600006
-      healthCap: 990
-      healthRegen: 14.799999
-      energyCap: 380
-      energyRegen: 12
-      moveSpeed: 6.12
+      healthCap: 1290
+      healthRegen: 58.699997
+      energyCap: 1140
+      energyRegen: 20.899996
+      moveSpeed: 5.8
       accelerationCap: 8
-      turnSpeed: 1
+      turnSpeed: 26
       weaponRotationSpeed: 0
-      maxPeople: 180
+      maxPeople: 239
     hasMissingStats: 1
   - catalogIndex: 84
     visualFamily: 2
@@ -6937,8 +6916,6 @@ MonoBehaviour:
       count: 2
     - displayName: GalacticOkamoto_Bridge
       count: 1
-    - displayName: GalacticOkamoto_Cannon
-      count: 12
     - displayName: GalacticOkamoto_Capsule
       count: 8
     - displayName: GalacticOkamoto_Cockpit
@@ -6966,20 +6943,20 @@ MonoBehaviour:
     - displayName: GalacticOkamoto_Wing
       count: 5
     summedStats:
-      firePower: 660
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 14
+      firePower: 80
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 8
       rammingPower: 53.600018
-      healthCap: 1616
-      healthRegen: 24.3
-      energyCap: 1288
-      energyRegen: 24
-      moveSpeed: 6.36
+      healthCap: 2216
+      healthRegen: 95.299995
+      energyCap: 2048
+      energyRegen: 36.89998
+      moveSpeed: 6.45
       accelerationCap: 16
-      turnSpeed: 1
+      turnSpeed: 30
       weaponRotationSpeed: 90
-      maxPeople: 300
+      maxPeople: 439
     hasMissingStats: 0
   - catalogIndex: 85
     visualFamily: 2
@@ -7007,8 +6984,6 @@ MonoBehaviour:
       count: 2
     - displayName: GalacticOkamoto_Bridge
       count: 1
-    - displayName: GalacticOkamoto_Cannon
-      count: 9
     - displayName: GalacticOkamoto_Capsule
       count: 6
     - displayName: GalacticOkamoto_Cockpit
@@ -7038,20 +7013,20 @@ MonoBehaviour:
     - displayName: GalacticOkamoto_Wing
       count: 9
     summedStats:
-      firePower: 495
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 10.5
+      firePower: 60
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 6
       rammingPower: 41.200012
-      healthCap: 1422
-      healthRegen: 20.899998
-      energyCap: 776
-      energyRegen: 12
-      moveSpeed: 6.18
-      accelerationCap: 10
-      turnSpeed: 1.5
+      healthCap: 1722
+      healthRegen: 84.799995
+      energyCap: 1496
+      energyRegen: 28.79999
+      moveSpeed: 6.5
+      accelerationCap: 3
+      turnSpeed: 51
       weaponRotationSpeed: 90
-      maxPeople: 280
+      maxPeople: 288
     hasMissingStats: 0
   - catalogIndex: 86
     visualFamily: 2
@@ -7079,8 +7054,6 @@ MonoBehaviour:
       count: 1
     - displayName: GalacticOkamoto_Bridge
       count: 1
-    - displayName: GalacticOkamoto_Cannon
-      count: 6
     - displayName: GalacticOkamoto_Capsule
       count: 2
     - displayName: GalacticOkamoto_Cockpit
@@ -7108,20 +7081,20 @@ MonoBehaviour:
     - displayName: GalacticOkamoto_Wing
       count: 4
     summedStats:
-      firePower: 330
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 7
+      firePower: 40
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 4
       rammingPower: 36.80001
-      healthCap: 1116
-      healthRegen: 16.3
-      energyCap: 744
-      energyRegen: 14
-      moveSpeed: 6.18
-      accelerationCap: 10
-      turnSpeed: 0.5
+      healthCap: 1716
+      healthRegen: 64.7
+      energyCap: 1414
+      energyRegen: 28.199986
+      moveSpeed: 5.95
+      accelerationCap: 3
+      turnSpeed: 21
       weaponRotationSpeed: 90
-      maxPeople: 280
+      maxPeople: 392
     hasMissingStats: 0
   - catalogIndex: 87
     visualFamily: 2
@@ -7149,8 +7122,6 @@ MonoBehaviour:
       count: 9
     - displayName: GalacticOkamoto_Bridge
       count: 2
-    - displayName: GalacticOkamoto_Cannon
-      count: 18
     - displayName: GalacticOkamoto_Capsule
       count: 6
     - displayName: GalacticOkamoto_Cockpit
@@ -7174,20 +7145,20 @@ MonoBehaviour:
     - displayName: GalacticOkamoto_Wing
       count: 4
     summedStats:
-      firePower: 990
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 21
+      firePower: 120
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 12
       rammingPower: 60.800022
-      healthCap: 1720
-      healthRegen: 26.3
-      energyCap: 1272
-      energyRegen: 14
-      moveSpeed: 6.12
+      healthCap: 2320
+      healthRegen: 104.7
+      energyCap: 2042
+      energyRegen: 32.19998
+      moveSpeed: 5.85
       accelerationCap: 8
-      turnSpeed: 1
+      turnSpeed: 26
       weaponRotationSpeed: 90
-      maxPeople: 280
+      maxPeople: 452
     hasMissingStats: 0
   - catalogIndex: 88
     visualFamily: 2
@@ -7232,20 +7203,20 @@ MonoBehaviour:
     - displayName: GalacticOkamoto_Wing
       count: 2
     summedStats:
-      firePower: 300
+      firePower: 240
       bulletSpeed: 12
-      bulletRange: 25
-      fireRate: 3
+      bulletRange: 12
+      fireRate: 6
       rammingPower: 13.599999
-      healthCap: 456
-      healthRegen: 6.1
-      energyCap: 340
-      energyRegen: 2
-      moveSpeed: 3
-      accelerationCap: 2
-      turnSpeed: 2.5
+      healthCap: 756
+      healthRegen: 24.300001
+      energyCap: 750
+      energyRegen: 13.400001
+      moveSpeed: 4.45
+      accelerationCap: 3
+      turnSpeed: 33
       weaponRotationSpeed: 90
-      maxPeople: 140
+      maxPeople: 184
     hasMissingStats: 0
   - catalogIndex: 89
     visualFamily: 2
@@ -7273,8 +7244,6 @@ MonoBehaviour:
       count: 5
     - displayName: GalacticOkamoto_Box
       count: 2
-    - displayName: GalacticOkamoto_Cannon
-      count: 6
     - displayName: GalacticOkamoto_Capsule
       count: 4
     - displayName: GalacticOkamoto_Cockpit
@@ -7298,21 +7267,1451 @@ MonoBehaviour:
     - displayName: GalacticOkamoto_Wing
       count: 5
     summedStats:
-      firePower: 330
-      bulletSpeed: 14
-      bulletRange: 25
-      fireRate: 7
+      firePower: 40
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 4
       rammingPower: 30.400007
-      healthCap: 1012
-      healthRegen: 14.799999
-      energyCap: 644
-      energyRegen: 12
-      moveSpeed: 6.12
+      healthCap: 1312
+      healthRegen: 58.799995
+      energyCap: 1154
+      energyRegen: 22.099995
+      moveSpeed: 6
       accelerationCap: 8
-      turnSpeed: 2
+      turnSpeed: 40
       weaponRotationSpeed: 90
-      maxPeople: 200
+      maxPeople: 241
     hasMissingStats: 0
+  - catalogIndex: 90
+    visualFamily: 1
+    displayName: Shadeclaw
+    prefab: {fileID: 3099414079942506098, guid: 53248dfb1fae21147bd2b542c56a645e, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: c47cd9b3212463641bc3dc13bb58d481, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: c47cd9b3212463641bc3dc13bb58d481, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 711d001090fbba44183d40b99dbe01d6, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: fd025b5f6d8f0c74ab67eff60650bd7c, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: a539ce3b19bbda1478e35299b1a66123, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: fac19fc886c4f29458ac4303d666d332, type: 3}
+    componentCounts:
+    - displayName: GalacticLeopard_Main_Arch
+      count: 4
+    - displayName: GalacticLeopard_Main_Core
+      count: 2
+    - displayName: GalacticLeopard_Main_Engine
+      count: 6
+    - displayName: GalacticLeopard_Main_Forepart
+      count: 4
+    - displayName: GalacticLeopard_Main_Hold
+      count: 1
+    - displayName: GalacticLeopard_Main_Storage
+      count: 5
+    - displayName: GalacticLeopard_Main_Tail
+      count: 4
+    - displayName: GalacticLeopard_Main_Wing
+      count: 6
+    - displayName: GalacticLeopard_Parts_Bend
+      count: 6
+    - displayName: GalacticLeopard_Parts_Box
+      count: 4
+    - displayName: GalacticLeopard_Parts_Bridge
+      count: 1
+    - displayName: GalacticLeopard_Parts_Cargo
+      count: 6
+    - displayName: GalacticLeopard_Parts_Cockpit
+      count: 2
+    - displayName: GalacticLeopard_Parts_ControlRoom
+      count: 3
+    - displayName: GalacticLeopard_Parts_Cylinder
+      count: 12
+    - displayName: GalacticLeopard_Parts_Fork
+      count: 2
+    - displayName: GalacticLeopard_Parts_Silo
+      count: 25
+    - displayName: GalacticLeopard_Parts_Thruster
+      count: 3
+    - displayName: GalacticLeopard_Parts_Turret_Sniper
+      count: 4
+    - displayName: Main
+      count: 1
+    - displayName: Parts
+      count: 1
+    summedStats:
+      firePower: 800
+      bulletSpeed: 20
+      bulletRange: 40
+      fireRate: 1.2
+      rammingPower: 85.99997
+      healthCap: 3306
+      healthRegen: 152.5
+      energyCap: 3480
+      energyRegen: 63.499954
+      moveSpeed: 7.95
+      accelerationCap: 9
+      turnSpeed: 79
+      weaponRotationSpeed: 90
+      maxPeople: 645
+    hasMissingStats: 0
+  - catalogIndex: 91
+    visualFamily: 1
+    displayName: Driftpelt
+    prefab: {fileID: 7317322530594579453, guid: ed2239cc3c2d3284e9ac5ea788480add, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: ac2bd5b0b56dd6b44be9372a7ef3de87, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: ac2bd5b0b56dd6b44be9372a7ef3de87, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 6aedcdb551b2c9041a743ca2ea92dc61, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: a9564a0f67f714a42bcf30759aed8c8e, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: a90591c5765ec9c448a83889d701fd55, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 9e2791b58925d0a41ac5a79d9ac70f83, type: 3}
+    componentCounts:
+    - displayName: GalacticLeopard_Main_Arch
+      count: 3
+    - displayName: GalacticLeopard_Main_Core
+      count: 3
+    - displayName: GalacticLeopard_Main_Engine
+      count: 5
+    - displayName: GalacticLeopard_Main_Forepart
+      count: 2
+    - displayName: GalacticLeopard_Main_Storage
+      count: 3
+    - displayName: GalacticLeopard_Main_Tail
+      count: 3
+    - displayName: GalacticLeopard_Main_Wing
+      count: 2
+    - displayName: GalacticLeopard_Parts_Box
+      count: 3
+    - displayName: GalacticLeopard_Parts_Cockpit
+      count: 3
+    - displayName: GalacticLeopard_Parts_ControlRoom
+      count: 3
+    - displayName: GalacticLeopard_Parts_Cylinder
+      count: 3
+    - displayName: GalacticLeopard_Parts_Fender
+      count: 3
+    - displayName: GalacticLeopard_Parts_Fork
+      count: 3
+    - displayName: GalacticLeopard_Parts_Silo
+      count: 4
+    - displayName: GalacticLeopard_Parts_Thruster
+      count: 3
+    - displayName: GalacticLeopard_Parts_Turret_Dual
+      count: 3
+    - displayName: Main
+      count: 1
+    - displayName: Parts
+      count: 1
+    summedStats:
+      firePower: 120
+      bulletSpeed: 12
+      bulletRange: 12
+      fireRate: 3
+      rammingPower: 46.800014
+      healthCap: 2356
+      healthRegen: 76.1
+      energyCap: 2230
+      energyRegen: 51.699986
+      moveSpeed: 7.25
+      accelerationCap: 9
+      turnSpeed: 53
+      weaponRotationSpeed: 90
+      maxPeople: 577
+    hasMissingStats: 0
+  - catalogIndex: 92
+    visualFamily: 1
+    displayName: Gleamfang
+    prefab: {fileID: 4407035439459463263, guid: 370a8791fc3469141846368cf65f9291, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 0613c406b6ece4f46a080bd996365c27, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: 0613c406b6ece4f46a080bd996365c27, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 27c5a13ad88950a408e1f3113667113d, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: 982460ef376c27f4cbfe96658d7be65b, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: d57fea27182d9224a846d80caae5b864, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: b44804f1c4ad7a942a2ab58a68018889, type: 3}
+    componentCounts:
+    - displayName: GalacticLeopard_Main_Arch
+      count: 6
+    - displayName: GalacticLeopard_Main_Core
+      count: 2
+    - displayName: GalacticLeopard_Main_Engine
+      count: 4
+    - displayName: GalacticLeopard_Main_Forepart
+      count: 2
+    - displayName: GalacticLeopard_Main_Hold
+      count: 5
+    - displayName: GalacticLeopard_Main_Storage
+      count: 3
+    - displayName: GalacticLeopard_Main_Tail
+      count: 4
+    - displayName: GalacticLeopard_Main_Wing
+      count: 4
+    - displayName: GalacticLeopard_Parts_Bend
+      count: 1
+    - displayName: GalacticLeopard_Parts_Box
+      count: 5
+    - displayName: GalacticLeopard_Parts_Bridge
+      count: 2
+    - displayName: GalacticLeopard_Parts_Cargo
+      count: 6
+    - displayName: GalacticLeopard_Parts_Cockpit
+      count: 3
+    - displayName: GalacticLeopard_Parts_ControlRoom
+      count: 5
+    - displayName: GalacticLeopard_Parts_Cylinder
+      count: 5
+    - displayName: GalacticLeopard_Parts_Fender
+      count: 8
+    - displayName: GalacticLeopard_Parts_Fork
+      count: 1
+    - displayName: GalacticLeopard_Parts_Silo
+      count: 4
+    - displayName: GalacticLeopard_Parts_Thruster
+      count: 1
+    - displayName: GalacticLeopard_Parts_Turret_Dual
+      count: 5
+    - displayName: Main
+      count: 1
+    - displayName: Parts
+      count: 1
+    summedStats:
+      firePower: 200
+      bulletSpeed: 12
+      bulletRange: 12
+      fireRate: 5
+      rammingPower: 63.60002
+      healthCap: 2930
+      healthRegen: 107.7
+      energyCap: 2600
+      energyRegen: 48.899975
+      moveSpeed: 6.9
+      accelerationCap: 3
+      turnSpeed: 61
+      weaponRotationSpeed: 90
+      maxPeople: 739
+    hasMissingStats: 0
+  - catalogIndex: 93
+    visualFamily: 1
+    displayName: Duskhide
+    prefab: {fileID: 5373316751953531498, guid: 9ef4126360cc7c44c8e960631c1c30f6, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 5bd63e4016fbd6f4695b72a08c6ef3ba, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: 5bd63e4016fbd6f4695b72a08c6ef3ba, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: b20026aef8d02334cb843a3f8bcfd51a, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: ad288562636f57a4c9018873f96e4b15, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: aab69fbe2b66c584f8fe14555fb83651, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 539d913edfcc2ea429fe384abb8ca509, type: 3}
+    componentCounts:
+    - displayName: GalacticLeopard_Main_Arch
+      count: 4
+    - displayName: GalacticLeopard_Main_Engine
+      count: 2
+    - displayName: GalacticLeopard_Main_Forepart
+      count: 4
+    - displayName: GalacticLeopard_Main_Hold
+      count: 3
+    - displayName: GalacticLeopard_Main_Storage
+      count: 1
+    - displayName: GalacticLeopard_Main_Tail
+      count: 1
+    - displayName: GalacticLeopard_Parts_Bend
+      count: 1
+    - displayName: GalacticLeopard_Parts_Box
+      count: 2
+    - displayName: GalacticLeopard_Parts_Bridge
+      count: 1
+    - displayName: GalacticLeopard_Parts_Cargo
+      count: 3
+    - displayName: GalacticLeopard_Parts_Cockpit
+      count: 1
+    - displayName: GalacticLeopard_Parts_ControlRoom
+      count: 1
+    - displayName: GalacticLeopard_Parts_Cylinder
+      count: 5
+    - displayName: GalacticLeopard_Parts_Fender
+      count: 1
+    - displayName: GalacticLeopard_Parts_Fork
+      count: 1
+    - displayName: GalacticLeopard_Parts_Silo
+      count: 6
+    - displayName: GalacticLeopard_Parts_Thruster
+      count: 1
+    - displayName: GalacticLeopard_Parts_Turret_Dual
+      count: 2
+    - displayName: Main
+      count: 1
+    - displayName: Parts
+      count: 1
+    summedStats:
+      firePower: 80
+      bulletSpeed: 12
+      bulletRange: 12
+      fireRate: 2
+      rammingPower: 37.60001
+      healthCap: 1378
+      healthRegen: 60.8
+      energyCap: 1360
+      energyRegen: 23.39999
+      moveSpeed: 5.6
+      accelerationCap: 3
+      turnSpeed: 15
+      weaponRotationSpeed: 90
+      maxPeople: 304
+    hasMissingStats: 0
+  - catalogIndex: 94
+    visualFamily: 1
+    displayName: Prowlorbit
+    prefab: {fileID: 5381268603517648316, guid: 10ab4689acbe5e249b6ed78698ea036c, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: e6eaa8fa45399a94b8070fcab346d827, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: e6eaa8fa45399a94b8070fcab346d827, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 60a5779e39f0c444b97fd397a97b0f21, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: 5a65b5fe711b08e459313d790d7f9bb2, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 01e225f199ab128448e786141f7003bb, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: fa805dbd6bf35e64b9e3d97e7ab4b5b5, type: 3}
+    componentCounts:
+    - displayName: GalacticLeopard_Main_Arch
+      count: 4
+    - displayName: GalacticLeopard_Main_Core
+      count: 1
+    - displayName: GalacticLeopard_Main_Engine
+      count: 4
+    - displayName: GalacticLeopard_Main_Forepart
+      count: 1
+    - displayName: GalacticLeopard_Main_Storage
+      count: 4
+    - displayName: GalacticLeopard_Main_Tail
+      count: 4
+    - displayName: GalacticLeopard_Main_Wing
+      count: 3
+    - displayName: GalacticLeopard_Parts_Box
+      count: 2
+    - displayName: GalacticLeopard_Parts_Cargo
+      count: 2
+    - displayName: GalacticLeopard_Parts_Cockpit
+      count: 1
+    - displayName: GalacticLeopard_Parts_ControlRoom
+      count: 2
+    - displayName: GalacticLeopard_Parts_Cylinder
+      count: 2
+    - displayName: GalacticLeopard_Parts_Fender
+      count: 2
+    - displayName: GalacticLeopard_Parts_Fork
+      count: 1
+    - displayName: GalacticLeopard_Parts_Silo
+      count: 3
+    - displayName: GalacticLeopard_Parts_Thruster
+      count: 2
+    - displayName: GalacticLeopard_Parts_Turret_Dual
+      count: 2
+    - displayName: Main
+      count: 1
+    - displayName: Parts
+      count: 1
+    summedStats:
+      firePower: 80
+      bulletSpeed: 12
+      bulletRange: 12
+      fireRate: 2
+      rammingPower: 28.000006
+      healthCap: 1336
+      healthRegen: 51.8
+      energyCap: 1410
+      energyRegen: 34.499992
+      moveSpeed: 6.9
+      accelerationCap: 6
+      turnSpeed: 62
+      weaponRotationSpeed: 90
+      maxPeople: 285
+    hasMissingStats: 0
+  - catalogIndex: 95
+    visualFamily: 1
+    displayName: Moonspot
+    prefab: {fileID: 7170296188990944410, guid: 741a4ad0c110e5840b39f35f2ac61787, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 8b87c8cc64f828246a4082772090b63a, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: 8b87c8cc64f828246a4082772090b63a, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 0d1717693904bd544988621f9d29076d, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: 2383bccf8f054be47939994993ead6da, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: bee08f2eb25e09c488d602b8b370c74b, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 90d3d747a06225e45864c0312f560b23, type: 3}
+    componentCounts:
+    - displayName: GalacticLeopard_Main_Arch
+      count: 2
+    - displayName: GalacticLeopard_Main_Engine
+      count: 2
+    - displayName: GalacticLeopard_Main_Forepart
+      count: 2
+    - displayName: GalacticLeopard_Main_Storage
+      count: 2
+    - displayName: GalacticLeopard_Main_Tail
+      count: 3
+    - displayName: GalacticLeopard_Main_Wing
+      count: 6
+    - displayName: GalacticLeopard_Parts_Box
+      count: 2
+    - displayName: GalacticLeopard_Parts_Bridge
+      count: 1
+    - displayName: GalacticLeopard_Parts_Cockpit
+      count: 2
+    - displayName: GalacticLeopard_Parts_ControlRoom
+      count: 1
+    - displayName: GalacticLeopard_Parts_Cylinder
+      count: 6
+    - displayName: GalacticLeopard_Parts_Fender
+      count: 2
+    - displayName: GalacticLeopard_Parts_Fork
+      count: 2
+    - displayName: GalacticLeopard_Parts_Silo
+      count: 8
+    - displayName: GalacticLeopard_Parts_Thruster
+      count: 1
+    - displayName: GalacticLeopard_Parts_Turret_Sniper
+      count: 2
+    - displayName: Main
+      count: 1
+    - displayName: Parts
+      count: 1
+    summedStats:
+      firePower: 400
+      bulletSpeed: 20
+      bulletRange: 40
+      fireRate: 0.6
+      rammingPower: 41.600014
+      healthCap: 1976
+      healthRegen: 77
+      energyCap: 1730
+      energyRegen: 33.399986
+      moveSpeed: 6.45
+      accelerationCap: 3
+      turnSpeed: 59
+      weaponRotationSpeed: 90
+      maxPeople: 434
+    hasMissingStats: 0
+  - catalogIndex: 96
+    visualFamily: 1
+    displayName: Palehide
+    prefab: {fileID: 2066127439885157544, guid: 9baf6910582b4f846a7ca87733b4846c, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 1bc322336a0b46a42bc6ac901deda606, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: 1bc322336a0b46a42bc6ac901deda606, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: fa3482a0ff199264586276c4b4e7f39d, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: d976467b3231c0d40b1a22853ceb0e01, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 0d5745950fba113459320aaf5a3e317b, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: e424d1e834bb3c64bbf13ad71e6a096c, type: 3}
+    componentCounts:
+    - displayName: GalacticLeopard_Main_Arch
+      count: 2
+    - displayName: GalacticLeopard_Main_Core
+      count: 2
+    - displayName: GalacticLeopard_Main_Engine
+      count: 1
+    - displayName: GalacticLeopard_Main_Forepart
+      count: 2
+    - displayName: GalacticLeopard_Main_Storage
+      count: 1
+    - displayName: GalacticLeopard_Main_Tail
+      count: 1
+    - displayName: GalacticLeopard_Main_Wing
+      count: 2
+    - displayName: GalacticLeopard_Parts_Box
+      count: 3
+    - displayName: GalacticLeopard_Parts_Bridge
+      count: 1
+    - displayName: GalacticLeopard_Parts_Cockpit
+      count: 2
+    - displayName: GalacticLeopard_Parts_ControlRoom
+      count: 1
+    - displayName: GalacticLeopard_Parts_Cylinder
+      count: 5
+    - displayName: GalacticLeopard_Parts_Fender
+      count: 2
+    - displayName: GalacticLeopard_Parts_Fork
+      count: 3
+    - displayName: GalacticLeopard_Parts_Silo
+      count: 2
+    - displayName: GalacticLeopard_Parts_Thruster
+      count: 5
+    - displayName: GalacticLeopard_Parts_Turret_Dual
+      count: 1
+    - displayName: GalacticLeopard_Parts_Turret_Quad
+      count: 1
+    - displayName: GalacticLeopard_Parts_Turret_Sniper
+      count: 1
+    - displayName: Main
+      count: 1
+    - displayName: Parts
+      count: 1
+    summedStats:
+      firePower: 290
+      bulletSpeed: 20
+      bulletRange: 40
+      fireRate: 1.8
+      rammingPower: 38.000008
+      healthCap: 1728
+      healthRegen: 62.89999
+      energyCap: 1580
+      energyRegen: 37.499996
+      moveSpeed: 6.4
+      accelerationCap: 15
+      turnSpeed: 43
+      weaponRotationSpeed: 90
+      maxPeople: 395
+    hasMissingStats: 0
+  - catalogIndex: 97
+    visualFamily: 1
+    displayName: Leapstar
+    prefab: {fileID: 137610036757605797, guid: f1d67a96ea44d1440b0f65f46ca811e5, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: e36744743a3c61f428554d86207af2d6, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: e36744743a3c61f428554d86207af2d6, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 029de99b8a446814092194247884a925, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: 5ff3e5594b071994499679a0b92d16b3, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 4d0151a1be73f434c91a75c5ce11ed5a, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 574761882a995ce46b8efecb56218c80, type: 3}
+    componentCounts:
+    - displayName: GalacticLeopard_Main_Arch
+      count: 4
+    - displayName: GalacticLeopard_Main_Engine
+      count: 3
+    - displayName: GalacticLeopard_Main_Forepart
+      count: 2
+    - displayName: GalacticLeopard_Main_Hold
+      count: 1
+    - displayName: GalacticLeopard_Main_Storage
+      count: 2
+    - displayName: GalacticLeopard_Main_Tail
+      count: 2
+    - displayName: GalacticLeopard_Main_Wing
+      count: 2
+    - displayName: GalacticLeopard_Parts_Bend
+      count: 2
+    - displayName: GalacticLeopard_Parts_Box
+      count: 2
+    - displayName: GalacticLeopard_Parts_Cargo
+      count: 1
+    - displayName: GalacticLeopard_Parts_ControlRoom
+      count: 1
+    - displayName: GalacticLeopard_Parts_Cylinder
+      count: 2
+    - displayName: GalacticLeopard_Parts_Fender
+      count: 6
+    - displayName: GalacticLeopard_Parts_Fork
+      count: 3
+    - displayName: GalacticLeopard_Parts_Silo
+      count: 3
+    - displayName: GalacticLeopard_Parts_Thruster
+      count: 2
+    - displayName: GalacticLeopard_Parts_Turret_Dual
+      count: 2
+    - displayName: Main
+      count: 1
+    - displayName: Parts
+      count: 1
+    summedStats:
+      firePower: 80
+      bulletSpeed: 12
+      bulletRange: 12
+      fireRate: 2
+      rammingPower: 32.40001
+      healthCap: 1038
+      healthRegen: 59.3
+      energyCap: 1290
+      energyRegen: 26.09999
+      moveSpeed: 6.3
+      accelerationCap: 6
+      turnSpeed: 38
+      weaponRotationSpeed: 90
+      maxPeople: 131
+    hasMissingStats: 0
+  - catalogIndex: 98
+    visualFamily: 1
+    displayName: Onyxspot
+    prefab: {fileID: 1451204807447383855, guid: 67fa0dbe1eb5fda4d92d1749234fb20c, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 8d728c9ca35e14d4ebf5462bbc3cadc4, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: 8d728c9ca35e14d4ebf5462bbc3cadc4, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: cdd83d9ab0b98e94598e23c6feb5a215, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: 354d291e5db88f441a0a62aeeb7d2a22, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: c79982b3645ebf74d8d944cde0eac297, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 19c05d7850b4fb94ebad537ebdcc6e5f, type: 3}
+    componentCounts:
+    - displayName: GalacticLeopard_Main_Core
+      count: 2
+    - displayName: GalacticLeopard_Main_Engine
+      count: 2
+    - displayName: GalacticLeopard_Main_Hold
+      count: 4
+    - displayName: GalacticLeopard_Main_Storage
+      count: 2
+    - displayName: GalacticLeopard_Main_Tail
+      count: 2
+    - displayName: GalacticLeopard_Parts_Bend
+      count: 2
+    - displayName: GalacticLeopard_Parts_Box
+      count: 2
+    - displayName: GalacticLeopard_Parts_Cargo
+      count: 12
+    - displayName: GalacticLeopard_Parts_Cockpit
+      count: 1
+    - displayName: GalacticLeopard_Parts_Cylinder
+      count: 2
+    - displayName: GalacticLeopard_Parts_Fender
+      count: 2
+    - displayName: GalacticLeopard_Parts_Fork
+      count: 2
+    - displayName: GalacticLeopard_Parts_Silo
+      count: 3
+    - displayName: GalacticLeopard_Parts_Thruster
+      count: 2
+    - displayName: GalacticLeopard_Parts_Turret_Dual
+      count: 2
+    - displayName: Main
+      count: 1
+    - displayName: Parts
+      count: 1
+    summedStats:
+      firePower: 80
+      bulletSpeed: 12
+      bulletRange: 12
+      fireRate: 2
+      rammingPower: 24.400003
+      healthCap: 1186
+      healthRegen: 39
+      energyCap: 1070
+      energyRegen: 24.099995
+      moveSpeed: 5.9
+      accelerationCap: 6
+      turnSpeed: 30
+      weaponRotationSpeed: 90
+      maxPeople: 381
+    hasMissingStats: 0
+  - catalogIndex: 99
+    visualFamily: 1
+    displayName: Rosette
+    prefab: {fileID: 6633284759033949866, guid: f967c244b55981349952393f69fcfd92, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 862e4db26b9f29348a869c0b9e5df3bf, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: 862e4db26b9f29348a869c0b9e5df3bf, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 89056781262e98a49811dd45ec090488, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: 2e74c6f7cf404d24a968ea5172803b68, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 8d91fd52575262142b9ffb6c40f90b47, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 45ddad8e0d12e0642b177f7dadb21650, type: 3}
+    componentCounts:
+    - displayName: GalacticLeopard_Main_Arch
+      count: 1
+    - displayName: GalacticLeopard_Main_Core
+      count: 1
+    - displayName: GalacticLeopard_Main_Engine
+      count: 1
+    - displayName: GalacticLeopard_Main_Storage
+      count: 1
+    - displayName: GalacticLeopard_Main_Tail
+      count: 1
+    - displayName: GalacticLeopard_Main_Wing
+      count: 3
+    - displayName: GalacticLeopard_Parts_Box
+      count: 2
+    - displayName: GalacticLeopard_Parts_ControlRoom
+      count: 1
+    - displayName: GalacticLeopard_Parts_Cylinder
+      count: 2
+    - displayName: GalacticLeopard_Parts_Fender
+      count: 2
+    - displayName: GalacticLeopard_Parts_Fork
+      count: 2
+    - displayName: GalacticLeopard_Parts_Silo
+      count: 3
+    - displayName: GalacticLeopard_Parts_Thruster
+      count: 2
+    - displayName: GalacticLeopard_Parts_Turret_Dual
+      count: 2
+    - displayName: Main
+      count: 1
+    - displayName: Parts
+      count: 1
+    summedStats:
+      firePower: 80
+      bulletSpeed: 12
+      bulletRange: 12
+      fireRate: 2
+      rammingPower: 19.2
+      healthCap: 658
+      healthRegen: 38.6
+      energyCap: 760
+      energyRegen: 16.300001
+      moveSpeed: 5.8
+      accelerationCap: 6
+      turnSpeed: 32
+      weaponRotationSpeed: 90
+      maxPeople: 73
+    hasMissingStats: 0
+  - catalogIndex: 100
+    visualFamily: 2
+    displayName: Shoji
+    prefab: {fileID: 2554439808026637239, guid: 0ea193f6d3013c54ab951e9932bee984, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: ca64c35d12542a04698eb17f8934dd60, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: ca64c35d12542a04698eb17f8934dd60, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: dd6d4b93501e179438c8691cf5f1fca5, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: 990b2aefef5428349a4cf7a1bfc619b0, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 59b5b2475caeee1429c413c16ed634b8, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 66ec3c1abe110a9468c47e11f1c323f0, type: 3}
+    componentCounts:
+    - displayName: GalacticOkamoto_Body
+      count: 5
+    - displayName: GalacticOkamoto_Capsule
+      count: 10
+    - displayName: GalacticOkamoto_Cockpit
+      count: 1
+    - displayName: GalacticOkamoto_Cylinder
+      count: 18
+    - displayName: GalacticOkamoto_Engine
+      count: 2
+    - displayName: GalacticOkamoto_Engine_Mirrored
+      count: 2
+    - displayName: GalacticOkamoto_Fusiform
+      count: 2
+    - displayName: GalacticOkamoto_Head
+      count: 2
+    - displayName: GalacticOkamoto_Hemisphere
+      count: 1
+    - displayName: GalacticOkamoto_Nozzle
+      count: 2
+    - displayName: GalacticOkamoto_Nozzle_Mirrored
+      count: 2
+    - displayName: GalacticOkamoto_Tail
+      count: 1
+    - displayName: GalacticOkamoto_Thruster
+      count: 2
+    - displayName: GalacticOkamoto_Turret1
+      count: 1
+    - displayName: GalacticOkamoto_Turret3
+      count: 2
+    - displayName: GalacticOkamoto_Wing
+      count: 10
+    summedStats:
+      firePower: 60
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 6
+      rammingPower: 54.40002
+      healthCap: 2140
+      healthRegen: 109.49999
+      energyCap: 2066
+      energyRegen: 41.59998
+      moveSpeed: 7.3
+      accelerationCap: 6
+      turnSpeed: 60
+      weaponRotationSpeed: 90
+      maxPeople: 326
+    hasMissingStats: 0
+  - catalogIndex: 101
+    visualFamily: 2
+    displayName: Enso
+    prefab: {fileID: 1151162213683622468, guid: 9f25d12209d7fb34bab24891544561be, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: f6ec05bbdbde3734bb4de2480b0dbe8c, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: f6ec05bbdbde3734bb4de2480b0dbe8c, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: faa3868ce284493428e89f35da9d8f1c, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: ed2cb3531d803c14e8d197c59566cd36, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: ae624afe39f7f2f4080606245059f1ea, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 811514dd966e788418819ccfc9a1e45d, type: 3}
+    componentCounts:
+    - displayName: GalacticOkamoto_Body
+      count: 3
+    - displayName: GalacticOkamoto_Capsule
+      count: 10
+    - displayName: GalacticOkamoto_Cockpit
+      count: 1
+    - displayName: GalacticOkamoto_Cylinder
+      count: 16
+    - displayName: GalacticOkamoto_Engine
+      count: 1
+    - displayName: GalacticOkamoto_Engine_Mirrored
+      count: 1
+    - displayName: GalacticOkamoto_Fusiform
+      count: 2
+    - displayName: GalacticOkamoto_Hemisphere
+      count: 1
+    - displayName: GalacticOkamoto_Nozzle
+      count: 1
+    - displayName: GalacticOkamoto_Nozzle_Mirrored
+      count: 1
+    - displayName: GalacticOkamoto_Tail
+      count: 2
+    - displayName: GalacticOkamoto_Thruster
+      count: 6
+    - displayName: GalacticOkamoto_Turret1
+      count: 4
+    - displayName: GalacticOkamoto_Wing
+      count: 6
+    summedStats:
+      firePower: 80
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 8
+      rammingPower: 44.800014
+      healthCap: 1780
+      healthRegen: 85.39999
+      energyCap: 1728
+      energyRegen: 44.19999
+      moveSpeed: 7.3
+      accelerationCap: 18
+      turnSpeed: 74
+      weaponRotationSpeed: 90
+      maxPeople: 282
+    hasMissingStats: 0
+  - catalogIndex: 102
+    visualFamily: 2
+    displayName: Shibori
+    prefab: {fileID: 7816078570592362328, guid: 7e3423ba09d8a4042a9e42b7c038a5a5, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 1f254640f8f322146b36a06d84c41864, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: 1f254640f8f322146b36a06d84c41864, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 0c89471ad26f6df40ba3e032d56ddf93, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: 2fa0b6e4abe09b143863b2593de9f670, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 13266252d3e8e954ca3c64dfef3a88eb, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 2f107fb632cf71f43bf6cfeb960278cb, type: 3}
+    componentCounts:
+    - displayName: GalacticOkamoto_Capsule
+      count: 5
+    - displayName: GalacticOkamoto_Cockpit
+      count: 1
+    - displayName: GalacticOkamoto_Engine
+      count: 1
+    - displayName: GalacticOkamoto_Engine_Mirrored
+      count: 1
+    - displayName: GalacticOkamoto_Fusiform
+      count: 2
+    - displayName: GalacticOkamoto_Head
+      count: 1
+    - displayName: GalacticOkamoto_Hemisphere
+      count: 4
+    - displayName: GalacticOkamoto_Nozzle
+      count: 1
+    - displayName: GalacticOkamoto_Nozzle_Mirrored
+      count: 1
+    - displayName: GalacticOkamoto_Tail
+      count: 1
+    - displayName: GalacticOkamoto_Wing
+      count: 2
+    summedStats:
+      firePower: 0
+      bulletSpeed: 0
+      bulletRange: 0
+      fireRate: 0
+      rammingPower: 20.800001
+      healthCap: 948
+      healthRegen: 36.699997
+      energyCap: 850
+      energyRegen: 17.2
+      moveSpeed: 5.6
+      accelerationCap: 8
+      turnSpeed: 18
+      weaponRotationSpeed: 0
+      maxPeople: 202
+    hasMissingStats: 1
+  - catalogIndex: 103
+    visualFamily: 2
+    displayName: Sakuraorbit
+    prefab: {fileID: 5374823777005985154, guid: a9abe9eefeec4254cbadc6b0bbfa547f, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: dbaacd6b758fe2844ae93938eb7b6bbe, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: dbaacd6b758fe2844ae93938eb7b6bbe, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 74826f729b4095444ab8a98fac44ae3a, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: cbfacd35578088644aa9b8759fd75dcf, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: bfe59ffa10eaa174c8ad6d14b660411d, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 4572922326eaab04381e5a5b3aa75840, type: 3}
+    componentCounts:
+    - displayName: GalacticOkamoto_Body
+      count: 1
+    - displayName: GalacticOkamoto_Capsule
+      count: 2
+    - displayName: GalacticOkamoto_Cockpit
+      count: 1
+    - displayName: GalacticOkamoto_Cylinder
+      count: 7
+    - displayName: GalacticOkamoto_Engine
+      count: 1
+    - displayName: GalacticOkamoto_Fusiform
+      count: 1
+    - displayName: GalacticOkamoto_Head
+      count: 2
+    - displayName: GalacticOkamoto_Hemisphere
+      count: 1
+    - displayName: GalacticOkamoto_Nozzle
+      count: 1
+    - displayName: GalacticOkamoto_Tail
+      count: 1
+    - displayName: GalacticOkamoto_Thruster
+      count: 1
+    - displayName: GalacticOkamoto_Turret3
+      count: 1
+    - displayName: GalacticOkamoto_Wing
+      count: 2
+    summedStats:
+      firePower: 20
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 2
+      rammingPower: 22.000002
+      healthCap: 970
+      healthRegen: 38.5
+      energyCap: 822
+      energyRegen: 17.499996
+      moveSpeed: 5.55
+      accelerationCap: 3
+      turnSpeed: 23
+      weaponRotationSpeed: 90
+      maxPeople: 205
+    hasMissingStats: 0
+  - catalogIndex: 104
+    visualFamily: 2
+    displayName: Bambooorbit
+    prefab: {fileID: 8949564330564087906, guid: f541b7e047b2de646ad387f818523d65, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 2367641f6d2c42b4793b5bbd4ddad6fe, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: 2367641f6d2c42b4793b5bbd4ddad6fe, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: bc5022c9071be2b4c98662c3f9e47b8b, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: e94bba6b7597fe24ab1603ef3626e872, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 57cc06705a5952c4eb86c78982bc8a32, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: f663e558263dc024faafe1c75988ba52, type: 3}
+    componentCounts:
+    - displayName: GalacticOkamoto_Body
+      count: 6
+    - displayName: GalacticOkamoto_Capsule
+      count: 7
+    - displayName: GalacticOkamoto_Cockpit
+      count: 1
+    - displayName: GalacticOkamoto_Cylinder
+      count: 12
+    - displayName: GalacticOkamoto_Engine
+      count: 2
+    - displayName: GalacticOkamoto_Engine_Mirrored
+      count: 2
+    - displayName: GalacticOkamoto_Fusiform
+      count: 1
+    - displayName: GalacticOkamoto_Head
+      count: 3
+    - displayName: GalacticOkamoto_Hemisphere
+      count: 3
+    - displayName: GalacticOkamoto_Nozzle
+      count: 2
+    - displayName: GalacticOkamoto_Nozzle_Mirrored
+      count: 2
+    - displayName: GalacticOkamoto_Tail
+      count: 3
+    - displayName: GalacticOkamoto_Thruster
+      count: 4
+    - displayName: GalacticOkamoto_Turret1
+      count: 3
+    - displayName: GalacticOkamoto_Wing
+      count: 9
+    summedStats:
+      firePower: 60
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 6
+      rammingPower: 47.200016
+      healthCap: 1980
+      healthRegen: 95.89999
+      energyCap: 1956
+      energyRegen: 47.29998
+      moveSpeed: 7.8
+      accelerationCap: 12
+      turnSpeed: 86
+      weaponRotationSpeed: 90
+      maxPeople: 303
+    hasMissingStats: 0
+  - catalogIndex: 105
+    visualFamily: 2
+    displayName: Craneorbit
+    prefab: {fileID: 8468439642275794251, guid: 49e8c1846c522744b9d1d5db128c578c, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: aa4627112cbaadb448cc7e8055947f2c, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: aa4627112cbaadb448cc7e8055947f2c, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 669355904afb09f4dbe9857efabab91d, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: fd1333c9cf6572445b0fe437b5f2571d, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: f6f3f9677bed4144985442e46908d07b, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 9951d58740bb1574aaca9a16e3b266ce, type: 3}
+    componentCounts:
+    - displayName: GalacticOkamoto_Body
+      count: 2
+    - displayName: GalacticOkamoto_Bridge
+      count: 3
+    - displayName: GalacticOkamoto_Capsule
+      count: 2
+    - displayName: GalacticOkamoto_Cockpit
+      count: 5
+    - displayName: GalacticOkamoto_Cylinder
+      count: 18
+    - displayName: GalacticOkamoto_Engine
+      count: 1
+    - displayName: GalacticOkamoto_Engine_Mirrored
+      count: 1
+    - displayName: GalacticOkamoto_Fusiform
+      count: 4
+    - displayName: GalacticOkamoto_Head
+      count: 2
+    - displayName: GalacticOkamoto_Hemisphere
+      count: 4
+    - displayName: GalacticOkamoto_Nozzle
+      count: 1
+    - displayName: GalacticOkamoto_Nozzle_Mirrored
+      count: 1
+    - displayName: GalacticOkamoto_Tail
+      count: 2
+    - displayName: GalacticOkamoto_Thruster
+      count: 2
+    - displayName: GalacticOkamoto_Wing
+      count: 2
+    - displayName: Turret
+      count: 1
+    summedStats:
+      firePower: 20
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 2
+      rammingPower: 64.40002
+      healthCap: 3278
+      healthRegen: 98.99999
+      energyCap: 2422
+      energyRegen: 51.099976
+      moveSpeed: 6.3
+      accelerationCap: 6
+      turnSpeed: 38
+      weaponRotationSpeed: 90
+      maxPeople: 871
+    hasMissingStats: 0
+  - catalogIndex: 106
+    visualFamily: 2
+    displayName: Foggarden
+    prefab: {fileID: 8666315719503967859, guid: 839a75cb59b1163419d6feb7e3862bb8, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: ef8e5219c5a903d43857e03c9e01cc18, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: ef8e5219c5a903d43857e03c9e01cc18, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 7c3901815089f994497382944a96c1bc, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: bf1179925f8f18c4da31c56ac2d12f09, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 16ed9f5a96d76704bb8b826f7886f902, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 9f2d456bfc40ff64cb4ced16f9c903cf, type: 3}
+    componentCounts:
+    - displayName: GalacticOkamoto_Body
+      count: 2
+    - displayName: GalacticOkamoto_Capsule
+      count: 12
+    - displayName: GalacticOkamoto_Cockpit
+      count: 1
+    - displayName: GalacticOkamoto_Cylinder
+      count: 12
+    - displayName: GalacticOkamoto_Engine
+      count: 1
+    - displayName: GalacticOkamoto_Engine_Mirrored
+      count: 1
+    - displayName: GalacticOkamoto_Fusiform
+      count: 4
+    - displayName: GalacticOkamoto_Head
+      count: 3
+    - displayName: GalacticOkamoto_Hemisphere
+      count: 10
+    - displayName: GalacticOkamoto_Nozzle
+      count: 1
+    - displayName: GalacticOkamoto_Nozzle_Mirrored
+      count: 1
+    - displayName: GalacticOkamoto_Tail
+      count: 3
+    - displayName: GalacticOkamoto_Wing
+      count: 10
+    - displayName: Turret
+      count: 1
+    summedStats:
+      firePower: 20
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 2
+      rammingPower: 58.000023
+      healthCap: 2198
+      healthRegen: 114.899994
+      energyCap: 1892
+      energyRegen: 32.49998
+      moveSpeed: 6.6
+      accelerationCap: 8
+      turnSpeed: 70
+      weaponRotationSpeed: 90
+      maxPeople: 335
+    hasMissingStats: 0
+  - catalogIndex: 107
+    visualFamily: 2
+    displayName: Plumgate
+    prefab: {fileID: 7400593551863527997, guid: 8f4db39e50eefee43a4787b7dac94781, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 6ec16f6f8f4052248938c4a42a5e8d87, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: 6ec16f6f8f4052248938c4a42a5e8d87, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: dd76d7d6db97c68418b8c34a8043292b, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: 43dfa84542298e94da77ec427a6c5078, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 80f519fca1531314d8cbcc0e8ac302d8, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 221fa87bcce20b64a994db6e60dcf9f7, type: 3}
+    componentCounts:
+    - displayName: GalacticOkamoto_Body
+      count: 1
+    - displayName: GalacticOkamoto_Bridge
+      count: 1
+    - displayName: GalacticOkamoto_Capsule
+      count: 4
+    - displayName: GalacticOkamoto_Cockpit
+      count: 2
+    - displayName: GalacticOkamoto_Cylinder
+      count: 4
+    - displayName: GalacticOkamoto_Engine
+      count: 1
+    - displayName: GalacticOkamoto_Engine_Mirrored
+      count: 1
+    - displayName: GalacticOkamoto_Fusiform
+      count: 1
+    - displayName: GalacticOkamoto_Head
+      count: 1
+    - displayName: GalacticOkamoto_Hemisphere
+      count: 2
+    - displayName: GalacticOkamoto_Nozzle
+      count: 1
+    - displayName: GalacticOkamoto_Nozzle_Mirrored
+      count: 1
+    - displayName: GalacticOkamoto_Tail
+      count: 1
+    - displayName: GalacticOkamoto_Thruster
+      count: 1
+    - displayName: GalacticOkamoto_Wing
+      count: 7
+    - displayName: Turret
+      count: 1
+    summedStats:
+      firePower: 20
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 2
+      rammingPower: 27.200006
+      healthCap: 1600
+      healthRegen: 54.799995
+      energyCap: 1202
+      energyRegen: 28.299992
+      moveSpeed: 6.35
+      accelerationCap: 3
+      turnSpeed: 43
+      weaponRotationSpeed: 90
+      maxPeople: 383
+    hasMissingStats: 0
+  - catalogIndex: 108
+    visualFamily: 2
+    displayName: Silkfold
+    prefab: {fileID: 7272702593414200996, guid: ec2450d616c723b419acb27ad7143f90, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 800ff6fcea1b4b0469486b0e51c14b7e, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: 800ff6fcea1b4b0469486b0e51c14b7e, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: ea7373f7cb8333440bda3def97a15e51, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: 0740735b05a5c7f4b85aebfa8c40e082, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 50cad70e7029ff24c8cb4ceef0f8dc36, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: b3c33d27b6c95e54b8403408000701e3, type: 3}
+    componentCounts:
+    - displayName: GalacticOkamoto_Body
+      count: 2
+    - displayName: GalacticOkamoto_Bridge
+      count: 1
+    - displayName: GalacticOkamoto_Capsule
+      count: 8
+    - displayName: GalacticOkamoto_Cockpit
+      count: 2
+    - displayName: GalacticOkamoto_Cylinder
+      count: 8
+    - displayName: GalacticOkamoto_Engine
+      count: 1
+    - displayName: GalacticOkamoto_Engine_Mirrored
+      count: 1
+    - displayName: GalacticOkamoto_Fusiform
+      count: 4
+    - displayName: GalacticOkamoto_Head
+      count: 1
+    - displayName: GalacticOkamoto_Hemisphere
+      count: 2
+    - displayName: GalacticOkamoto_Nozzle
+      count: 1
+    - displayName: GalacticOkamoto_Nozzle_Mirrored
+      count: 1
+    - displayName: GalacticOkamoto_Tail
+      count: 1
+    - displayName: GalacticOkamoto_Thruster
+      count: 1
+    - displayName: GalacticOkamoto_Turret1
+      count: 2
+    - displayName: GalacticOkamoto_Wing
+      count: 9
+    summedStats:
+      firePower: 40
+      bulletSpeed: 12
+      bulletRange: 30
+      fireRate: 4
+      rammingPower: 41.60001
+      healthCap: 2032
+      healthRegen: 82.799995
+      energyCap: 1594
+      energyRegen: 32.899986
+      moveSpeed: 6.55
+      accelerationCap: 3
+      turnSpeed: 51
+      weaponRotationSpeed: 90
+      maxPeople: 429
+    hasMissingStats: 0
+  - catalogIndex: 109
+    visualFamily: 2
+    displayName: Ikebana
+    prefab: {fileID: 3071532628340817069, guid: 623f354b9fcaa2044852559a557f1168, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 12ec3544fc731e247a6a6f3b598ba135, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: 12ec3544fc731e247a6a6f3b598ba135, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 0a9d455c994cd594598a9b9da2d5183f, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: f278719caae5348449c286a888d344e2, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: ff3d4b4268032764e804fece93c04709, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 32f01a3027ea16548b1cacc8b783737b, type: 3}
+    componentCounts:
+    - displayName: GalacticOkamoto_Body
+      count: 3
+    - displayName: GalacticOkamoto_Capsule
+      count: 5
+    - displayName: GalacticOkamoto_Cockpit
+      count: 1
+    - displayName: GalacticOkamoto_Engine
+      count: 1
+    - displayName: GalacticOkamoto_Engine_Mirrored
+      count: 1
+    - displayName: GalacticOkamoto_Fusiform
+      count: 1
+    - displayName: GalacticOkamoto_Head
+      count: 1
+    - displayName: GalacticOkamoto_Hemisphere
+      count: 2
+    - displayName: GalacticOkamoto_Nozzle
+      count: 1
+    - displayName: GalacticOkamoto_Nozzle_Mirrored
+      count: 1
+    - displayName: GalacticOkamoto_Tail
+      count: 4
+    - displayName: GalacticOkamoto_Thruster
+      count: 1
+    - displayName: GalacticOkamoto_Wing
+      count: 7
+    summedStats:
+      firePower: 0
+      bulletSpeed: 0
+      bulletRange: 0
+      fireRate: 0
+      rammingPower: 20.800001
+      healthCap: 1188
+      healthRegen: 47.09999
+      energyCap: 960
+      energyRegen: 25.7
+      moveSpeed: 6.6
+      accelerationCap: 3
+      turnSpeed: 73
+      weaponRotationSpeed: 0
+      maxPeople: 227
+    hasMissingStats: 1
   purchaseGemCost: 1200
   asteroidPlowDamageMultiplier: 1
   asteroidPlowImpactVisualScale: 1
@@ -7320,7 +8719,7 @@ MonoBehaviour:
   galacticLeopardScale: 0.35
   galacticOkamotoScale: 0.5
   globalScale: 0.5
-  extraEngineSpeedPercent: 0.02
+  extraEngineSpeedPercent: 0.05
   teamMaterials: []
   visualFamilyTeamMaterials:
   - visualFamily: 0
@@ -7400,9 +8799,9 @@ MonoBehaviour:
   menuPreviewBoundsPadding: 1.15
   menuPreviewBackgroundColor: {r: 0, g: 0, b: 0, a: 1}
   weaponBulletStats:
-    firePower: 15
-    bulletSpeed: 14
-    bulletRange: 25
+    firePower: 20
+    bulletSpeed: 12
+    bulletRange: 30
     fireRate: 2
     rammingPower: 0
     healthCap: 0
@@ -7415,10 +8814,10 @@ MonoBehaviour:
     weaponRotationSpeed: 90
     maxPeople: 0
   weaponCannonStats:
-    firePower: 50
+    firePower: 40
     bulletSpeed: 12
-    bulletRange: 25
-    fireRate: 0.5
+    bulletRange: 12
+    fireRate: 1
     rammingPower: 0
     healthCap: 0
     healthRegen: 0
@@ -7430,10 +8829,10 @@ MonoBehaviour:
     weaponRotationSpeed: 90
     maxPeople: 0
   weaponMissileStats:
-    firePower: 30
+    firePower: 50
     bulletSpeed: 10
-    bulletRange: 25
-    fireRate: 0.75
+    bulletRange: 30
+    fireRate: 0.5
     rammingPower: 0
     healthCap: 0
     healthRegen: 0
@@ -7445,10 +8844,10 @@ MonoBehaviour:
     weaponRotationSpeed: 90
     maxPeople: 0
   weaponSniperStats:
-    firePower: 100
-    bulletSpeed: 28
+    firePower: 200
+    bulletSpeed: 20
     bulletRange: 40
-    fireRate: 0.2
+    fireRate: 0.3
     rammingPower: 0
     healthCap: 0
     healthRegen: 0
@@ -7460,24 +8859,28 @@ MonoBehaviour:
     weaponRotationSpeed: 90
     maxPeople: 0
   weaponBulletBankIndex: -1
-  weaponCannonBankIndex: -1
+  weaponBulletBankScale: 1
+  weaponCannonBankIndex: 0
+  weaponCannonBankScale: 1
   weaponMissileBankIndex: -1
-  weaponSniperBankIndex: -1
+  weaponMissileBankScale: 1
+  weaponSniperBankIndex: 14
+  weaponSniperBankScale: 1
   cockpitStats:
     firePower: 0
     bulletSpeed: 0
     bulletRange: 0
     fireRate: 0
     rammingPower: 4
-    healthCap: 100
-    healthRegen: 1
-    energyCap: 100
-    energyRegen: 2
-    moveSpeed: 0
+    healthCap: 400
+    healthRegen: 4
+    energyCap: 200
+    energyRegen: 5
+    moveSpeed: 1
     accelerationCap: 0
     turnSpeed: 0
     weaponRotationSpeed: 0
-    maxPeople: 100
+    maxPeople: 150
   wingStats:
     firePower: 0
     bulletSpeed: 0
@@ -7485,14 +8888,14 @@ MonoBehaviour:
     fireRate: 0
     rammingPower: 0
     healthCap: 36
-    healthRegen: 0.4
-    energyCap: 0
-    energyRegen: 0
-    moveSpeed: 0
+    healthRegen: 2
+    energyCap: 10
+    energyRegen: 0.5
+    moveSpeed: 2
     accelerationCap: 0
-    turnSpeed: 0
+    turnSpeed: 4
     weaponRotationSpeed: 0
-    maxPeople: 20
+    maxPeople: 5
   engineStats:
     firePower: 0
     bulletSpeed: 0
@@ -7501,9 +8904,9 @@ MonoBehaviour:
     rammingPower: 0
     healthCap: 20
     healthRegen: 0.3
-    energyCap: 140
-    energyRegen: 5
-    moveSpeed: 6
+    energyCap: 100
+    energyRegen: 3
+    moveSpeed: 5
     accelerationCap: 4
     turnSpeed: 0
     weaponRotationSpeed: 0
@@ -7516,11 +8919,11 @@ MonoBehaviour:
     rammingPower: 0
     healthCap: 12
     healthRegen: 0.1
-    energyCap: 0
-    energyRegen: 0
-    moveSpeed: 3
-    accelerationCap: 2
-    turnSpeed: 0.5
+    energyCap: 30
+    energyRegen: 3
+    moveSpeed: 4
+    accelerationCap: 3
+    turnSpeed: 5
     weaponRotationSpeed: 0
     maxPeople: 0
   tailStats:
@@ -7531,11 +8934,11 @@ MonoBehaviour:
     rammingPower: 0
     healthCap: 16
     healthRegen: 0.1
-    energyCap: 0
-    energyRegen: 0
-    moveSpeed: 0
+    energyCap: 10
+    energyRegen: 1
+    moveSpeed: 2
     accelerationCap: 0
-    turnSpeed: 1
+    turnSpeed: 10
     weaponRotationSpeed: 0
     maxPeople: 0
   hullStats:
@@ -7545,14 +8948,29 @@ MonoBehaviour:
     fireRate: 0
     rammingPower: 1.2
     healthCap: 30
-    healthRegen: 0.5
-    energyCap: 0
-    energyRegen: 0
-    moveSpeed: 0
+    healthRegen: 2
+    energyCap: 30
+    energyRegen: 0.3
+    moveSpeed: -0.5
     accelerationCap: 0
     turnSpeed: 0
     weaponRotationSpeed: 0
-    maxPeople: 0
+    maxPeople: 3
+  cargoStats:
+    firePower: 0
+    bulletSpeed: 0
+    bulletRange: 0
+    fireRate: 0
+    rammingPower: 0
+    healthCap: 10
+    healthRegen: 0
+    energyCap: 0
+    energyRegen: 0
+    moveSpeed: -0.2
+    accelerationCap: 0
+    turnSpeed: 0
+    weaponRotationSpeed: 0
+    maxPeople: 10
   runtimeDefaultStats:
     firePower: 0
     bulletSpeed: 12
@@ -7565,9 +8983,9 @@ MonoBehaviour:
     energyRegen: 25
     moveSpeed: 6
     accelerationCap: 4
-    turnSpeed: 2.5
+    turnSpeed: 25
     weaponRotationSpeed: 90
-    maxPeople: 400
+    maxPeople: 100
   runtimeMinimumStats:
     firePower: 0
     bulletSpeed: 8
@@ -7576,13 +8994,13 @@ MonoBehaviour:
     rammingPower: 2
     healthCap: 400
     healthRegen: 1
-    energyCap: 500
-    energyRegen: 15
+    energyCap: 100
+    energyRegen: 5
     moveSpeed: 4
     accelerationCap: 2
-    turnSpeed: 2
+    turnSpeed: 20
     weaponRotationSpeed: 25
-    maxPeople: 200
+    maxPeople: 100
   cameraFollowSettings: {fileID: 11400000, guid: 90d7e8197d9477d40bc1400865e6a4af, type: 2}
   cameraHullViewPadding: 8
   cameraMaxHeight: 90

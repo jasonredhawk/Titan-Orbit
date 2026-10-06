@@ -61,10 +61,15 @@ namespace TitanOrbit.Game
         /// One-shot hull / body clearance from mesh AABBs. Call on ship spawn / chassis swap only —
         /// floating counts must read the cached result, not remesh every frame.
         /// </summary>
-        public static bool TryMeasureBodyClearance(Transform root, out float liftFromPivot, out float xzRadius)
+        public static bool TryMeasureBodyClearance(
+            Transform root,
+            out float liftFromPivot,
+            out float xzRadius,
+            out Vector3 localXzCenter)
         {
             liftFromPivot = 0f;
             xzRadius = 0f;
+            localXzCenter = Vector3.zero;
             if (root == null)
                 return false;
 
@@ -74,6 +79,9 @@ namespace TitanOrbit.Game
 
             liftFromPivot = Mathf.Max(0f, bounds.max.y - root.position.y);
             xzRadius = Mathf.Max(bounds.extents.x, bounds.extents.z);
+            Vector3 local = root.InverseTransformPoint(bounds.center);
+            local.y = 0f;
+            localXzCenter = local;
             return liftFromPivot > 0.0001f || xzRadius > 0.0001f;
         }
 
@@ -152,6 +160,7 @@ namespace TitanOrbit.Game
                 name.Contains("FullVersionBadge") ||
                 name.Contains("PlayerBadge") ||
                 name.Contains("HealthBar") ||
+                name.Contains("MineNameplate") ||
                 name.Contains("GemsBar") ||
                 name.Contains("PeopleBar") ||
                 name.Contains("RoleRow"))

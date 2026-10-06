@@ -1,13 +1,15 @@
+using TitanOrbit.Simulation;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.NetCode;
 using Unity.Physics;
+using Unity.Transforms;
 
 namespace TitanOrbit.ECS
 {
     /// <summary>
     /// After Unity Physics integrates hull motion and resolves collisions, mirrors linear velocity
-    /// into ghost <see cref="ShipKinematics"/> for HUD, bullets, and VFX.
+    /// and escort formation heading into ghost <see cref="ShipKinematics"/> for HUD, bullets, and VFX.
     /// [PHYSICS] Runs after <see cref="PhysicsSystemGroup"/> and
     /// <see cref="ShipPlanarPhysicsConstraintSystem"/> so asteroid bounce velocity is captured —
     /// we do <b>not</b> hard-clamp to MaxSpeed here (that would erase collision impulse).
@@ -27,32 +29,35 @@ namespace TitanOrbit.ECS
             if (state.World.IsClient() && ClientJoinSettleCache.ShouldSkipShipSimulation)
                 return;
 
+            float dt = SystemAPI.Time.DeltaTime;
             if (state.World.IsClient())
             {
-                foreach (var (velocity, kinematics, shipState) in SystemAPI
-                             .Query<RefRW<PhysicsVelocity>, RefRW<ShipKinematics>, RefRO<ShipState>>()
+                foreach (var (velocity, kinematics, shipState, transform) in SystemAPI
+                             .Query<RefRW<PhysicsVelocity>, RefRW<ShipKinematics>, RefRO<ShipState>, RefRO<LocalTransform>>()
                              .WithAll<ShipTag, Simulate, PredictedGhost>())
-                    SyncKinematics(velocity, kinematics, shipState);
+                    SyncKinematics(velocity, kinematics, shipState, transform, dt);
             }
             else
             {
-                foreach (var (velocity, kinematics, shipState) in SystemAPI
-                             .Query<RefRW<PhysicsVelocity>, RefRW<ShipKinematics>, RefRO<ShipState>>()
+                foreach (var (velocity, kinematics, shipState, transform) in SystemAPI
+                             .Query<RefRW<PhysicsVelocity>, RefRW<ShipKinematics>, RefRO<ShipState>, RefRO<LocalTransform>>()
                              .WithAll<ShipTag, Simulate>())
-                    SyncKinematics(velocity, kinematics, shipState);
+                    SyncKinematics(velocity, kinematics, shipState, transform, dt);
             }
         }
 
-        /// <summary>Mirrors post-collision planar velocity into ghosted kinematics.</summary>
+        /// <summary>Mirrors post-collision planar velocity and escort heading into ghosted kinematics.</summary>
         static void SyncKinematics(
             RefRW<PhysicsVelocity> velocity,
             RefRW<ShipKinematics> kinematics,
-            RefRO<ShipState> shipState)
+            RefRO<ShipState> shipState,
+            RefRO<LocalTransform> transform,
+            float dt)
         {
             if (shipState.ValueRO.IsDead || shipState.ValueRO.AwaitingTeamSelection)
             {
                 velocity.ValueRW = PhysicsVelocity.Zero;
-                kinematics.ValueRW = new ShipKinematics { Velocity = float3.zero };
+                kinematics.ValueRW = default;
                 return;
             }
 
@@ -64,7 +69,12 @@ namespace TitanOrbit.ECS
                 Linear = linear,
                 Angular = new float3(0f, yawRate, 0f),
             };
-            kinematics.ValueRW = new ShipKinematics { Velocity = linear };
+            kinematics.ValueRW = new ShipKinematics
+            {
+                Velocity = linear,
+                FormationHeading = PeopleTransportMath.StepEscortFormationHeading(
+                    kinematics.ValueRO.FormationHeading, transform.ValueRO.Rotation, linear, dt),
+            };
         }
     }
 }

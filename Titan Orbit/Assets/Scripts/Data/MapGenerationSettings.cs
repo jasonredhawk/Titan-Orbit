@@ -13,6 +13,9 @@ namespace TitanOrbit.Data
     [CreateAssetMenu(fileName = "MapGenerationSettings", menuName = "Titan Orbit/Map Generation Settings")]
     public class MapGenerationSettings : ScriptableObject
     {
+        /// <summary>Fallback roster cap when the asset is missing or the field is unset.</summary>
+        public const int DefaultMaxPlayersPerTeam = 12;
+
         [Header("Seed")]
         [Tooltip("0 = random seed each match. Non-zero fixes the seed for reproducible maps.")]
         public int seed;
@@ -28,6 +31,9 @@ namespace TitanOrbit.Data
         public int minTeamsPerMatch = 2;
         [Tooltip("Randomized team count upper bound (inclusive). Supports 2..5 teams.")]
         public int maxTeamsPerMatch = 5;
+        [Tooltip("Hard cap on players who can join each team. Team-pick RPCs reject extras.")]
+        [Min(1)]
+        public int maxPlayersPerTeam = DefaultMaxPlayersPerTeam;
         [Tooltip("Uniform scale for spawned home planets.")]
         public float homePlanetSize = 15f;
         [Tooltip("Starting level for home planets.")]
@@ -46,17 +52,19 @@ namespace TitanOrbit.Data
         public int maxNeutralPlanets = 27;
         [Tooltip(
             "How many non-home (neutral) planets each team starts owning. 0 = all neutrals stay unowned. " +
-            "Claims are applied round-robin during map generation (each team gets one closest-to-home " +
-            "neutral per pass) so planet-connection lines form like live captures. " +
-            "If there are not enough neutrals for every team to get this many, ownership is spread evenly " +
-            "(e.g. 4 wanted × 4 teams but only 12 neutrals → 3 each). Leftover neutrals stay unowned.")]
+            "Claims are applied round-robin during map generation (each team gets the lowest-level " +
+            "available neutral at or below home-planet level; same-level ties go to the smallest planet) " +
+            "so planet-connection lines form like live captures. Planets above home level stay unowned. " +
+            "If there are not enough eligible neutrals for every team to get this many, ownership is spread evenly " +
+            "(e.g. 4 wanted × 4 teams but only 12 eligible → 3 each). Leftover neutrals stay unowned.")]
         [Min(0)]
         public int startingOwnedNeutralPlanetsPerTeam = 0;
         [Tooltip(
-            "For each home planet and each starting owned neutral, randomly seed defense turrets. " +
-            "0 = none. N = place a random count of 0..N turrets on that planet, each at a random " +
-            "level from 1..N (also capped by the planet’s slot count / max turret level). " +
-            "Example: 3 → up to three turrets, each level 1–3.")]
+            "For each starting owned neutral, randomly seed defense turrets. Home planets always " +
+            "start with every pad at the home planet’s max turret level (from Home Planet Level). " +
+            "0 = none on claimed neutrals. N = place a random count of 0..N turrets on that planet, " +
+            "each at a random level from 1..N (also capped by the planet’s slot count / max turret " +
+            "level). Example: 3 → up to three turrets, each level 1–3.")]
         [Min(0)]
         public int startingRandomDefenseTurretsMax = 0;
         public float minPlanetSize = 9f;

@@ -9,7 +9,6 @@ using Unity.Mathematics;
 using Unity.NetCode;
 using Unity.Physics;
 using Unity.Transforms;
-using Random = Unity.Mathematics.Random;
 
 namespace TitanOrbit.ECS
 {
@@ -19,8 +18,14 @@ namespace TitanOrbit.ECS
     /// </summary>
     public static class GemEconomyConstants
     {
-        /// <summary>World units — ship must be within this toroidal distance to mine an asteroid.</summary>
+        /// <summary>
+        /// Legacy aura (retired). Live mining uses hull + rock radius so a fly-by does
+        /// not empty SizeSmallBias pebbles. Kept so older docs / callers still compile.
+        /// </summary>
         public const float MiningRange = 6f;
+
+        /// <summary>Float slack on hull+rock contact. Not a gameplay aura.</summary>
+        public const float MiningContactPad = 0.05f;
 
         /// <summary>Gem value mined per second while in range.</summary>
         public const float MiningRate = 5f;
@@ -133,14 +138,6 @@ namespace TitanOrbit.ECS
         public const float MinGemSpawnValue = 0.25f;
 
         /// <summary>
-        /// Absorb-zone self-pickup grace after a ship spills cargo. Tractor stays blocked for
-        /// the full <see cref="GemExplosionSettings.SelfPickupBlockSeconds"/> so you cannot
-        /// magnet dumps back; fly-over scoop uses this shorter window so burst nuggets are not
-        /// uncollectable for seconds while they sit in the explosion cloud.
-        /// </summary>
-        public const float SelfPickupAbsorbBlockSeconds = 0.45f;
-
-        /// <summary>
         /// Fallback explosion speed when <see cref="GemExplosionSettings"/> is missing.
         /// Prefer the ScriptableObject (Assets/Resources/GemExplosionSettings.asset).
         /// </summary>
@@ -165,8 +162,11 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
-    /// Server: ships near asteroids mine gems over time, spawning gem entities when chunks break off.
-    /// Destroys asteroids when RemainingGems reaches zero.
+    /// Server: ships <b>touching</b> asteroids mine gems over time, spawning gem entities
+    /// when chunks break off. Destroys asteroids when RemainingGems reaches zero.
+    /// Range is hull + rock radius (map size from <see cref="MapStateSingleton"/>) —
+    /// a 6u aura used to pop small-bias rocks as the ship flew past.
+    /// MEGA hulls skip this (they plow). Stowed turret hulls skip it too.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
@@ -204,6 +204,7 @@ namespace TitanOrbit.ECS
                 ToroidalMapEcs.SetMapSize(mapW, mapH);
 
             var ecb = new EntityCommandBuffer(Allocator.Temp);
+            bool haveRoles = SystemAPI.TryGetSingleton<ShipCommandRoleSnapshot>(out var roles);
 
             // --- Home planet levels for territory gem bonus (1 + 0.05 × homeLevel) ---
             // [TITAN-ORBIT] Same formula as NGO MiningSystem when ship's team is in TerritoryTeamsMask.
@@ -225,6 +226,14 @@ namespace TitanOrbit.ECS
             {
                 if (shipState.ValueRO.IsDead || shipState.ValueRO.AwaitingTeamSelection)
                     continue;
+                if (state.EntityManager.HasComponent<MegaShipState>(shipEntity) &&
+                    state.EntityManager.GetComponentData<MegaShipState>(shipEntity).IsMega)
+                    continue;
+                if (state.EntityManager.HasComponent<ShipTurretControlState>(shipEntity) &&
+                    state.EntityManager.GetComponentData<ShipTurretControlState>(shipEntity).IsControlling)
+                    continue;
+
+                float shipRadius = BodyCollisionMath.GetShipHullRadiusWorld(shipTransform.ValueRO.Scale);
 
                 foreach (var (asteroidState, asteroidTransform, asteroidEntity) in SystemAPI
                              .Query<RefRW<AsteroidState>, RefRO<LocalTransform>>()
@@ -234,36 +243,79 @@ namespace TitanOrbit.ECS
                     if (asteroidState.ValueRO.IsDestroyed)
                         continue;
 
+                    float rockRadius = BodyCollisionMath.GetAsteroidBodyRadiusWorld(
+                        asteroidTransform.ValueRO.Scale);
+                    float mineRange = shipRadius + rockRadius + GemEconomyConstants.MiningContactPad;
                     if (ToroidalMapEcs.ToroidalDistance(
                             shipTransform.ValueRO.Position,
                             asteroidTransform.ValueRO.Position,
                             mapW,
-                            mapH) > GemEconomyConstants.MiningRange)
+                            mapH) > mineRange)
                         continue;
 
                     var a = asteroidState.ValueRO;
                     float mineMul = CardEffectQuery.GetMul(state.EntityManager, shipEntity, CardEffectKind.MiningRateMul);
                     float yieldMul = CardEffectQuery.GetMul(state.EntityManager, shipEntity, CardEffectKind.AsteroidGemYieldMul);
-                    float mined = GemEconomyConstants.MiningRate * dt * mineMul;
-                    mined = math.min(mined, a.RemainingGems);
-                    if (mined < GemEconomyConstants.MinGemSpawnValue)
+                    float minedTick = GemEconomyConstants.MiningRate * dt * mineMul;
+                    minedTick = math.min(minedTick, a.RemainingGems);
+                    if (minedTick <= 0f)
                         continue;
+
+                    // --- Accrue sub-threshold 60 Hz chips ---
+                    // [TITAN-ORBIT] MiningRate×dt is ~0.083 at 60 Hz, below MinGemSpawnValue.
+                    // Drain the rock now; Instantiates one red chip per ~1s of MiningRate (5)
+                    // so we do not flood gem RPCs, and yellow (5%) reaches a visible crystal.
+                    a.RemainingGems -= minedTick;
+                    a.MiningYieldRemainder += minedTick;
+                    bool emptied = a.RemainingGems <= 0f;
+                    if (!emptied && a.MiningYieldRemainder < GemEconomyConstants.MiningRate)
+                    {
+                        a.LastInteractTeam = shipState.ValueRO.Team;
+                        if (state.EntityManager.HasComponent<GhostOwner>(shipEntity))
+                            a.LastInteractNetworkId = state.EntityManager.GetComponentData<GhostOwner>(shipEntity).NetworkId;
+                        asteroidState.ValueRW = a;
+                        continue;
+                    }
+
+                    float mined = a.MiningYieldRemainder;
+                    a.MiningYieldRemainder = 0f;
+                    if (mined <= 0f)
+                    {
+                        asteroidState.ValueRW = a;
+                        continue;
+                    }
 
                     // --- Friendly territory gem bonus (tint only once spawned) ---
                     // [TITAN-ORBIT] Base mined chunk is red; extra value Instantiates as a yellow
                     // gem so players see the triangle bonus. Same scoop rules as red — any ship.
-                    // Asteroid loses RemainingGems at the base rate only. Mask (not strongest-wins
-                    // TerritoryTeam): overlap still grants extra yield to each owner.
+                    // Asteroid loses RemainingGems at the base rate only. Live PIT (not the 1s
+                    // stored mask): respawn / graph publish lag used to leave TerritoryTeamsMask=0
+                    // on rocks the client already painted as team-owned.
+                    byte territoryMask = PlanetConnectionGraphCache.ResolveAsteroidTerritoryMask(
+                        a.TerritoryTeamsMask,
+                        a.TerritoryTeam,
+                        asteroidTransform.ValueRO.Position,
+                        mapW,
+                        mapH);
+                    a.TerritoryTeamsMask = territoryMask;
                     int homeLevel = PlanetConnectionGraphLogic.GetHomePlanetLevel(
                         shipState.ValueRO.Team, homeLevels);
                     float gemMult = PlanetConnectionGraphLogic.FriendlyTerritoryGemMultiplier(
-                        shipState.ValueRO.Team, a.TerritoryTeamsMask, homeLevel);
+                        shipState.ValueRO.Team, territoryMask, homeLevel);
                     float bonusValue = mined * (gemMult - 1f);
 
-                    a.RemainingGems -= mined;
-                    // [TITAN-ORBIT] Record miner team so destroy Instantiates extra yellow yield
-                    // only inside that team's triangle. Collection is still free-for-all.
+                    // --- Top-miner command bonus (blue, never mixed into yellow) ---
+                    // [TITAN-ORBIT] 5% of the red chip Instantiates as its own blue crystal.
+                    // Triangle yellow stays a separate spawn so both extras can sit on one rock.
+                    int minerNetId = 0;
+                    if (state.EntityManager.HasComponent<GhostOwner>(shipEntity))
+                        minerNetId = state.EntityManager.GetComponentData<GhostOwner>(shipEntity).NetworkId;
+                    bool isTopMiner = haveRoles && roles.IsMiner(shipState.ValueRO.Team, minerNetId);
+                    float minerBonus = TeamCommandRoleRules.GemBonusValue(mined, isTopMiner);
+                    // [TITAN-ORBIT] Record miner so destroy Instantiates yellow (team) and
+                    // blue (this NetworkId still holding the title). Collection is free-for-all.
                     a.LastInteractTeam = shipState.ValueRO.Team;
+                    a.LastInteractNetworkId = minerNetId;
                     if (a.RemainingGems <= 0f)
                     {
                         a.RemainingGems = 0f;
@@ -282,8 +334,8 @@ namespace TitanOrbit.ECS
                         (uint)asteroidEntity.Index,
                         burst: false,
                         spawnServerTime,
-                        isBonusGem: false);
-                    if (bonusValue >= GemEconomyConstants.MinGemSpawnValue)
+                        tint: GemVisualTint.Standard);
+                    if (bonusValue > 0f)
                     {
                         GemSpawning.Spawn(
                             ecb,
@@ -293,7 +345,20 @@ namespace TitanOrbit.ECS
                             (uint)asteroidEntity.Index + 7919u,
                             burst: false,
                             spawnServerTime,
-                            isBonusGem: true);
+                            tint: GemVisualTint.TerritoryBonus);
+                    }
+
+                    if (minerBonus > 0f)
+                    {
+                        GemSpawning.Spawn(
+                            ecb,
+                            prefabs.Gem,
+                            asteroidTransform.ValueRO.Position,
+                            minerBonus,
+                            (uint)asteroidEntity.Index + 4813u,
+                            burst: false,
+                            spawnServerTime,
+                            tint: GemVisualTint.MinerCommander);
                     }
                 }
             }
@@ -312,6 +377,12 @@ namespace TitanOrbit.ECS
     /// same-tick coherent. Skips linear damping only while a live tractor lock is active
     /// (<see cref="GemMotionState.PhaseTractor"/> and non-zero <see cref="GemMotionState.TractorShipId"/>).
     /// Tunables: <see cref="GemExplosionSettings"/> (Editor).
+    /// <para>
+    /// Steps whole ServerTicks at 1/Hz, matching <see cref="GemClientMotionSystem"/>.
+    /// Host <c>SimulationSystemGroup</c> runs every render frame with frame <c>DeltaTime</c>
+    /// while the client coasts on ServerTick — that parked spilled gems off the scoop pose
+    /// once the burst finished damping.
+    /// </para>
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
@@ -319,10 +390,29 @@ namespace TitanOrbit.ECS
     [UpdateAfter(typeof(MiningSystem))]
     public partial struct GemMotionSystem : ISystem
     {
+        /// <summary>Last ServerTick this system already integrated. 0 = not sampled yet.</summary>
+        uint _committedTick;
+
         /// <summary>Integrates velocity + tumble with PhysX-like damping, then wraps XZ.</summary>
         public void OnUpdate(ref SystemState state)
         {
-            float dt = SystemAPI.Time.DeltaTime;
+            if (!PlanetGemMoonOrbitClock.TryGetServerTick(state.EntityManager, out uint tick, out int hz))
+                return;
+
+            float dt = hz > 0 ? 1f / hz : GemMotionLogic.CatchUpStepSeconds;
+            if (_committedTick == 0 || tick < _committedTick)
+            {
+                _committedTick = tick;
+                return;
+            }
+
+            if (tick == _committedTick)
+                return;
+
+            // Dedicated catch-up can jump many ticks in one frame; host editor stays at 1–2.
+            int steps = (int)math.min(tick - _committedTick, 64);
+            _committedTick = tick;
+
             var settings = GemExplosionSettingsCache.ResolveOrDefault();
             float linearDamping = settings.LinearDamping;
             float angularDamping = settings.AngularDamping;
@@ -351,44 +441,43 @@ namespace TitanOrbit.ECS
                     }
                 }
 
-                // --- Linear velocity ---
-                // [TITAN-ORBIT] Live tractor owns constant pull speed — damping would fight the beam.
-                float3 vel = underTractor
-                    ? kin.Velocity
-                    : GemExplosionMath.IntegrateLinearVelocity(
-                        kin.Velocity, linearDamping, stopSpeed, dt);
-                float3 ang = GemExplosionMath.IntegrateAngularVelocity(
-                    kin.AngularVelocity, angularDamping, dt);
-
-                // --- Integrate then wrap onto the canonical chart ---
                 var lt = transform.ValueRO;
-                lt.Position += vel * dt;
-                if (ToroidalMapEcs.HasValidMapSize)
-                    lt.Position = ToroidalMapEcs.Wrap(lt.Position);
-                if (math.lengthsq(ang) > 0.0001f)
+                float3 pos = lt.Position;
+                quaternion rot = lt.Rotation;
+                float3 vel = kin.Velocity;
+                float3 ang = kin.AngularVelocity;
+                byte phase = hasMotion ? motionRo.Phase : GemMotionState.PhaseCoast;
+                bool haveMap = ToroidalMapEcs.TryGetMapSize(out float mapW, out float mapH);
+
+                for (int s = 0; s < steps; s++)
                 {
-                    // AngularVelocity is rad/s — quaternion integrate in world space.
-                    float angle = math.length(ang) * dt;
-                    float3 axis = math.normalizesafe(ang, new float3(0f, 1f, 0f));
-                    lt.Rotation = math.mul(quaternion.AxisAngle(axis, angle), lt.Rotation);
+                    GemMotionLogic.IntegrateStep(
+                        ref pos,
+                        ref rot,
+                        ref vel,
+                        ref ang,
+                        ref phase,
+                        underTractor,
+                        dt,
+                        linearDamping,
+                        angularDamping,
+                        stopSpeed,
+                        mapW,
+                        mapH,
+                        haveMap);
                 }
 
+                lt.Position = pos;
+                lt.Rotation = rot;
                 transform.ValueRW = lt;
                 kinematics.ValueRW = new GemKinematics { Velocity = vel, AngularVelocity = ang };
 
-                // --- Phase: Coast → Idle when stopped (never steal Tractor phase here) ---
                 if (!hasMotion || underTractor)
                     continue;
 
-                if (math.lengthsq(vel) < stopSpeed * stopSpeed)
+                if (motionRo.Phase != phase)
                 {
-                    motionRo.Phase = GemMotionState.PhaseIdle;
-                    SystemAPI.SetComponent(entity, motionRo);
-                }
-                else if (motionRo.Phase == GemMotionState.PhaseIdle)
-                {
-                    // Nudged / re-launched somehow — treat as coast again.
-                    motionRo.Phase = GemMotionState.PhaseCoast;
+                    motionRo.Phase = phase;
                     SystemAPI.SetComponent(entity, motionRo);
                 }
             }
@@ -426,12 +515,20 @@ namespace TitanOrbit.ECS
                          .WithEntityAccess())
             {
                 float spawnTime = gemState.ValueRO.SpawnServerTime;
-                if (spawnTime <= 0f)
+                if (spawnTime <= 0f || gemState.ValueRO.SpawnId == 0)
                 {
                     // Prefab default leaked — stamp now so lifetime and self-pickup can run.
-                    // Leaving 0 made gems immortal and unblocked forever.
+                    // Leaving 0 made gems immortal and unblocked forever. SpawnId 0 also
+                    // swallowed GemConsumedRpc, so clients kept a crystal they could not scoop.
                     var stamped = gemState.ValueRO;
-                    stamped.SpawnServerTime = now;
+                    if (spawnTime <= 0f)
+                        stamped.SpawnServerTime = now;
+                    if (stamped.SpawnId == 0)
+                    {
+                        int hashed = (int)math.hash(new uint2((uint)gemEntity.Index, math.asuint(now)));
+                        stamped.SpawnId = hashed == 0 ? 1 : hashed;
+                    }
+
                     ecb.SetComponent(gemEntity, stamped);
                     continue;
                 }
@@ -443,6 +540,7 @@ namespace TitanOrbit.ECS
                 if (elapsed < lifetime)
                     continue;
 
+                GemNetNotify.SendConsumed(ref ecb, gemState.ValueRO.SpawnId);
                 ecb.DestroyEntity(gemEntity);
             }
 
@@ -535,6 +633,7 @@ namespace TitanOrbit.ECS
             if (gemCount <= 0)
                 return;
 
+            float dt = SystemAPI.Time.DeltaTime;
             var pickupSettings = TractorBeamSettingsCache.ResolveOrDefault();
             var gemEntities = _gemQuery.ToEntityArray(Allocator.Temp);
             var gemStates = _gemQuery.ToComponentDataArray<GemState>(Allocator.Temp);
@@ -632,6 +731,9 @@ namespace TitanOrbit.ECS
                     // [TITAN-ORBIT] Damage-spill penalty — source ship cannot reclaim yet.
                     bool pickupBlocked = GemSelfPickupBlock.IsPickupBlockedForShip(
                         gemState, shipNetworkId, nowServerTime);
+                    float3 shipMove = float3.zero;
+                    if (state.EntityManager.HasComponent<ShipKinematics>(shipEntity))
+                        shipMove = state.EntityManager.GetComponentData<ShipKinematics>(shipEntity).Velocity * dt;
                     bool inRange = IsWithinPickupRange(
                             state.EntityManager,
                             shipEntity,
@@ -641,7 +743,8 @@ namespace TitanOrbit.ECS
                             hasWings,
                             pickupSettings,
                             mapW,
-                            mapH);
+                            mapH,
+                            shipMove);
                     if (!inRange)
                         continue;
 
@@ -672,15 +775,15 @@ namespace TitanOrbit.ECS
                         gemTransforms[gi] = leftoverXf;
                         ecb.SetComponent(gemEntity, gemState);
                         ecb.SetComponent(gemEntity, leftoverXf);
+                        GemNetNotify.SendValueChanged(ref ecb, gemState.SpawnId, remainder);
                     }
                     else
                     {
                         gemConsumed[gi] = true;
                         gemState.IsConsumed = true;
                         gemStates[gi] = gemState;
-                        ecb.SetComponent(gemEntity, gemState);
-                        if (!state.EntityManager.HasComponent<GemConsumedPendingDestroy>(gemEntity))
-                            ecb.AddComponent(gemEntity, new GemConsumedPendingDestroy { SendsLeft = 2 });
+                        GemNetNotify.SendConsumed(ref ecb, gemState.SpawnId);
+                        ecb.DestroyEntity(gemEntity);
                     }
 
                     if (capacityLeft <= 0.001f)
@@ -717,7 +820,8 @@ namespace TitanOrbit.ECS
             bool hasWings,
             TractorBeamSettings pickupSettings,
             float mapW,
-            float mapH)
+            float mapH,
+            float3 shipMove)
         {
             float3 gemPos = gemTransform.Position;
 
@@ -734,7 +838,9 @@ namespace TitanOrbit.ECS
                 for (int wi = 0; wi < wings.Length; wi++)
                 {
                     float3 wingPos = ShipWingTractorBeamPose.GetWorldPosition(shipTransform, wings[wi]);
-                    if (GemTractorBeamMath.ToroidalDistance(gemPos, wingPos, mapW, mapH) <= collectRadius)
+                    float3 prevWing = ToroidalMapEcs.Wrap(wingPos - shipMove, mapW, mapH);
+                    if (GemCollectMath.SegmentReachesPoint(
+                            gemPos, prevWing, wingPos, collectRadius, mapW, mapH))
                         return true;
                 }
 
@@ -743,13 +849,14 @@ namespace TitanOrbit.ECS
                 // for a wing tip / tractor lock. When OFF, only tip zones collect (tight old feel).
                 if (pickupSettings.AlsoUseHullPickupWithWings)
                     return IsWithinHullPickupRange(
-                        em, shipEntity, shipTransform, gemPos, gemState, pickupSettings, mapW, mapH);
+                        em, shipEntity, shipTransform, gemPos, gemState, pickupSettings, mapW, mapH, shipMove);
 
                 return false;
             }
 
             // --- No wings: hull-center only ---
-            return IsWithinHullPickupRange(em, shipEntity, shipTransform, gemPos, gemState, pickupSettings, mapW, mapH);
+            return IsWithinHullPickupRange(
+                em, shipEntity, shipTransform, gemPos, gemState, pickupSettings, mapW, mapH, shipMove);
         }
 
         /// <summary>
@@ -764,42 +871,36 @@ namespace TitanOrbit.ECS
             in GemState gemState,
             TractorBeamSettings pickupSettings,
             float mapW,
-            float mapH)
+            float mapH,
+            float3 shipMove)
         {
             float hullRange = GemCollectMath.ResolveHullCollectRadius(
                 pickupSettings, gemState.Value, gemState.Size, shipTransform.Scale)
                 + CardEffectQuery.GetValue(em, shipEntity, CardEffectKind.GemPickupRadiusAdd);
-            return GemTractorBeamMath.ToroidalDistance(gemPos, shipTransform.Position, mapW, mapH) <=
-                   hullRange;
+            float3 hullPos = shipTransform.Position;
+            float3 prevHull = ToroidalMapEcs.Wrap(hullPos - shipMove, mapW, mapH);
+            return GemCollectMath.SegmentReachesPoint(
+                gemPos, prevHull, hullPos, hullRange, mapW, mapH);
         }
     }
 
     /// <summary>
-    /// Server: after GhostSend has had a chance to replicate <see cref="GemState.IsConsumed"/>,
-    /// destroy scooped gem entities so NetCode can send the despawn. Pickup used to
-    /// DestroyEntity the same tick as cargo add, which left clients interpolating the last
-    /// alive snapshot until the 20s lifetime shrink.
+    /// [LEGACY] Consume used to hold the ghost two GhostSend ticks so <c>IsConsumed</c> replicated.
+    /// Event-hydrate gems destroy immediately and notify with <see cref="GemConsumedRpc"/>.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup), OrderLast = true)]
-    [UpdateAfter(typeof(GhostSendSystem))]
     public partial struct GemConsumedDestroySystem : ISystem
     {
-        /// <summary>Destroys scooped gems once their consume flag has been sent.</summary>
+        /// <summary>No-op — leftover <see cref="GemConsumedPendingDestroy"/> entities are destroyed.</summary>
         public void OnUpdate(ref SystemState state)
         {
             var ecb = new EntityCommandBuffer(Allocator.Temp);
-            foreach (var (pending, gemEntity) in SystemAPI
-                         .Query<RefRW<GemConsumedPendingDestroy>>()
+            foreach (var (_, gemEntity) in SystemAPI
+                         .Query<RefRO<GemConsumedPendingDestroy>>()
                          .WithAll<GemTag>()
                          .WithEntityAccess())
             {
-                if (pending.ValueRO.SendsLeft > 0)
-                {
-                    pending.ValueRW.SendsLeft--;
-                    continue;
-                }
-
                 ecb.DestroyEntity(gemEntity);
             }
 
@@ -1031,8 +1132,7 @@ namespace TitanOrbit.ECS
     /// <see cref="GemExplosionSettings"/>) that sum to leftover <see cref="AsteroidState.RemainingGems"/>,
     /// with original NGO explosion speed, damping, and tumble. Schedules a timed respawn
     /// (<see cref="AsteroidSpawning.ScheduleRespawn"/>) then destroys the entity.
-    /// Clients present gems only after gem ghosts Instantiates, driven by ghosted
-    /// <see cref="GemKinematics"/> / LocalTransform (no client-invented burst VFX).
+    /// Clients hydrate the burst from <see cref="GemBurstRpc"/> (same seed / chord split).
     /// <para>
     /// [TITAN-ORBIT] Despawn triggers on <see cref="AsteroidState.IsDestroyed"/> <b>or</b>
     /// <c>Health &lt;= 0</c> (belt-and-suspenders for bullet kills). Missing Gem prefab must not
@@ -1063,7 +1163,10 @@ namespace TitanOrbit.ECS
             public float MaxHealth;
             public float Size;
             public TeamId LastInteractTeam;
+            public int LastInteractNetworkId;
             public byte TerritoryTeamsMask;
+            public TeamId TerritoryTeam;
+            public float MiningYieldRemainder;
             public int LayoutSlot;
         }
 
@@ -1088,12 +1191,26 @@ namespace TitanOrbit.ECS
             bool canSpawnGems = gemPrefab != Entity.Null;
             var settings = GemExplosionSettingsCache.ResolveOrDefault();
             settings.ClampCounts();
+            var asteroidSettings = AsteroidSettingsCache.ResolveOrDefault();
+            asteroidSettings.ClampValues();
             float spawnTime = PlanetGemMoonOrbitClock.GetElapsedSecondsOrFallback(
                 state.EntityManager, SystemAPI.Time.ElapsedTime);
             // Respawn queue is server-only — World.Time is fine (not replicated to clients).
             double now = SystemAPI.Time.ElapsedTime;
             var respawnBuffer = SystemAPI.GetSingletonBuffer<PendingAsteroidRespawnElement>();
             var em = state.EntityManager;
+
+            // Map period for live triangle PIT (destroy yellow extras). Skip inventing 1000.
+            float mapW = 0f;
+            float mapH = 0f;
+            if (SystemAPI.TryGetSingleton<MapStateSingleton>(out var mapState) &&
+                ToroidalMapEcs.IsValidMapSize(mapState.MapWidth, mapState.MapHeight))
+            {
+                mapW = mapState.MapWidth;
+                mapH = mapState.MapHeight;
+            }
+            else
+                ToroidalMapEcs.TryGetMapSize(out mapW, out mapH);
 
             // --- Phase 1: copy dead rocks (no structural changes inside the query) ---
             var pending = new NativeList<PendingDestroy>(8, Allocator.Temp);
@@ -1121,7 +1238,10 @@ namespace TitanOrbit.ECS
                     MaxHealth = a.MaxHealth,
                     Size = a.Size,
                     LastInteractTeam = a.LastInteractTeam,
+                    LastInteractNetworkId = a.LastInteractNetworkId,
                     TerritoryTeamsMask = a.TerritoryTeamsMask,
+                    TerritoryTeam = a.TerritoryTeam,
+                    MiningYieldRemainder = a.MiningYieldRemainder,
                     LayoutSlot = AsteroidLayoutSlot.Read(em, entity),
                 });
             }
@@ -1143,7 +1263,7 @@ namespace TitanOrbit.ECS
 
                 float3 pos = dead.Position;
                 pos.y = 0f;
-                float remaining = dead.RemainingGems;
+                float remaining = dead.RemainingGems + math.max(0f, dead.MiningYieldRemainder);
                 float rpcScale = dead.Scale;
                 if (rpcScale <= AsteroidDeathPhysics.CulledTransformScale + 0.001f)
                     rpcScale = 1f;
@@ -1153,15 +1273,29 @@ namespace TitanOrbit.ECS
                 // [TITAN-ORBIT] Extra yellow crystals Instantiates only when the last miner/shooter
                 // owns this rock (mask bit). Enemy-tinted asteroids must not dump bonus yield on
                 // kill. The gems themselves are free-for-all once they exist.
-                // Legacy bug: FriendlyTerritoryGemMultiplier(TerritoryTeam, TerritoryTeam) always
-                // matched for any non-None tint — ignored the destroyer.
+                // Live PIT: stored TerritoryTeamsMask stays 0 until the 1s territory refresh,
+                // so team-tinted rocks used to dump only red leftovers.
+                byte territoryMask = PlanetConnectionGraphCache.ResolveAsteroidTerritoryMask(
+                    dead.TerritoryTeamsMask, dead.TerritoryTeam, pos, mapW, mapH);
                 if (dead.LastInteractTeam != TeamId.None &&
-                    remaining >= GemEconomyConstants.MinGemSpawnValue)
+                    remaining > 0f)
                 {
                     int homeLevel = PlanetConnectionGraphCache.GetHomePlanetLevel(dead.LastInteractTeam);
                     float mult = PlanetConnectionGraphLogic.FriendlyTerritoryGemMultiplier(
-                        dead.LastInteractTeam, dead.TerritoryTeamsMask, homeLevel);
+                        dead.LastInteractTeam, territoryMask, homeLevel);
                     bonusExtra = remaining * (mult - 1f);
+                }
+
+                // --- Top-miner command bonus (blue, its own burst) ---
+                // [TITAN-ORBIT] 5% of the red leftover. Not added into yellow — players see
+                // two extra colours when a titled miner pops a triangle rock.
+                float minerExtra = 0f;
+                if (dead.LastInteractNetworkId > 0
+                    && remaining > 0f
+                    && SystemAPI.TryGetSingleton<ShipCommandRoleSnapshot>(out var roles)
+                    && roles.IsMiner(dead.LastInteractTeam, dead.LastInteractNetworkId))
+                {
+                    minerExtra = TeamCommandRoleRules.GemBonusValue(remaining, true);
                 }
 
                 if (canSpawnGems && remaining >= GemEconomyConstants.MinGemSpawnValue)
@@ -1169,12 +1303,20 @@ namespace TitanOrbit.ECS
                     // Deterministic seed so client immediate burst can match count/feel closely.
                     uint seed = math.hash(new uint2((uint)entity.Index, math.hash(pos)));
                     SpawnAsteroidDestructionGems(
-                        ecb, gemPrefab, pos, remaining, seed, settings, spawnTime, isBonusGem: false);
-                    if (bonusExtra >= GemEconomyConstants.MinGemSpawnValue)
+                        ecb, gemPrefab, pos, remaining, seed, settings, spawnTime,
+                        GemVisualTint.Standard);
+                    if (bonusExtra > 0f)
                     {
                         SpawnAsteroidDestructionGems(
                             ecb, gemPrefab, pos, bonusExtra, seed + 1337u, settings, spawnTime,
-                            isBonusGem: true);
+                            GemVisualTint.TerritoryBonus);
+                    }
+
+                    if (minerExtra > 0f)
+                    {
+                        SpawnAsteroidDestructionGems(
+                            ecb, gemPrefab, pos, minerExtra, seed + 2741u, settings, spawnTime,
+                            GemVisualTint.MinerCommander);
                     }
                 }
 
@@ -1200,7 +1342,7 @@ namespace TitanOrbit.ECS
                     restoreHealth,
                     dead.Size,
                     now,
-                    settings.AsteroidRespawnDelaySeconds,
+                    asteroidSettings.RespawnDelaySeconds,
                     dead.LayoutSlot);
 
                 // --- Clients: destroy seed-hydrated local rock now ---
@@ -1242,51 +1384,28 @@ namespace TitanOrbit.ECS
             uint seed,
             GemExplosionSettings settings,
             float spawnServerTime,
-            bool isBonusGem)
+            GemVisualTint tint)
         {
-            var rng = Random.CreateFromIndex(seed);
-            // [TITAN-ORBIT] Unit cap keeps each pickup on the 88-key chromatic SFX ladder.
-            int count = GemExplosionMath.ResolveGemCountForUnitCap(
-                remaining,
-                settings.MinGemCount,
-                settings.MaxGemCount,
-                settings.MaxGemUnitValue,
-                ref rng);
-
-            // --- Chord-tone values (C / C+G / C+E+G / …) summing to remaining ---
-            // [TITAN-ORBIT] Equal split made every gem the same note; chord fill makes consume SFX harmonic.
-            var chordValues = new float[count];
-            GemChordValues.Fill(remaining, count, settings.MaxGemUnitValue, chordValues);
-
+            var recipes = new GemSpawnRecipe[GemExplosionMath.AbsoluteMaxGemCount];
+            int count = GemBurstExpansion.FillRecipes(
+                pos, remaining, seed, spawnServerTime, tint, settings, recipes);
             for (int i = 0; i < count; i++)
             {
-                float value = chordValues[i];
-                if (value < GemEconomyConstants.MinGemSpawnValue)
-                    continue;
-                GemSpawning.Spawn(
-                    ecb,
-                    gemPrefab,
-                    pos,
-                    value,
-                    seed + (uint)(i + 1) * 97u,
-                    burst: true,
-                    spawnServerTime,
-                    settings,
-                    burstIndex: (byte)i,
-                    isBonusGem: isBonusGem);
+                GemSpawning.SpawnFromRecipe(
+                    ecb, gemPrefab, recipes[i], settings, emitNetwork: false);
             }
+
+            if (count > 0)
+                GemNetNotify.SendBurst(ref ecb, pos, remaining, seed, spawnServerTime, tint);
         }
     }
 
     /// <summary>Shared gem entity spawn helper for mining and asteroid destruction bursts.</summary>
     public static class GemSpawning
     {
-        static int _nextSpawnId;
-
-        /// <summary>Monotonic session id for gem debug trails (never reuse, unlike ghostId).</summary>
-        public static int NextSpawnId() => System.Threading.Interlocked.Increment(ref _nextSpawnId);
         /// <summary>
-        /// Instantiates a gem prefab with value, optional burst velocity/tumble, offset, and lifetime stamp.
+        /// Instantiates a server-local gem (not a NetCode ghost) and optionally broadcasts
+        /// <see cref="GemSpawnRpc"/> so clients hydrate the same recipe.
         /// </summary>
         /// <param name="spawnServerTime">ServerTick seconds — drives lifetime despawn and client shrink.</param>
         /// <param name="burstIndex">
@@ -1324,91 +1443,81 @@ namespace TitanOrbit.ECS
             float spawnServerTime,
             GemExplosionSettings settings = null,
             byte burstIndex = 0,
-            bool isBonusGem = false,
+            GemVisualTint tint = GemVisualTint.Standard,
             float burstIntensity = 1f,
             int excludePickupNetworkId = 0,
             float excludePickupUntilServerTime = 0f,
             float3 launchDir = default,
             float3 addVelocity = default,
-            float launchSpeedMul = 1f)
+            float launchSpeedMul = 1f,
+            bool emitNetwork = true)
         {
             if (value <= 0f)
                 return;
 
+            var recipe = GemSpawnMath.Create(
+                position,
+                value,
+                salt,
+                burst,
+                spawnServerTime,
+                burstIndex,
+                tint,
+                burstIntensity,
+                excludePickupNetworkId,
+                excludePickupUntilServerTime,
+                launchDir,
+                addVelocity,
+                launchSpeedMul);
+            SpawnFromRecipe(ecb, gemPrefab, recipe, settings, emitNetwork);
+        }
+
+        /// <summary>
+        /// Instantiates from a resolved recipe. <paramref name="emitNetwork"/> is false for
+        /// asteroid bursts (one <see cref="GemBurstRpc"/> covers the set).
+        /// </summary>
+        public static void SpawnFromRecipe(
+            EntityCommandBuffer ecb,
+            Entity gemPrefab,
+            in GemSpawnRecipe recipe,
+            GemExplosionSettings settings = null,
+            bool emitNetwork = true)
+        {
             settings ??= GemExplosionSettingsCache.ResolveOrDefault();
-            var rng = Random.CreateFromIndex(math.hash(position) + salt + 17u);
-
-            // --- Heading ---
-            // [TITAN-ORBIT] Voluntary dump locks to ship forward. Damage / mine bursts stay random XZ.
-            float3 planarLaunch = new float3(launchDir.x, 0f, launchDir.z);
-            bool useForward = math.lengthsq(planarLaunch) > 0.01f;
-            float3 spawnDir = useForward
-                ? math.normalize(planarLaunch)
-                : GemExplosionMath.RandomUnitXZ(ref rng);
-            if (math.lengthsq(spawnDir) < 0.01f)
-                spawnDir = new float3(0f, 0f, 1f);
-
-            float radius = burst ? settings.AsteroidExplosionRadius : 0.8f;
-            // Voluntary dump already sits on the hull nose — do not add asteroid-burst radius.
-            float along = useForward ? 0f : radius * rng.NextFloat(0.3f, 1f);
-            float3 offset = spawnDir * along;
-            float scale = math.clamp(math.sqrt(value) * 0.2f, 0.2f, 0.5f);
+            if (!GemSpawnMath.TryResolve(recipe, settings, out var resolved))
+                return;
 
             Entity gem = ecb.Instantiate(gemPrefab);
-            ecb.SetComponent(gem, LocalTransform.FromPositionRotationScale(position + offset, quaternion.identity, scale));
+            ecb.SetComponent(gem, LocalTransform.FromPositionRotationScale(
+                resolved.Position, quaternion.identity, resolved.Scale));
             ecb.SetComponent(gem, new GemState
             {
-                SpawnId = NextSpawnId(),
-                Value = value,
-                Size = scale,
+                SpawnId = resolved.SpawnId,
+                Value = resolved.Value,
+                Size = resolved.Scale,
                 DepositTeam = TeamId.None,
-                SpawnServerTime = spawnServerTime,
-                // Tint only — tractor / pickup never read this flag.
-                IsBonusGem = isBonusGem,
-                // [TITAN-ORBIT] Damage-spill self-pickup penalty (ghosted — client hides beams too).
-                // Mining / asteroid bursts leave these 0.
-                ExcludePickupNetworkId = excludePickupNetworkId,
-                ExcludePickupUntilServerTime = excludePickupUntilServerTime,
+                SpawnServerTime = resolved.SpawnServerTime,
+                Tint = resolved.Tint,
+                ExcludePickupNetworkId = resolved.ExcludePickupNetworkId,
+                ExcludePickupUntilServerTime = resolved.ExcludePickupUntilServerTime,
             });
-
-            // --- Motion phase + burst slot (ghosted for client handoff / tractor lock) ---
             ecb.SetComponent(gem, new GemMotionState
             {
                 Phase = GemMotionState.PhaseCoast,
-                BurstIndex = burstIndex,
+                BurstIndex = resolved.BurstIndex,
                 TractorShipId = 0,
                 TractorWingIndex = 0,
                 TractorLockTick = 0,
                 TractorExtendDuration = 0f,
             });
-
-            float speedMul = math.max(0.01f, launchSpeedMul);
-
-            if (burst)
+            ecb.SetComponent(gem, new GemKinematics
             {
-                // --- Original NGO GemSpawner launch + tumble (intensity scales ship-damage spills) ---
-                float3 vel = GemExplosionMath.BurstVelocity(
-                    spawnDir,
-                    settings.AsteroidExplosionSpeed,
-                    settings.SpeedRandomMin,
-                    settings.SpeedRandomMax,
-                    burstIntensity,
-                    ref rng);
-                vel *= speedMul;
-                vel += addVelocity;
-                vel.y = 0f;
-                float3 ang = GemExplosionMath.BurstAngularVelocity(settings.AngularSpeedMax, ref rng);
-                ecb.SetComponent(gem, new GemKinematics { Velocity = vel, AngularVelocity = ang });
-            }
-            else
-            {
-                // Small outward nudge so mined gems are not stuck inside the asteroid mesh.
-                float speed = rng.NextFloat(settings.MiningNudgeSpeedMin, settings.MiningNudgeSpeedMax);
-                float3 ang = GemExplosionMath.BurstAngularVelocity(settings.AngularSpeedMax * 0.35f, ref rng);
-                float3 vel = spawnDir * (speed * speedMul) + addVelocity;
-                vel.y = 0f;
-                ecb.SetComponent(gem, new GemKinematics { Velocity = vel, AngularVelocity = ang });
-            }
+                Velocity = resolved.Velocity,
+                AngularVelocity = resolved.AngularVelocity,
+            });
+
+            if (emitNetwork)
+                GemNetNotify.SendSpawn(ref ecb, recipe);
         }
     }
 
@@ -1470,7 +1579,7 @@ namespace TitanOrbit.ECS
                 spawnServerTime,
                 settings: settings,
                 burstIndex: 0,
-                isBonusGem: false,
+                tint: GemVisualTint.Standard,
                 burstIntensity: math.saturate(intensity),
                 excludePickupNetworkId: excludeId,
                 excludePickupUntilServerTime: blockUntil);
@@ -1559,7 +1668,7 @@ namespace TitanOrbit.ECS
                 spawnServerTime,
                 settings: settings,
                 burstIndex: 0,
-                isBonusGem: false,
+                tint: GemVisualTint.Standard,
                 burstIntensity: 0.25f,
                 excludePickupNetworkId: excludeId,
                 excludePickupUntilServerTime: blockUntil,
@@ -1573,7 +1682,8 @@ namespace TitanOrbit.ECS
     /// Shared check: damage-spilled gems block the source ship from tractor / pickup.
     /// Window is <c>SpawnServerTime + duration</c> on the ServerTick clock — not the ghosted
     /// <see cref="GemState.ExcludePickupUntilServerTime"/> float (quantization could stick
-    /// the block on forever).
+    /// the block on forever). A spawn stamp far ahead of that clock fails open so the
+    /// spilling ship is not locked out for the rest of the match.
     /// </summary>
     public static class GemSelfPickupBlock
     {
@@ -1596,7 +1706,13 @@ namespace TitanOrbit.ECS
             float spawn = gem.SpawnServerTime;
             if (spawn <= 0f)
                 return false;
-            return nowServerTime < spawn + blockSeconds;
+            float age = nowServerTime - spawn;
+            // Spawn stamped on World.Time while this check uses ServerTick (or the reverse)
+            // leaves age largely negative. Treating that as "still in the window" locked the
+            // spilling ship out until the slow clock caught up — often the rest of the match.
+            if (age < -0.25f)
+                return false;
+            return age < blockSeconds;
         }
 
         /// <summary>Tractor window — full designer self-pickup penalty.</summary>
@@ -1610,15 +1726,18 @@ namespace TitanOrbit.ECS
                 gem, shipNetworkId, nowServerTime, settings.SelfPickupBlockSeconds);
         }
 
-        /// <summary>Absorb-zone window — short anti-vacuum, then fly-over is allowed.</summary>
+        /// <summary>
+        /// Absorb-zone window — same delay as tractor. The spilling hull cannot scoop
+        /// gems that are still inside its own explosion.
+        /// </summary>
         public static bool IsPickupBlockedForShip(
             in GemState gem,
             int shipNetworkId,
             float nowServerTime)
         {
             var settings = GemExplosionSettingsCache.ResolveOrDefault();
-            float window = math.min(settings.SelfPickupBlockSeconds, GemEconomyConstants.SelfPickupAbsorbBlockSeconds);
-            return IsBlockedForShip(gem, shipNetworkId, nowServerTime, window);
+            return IsBlockedForShip(
+                gem, shipNetworkId, nowServerTime, settings.SelfPickupBlockSeconds);
         }
     }
 }

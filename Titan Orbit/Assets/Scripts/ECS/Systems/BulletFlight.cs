@@ -14,7 +14,11 @@ namespace TitanOrbit.ECS
         /// <summary>
         /// End of this step and how many equal segments to sweep.
         /// </summary>
-        [BurstCompile]
+        /// <remarks>
+        /// No <c>[BurstCompile]</c> on this method. That attribute makes a direct-call
+        /// entry point, and Burst rejects <c>float3</c> passed by value (BC1064 / BC1067).
+        /// Jobs still inline the body from <c>BulletAdvanceJob</c> and the cosmetic sweep.
+        /// </remarks>
         public static void GetStep(
             float3 from,
             float3 velocity,
@@ -32,7 +36,6 @@ namespace TitanOrbit.ECS
         /// reaching a hull the server had already expired.
         /// </summary>
         /// <param name="maxTravel">Remaining flight budget (MaxDistance − Traveled).</param>
-        [BurstCompile]
         public static void GetStep(
             float3 from,
             float3 velocity,
@@ -41,7 +44,7 @@ namespace TitanOrbit.ECS
             out float3 to,
             out int substeps)
         {
-            if (maxTravel <= 1e-5f)
+            if (maxTravel <= RangeStopEpsilon)
             {
                 to = from;
                 substeps = 1;
@@ -53,6 +56,28 @@ namespace TitanOrbit.ECS
             if (stepDistance > maxTravel && stepDistance > 1e-6f)
                 to = from + (to - from) * (maxTravel / stepDistance);
             substeps = BulletCollision.ComputeAdvanceSubstepCount(math.min(stepDistance, maxTravel));
+        }
+
+        /// <summary>
+        /// <see cref="GetStep"/> parks the pose when remaining travel is at or below this.
+        /// Expire with the same threshold or the tracer freezes at max range.
+        /// </summary>
+        public const float RangeStopEpsilon = 1e-5f;
+
+        /// <summary>
+        /// Arrive slop so float error cannot leave <c>Traveled</c> just shy of MaxDistance.
+        /// </summary>
+        public const float RangeArriveSlop = 1e-4f;
+
+        /// <summary>
+        /// True when the shot has no remaining travel budget. Matches server
+        /// <c>BulletAdvanceJob</c> so client tracers cannot freeze after the last clamp.
+        /// </summary>
+        [BurstCompile]
+        public static bool IsRangeExpired(float traveled, float maxDistance)
+        {
+            return (maxDistance - traveled) <= RangeStopEpsilon ||
+                   traveled >= maxDistance - RangeArriveSlop;
         }
 
         /// <summary>

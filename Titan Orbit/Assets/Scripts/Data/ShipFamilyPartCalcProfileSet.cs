@@ -647,6 +647,8 @@ namespace TitanOrbit.Data
                         mapping.partType = ShipFamilyPartTypes.Wing;
                     else if (n.IndexOf("Cockpit", StringComparison.OrdinalIgnoreCase) >= 0)
                         mapping.partType = ShipFamilyPartTypes.Cockpit;
+                    else if (ShipFamilyPartTypes.IsCargoLikeName(n))
+                        mapping.partType = ShipFamilyPartTypes.Cargo;
                     else
                         mapping.partType = ShipFamilyPartTypes.Hull;
                 }
@@ -1010,6 +1012,24 @@ namespace TitanOrbit.Data
                     maxPeople = ShipComponentPeopleCapacitySuggestions.PeopleCapacityV1,
                     tractorBeamDistance = ShipComponentTractorBeamSuggestions.TractorDistancePerVersion,
                     tractorBeamPower = ShipComponentTractorBeamSuggestions.TractorPowerPerVersion,
+                };
+            }
+            else if (ShipFamilyPartTypes.IsCargoProfile(type))
+            {
+                profile.baseAtVersion1 = new ShipComponentAbilityStats
+                {
+                    healthCap = ShipComponentHealthSuggestions.GetSuggestedHealthCap(1),
+                    healthRegen = ShipComponentHealthSuggestions.GetSuggestedHealthRegen(1),
+                    maxGems = 8f,
+                    maxPeople = ShipComponentPeopleCapacitySuggestions.GetSuggestedPeopleCapacity(1),
+                };
+                profile.perVersionIncrement = new ShipComponentAbilityStats
+                {
+                    healthCap = ShipComponentHealthSuggestions.HealthCapPerVersion,
+                    healthRegen = ShipComponentHealthSuggestions.HealthCapPerVersion
+                        * ShipComponentHealthSuggestions.HealthRegenFractionOfCap,
+                    maxGems = 8f,
+                    maxPeople = ShipComponentPeopleCapacitySuggestions.PeopleCapacityV1,
                 };
             }
             else

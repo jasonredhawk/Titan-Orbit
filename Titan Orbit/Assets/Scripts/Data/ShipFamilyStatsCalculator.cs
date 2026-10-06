@@ -264,7 +264,8 @@ namespace TitanOrbit.Data
             _ = shipLevel;
             result.TotalStats = ShipComponentStackAggregation.AggregateAllPools(
                 result.MatchedComponentIds,
-                result.PerComponentStats);
+                result.PerComponentStats,
+                result.StoreExtraStartIndex);
 
             // [TITAN-ORBIT] Primary weapon already owns bullet speed/range — max helpers are no-ops
             // when only one weapon contributes, but keep them for mixed non-weapon speed sources.

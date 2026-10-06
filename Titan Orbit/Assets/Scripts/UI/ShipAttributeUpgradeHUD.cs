@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using TitanOrbit.Core;
 using TitanOrbit.Data;
 using TitanOrbit.ECS;
@@ -7,6 +8,7 @@ using TitanOrbit.Simulation;
 using TMPro;
 using Unity.Entities;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 using UnityEngine.Serialization;
 using UnityEngine.UI;
@@ -29,12 +31,15 @@ namespace TitanOrbit.UI
     /// and paint three purchase states: Ready (affordable), Locked (not enough gems), Maxed.
     /// Both rows share dark-glass + category-accent chrome (space-gamer HUD). Chip hover opens
     /// a calculation card from <see cref="ShipAbilityStatBreakdown"/> when the STATS row is on.
-    /// That card uses a nested Canvas (sort 150) so rockets, brakes, turret pad, and sibling HUD
-    /// cannot paint through it.
-    /// MEGA hulls keep the ten buttons visible but disabled (no Extra Level purchases) and hide
-    /// the little tick squares so the strip does not look like upgrades are still available.
+    /// That card lives on an always-active overlay Canvas (sort 160) so rockets, brakes, turret
+    /// pad, comms, and sibling HUD cannot paint through it — even on the first hover.
+    /// A RESET chip appears on a slot that has at least one Extra Level. Hold it for
+    /// <see cref="abilityResetHoldSeconds"/> to zero that ability (no gem refund). Release early
+    /// cancels. MEGA hulls keep the ten buttons visible but disabled (no Extra Level purchases)
+    /// and hide the little tick squares so the strip does not look like upgrades are still available.
     /// MEGA identity is latched through gem Instantiates (plow destroy) so ticks/costs do not flicker.
-    /// Quick-stat chips and hover details use <see cref="MegaShipStatsCalculator"/> (no +per-buy).
+    /// Titan chips use <see cref="MegaShipStatsCalculator"/> (frozen hull + PerExtra-only
+    /// LOADOUT gear, no +per-buy).
     /// Chip values and tip bodies are rebuilt when the ship / ability snapshot key changes
     /// (new ship, ability purchase, or B-key bullet type) — never every frame for live
     /// HP/speed/cargo. Fire Power / Bullet Speed numbers include the live bank's
@@ -91,6 +96,10 @@ namespace TitanOrbit.UI
         [Tooltip("Uniform font size for all ability titles (scaled on mobile with the upgrade bar).")]
         [SerializeField, FormerlySerializedAs("titleFontSizeMax")] private float titleFontSize = 12f;
 
+        [Header("Ability reset")]
+        [Tooltip("Hold RESET this long to zero that ability. No gem refund. Release early cancels.")]
+        [SerializeField] private float abilityResetHoldSeconds = 3f;
+
         [Header("STATS row toggle")]
         [Tooltip("When on, the top value/+per-buy chips and their hover tips are available.")]
         [SerializeField] private bool statsChipsVisible = true;
@@ -129,13 +138,14 @@ namespace TitanOrbit.UI
         const string StatsChipsPrefsKey = "TitanOrbit.AbilityStatsChipsVisible";
 
         /// <summary>
-        /// Nested-canvas sort for the hover calculation card.
-        /// Main HUD canvas is 0; rocket / space-brake overlays are 80; turret pad is 120;
-        /// orbit station is 200. 150 sits above gameplay HUD and below dock / death / match-end.
+        /// Overlay-canvas sort for the hover calculation card.
+        /// Main HUD canvas is 0; rocket / space-brake / ordnance overlays are 80; turret pad is 120;
+        /// comms is 150; orbit station is 200. 160 sits above gameplay HUD and below dock / death / match-end.
         /// <see cref="Transform.SetAsLastSibling"/> only wins inside one canvas — it cannot beat
-        /// those overlay canvases.
+        /// those overlay canvases. The sort lives on an always-active host, not the inactive tip
+        /// child: Unity drops <c>overrideSorting</c> when you set it on a disabled GameObject.
         /// </summary>
-        const int AbilityTipSortingOrder = 150;
+        const int AbilityTipSortingOrder = 160;
 
         /// <summary>
         /// Purchase affordance for one bottom upgrade slot.
@@ -184,10 +194,35 @@ namespace TitanOrbit.UI
             (UpgradeSlotVisualState)(-1)
         };
 
+        // --- Hold-to-reset (visible only when that ability has at least one Extra Level) ---
+        private GameObject[] _resetHoldRoots = new GameObject[10];
+        private RectTransform[] _resetHoldRects = new RectTransform[10];
+        private Image[] _resetHoldFills = new Image[10];
+        private TextMeshProUGUI[] _resetHoldLabels = new TextMeshProUGUI[10];
+        private int _resetHoldIndex = -1;
+        private float _resetHoldStart;
+        /// <summary>
+        /// Slot whose RESET pointer is still down. Hiding the chip or flipping the parent
+        /// Button back to interactable mid-press made Unity treat the release as a purchase.
+        /// </summary>
+        private int _resetPointerBlockIndex = -1;
+        /// <summary>Slot that just finished a RESET press — swallow Button.onClick this/next frame.</summary>
+        private int _resetClickSuppressIndex = -1;
+        private int _resetClickSuppressThroughFrame = -1;
+        static Sprite s_resetFillSprite;
+
         // --- Quick-stat chips above each ability button ---
         private RectTransform[] _chipRects = new RectTransform[10];
         private TextMeshProUGUI[] _chipValueTexts = new TextMeshProUGUI[10];
         private readonly string[] _lastChipText = new string[10];
+        /// <summary>
+        /// Always-active host for the ability calculation card. Owns the overlay Canvas so Unity
+        /// keeps sort 160 registered even while the tip child is hidden. Parent of
+        /// <see cref="_abilityTipPanel"/>. Stretch-matches the layout canvas so tip
+        /// <c>anchoredPosition</c> stays in the same space as the upgrade strip.
+        /// </summary>
+        private GameObject _abilityTipOverlay;
+
         private GameObject _abilityTipPanel;
         private RectTransform _abilityTipRect;
         private TextMeshProUGUI _abilityTipLabel;
@@ -215,6 +250,16 @@ namespace TitanOrbit.UI
 
         /// <summary>Min seconds between gem-only STATS chip rebuilds while grinding.</summary>
         const float CargoChipRepaintMinInterval = 0.4f;
+
+        /// <summary>
+        /// Cheap identity (no chassis string / part aggregate). When this is unchanged we skip
+        /// <see cref="TryResolveChipLiveContext"/> — that path allocated ~27KB every LateUpdate
+        /// (Profiler: ShipAttributeUpgradeHUD self GC).
+        /// </summary>
+        int _lastCheapIdentityKey = int.MinValue;
+
+        /// <summary>Last time we walked equipped gear for the chip snapshot key.</summary>
+        float _lastEquipmentPollTime = -999f;
 
         // --- STATS toggle (shows/hides chip row + hover tips) ---
         private RectTransform _statsToggleRect;
@@ -349,7 +394,7 @@ namespace TitanOrbit.UI
                 return false;
             if (ship.IsDead || ship.AwaitingTeamSelection || ship.Team == TeamId.None)
                 return false;
-            if (HUDController.ShipUpgradeTreeObscuresHud || HUDController.MinimapExpandedObscuresHud)
+            if (HUDController.GameplayChromeObscured)
                 return false;
 
             return true;
@@ -656,6 +701,9 @@ namespace TitanOrbit.UI
                     costLabels[i].fontSize = F(11f);
                 if (_chipValueTexts[i] != null)
                     _chipValueTexts[i].fontSize = F(12f);
+                LayoutAbilityResetChip(_resetHoldRects[i]);
+                if (_resetHoldLabels[i] != null)
+                    _resetHoldLabels[i].fontSize = F(7f);
             }
 
             RefreshStatsToggleVisual();
@@ -721,6 +769,10 @@ namespace TitanOrbit.UI
                 costLabels[i] = btn.costLabel;
                 costGemIcons[i] = btn.costGemIcon;
                 _buttonRects[i] = btn.buttonRect;
+                _resetHoldRoots[i] = btn.resetRoot;
+                _resetHoldRects[i] = btn.resetRect;
+                _resetHoldFills[i] = btn.resetFill;
+                _resetHoldLabels[i] = btn.resetLabel;
                 _lastSlotVisualState[i] = (UpgradeSlotVisualState)(-1);
 
                 var chip = CreateStatChip(rootPanel.transform, i, statColor);
@@ -807,6 +859,7 @@ namespace TitanOrbit.UI
             {
                 // Turning STATS back on — force one chip rebuild on the next Update.
                 _statsSnapshotKey = int.MinValue;
+                _lastCheapIdentityKey = int.MinValue;
             }
 
             if (_uiBuilt)
@@ -1108,8 +1161,15 @@ namespace TitanOrbit.UI
         /// </summary>
         void BuildAbilityTipPanel()
         {
-            // Same canvas parent as the strip so anchoredPosition math matches GetUpgradeStripReserveHeight space.
-            Transform tipParent = _layoutCanvasRect != null ? (Transform)_layoutCanvasRect : transform;
+            // --- Overlay host ---
+            // Stretch-match the layout canvas so tip anchoredPosition stays in strip space,
+            // then park the card under that host (not the root canvas). Chrome.Build starts
+            // the tip inactive; the overlay stays on so its Canvas sort is never dropped.
+            EnsureAbilityTipOverlay();
+            Transform tipParent = _abilityTipOverlay != null
+                ? _abilityTipOverlay.transform
+                : (_layoutCanvasRect != null ? (Transform)_layoutCanvasRect : transform);
+
             _abilityTipChrome = ShipStatTooltipChrome.Build(
                 "ShipAbilityStatTooltip",
                 tipParent,
@@ -1129,35 +1189,77 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Gives the calculation card its own nested Canvas so it paints above other HUD.
-        /// Called once at build and again on hover in case a later HUD sibling stole hierarchy order.
+        /// Creates the always-active overlay that owns the ability-tip Canvas.
+        /// Called at strip build and again on hover if a later HUD destroyed the host.
+        /// Stretch-fills the layout canvas so child <c>anchoredPosition</c> equals strip space.
         /// </summary>
-        void ElevateAbilityTipDrawOrder()
+        void EnsureAbilityTipOverlay()
         {
-            if (_abilityTipPanel == null)
+            if (_abilityTipOverlay != null)
                 return;
 
-            // --- Nested canvas (beats overlay HUDs that sibling-order cannot) ---
-            // [UNITY] A child Canvas with overrideSorting is a separate draw batch. Without it,
-            // RocketLoadoutHUD / SpaceBrakesHUD / BulletTypeHUD (order 80) and the turret pad (120) always
-            // cover this tip even after SetAsLastSibling on the main canvas.
-            Canvas tipCanvas = _abilityTipPanel.GetComponent<Canvas>();
-            if (tipCanvas == null)
-                tipCanvas = _abilityTipPanel.AddComponent<Canvas>();
+            // --- Parent ---
+            // Same root as the upgrade strip. Overlay is stretch-full, so a child with
+            // bottom-left anchors uses the same (x, y) as if it were parented to the canvas.
+            Transform parent = _layoutCanvasRect != null ? (Transform)_layoutCanvasRect : transform;
+            _abilityTipOverlay = new GameObject("ShipAbilityTipOverlay");
+            _abilityTipOverlay.transform.SetParent(parent, false);
 
-            tipCanvas.overrideSorting = true;
-            tipCanvas.sortingOrder = AbilityTipSortingOrder;
+            RectTransform overlayRt = _abilityTipOverlay.AddComponent<RectTransform>();
+            overlayRt.anchorMin = Vector2.zero;
+            overlayRt.anchorMax = Vector2.one;
+            overlayRt.offsetMin = Vector2.zero;
+            overlayRt.offsetMax = Vector2.zero;
+            overlayRt.localScale = Vector3.one;
+
+            // --- Overlay canvas ---
+            // [UNITY] Canvas must live on this active host. Adding overrideSorting to the
+            // inactive tip child is why the first N hovers painted under Rocket / Ordnance / Brakes
+            // (those HUDs are sort 80). Unity only keeps the sort once the Canvas GameObject is on.
+            Canvas overlayCanvas = _abilityTipOverlay.AddComponent<Canvas>();
+            overlayCanvas.overrideSorting = true;
+            overlayCanvas.sortingOrder = AbilityTipSortingOrder;
 
             // [UNITY] Nested canvases start with no extra shader channels. TMP needs TexCoord1
             // (and usually Normal / Tangent) or the body text disappears.
-            tipCanvas.additionalShaderChannels =
+            overlayCanvas.additionalShaderChannels =
                 AdditionalCanvasShaderChannels.TexCoord1
                 | AdditionalCanvasShaderChannels.Normal
                 | AdditionalCanvasShaderChannels.Tangent;
 
-            // Intentional: no GraphicRaycaster — fill/frame are already non-raycast so clicks
-            // still reach the chips and the world under the card.
-            _abilityTipPanel.transform.SetAsLastSibling();
+            // Intentional: no GraphicRaycaster — tip fill/frame are already non-raycast so
+            // clicks still reach the chips and the world under the card.
+            overlayRt.SetAsLastSibling();
+        }
+
+        /// <summary>
+        /// Re-asserts overlay sort 160 and last-sibling order.
+        /// Called once at build and again on hover in case a later HUD sibling stole hierarchy order.
+        /// </summary>
+        void ElevateAbilityTipDrawOrder()
+        {
+            // --- Guarantee the host exists ---
+            // Build creates it; hover re-runs this if another HUD tore the overlay down.
+            EnsureAbilityTipOverlay();
+            if (_abilityTipOverlay == null)
+                return;
+
+            // --- Overlay canvas (beats overlay HUDs that sibling-order cannot) ---
+            // [UNITY] A child Canvas with overrideSorting is a separate draw batch. Without it,
+            // RocketLoadoutHUD / SpaceBrakesHUD / BulletTypeHUD (order 80) and the turret pad (120)
+            // always cover this tip even after SetAsLastSibling on the main canvas.
+            Canvas overlayCanvas = _abilityTipOverlay.GetComponent<Canvas>();
+            if (overlayCanvas == null)
+                overlayCanvas = _abilityTipOverlay.AddComponent<Canvas>();
+
+            overlayCanvas.overrideSorting = true;
+            overlayCanvas.sortingOrder = AbilityTipSortingOrder;
+            overlayCanvas.additionalShaderChannels =
+                AdditionalCanvasShaderChannels.TexCoord1
+                | AdditionalCanvasShaderChannels.Normal
+                | AdditionalCanvasShaderChannels.Tangent;
+
+            _abilityTipOverlay.transform.SetAsLastSibling();
         }
 
         /// <summary>Pointer entered a quick-stat chip — show that ability's calculation card.</summary>
@@ -1180,9 +1282,13 @@ namespace TitanOrbit.UI
             // Build once on enter — not every Update (LIVE vitals removed; body is static until upgrade).
             RefreshAbilityTipContent();
             PositionAbilityTipPanel(abilityIndex);
-            ElevateAbilityTipDrawOrder();
+
+            // --- Show, then re-assert draw order ---
+            // [UNITY] Activate the tip child first. The overlay Canvas is already on (sort 160);
+            // we still call Elevate so a late-spawned HUD cannot steal last-sibling order.
             if (!_abilityTipPanel.activeSelf)
                 _abilityTipPanel.SetActive(true);
+            ElevateAbilityTipDrawOrder();
         }
 
         /// <summary>
@@ -1236,6 +1342,46 @@ namespace TitanOrbit.UI
                 h = h * 31 + megaCatalogKey;
                 // Orbit Menu gear — buying a cockpit must rebuild chips even when level/attrs stay put.
                 h = h * 31 + equipmentHash;
+                return h;
+            }
+        }
+
+        /// <summary>
+        /// Identity that can be hashed without chassis strings or equipment buffer walks.
+        /// Used to skip <see cref="TryResolveChipLiveContext"/> on unchanged frames.
+        /// </summary>
+        static int ComputeCheapChipIdentityKey(
+            in ShipState ship,
+            in ShipAttributeUpgradeState attrs,
+            float componentSize,
+            int gemBucket,
+            int bankKey,
+            int megaCatalogKey,
+            int territoryHundredths)
+        {
+            unchecked
+            {
+                int h = 17;
+                h = h * 31 + ship.ShipLevel;
+                h = h * 31 + (int)ship.Team;
+                h = h * 31 + ship.BranchIndex;
+                h = h * 31 + ship.ShipFamilyConfigIndex;
+                h = h * 31 + attrs.FirePower;
+                h = h * 31 + attrs.BulletSpeed;
+                h = h * 31 + attrs.MaxHealth;
+                h = h * 31 + attrs.HealthRegen;
+                h = h * 31 + attrs.EnergyCapacity;
+                h = h * 31 + attrs.EnergyRegen;
+                h = h * 31 + attrs.MovementSpeed;
+                h = h * 31 + attrs.RotationSpeed;
+                h = h * 31 + attrs.GemCapacity;
+                h = h * 31 + attrs.PeopleCapacity;
+                h = h * 31 + Mathf.RoundToInt(componentSize * 100f);
+                h = h * 31 + ship.CurrentPeople;
+                h = h * 31 + gemBucket;
+                h = h * 31 + bankKey;
+                h = h * 31 + megaCatalogKey;
+                h = h * 31 + territoryHundredths;
                 return h;
             }
         }
@@ -1305,8 +1451,8 @@ namespace TitanOrbit.UI
                 return;
 
             // --- Preferred spot: above the chip, horizontally centered on that slot ---
-            // Tip is parented to the layout canvas with the same anchors as the strip (bottom-left).
-            // anchoredPosition is therefore in the same space as strip.anchoredPosition + chip local X.
+            // Tip is parented to the stretch-full overlay, which matches the layout canvas rect.
+            // Same bottom-left anchors as the strip, so anchoredPosition is strip.anchoredPosition + chip local X.
             RectTransform chip = _chipRects[abilityIndex];
             _abilityTipRect.anchorMin = _stripRootRect.anchorMin;
             _abilityTipRect.anchorMax = _stripRootRect.anchorMax;
@@ -1477,20 +1623,22 @@ namespace TitanOrbit.UI
             }
 
             live.IsMega = mega;
-            if (mega && MegaShipStatsCalculator.TrySumForCatalogIndex(megaIndex, out ShipComponentAbilityStats megaStats))
+            if (mega && TrySumLocalMegaWithGear(
+                    megaIndex, ship.ShipLevel, out ShipComponentAbilityStats megaStats, out float megaDps))
             {
-                // --- MEGA: catalog totals only ---
+                // --- MEGA: frozen catalog + PerExtra-only LOADOUT gear ---
                 // [TITAN-ORBIT] Team+level+branch would resolve a regular L7 family chassis
-                // (same slot index as the MEGA planet slot) and Extra-Level it. MEGAs are
-                // static — no Extra Level, no +per-buy, gem cap stays 0.
+                // (same slot index as the MEGA planet slot) and Extra-Level the hull. Titans
+                // stay static on unique-parts; moon-store extras add PerExtra × tier only.
                 live.MegaCatalogIndex = megaIndex;
                 live.EffectiveStats = megaStats;
+                live.AllGunDps = megaDps;
                 live.ChassisMaxSpeed = megaStats.moveSpeed;
                 live.ChassisAccel = megaStats.accelerationCap > 0.1f
                     ? megaStats.accelerationCap
                     : megaStats.moveSpeed;
-                live.ChassisTurnDeg = ShipPropulsionAggregation.ConvertTurnDefinitionToDegreesPerSecond(
-                    megaStats.turnSpeed);
+                // Catalog turnSpeed is already degrees per second.
+                live.ChassisTurnDeg = Mathf.Max(0f, megaStats.turnSpeed);
                 live.MoveStepPreview = 0f;
                 if (hasComponentSize)
                 {
@@ -1545,6 +1693,8 @@ namespace TitanOrbit.UI
                         effective = family.ApplySpecialBonuses(effective);
                     }
 
+                    ApplyLocalCardStatModifiers(chassisId, ref effective);
+
                     // --- All-gun DPS for the Fire Power chip ---
                     float allGun = ShipWeaponDpsMath.SumAllGunDps(
                         parts.Ids, parts.Stats, ship.ShipLevel, in abilityCounts);
@@ -1565,6 +1715,7 @@ namespace TitanOrbit.UI
                         levelOneSummed, out float moveStep, out float accelStep, out float odDrainStep);
                     ShipAttributeUpgradeLogic.ApplyMoveSpeedAbilitySteps(
                         ref effective, attrs, moveStep, accelStep, odDrainStep);
+                    ApplyLocalCardStatModifiers(chassisId, ref effective);
                 }
                 else
                 {
@@ -1576,9 +1727,8 @@ namespace TitanOrbit.UI
                 live.ChassisAccel = effective.accelerationCap > 0.1f
                     ? effective.accelerationCap
                     : effective.moveSpeed;
-                // [TITAN-ORBIT] turnSpeed on the stats block is definition units — convert like the bar.
-                live.ChassisTurnDeg = ShipPropulsionAggregation.ConvertTurnDefinitionToDegreesPerSecond(
-                    effective.turnSpeed);
+                // [TITAN-ORBIT] turnSpeed is already degrees per second — same number the motor yaws at.
+                live.ChassisTurnDeg = Mathf.Max(0f, effective.turnSpeed);
 
                 // Mass tax only when ComponentSize is known — otherwise leave CruiseMaxSpeed at 0
                 // so IsChipLiveContextReady keeps retrying (MS would look like chassis / no drag).
@@ -1614,10 +1764,73 @@ namespace TitanOrbit.UI
             if (live.MoveStepPreview <= 0.0001f)
                 live.MoveStepPreview = Mathf.Max(0f, live.EffectiveStats.moveSpeedPerExtraLevel);
 
+            ApplyLocalTerritoryToCruise(ref live);
+
             // [TITAN-ORBIT] SnapshotKey already includes the B-key bank so chips rebuild.
             // Apply the same fire-time muls combat uses or FP / speed / range stay hull-only.
             BulletBankHudCopy.ApplyLiveCombatMuls(ref live);
             return true;
+        }
+
+        /// <summary>
+        /// Same card flats the motor bakes into MaxSpeed. Without this the Move Speed chip
+        /// stays at the pre-card cruise while the ship flies the card-boosted cap.
+        /// </summary>
+        static void ApplyLocalCardStatModifiers(string chassisId, ref ShipComponentAbilityStats effective)
+        {
+            if (string.IsNullOrEmpty(chassisId))
+                return;
+
+            var world = EcsGameBridge.GetLocalPlayerShipWorld();
+            if (world == null || !world.IsCreated)
+                return;
+
+            var em = world.EntityManager;
+            if (!LocalShipEntitySeed.TryGetSeededShip(em, out Entity ship)
+                || ship == Entity.Null
+                || !em.Exists(ship))
+                return;
+
+            ShipStatApplyLogic.ApplyEquippedCardStatModifiers(em, ship, chassisId, ref effective);
+        }
+
+        /// <summary>
+        /// Multiplies chip cruise / accel by the motor's friendly-territory latch.
+        /// The chip used to stay at chassis cruise (6.5) while flight in home space was ~9.
+        /// </summary>
+        static void ApplyLocalTerritoryToCruise(ref ShipSpeedometerStatTooltips.LiveContext live)
+        {
+            if (live.CruiseMaxSpeed <= 0.01f)
+                return;
+
+            float territory = ReadLocalTerritoryMult();
+            live.TerritoryMult = territory;
+            if (territory <= 1.001f)
+                return;
+
+            live.CruiseMaxSpeed *= territory;
+            live.TaxedAccel *= territory;
+            live.LiveMaxSpeed = live.CruiseMaxSpeed;
+        }
+
+        /// <summary>Territory multiplier the predicted motor is holding (1 outside friendly space).</summary>
+        static float ReadLocalTerritoryMult()
+        {
+            var world = EcsGameBridge.GetLocalPlayerShipWorld();
+            if (world == null || !world.IsCreated)
+                return Mathf.Max(1f, PlanetConnectionGraphCache.LocalOwnerTerritoryMult);
+
+            var em = world.EntityManager;
+            if (!LocalShipEntitySeed.TryGetSeededShip(em, out Entity ship)
+                || ship == Entity.Null
+                || !em.Exists(ship)
+                || !em.HasComponent<ShipTerritoryBoostLatch>(ship))
+                return Mathf.Max(1f, PlanetConnectionGraphCache.LocalOwnerTerritoryMult);
+
+            float latched = em.GetComponentData<ShipTerritoryBoostLatch>(ship).LatchedMult;
+            return latched > 0.01f
+                ? Mathf.Max(1f, latched)
+                : 1f;
         }
 
         /// <summary>
@@ -1644,6 +1857,54 @@ namespace TitanOrbit.UI
                 return 0;
 
             return ShipStatApplyLogic.ComputeEquippedLoadoutFingerprint(em, ship);
+        }
+
+        /// <summary>
+        /// Catalog Titan totals plus PerExtra-only moon-store ship components on the local hull.
+        /// Uses the seeded local-ship lookup — no extra archetype gather.
+        /// </summary>
+        /// <param name="megaIndex">Catalog row for the current Titan.</param>
+        /// <param name="shipLevel">Ghosted ship level (7 on a live Titan).</param>
+        /// <param name="megaStats">Hull + gear totals when this returns true.</param>
+        static bool TrySumLocalMegaWithGear(
+            ushort megaIndex,
+            int shipLevel,
+            out ShipComponentAbilityStats megaStats,
+            out float megaDps)
+        {
+            megaStats = default;
+            megaDps = 0f;
+            var extraIds = CollectLocalStoreComponentIds();
+            if (!MegaShipStatsCalculator.TrySumForCatalogIndex(
+                    megaIndex, extraIds, shipLevel, out megaStats))
+                return false;
+
+            // Per-gun catalog DPS + Extra-Leveled LOADOUT guns (not summed-rate × summed-FP).
+            var megaCat = MegaShipCatalog.Load();
+            if (megaCat != null)
+                megaDps = megaCat.GetPowerBreakdown(megaIndex).GetDisplayDps();
+            megaDps += MegaShipStatsCalculator.SumEquippedWeaponDps(extraIds, shipLevel);
+            return true;
+        }
+
+        /// <summary>
+        /// Equipped moon-store ship-component ids on the local owner. Empty when the
+        /// seed is missing (Join Team Instantiates) — chips then show catalog-only.
+        /// </summary>
+        static List<string> CollectLocalStoreComponentIds()
+        {
+            var world = EcsGameBridge.GetLocalPlayerShipWorld();
+            if (world == null || !world.IsCreated)
+                return new List<string>(0);
+
+            var em = world.EntityManager;
+            if (!LocalShipEntitySeed.TryGetSeededShip(em, out Entity ship)
+                || ship == Entity.Null
+                || !em.Exists(ship))
+                return new List<string>(0);
+
+            ShipComponentStoreVisualScaleLogic.CollectExtraComponentIds(em, ship, out var extraIds);
+            return extraIds;
         }
 
         static bool TryGetLocalHullComponentSize(out float componentSize)
@@ -1729,7 +1990,7 @@ namespace TitanOrbit.UI
                 sb.Append("</size>");
         }
 
-        private (Button button, RectTransform buttonRect, TextMeshProUGUI titleText, GameObject tickContainer, Image bgImage, Outline outline, Image accentRail, TextMeshProUGUI keyLabel, TextMeshProUGUI costLabel, Image costGemIcon) CreateUpgradeButton(Transform parent, int index, Color statColor, string keyStr)
+        private (Button button, RectTransform buttonRect, TextMeshProUGUI titleText, GameObject tickContainer, Image bgImage, Outline outline, Image accentRail, TextMeshProUGUI keyLabel, TextMeshProUGUI costLabel, Image costGemIcon, GameObject resetRoot, RectTransform resetRect, Image resetFill, TextMeshProUGUI resetLabel) CreateUpgradeButton(Transform parent, int index, Color statColor, string keyStr)
         {
             GameObject btnObj = new GameObject($"UpgradeBtn_{index}");
             btnObj.transform.SetParent(parent, false);
@@ -1878,7 +2139,8 @@ namespace TitanOrbit.UI
             if (TMP_Settings.defaultFontAsset != null) costLabel.font = TMP_Settings.defaultFontAsset;
             // Same warm gold as gemCostIconColor so icon + digits match.
             costLabel.color = gemCostIconColor;
-            costLabel.alignment = TextAlignmentOptions.MidlineLeft;
+            // Midline (not MidlineLeft): the row sizes to the glyphs, and MAX has no gem beside it.
+            costLabel.alignment = TextAlignmentOptions.Midline;
             costLabel.overflowMode = TextOverflowModes.Overflow;
             ContentSizeFitter costCsf = costObj.AddComponent<ContentSizeFitter>();
             costCsf.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
@@ -1886,7 +2148,96 @@ namespace TitanOrbit.UI
             LayoutElement costLe = costObj.AddComponent<LayoutElement>();
             costLe.flexibleWidth = 0f;
 
-            return (button, btnRect, titleText, tickContainer, bgImage, buttonOutline, accentRail, keyLabel, costLabel, costGemIcon);
+            var reset = CreateAbilityResetHold(btnObj.transform, index);
+            return (button, btnRect, titleText, tickContainer, bgImage, buttonOutline, accentRail, keyLabel, costLabel, costGemIcon, reset.root, reset.rect, reset.fill, reset.label);
+        }
+
+        /// <summary>
+        /// Compact RESET chip centered on the top of the slot.
+        /// Hold 3s to zero that ability. Hidden until the slot has at least one Extra Level.
+        /// </summary>
+        (GameObject root, RectTransform rect, Image fill, TextMeshProUGUI label) CreateAbilityResetHold(Transform parent, int index)
+        {
+            GameObject root = new GameObject("ResetHold");
+            root.transform.SetParent(parent, false);
+            RectTransform rect = root.AddComponent<RectTransform>();
+            LayoutAbilityResetChip(rect);
+
+            Image bg = root.AddComponent<Image>();
+            bg.color = new Color(0.18f, 0.05f, 0.07f, 0.92f);
+            bg.raycastTarget = true;
+            bg.sprite = GetResetFillSprite();
+
+            GameObject fillGo = new GameObject("Fill");
+            fillGo.transform.SetParent(root.transform, false);
+            RectTransform fillRt = fillGo.AddComponent<RectTransform>();
+            fillRt.anchorMin = Vector2.zero;
+            fillRt.anchorMax = Vector2.one;
+            fillRt.offsetMin = Vector2.zero;
+            fillRt.offsetMax = Vector2.zero;
+            Image fill = fillGo.AddComponent<Image>();
+            fill.sprite = GetResetFillSprite();
+            fill.color = new Color(0.86f, 0.22f, 0.24f, 0.85f);
+            fill.type = Image.Type.Filled;
+            fill.fillMethod = Image.FillMethod.Horizontal;
+            fill.fillOrigin = (int)Image.OriginHorizontal.Left;
+            fill.fillAmount = 0f;
+            fill.raycastTarget = false;
+
+            GameObject labelGo = new GameObject("Label");
+            labelGo.transform.SetParent(root.transform, false);
+            RectTransform labelRt = labelGo.AddComponent<RectTransform>();
+            labelRt.anchorMin = Vector2.zero;
+            labelRt.anchorMax = Vector2.one;
+            labelRt.offsetMin = Vector2.zero;
+            labelRt.offsetMax = Vector2.zero;
+            TextMeshProUGUI label = labelGo.AddComponent<TextMeshProUGUI>();
+            label.text = "RESET";
+            label.fontSize = F(7f);
+            label.fontStyle = FontStyles.Bold;
+            label.enableWordWrapping = false;
+            label.overflowMode = TextOverflowModes.Overflow;
+            label.alignment = TextAlignmentOptions.Center;
+            label.color = new Color(0.96f, 0.74f, 0.74f, 1f);
+            label.raycastTarget = false;
+            if (TMP_Settings.defaultFontAsset != null)
+                label.font = TMP_Settings.defaultFontAsset;
+
+            var relay = root.AddComponent<AbilityResetHoldRelay>();
+            relay.Bind(this, index);
+            root.SetActive(false);
+            return (root, rect, fill, label);
+        }
+
+        /// <summary>
+        /// Top-center hold chip. Fixed size so the ability name stays readable.
+        /// </summary>
+        void LayoutAbilityResetChip(RectTransform rect)
+        {
+            if (rect == null)
+                return;
+
+            rect.anchorMin = new Vector2(0.5f, 1f);
+            rect.anchorMax = new Vector2(0.5f, 1f);
+            rect.pivot = new Vector2(0.5f, 1f);
+            rect.anchoredPosition = new Vector2(0f, -E(3f));
+            rect.sizeDelta = new Vector2(E(40f), E(12f));
+        }
+
+        /// <summary>1×1 white sprite so the RESET hold fill can clip.</summary>
+        static Sprite GetResetFillSprite()
+        {
+            if (s_resetFillSprite != null)
+                return s_resetFillSprite;
+
+            Texture2D tex = Texture2D.whiteTexture;
+            s_resetFillSprite = Sprite.Create(
+                tex,
+                new Rect(0f, 0f, tex.width, tex.height),
+                new Vector2(0.5f, 0.5f),
+                100f);
+            s_resetFillSprite.name = "AbilityResetFillWhite";
+            return s_resetFillSprite;
         }
 
         /// <summary>
@@ -1937,6 +2288,13 @@ namespace TitanOrbit.UI
             {
                 if (tickContainers[i] != null && tickContainers[i].activeSelf == mega)
                     tickContainers[i].SetActive(!mega);
+
+                if (mega && _resetHoldRoots[i] != null && _resetHoldRoots[i].activeSelf)
+                {
+                    _resetHoldRoots[i].SetActive(false);
+                    if (_resetHoldIndex == i)
+                        CancelAbilityResetHold();
+                }
 
                 if (titleTexts[i] == null)
                     continue;
@@ -2010,11 +2368,15 @@ namespace TitanOrbit.UI
             {
                 rootPanel.SetActive(show);
                 _lastShowActive = show;
-                if (!show && _abilityTipPanel != null)
+                if (!show)
                 {
-                    _activeAbilityTipIndex = null;
-                    _pendingHideAbilityTip = null;
-                    _abilityTipPanel.SetActive(false);
+                    CancelAbilityResetHold();
+                    if (_abilityTipPanel != null)
+                    {
+                        _activeAbilityTipIndex = null;
+                        _pendingHideAbilityTip = null;
+                        _abilityTipPanel.SetActive(false);
+                    }
                 }
             }
 
@@ -2053,6 +2415,16 @@ namespace TitanOrbit.UI
                 if (!mega)
                     UpdateTickMarks(i, current, maxUpgrades, slotState);
 
+                // Keep the chip under the finger after a completed reset so the parent
+                // Button does not inherit the still-down press and buy a level on release.
+                bool showReset = !mega && (current > 0 || _resetPointerBlockIndex == i);
+                if (_resetHoldRoots[i] != null && _resetHoldRoots[i].activeSelf != showReset)
+                {
+                    _resetHoldRoots[i].SetActive(showReset);
+                    if (!showReset && _resetHoldIndex == i)
+                        CancelAbilityResetHold();
+                }
+
                 if (costLabels[i] == null)
                     continue;
 
@@ -2085,7 +2457,13 @@ namespace TitanOrbit.UI
                         Sprite gemSprite = ResolveGemCostIcon();
                         if (costGemIcons[i].sprite == null && gemSprite != null)
                             costGemIcons[i].sprite = gemSprite;
-                        costGemIcons[i].enabled = showGemIcon && costGemIcons[i].sprite != null;
+                        bool gemOn = showGemIcon && costGemIcons[i].sprite != null;
+                        costGemIcons[i].enabled = gemOn;
+                        // Hiding the Image still leaves its LayoutElement width, which shoves
+                        // MAX (and the MEGA dash) right of the button center.
+                        LayoutElement gemLayout = costGemIcons[i].GetComponent<LayoutElement>();
+                        if (gemLayout != null)
+                            gemLayout.ignoreLayout = !gemOn;
                     }
                 }
 
@@ -2095,12 +2473,18 @@ namespace TitanOrbit.UI
                     ApplyUpgradeSlotVisual(i, slotState);
                     _lastSlotVisualState[i] = slotState;
                 }
+
+                // After Ready paint — do not let a mid-press Maxed→Ready flip buy on release.
+                if (_resetPointerBlockIndex == i && buttons[i] != null && buttons[i].interactable)
+                    buttons[i].interactable = false;
             }
 
             _lastMaxUpgrades = maxUpgrades;
             _lastCost = cost;
             _slotVisualsSeeded = true;
 
+            TickAbilityResetHold();
+            ReleaseAbilityResetPointerIfUp();
             FlushPendingAbilityTipHide();
         }
 
@@ -2115,19 +2499,43 @@ namespace TitanOrbit.UI
             if (!statsChipsVisible)
                 return;
 
+            // --- Cheap dirty check (no chassis ToString / AggregateAndEvaluate) ---
+            // [TITAN-ORBIT] Profiler median frame: this LateUpdate self-allocated 27KB because
+            // TryResolveChipLiveContext ran every tick just to decide not to repaint.
+            int gemBucket = Mathf.RoundToInt(ship.CurrentGems);
+            TryGetLocalHullComponentSize(out float componentSize);
+            int megaKey = 0;
+            if (EcsGameBridge.TryGetLocalMegaShipState(out MegaShipState mega))
+                megaKey = mega.CatalogIndex + 1;
+            int territoryKey = Mathf.RoundToInt(ReadLocalTerritoryMult() * 100f);
+            int cheapKey = ComputeCheapChipIdentityKey(
+                in ship,
+                in attrs,
+                componentSize,
+                gemBucket,
+                BulletBankHudCopy.SnapshotKey(),
+                megaKey,
+                territoryKey);
+            bool cheapChanged = cheapKey != _lastCheapIdentityKey;
+            bool havePainted = _statsSnapshotKey != int.MinValue;
+            if (!cheapChanged && havePainted &&
+                Time.unscaledTime - _lastEquipmentPollTime < CargoChipRepaintMinInterval)
+                return;
+
             if (!TryResolveChipLiveContext(out _, out var live, out _) || !IsChipLiveContextReady(in live))
                 return;
 
             // Key includes ComponentSize + people so cargo mass tax repaints MS/TS.
             // Gems are bucketed + throttled — 4 Hz grind expulsion must not ForceMeshUpdate
             // every pulse (Profiler hitch ~9.6 ms on ShipAttributeUpgradeHUD.LateUpdate).
+            _lastCheapIdentityKey = cheapKey;
+            _lastEquipmentPollTime = Time.unscaledTime;
             int snapshotKey = ComputeStatsSnapshotKey(
                 in ship,
                 in attrs,
                 live.ComponentSize,
                 live.IsMega ? live.MegaCatalogIndex + 1 : 0,
                 ResolveLocalEquipmentHash());
-            int gemBucket = Mathf.RoundToInt(ship.CurrentGems);
             bool identityChanged = snapshotKey != _statsSnapshotKey;
             bool gemsChanged = gemBucket != _lastGemBucket;
             if (!identityChanged && !gemsChanged)
@@ -2199,6 +2607,10 @@ namespace TitanOrbit.UI
 
             EnsureUiBuilt();
 
+            // Comms / expanded map hide this strip — do not remeasure against a docked minimap.
+            if (HUDController.GameplayChromeObscured)
+                return;
+
             // Layout only when screen / canvas / minimap geometry actually changes — not every frame.
             // Continuous remeasure against the minimap left edge caused sub-pixel button jitter
             // (especially visible in a windowed Game view that is not 1:1 with canvas units).
@@ -2237,6 +2649,8 @@ namespace TitanOrbit.UI
         private void TryUpgrade(int index)
         {
             // --- Attempt resolution ---
+            if (ShouldSuppressUpgradeAfterReset(index))
+                return;
             if (!CanShowUpgradeBar() || IsLocalShipMega())
                 return;
             if (index < 0 || index > 9)
@@ -2250,6 +2664,164 @@ namespace TitanOrbit.UI
 
             // [NETCODE] Authoritative purchase runs on server after RPC delivery.
             MoonOrbitRpcClient.PurchaseAttributeUpgrade(index);
+        }
+
+        /// <summary>
+        /// Client-side pre-check then RPC — server re-validates in ShipAttributeUpgradeLogic.TryReset.
+        /// No gem refund.
+        /// </summary>
+        void TryResetAbility(int index)
+        {
+            if (!CanShowUpgradeBar() || IsLocalShipMega())
+                return;
+            if (index < 0 || index > 9)
+                return;
+            if (!TryGetUpgradeHudSnapshot(out _, out var attrs))
+                return;
+            if (ShipAttributeUpgradeLogic.GetAttributeLevel(attrs, index) <= 0)
+                return;
+
+            MoonOrbitRpcClient.ResetAttributeUpgrade(index);
+        }
+
+        void BeginAbilityResetHold(int index)
+        {
+            if (!CanShowUpgradeBar() || IsLocalShipMega())
+                return;
+            if (index < 0 || index > 9)
+                return;
+            if (!TryGetUpgradeHudSnapshot(out _, out var attrs))
+                return;
+            if (ShipAttributeUpgradeLogic.GetAttributeLevel(attrs, index) <= 0)
+                return;
+
+            if (_resetHoldIndex >= 0 && _resetHoldIndex != index)
+                CancelAbilityResetHold();
+
+            _resetHoldIndex = index;
+            _resetHoldStart = Time.unscaledTime;
+            _resetPointerBlockIndex = index;
+            _resetClickSuppressIndex = index;
+            _resetClickSuppressThroughFrame = int.MaxValue;
+            if (_resetHoldFills[index] != null)
+                _resetHoldFills[index].fillAmount = 0f;
+            if (_resetHoldLabels[index] != null)
+                _resetHoldLabels[index].text = "HOLD";
+            if (buttons[index] != null)
+                buttons[index].interactable = false;
+        }
+
+        void CancelAbilityResetHold(int index)
+        {
+            if (_resetHoldIndex != index)
+                return;
+            CancelAbilityResetHold();
+        }
+
+        void CancelAbilityResetHold()
+        {
+            if (_resetHoldIndex < 0)
+                return;
+
+            int i = _resetHoldIndex;
+            _resetHoldIndex = -1;
+            if (i >= 0 && i < _resetHoldFills.Length && _resetHoldFills[i] != null)
+                _resetHoldFills[i].fillAmount = 0f;
+            if (i >= 0 && i < _resetHoldLabels.Length && _resetHoldLabels[i] != null)
+                _resetHoldLabels[i].text = "RESET";
+        }
+
+        void TickAbilityResetHold()
+        {
+            if (_resetHoldIndex < 0)
+                return;
+
+            float needed = Mathf.Max(0.25f, abilityResetHoldSeconds);
+            float elapsed = Time.unscaledTime - _resetHoldStart;
+            int i = _resetHoldIndex;
+            if (i >= 0 && i < _resetHoldFills.Length && _resetHoldFills[i] != null)
+                _resetHoldFills[i].fillAmount = Mathf.Clamp01(elapsed / needed);
+
+            if (elapsed < needed)
+                return;
+
+            int completed = i;
+            CancelAbilityResetHold();
+            _resetPointerBlockIndex = completed;
+            _resetClickSuppressIndex = completed;
+            _resetClickSuppressThroughFrame = int.MaxValue;
+            TryResetAbility(completed);
+        }
+
+        bool ShouldSuppressUpgradeAfterReset(int index)
+        {
+            if (index < 0 || index > 9)
+                return false;
+            if (_resetPointerBlockIndex == index)
+                return true;
+            return _resetClickSuppressIndex == index
+                && Time.frameCount <= _resetClickSuppressThroughFrame;
+        }
+
+        void ReleaseAbilityResetPointer(int index)
+        {
+            if (_resetHoldIndex == index)
+                CancelAbilityResetHold();
+            if (_resetPointerBlockIndex == index)
+                _resetPointerBlockIndex = -1;
+            _resetClickSuppressIndex = index;
+            _resetClickSuppressThroughFrame = Time.frameCount + 1;
+        }
+
+        /// <summary>
+        /// Pointer-up can be lost if the RESET chip hides under a still-down press.
+        /// Poll so the parent Button cannot buy a level on that same release.
+        /// </summary>
+        void ReleaseAbilityResetPointerIfUp()
+        {
+            if (_resetPointerBlockIndex < 0)
+                return;
+            if (IsPrimaryPointerHeld())
+                return;
+            ReleaseAbilityResetPointer(_resetPointerBlockIndex);
+        }
+
+        static bool IsPrimaryPointerHeld()
+        {
+            var mouse = Mouse.current;
+            if (mouse != null && mouse.leftButton.isPressed)
+                return true;
+            var touch = Touchscreen.current;
+            if (touch != null && touch.primaryTouch.press.isPressed)
+                return true;
+            return false;
+        }
+
+        /// <summary>
+        /// Pointer relay for one RESET chip. Reports down / up / exit so the HUD can run
+        /// the 3-second hold without a Button.onClick (a short tap must not reset).
+        /// </summary>
+        sealed class AbilityResetHoldRelay : MonoBehaviour, IPointerDownHandler, IPointerUpHandler, IPointerExitHandler
+        {
+            ShipAttributeUpgradeHUD _host;
+            int _index;
+
+            public void Bind(ShipAttributeUpgradeHUD host, int index)
+            {
+                _host = host;
+                _index = index;
+            }
+
+            public void OnPointerDown(PointerEventData eventData) => _host?.BeginAbilityResetHold(_index);
+
+            public void OnPointerUp(PointerEventData eventData) => _host?.ReleaseAbilityResetPointer(_index);
+
+            public void OnPointerExit(PointerEventData eventData)
+            {
+                // Leaving the chip cancels the 3s hold, but the parent Button must not
+                // purchase on the same press (slide-off or chip hide mid-hold).
+                _host?.CancelAbilityResetHold(_index);
+            }
         }
     }
 }

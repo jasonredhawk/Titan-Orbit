@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using Unity.Networking.Transport;
 using Unity.Networking.Transport.Relay;
 using Unity.Services.Relay.Models;
@@ -97,13 +99,66 @@ namespace TitanOrbit.NetCode
         /// <summary>[NETCODE] Converts host Relay allocation to UTP RelayServerData.</summary>
         public static RelayServerData FromAllocation(Allocation allocation, string connectionType = null)
         {
-            return allocation.ToRelayServerData(SanitizeRelayProtocolForRelaySdk(connectionType));
+            string protocol = SanitizeRelayProtocolForRelaySdk(connectionType);
+#if UNITY_EDITOR && UNITY_WEBGL
+            return CreateRelayServerData(allocation.ServerEndpoints, allocation.AllocationIdBytes,
+                allocation.ConnectionData, allocation.ConnectionData, allocation.Key, protocol);
+#else
+            return allocation.ToRelayServerData(protocol);
+#endif
         }
 
         /// <summary>[NETCODE] Converts client join allocation to UTP RelayServerData.</summary>
         public static RelayServerData FromJoinAllocation(JoinAllocation allocation, string connectionType = null)
         {
-            return allocation.ToRelayServerData(SanitizeRelayProtocolForRelaySdk(connectionType));
+            string protocol = SanitizeRelayProtocolForRelaySdk(connectionType);
+#if UNITY_EDITOR && UNITY_WEBGL
+            return CreateRelayServerData(allocation.ServerEndpoints, allocation.AllocationIdBytes,
+                allocation.ConnectionData, allocation.HostConnectionData, allocation.Key, protocol);
+#else
+            return allocation.ToRelayServerData(protocol);
+#endif
+        }
+
+        /// <summary>
+        /// Builds <see cref="RelayServerData"/> without <c>AllocationUtils.ToRelayServerData</c>.
+        /// That helper rejects <c>dtls</c> whenever <c>UNITY_WEBGL</c> is defined, including the Editor.
+        /// </summary>
+        static RelayServerData CreateRelayServerData(
+            List<RelayServerEndpoint> endpoints,
+            byte[] allocationId,
+            byte[] connectionData,
+            byte[] hostConnectionData,
+            byte[] key,
+            string connectionType)
+        {
+            RelayServerEndpoint endpoint = null;
+            if (endpoints != null)
+            {
+                for (int i = 0; i < endpoints.Count; i++)
+                {
+                    if (string.Equals(endpoints[i].ConnectionType, connectionType, StringComparison.OrdinalIgnoreCase))
+                    {
+                        endpoint = endpoints[i];
+                        break;
+                    }
+                }
+            }
+
+            if (endpoint == null)
+                throw new ArgumentException("No Relay endpoint for connection type \"" + connectionType + "\".");
+
+            bool isWebSocket = string.Equals(connectionType, "wss", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(connectionType, "ws", StringComparison.OrdinalIgnoreCase);
+            return new RelayServerData(
+                endpoint.Host,
+                (ushort)endpoint.Port,
+                allocationId,
+                connectionData,
+                hostConnectionData,
+                key,
+                endpoint.Secure,
+                isWebSocket);
         }
 
         /// <summary>True when Relay endpoint parsed successfully from allocation.</summary>
@@ -113,13 +168,13 @@ namespace TitanOrbit.NetCode
         }
 
         /// <summary>
-        /// True when Relay SDK <c>ToRelayServerData</c> only accepts <c>wss</c>.
-        /// Matches MPS 2.2 <c>AllocationUtils.GetValidProtocols</c>: <c>#if UNITY_WEBGL</c>
-        /// (WebGL player <b>and</b> Editor with WebGL as the active build target).
+        /// True for the WebGL player, which can only open Relay over <c>wss</c>.
+        /// The Editor uses <c>dtls</c> even when the active build target is WebGL:
+        /// its WebSocket driver stays in <c>Connecting</c> and never receives a NetworkId.
         /// </summary>
         public static bool PlatformRequiresWebSocketRelay()
         {
-#if UNITY_WEBGL
+#if UNITY_WEBGL && !UNITY_EDITOR
             return true;
 #else
             return false;
@@ -129,17 +184,14 @@ namespace TitanOrbit.NetCode
         /// <summary>Relay connection type for joining clients (not the host listen type).</summary>
         public static string ClientConnectionTypeForPlatform()
         {
-            // Must match GetValidProtocols() — do not exclude UNITY_EDITOR.
-            // Editor + WebGL target still defines UNITY_WEBGL; dtls throws
-            // Invalid connection type: "DTLS". Connection type must be one of:  or "wss".
             return PlatformRequiresWebSocketRelay() ? "wss" : "dtls";
         }
 
         /// <summary>
         /// Relay connection type for the dedicated host allocation. GCE may pass <c>--relayProtocol=udp</c>;
         /// that is normalized to <c>dtls</c> for MPS 2.0 (same as legacy NGO dedicated bootstrap).
-        /// On WebGL / Editor-with-WebGL-target this is coerced to <c>wss</c> so CreateAllocation
-        /// conversion does not throw; Linux dedicated (<c>UNITY_SERVER</c>) stays dtls.
+        /// The WebGL player is coerced to <c>wss</c>. The Editor stays <c>dtls</c> so play mode
+        /// can join the same allocation the dedicated server listens on. Linux <c>UNITY_SERVER</c> stays dtls.
         /// </summary>
         public static string HostConnectionTypeForPlatform(string commandLineOverride = null)
         {

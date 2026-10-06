@@ -44,6 +44,14 @@ namespace TitanOrbit.ECS
                 return;
 
             double serverElapsed = SystemAPI.Time.ElapsedTime;
+            int hz = 0;
+            if (SystemAPI.TryGetSingleton<ClientServerTickRate>(out var tickRate))
+                hz = tickRate.SimulationTickRate;
+            // Fuse PlaceTime/ExpireTime use ServerTick seconds so the client bar matches explode.
+            // NextMinePlaceTime stays on World.Time — RocketLoadoutHUD reads that clock.
+            double fuseElapsed = SystemAPI.TryGetSingleton<NetworkTime>(out var networkTime)
+                ? PlanetGemMoonOrbitClock.GetElapsedSeconds(networkTime, hz, includeTickFraction: false)
+                : serverElapsed;
 
             foreach (var (input, shipState, loadout, transform, ghostOwner, entity) in SystemAPI
                          .Query<RefRO<ShipInput>, RefRO<ShipState>, RefRW<ShipLoadoutState>,
@@ -101,8 +109,9 @@ namespace TitanOrbit.ECS
                     OwnerNetworkId = ghostOwner.ValueRO.NetworkId,
                     ItemLevel = math.max(1, itemLevel),
                     Sequence = BulletVfxBridge.NextSequence(),
-                    ExpireTime = serverElapsed + math.max(0.1f, stats.lifetime),
-                    PlaceTime = serverElapsed,
+                    ExpireTime = fuseElapsed + math.max(0.1f, stats.lifetime),
+                    PlaceTime = fuseElapsed,
+                    MaxHealth = MineHealthMath.ResolveMaxHealth(stats.maxHealth),
                     Damage = math.max(0.1f, damage),
                     HitRadius = math.max(0.1f, stats.hitRadius),
                     BlastRadius = math.max(0.1f, stats.blastRadius * blastMul),

@@ -6,6 +6,7 @@ using TitanOrbit.ECS;
 using TitanOrbit.Entities;
 using TitanOrbit.Generation;
 using TitanOrbit.Shared;
+using TitanOrbit.Simulation;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
@@ -17,8 +18,9 @@ namespace TitanOrbit.Game
 {
     /// <summary>
     /// Client-only hybrid: Instantiates Bomb_4 meshes for every ghosted
-    /// <see cref="DeployedMineElement"/> and plays the catalog / FireballsV2 explosion
-    /// when <see cref="MineExplosionBridge"/> dequeues a burst.
+    /// <see cref="DeployedMineElement"/>, syncs a nameless fuse health bar + badge, and
+    /// plays the catalog / FireballsV2 explosion when <see cref="MineExplosionBridge"/>
+    /// dequeues a burst.
     /// <para>
     /// [HYBRID] Presentation only — damage stays on <c>MineSimulationSystem</c>.
     /// Pose uses <see cref="ToroidalMapEcs.GetDisplayPosition"/> vs the local ship so mines
@@ -29,12 +31,18 @@ namespace TitanOrbit.Game
     {
         const string EditorPrefabPath = "Assets/Sci-fi Mines/Prefabs/Bomb_4.prefab";
         const string FireballsV2Category = "FireballsV2";
+        /// <summary>
+        /// Ghost snapshots can drop a mine for a frame (predicted vs interpolated ship).
+        /// Exploding immediately made it look like only one mine could exist.
+        /// </summary>
+        const float DespawnGraceSeconds = 0.45f;
 
-        /// <summary>One spawned Bomb_4 keyed by owner + sequence.</summary>
+        /// <summary>One spawned Bomb_4 keyed by owner + sequence + place time.</summary>
         struct LiveVisual
         {
             public int OwnerNetworkId;
             public uint Sequence;
+            public double PlaceTime;
             public byte OwnerTeam;
             public int ItemLevel;
             public float VisualScale;
@@ -43,6 +51,7 @@ namespace TitanOrbit.Game
             public float3 LogicalPos;
             public Vector3 PrefabLocalScale;
             public GameObject Instance;
+            public float LastSeenRealtime;
         }
 
         static MineVisualDriver s_instance;
@@ -184,17 +193,20 @@ namespace TitanOrbit.Game
                 for (int i = 0; i < buf.Length; i++)
                 {
                     var mine = buf[i];
-                    ulong key = PackKey(mine.OwnerNetworkId, mine.Sequence);
+                    ulong key = PackKey(mine.OwnerNetworkId, mine.Sequence, mine.PlaceTime);
                     _aliveKeys.Add(key);
                     SyncVisual(in mine, hasLocal ? localPos : mine.Position);
                 }
             }
 
             // --- Despawn missing mines (play VFX if the RPC has not already) ---
+            float nowRt = Time.realtimeSinceStartup;
             for (int i = _visuals.Count - 1; i >= 0; i--)
             {
                 var v = _visuals[i];
-                if (_aliveKeys.Contains(PackKey(v.OwnerNetworkId, v.Sequence)))
+                if (_aliveKeys.Contains(PackKey(v.OwnerNetworkId, v.Sequence, v.PlaceTime)))
+                    continue;
+                if (nowRt - v.LastSeenRealtime < DespawnGraceSeconds)
                     continue;
 
                 MineExplosionBridge.Enqueue(new MineExplosionBridge.Request
@@ -216,7 +228,7 @@ namespace TitanOrbit.Game
         /// <summary>Creates or updates one Bomb_4 for a ghosted mine.</summary>
         void SyncVisual(in DeployedMineElement mine, float3 referencePos)
         {
-            int idx = FindVisual(mine.OwnerNetworkId, mine.Sequence);
+            int idx = FindVisual(mine.OwnerNetworkId, mine.Sequence, mine.PlaceTime);
             if (idx < 0)
             {
                 if (_prefab == null)
@@ -225,10 +237,12 @@ namespace TitanOrbit.Game
                 GameObject go = Instantiate(_prefab);
                 go.name = $"Mine_{mine.OwnerNetworkId}_{mine.Sequence}";
                 ApplyTeamMaterial(go, (TeamId)mine.OwnerTeam);
+                MineNameplate.Ensure(go);
                 var created = new LiveVisual
                 {
                     OwnerNetworkId = mine.OwnerNetworkId,
                     Sequence = mine.Sequence,
+                    PlaceTime = mine.PlaceTime,
                     OwnerTeam = mine.OwnerTeam,
                     ItemLevel = mine.ItemLevel,
                     VisualScale = mine.VisualScale,
@@ -237,6 +251,7 @@ namespace TitanOrbit.Game
                     LogicalPos = mine.Position,
                     PrefabLocalScale = _prefabLocalScale,
                     Instance = go,
+                    LastSeenRealtime = Time.realtimeSinceStartup,
                 };
                 _visuals.Add(created);
                 idx = _visuals.Count - 1;
@@ -247,6 +262,8 @@ namespace TitanOrbit.Game
             v.VisualScale = mine.VisualScale;
             v.ExplosionVfxScale = mine.ExplosionVfxScale;
             v.Damage = mine.Damage;
+            v.PlaceTime = mine.PlaceTime;
+            v.LastSeenRealtime = Time.realtimeSinceStartup;
             _visuals[idx] = v;
 
             if (v.Instance == null)
@@ -256,6 +273,14 @@ namespace TitanOrbit.Game
             v.Instance.transform.position = new Vector3(display.x, display.y, display.z);
             float mul = math.max(0.05f, mine.VisualScale);
             v.Instance.transform.localScale = v.PrefabLocalScale * mul;
+
+            // Fuse bar from NetworkTime (same clock as PlaceTime/ExpireTime).
+            double now = PlanetGemMoonOrbitClock.TryGetElapsedSeconds(out double elapsed, includeTickFraction: true)
+                ? elapsed
+                : Time.timeAsDouble;
+            int maxHp = MineHealthMath.ResolveMaxHealth(mine.MaxHealth);
+            float hp = MineHealthMath.CurrentHealth(mine.PlaceTime, mine.ExpireTime, now, maxHp);
+            MineNameplate.Sync(v.Instance, mine.OwnerNetworkId, hp, maxHp);
         }
 
         /// <summary>Plays queued bursts at the display-unwrapped explode point.</summary>
@@ -332,22 +357,25 @@ namespace TitanOrbit.Game
             }
         }
 
-        /// <summary>Finds a live visual by owner + sequence, or -1.</summary>
-        int FindVisual(int ownerNetworkId, uint sequence)
+        /// <summary>Finds a live visual by owner + sequence + place time, or -1.</summary>
+        int FindVisual(int ownerNetworkId, uint sequence, double placeTime)
         {
             for (int i = 0; i < _visuals.Count; i++)
             {
-                if (_visuals[i].OwnerNetworkId == ownerNetworkId && _visuals[i].Sequence == sequence)
+                if (_visuals[i].OwnerNetworkId == ownerNetworkId
+                    && _visuals[i].Sequence == sequence
+                    && math.abs(_visuals[i].PlaceTime - placeTime) < 0.0001)
                     return i;
             }
 
             return -1;
         }
 
-        /// <summary>Packs owner + sequence into one set key.</summary>
-        static ulong PackKey(int ownerNetworkId, uint sequence)
+        /// <summary>Packs owner + sequence + place-time bits so Sequence 0 mines stay distinct.</summary>
+        static ulong PackKey(int ownerNetworkId, uint sequence, double placeTime)
         {
-            return ((ulong)(uint)ownerNetworkId << 32) | sequence;
+            uint placeBits = math.asuint((float)placeTime);
+            return ((ulong)(uint)ownerNetworkId << 32) ^ ((ulong)sequence * 0x9E3779B97F4A7C15UL) ^ placeBits;
         }
 
         /// <summary>

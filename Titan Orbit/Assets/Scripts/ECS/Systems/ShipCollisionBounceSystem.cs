@@ -17,8 +17,13 @@ namespace TitanOrbit.ECS
     /// <see cref="ShipCollisionImpulseLogic"/> and <see cref="AsteroidSettings.BounceRestitution"/>.
     /// World bodies (asteroid, planet, moon, moon shield) use the same wall reflect.
     /// Predicted ship↔ship uses two-body impulse at that same <c>e</c>. Client remotes have
-    /// no <see cref="PhysicsVelocity"/> — moving wall from ghosted <see cref="ShipKinematics"/>
-    /// at the same <c>e</c>. PhysX materials stay restitution 0 so this pass owns rebound.
+    /// no <see cref="PhysicsVelocity"/> (static interpolated hulls). When the local ship is
+    /// the one closing, this pass applies that ship's share of the two-body impulse and
+    /// keeps only its movement-mass share of the PhysX shove — a static remote otherwise
+    /// reflects the owner like a wall and prediction yo-yos the hull, drones, and escorts.
+    /// When the remote is the one closing, a moving wall from ghosted
+    /// <see cref="ShipKinematics"/> plus the full solver separation stays, so the owner
+    /// rides the interpolated hull. PhysX materials stay restitution 0 so this pass owns rebound.
     /// MEGA hulls plow asteroids only (restore pre-collision motion). Planets and moons
     /// use the same wall bounce as regular ships — undoing PhysX depenetration there
     /// let Titans tunnel through the body. Friendly shields are off via
@@ -46,6 +51,7 @@ namespace TitanOrbit.ECS
         NativeHashSet<Entity> _megaKeepPhysX;
         NativeHashSet<long> _seenShipPairs;
         NativeHashSet<Entity> _seenPlowRocks;
+        NativeHashSet<Entity> _pusherPoseCorrected;
 
         /// <summary>Require the classified contact buffer from <see cref="ShipPhysicsContactCollectSystem"/>.</summary>
         public void OnCreate(ref SystemState state)
@@ -56,6 +62,7 @@ namespace TitanOrbit.ECS
             _megaKeepPhysX = new NativeHashSet<Entity>(16, Allocator.Persistent);
             _seenShipPairs = new NativeHashSet<long>(16, Allocator.Persistent);
             _seenPlowRocks = new NativeHashSet<Entity>(16, Allocator.Persistent);
+            _pusherPoseCorrected = new NativeHashSet<Entity>(16, Allocator.Persistent);
         }
 
         /// <summary>Persistent scratch from <see cref="OnCreate"/>.</summary>
@@ -71,6 +78,8 @@ namespace TitanOrbit.ECS
                 _seenShipPairs.Dispose();
             if (_seenPlowRocks.IsCreated)
                 _seenPlowRocks.Dispose();
+            if (_pusherPoseCorrected.IsCreated)
+                _pusherPoseCorrected.Dispose();
         }
 
         /// <summary>
@@ -127,10 +136,12 @@ namespace TitanOrbit.ECS
             EnsureSetCapacity(ref _megaUnconstrained, pairCap);
             EnsureSetCapacity(ref _megaKeepPhysX, pairCap);
             EnsureSetCapacity(ref _seenShipPairs, math.max(8, pairs.Length));
+            EnsureSetCapacity(ref _pusherPoseCorrected, pairCap);
             _working.Clear();
             _megaUnconstrained.Clear();
             _megaKeepPhysX.Clear();
             _seenShipPairs.Clear();
+            _pusherPoseCorrected.Clear();
 
             for (int i = 0; i < pairs.Length; i++)
             {
@@ -143,12 +154,14 @@ namespace TitanOrbit.ECS
                         continue;
                     // Keep MEGA plow from undoing the solver pose. Predicted pairs get a
                     // snapshot two-body rewrite (not stacked on PhysX). Interpolated remotes
-                    // have no PhysicsVelocity — moving wall from ghosted kinematics.
+                    // have no PhysicsVelocity — local-closing uses a two-body share; remote-closing
+                    // stays a moving wall from ghosted kinematics.
                     _megaKeepPhysX.Add(pair.Ship);
                     _megaKeepPhysX.Add(pair.Other);
                     ApplyShipVsShip(
                         pair, ref _working, snapshotLookup, velocityLookup, kinematicsLookup,
-                        motorLookup, shipStateLookup, megaLookup, isClient, restitution);
+                        motorLookup, shipStateLookup, megaLookup, transformLookup,
+                        ref _pusherPoseCorrected, isClient, restitution, fixedDt);
                 }
                 else if (pair.Kind == ShipPhysicsContactKind.Asteroid)
                 {
@@ -500,8 +513,8 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Predicted ship↔ship: snapshot two-body impulse (ramming mass) at the shared <c>e</c>.
-        /// Client local vs an interpolated remote (no <see cref="PhysicsVelocity"/>) uses a
-        /// moving-wall reflect at that same <c>e</c>.
+        /// Client local vs an interpolated remote (no <see cref="PhysicsVelocity"/>) is handled
+        /// by <see cref="ApplyLocalVsInterpolatedRemote"/>.
         /// </summary>
         static void ApplyShipVsShip(
             ShipPhysicsContactElement pair,
@@ -512,8 +525,11 @@ namespace TitanOrbit.ECS
             ComponentLookup<ShipMotorConfig> motors,
             ComponentLookup<ShipState> shipStates,
             ComponentLookup<MegaShipState> megas,
+            ComponentLookup<LocalTransform> transforms,
+            ref NativeHashSet<Entity> pusherPoseCorrected,
             bool isClient,
-            float restitution)
+            float restitution,
+            float fixedDt)
         {
             bool shipHasVel = velocities.HasComponent(pair.Ship);
             bool otherHasVel = velocities.HasComponent(pair.Other);
@@ -522,7 +538,8 @@ namespace TitanOrbit.ECS
                 if (isClient)
                 {
                     ApplyLocalVsInterpolatedRemote(
-                        pair, ref working, snapshots, velocities, kinematics, megas, restitution);
+                        pair, ref working, snapshots, velocities, kinematics, motors, shipStates,
+                        megas, transforms, ref pusherPoseCorrected, restitution, fixedDt);
                 }
 
                 return;
@@ -549,9 +566,13 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Client only: local predicted hull vs interpolated remote (no <see cref="PhysicsVelocity"/>).
-        /// Restores pre-collision velocity then reflects in the remote's rest frame so a ram
-        /// scrapes off a moving ghost instead of a static magnet. No-ops when both hulls have
-        /// velocity (listen-server / two predicted) or the local ship is a MEGA plow.
+        /// The remote is a static body, so PhysX depenetrates only the owner and a moving-wall
+        /// reflect treats them as infinite mass. That matches the server when they are ramming
+        /// us (we stay glued to their interpolated hull). When we are the ones closing, the
+        /// server instead splits a two-body impulse and a mass-weighted shove — replaying the
+        /// wall here bounces the owner backward, then reconciliation snaps forward, and drones
+        /// plus escorts inherit that yo-yo. No-ops when both hulls have velocity (listen-server
+        /// / two predicted) or the local ship is a MEGA plow.
         /// </summary>
         static void ApplyLocalVsInterpolatedRemote(
             ShipPhysicsContactElement pair,
@@ -559,8 +580,13 @@ namespace TitanOrbit.ECS
             ComponentLookup<ShipPreCollisionVelocity> snapshots,
             ComponentLookup<PhysicsVelocity> velocities,
             ComponentLookup<ShipKinematics> kinematics,
+            ComponentLookup<ShipMotorConfig> motors,
+            ComponentLookup<ShipState> shipStates,
             ComponentLookup<MegaShipState> megas,
-            float restitution)
+            ComponentLookup<LocalTransform> transforms,
+            ref NativeHashSet<Entity> pusherPoseCorrected,
+            float restitution,
+            float fixedDt)
         {
             Entity local = pair.Ship;
             Entity remote = pair.Other;
@@ -580,13 +606,63 @@ namespace TitanOrbit.ECS
 
             if (megas.HasComponent(local) && megas[local].IsMega)
                 return;
+            if (shipStates.HasComponent(local) && shipStates[local].IsDead)
+                return;
+            if (shipStates.HasComponent(remote) && shipStates[remote].IsDead)
+                return;
 
-            float3 wallVel = kinematics.HasComponent(remote)
+            float3 remoteVel = kinematics.HasComponent(remote)
                 ? kinematics[remote].Velocity
                 : float3.zero;
-            float3 v = GetWorkingOrSnapshot(local, ref working, snapshots);
-            ShipCollisionImpulseLogic.ApplyMovingWallImpulse(ref v, wallVel, n, restitution);
-            working[local] = v;
+            float3 localVel = GetWorkingOrSnapshot(local, ref working, snapshots);
+
+            float3 localPlanar = localVel;
+            float3 remotePlanar = remoteVel;
+            localPlanar.y = 0f;
+            remotePlanar.y = 0f;
+            n.y = 0f;
+            if (math.lengthsq(n) < 1e-8f)
+                return;
+            n = math.normalize(n);
+
+            // Into-speed along the separation normal. Remote-closing keeps the smooth wall
+            // path; local-closing must match the server's finite-mass result.
+            float localInto = math.max(0f, -math.dot(localPlanar, n));
+            float remoteInto = math.max(0f, math.dot(remotePlanar, n));
+            float vnRel = math.dot(localPlanar - remotePlanar, n);
+            bool localIsPusher = vnRel < -0.05f && localInto >= remoteInto;
+
+            if (!localIsPusher)
+            {
+                float3 v = localVel;
+                ShipCollisionImpulseLogic.ApplyMovingWallImpulse(ref v, remoteVel, n, restitution);
+                working[local] = v;
+                return;
+            }
+
+            float mLocalRam = GetShipCollisionMass(local, motors, shipStates, megas);
+            float mRemoteRam = GetShipCollisionMass(remote, motors, shipStates, megas);
+            float3 localAfter = localPlanar;
+            float3 remoteAfter = remotePlanar;
+            ShipCollisionImpulseLogic.ApplyTwoBodyImpulse(
+                ref localAfter, ref remoteAfter, n, mLocalRam, mRemoteRam, restitution);
+            // Always keep the snapshot-based result so PhysX's inelastic stop cannot stick.
+            // Remote velocity is discarded — interpolation owns that ghost.
+            working[local] = localAfter;
+
+            if (!pusherPoseCorrected.Add(local))
+                return;
+            if (!snapshots.HasComponent(local) || !transforms.HasComponent(local))
+                return;
+
+            var snap = snapshots[local];
+            var lt = transforms[local];
+            float3 integrated = snap.Position + snap.Linear * fixedDt;
+            float mLocalMove = GetShipMovementMass(local, motors, shipStates, megas);
+            float mRemoteMove = GetShipMovementMass(remote, motors, shipStates, megas);
+            lt.Position = ShipCollisionImpulseLogic.KeepLocalShareOfStaticDepenetration(
+                integrated, lt.Position, n, mLocalMove, mRemoteMove);
+            transforms[local] = lt;
         }
 
         /// <summary>Reads snapshot (or current working) velocity for a ship entity.</summary>
@@ -625,6 +701,34 @@ namespace TitanOrbit.ECS
             if (megas.HasComponent(ship) && megas[ship].IsMega)
                 mass = math.max(mass, MegaShipCatalog.MinHullCollisionMass);
             return mass;
+        }
+
+        /// <summary>
+        /// Movement mass the physics solver used for positional correction
+        /// (<see cref="ShipPhysicsMassSyncSystem"/>). Ramming mass is only the bounce impulse.
+        /// </summary>
+        static float GetShipMovementMass(
+            Entity ship,
+            ComponentLookup<ShipMotorConfig> motors,
+            ComponentLookup<ShipState> shipStates,
+            ComponentLookup<MegaShipState> megas)
+        {
+            if (!motors.HasComponent(ship) || !shipStates.HasComponent(ship))
+                return ShipMassLogic.MinMass;
+
+            var motor = motors[ship];
+            var ss = shipStates[ship];
+            float baseMass = motor.Mass > 0f ? motor.Mass : ShipMassLogic.DefaultBaseMass;
+            float mass = ShipMassLogic.ComputeMovementMass(
+                motor.HullMassReference,
+                ss.MaxHealth,
+                motor.ChassisReferenceHealth,
+                ss.CurrentGems,
+                baseMass,
+                ss.CurrentPeople);
+            if (megas.HasComponent(ship) && megas[ship].IsMega)
+                mass = math.max(mass, MegaShipCatalog.DefaultHullCollisionMass);
+            return math.max(ShipMassLogic.MinMass, mass);
         }
 
         /// <summary>

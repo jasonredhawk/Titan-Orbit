@@ -7,6 +7,7 @@ using TitanOrbit.Data;
 using TitanOrbit.ECS;
 using TitanOrbit.Entities;
 using TitanOrbit.Generation;
+using TitanOrbit.Diagnostics;
 using TitanOrbit.NetCode;
 using TitanOrbit.Shared;
 using TitanOrbit.Simulation;
@@ -125,13 +126,33 @@ namespace TitanOrbit.Game
         readonly Dictionary<Entity, PlanetVisualKey> _proxyPlanetVisuals = new Dictionary<Entity, PlanetVisualKey>();
 
         /// <summary>
+        /// Match seed and water range last applied to this planet. A new map seed, or an
+        /// edit to <see cref="PlanetMaterialPool"/> min/max, rolls the oceans again once.
+        /// </summary>
+        readonly Dictionary<Entity, PlanetSurfaceWaterRoll> _planetSurfaceWaterSeeds =
+            new Dictionary<Entity, PlanetSurfaceWaterRoll>();
+
+        struct PlanetSurfaceWaterRoll
+        {
+            public uint Seed;
+            public float Min;
+            public float Max;
+        }
+
+        /// <summary>
         /// Last applied display tint team per asteroid proxy (after overlap → prefer-local resolve).
         /// Skip GetComponent/tint work every SyncAllProxies when unchanged.
         /// </summary>
         readonly Dictionary<Entity, TeamId> _proxyAsteroidTerritory = new Dictionary<Entity, TeamId>();
 
         /// <summary>Last applied bonus-gem tint flag per gem proxy (skip retint every sync).</summary>
-        readonly Dictionary<Entity, bool> _proxyGemBonusTint = new Dictionary<Entity, bool>();
+        readonly Dictionary<Entity, GemVisualTint> _proxyGemBonusTint = new Dictionary<Entity, GemVisualTint>();
+
+        /// <summary>
+        /// Local scoop fade for gems this ship expelled: 0 = normal tint, 1 = blocked
+        /// (alpha 0.3), 2 = delay elapsed (alpha 1). Other players' gems stay at 0.
+        /// </summary>
+        readonly Dictionary<Entity, byte> _proxyGemSelfPickupFade = new Dictionary<Entity, byte>();
 
         /// <summary>
         /// [TITAN-ORBIT] Client topology revision last used for asteroid tint PIT.
@@ -141,6 +162,12 @@ namespace TitanOrbit.Game
 
         /// <summary>Viewer team latched with <see cref="_lastAsteroidTintGraphRevision"/>.</summary>
         TeamId _lastAsteroidTintViewerTeam = TeamId.None;
+
+        /// <summary>
+        /// Last asteroid walked by the territory-tint budget. The next sync continues after
+        /// this entity so unlatched rocks are not stuck behind the same first slice.
+        /// </summary>
+        Entity _asteroidTintResume;
 
         /// <summary>Max asteroid territory PIT evaluations per visual sync frame.</summary>
         const int MaxAsteroidTerritoryTintsPerFrame = 24;
@@ -200,6 +227,12 @@ namespace TitanOrbit.Game
 
         /// <summary>Asteroid proxy keys only — DetectAsteroidGemBursts must not walk ships/planets/gems.</summary>
         readonly HashSet<Entity> _asteroidProxyEntities = new HashSet<Entity>();
+
+        /// <summary>Layout slot for each live asteroid proxy so a kill can park that same GameObject.</summary>
+        readonly Dictionary<Entity, int> _asteroidLayoutSlots = new Dictionary<Entity, int>();
+
+        /// <summary>Gem proxy keys — comms "Gems" walks this, never asteroids.</summary>
+        readonly HashSet<Entity> _gemProxyEntities = new HashSet<Entity>();
 
         /// <summary>Ship proxy keys — pose sync walks this instead of a per-frame ship gather.</summary>
         readonly HashSet<Entity> _shipProxyEntities = new HashSet<Entity>();
@@ -395,9 +428,11 @@ namespace TitanOrbit.Game
             _proxies.Clear();
             _proxyKinds.Clear();
             _asteroidProxyEntities.Clear();
+            _gemProxyEntities.Clear();
             _asteroidBurstFired.Clear();
             _asteroidLastKnown.Clear();
             _proxyGemBonusTint.Clear();
+            _proxyGemSelfPickupFade.Clear();
             ResetInstanceLoadingCounts();
         }
 
@@ -538,6 +573,7 @@ namespace TitanOrbit.Game
             // Force full asteroid tint recompute next enable (viewer team / graph may change).
             _lastAsteroidTintGraphRevision = int.MinValue;
             _lastAsteroidTintViewerTeam = TeamId.None;
+            _asteroidTintResume = Entity.Null;
             DisposeVisualizerQueries();
         }
 
@@ -590,6 +626,19 @@ namespace TitanOrbit.Game
                 return;
             dst.Clear();
             foreach (Entity e in _asteroidProxyEntities)
+                dst.Add(e);
+        }
+
+        /// <summary>
+        /// Copies ship hybrid-proxy entity keys into <paramref name="dst"/> (clears first).
+        /// Dictionary walk only — no ECS ship gather.
+        /// </summary>
+        public void CopyShipProxyEntitiesTo(List<Entity> dst)
+        {
+            if (dst == null)
+                return;
+            dst.Clear();
+            foreach (Entity e in _shipProxyEntities)
                 dst.Add(e);
         }
 
@@ -779,6 +828,220 @@ namespace TitanOrbit.Game
             return false;
         }
 
+        /// <summary>
+        /// Closest planet proxy to <paramref name="aim"/> on the torus.
+        /// Walks hybrid dictionaries only — no ECS gather. Used by comms "Orange Planet".
+        /// Map size from <see cref="ToroidalMap"/> (bootstrap / session meta).
+        /// </summary>
+        public bool TryFindClosestPlanet(
+            Vector3 aim,
+            TeamId teamFilter,
+            bool homeOnly,
+            out int planetId,
+            out Vector3 worldPos,
+            TeamId excludeTeam = TeamId.None,
+            bool allowFallback = true)
+        {
+            if (TryFindClosestPlanetFiltered(
+                    aim, teamFilter, homeOnly, excludeTeam, out planetId, out worldPos))
+                return true;
+            if (allowFallback && teamFilter != TeamId.None && excludeTeam == TeamId.None)
+                return TryFindClosestPlanetFiltered(
+                    aim, TeamId.None, homeOnly, excludeTeam, out planetId, out worldPos);
+            return false;
+        }
+
+        bool TryFindClosestPlanetFiltered(
+            Vector3 aim,
+            TeamId teamFilter,
+            bool homeOnly,
+            TeamId excludeTeam,
+            out int planetId,
+            out Vector3 worldPos)
+        {
+            planetId = 0;
+            worldPos = default;
+            float best = float.MaxValue;
+            bool found = false;
+
+            foreach (var kv in _proxyPlanetVisuals)
+            {
+                if (homeOnly && !kv.Value.IsHome)
+                    continue;
+                if (teamFilter != TeamId.None && kv.Value.Team != teamFilter)
+                    continue;
+                if (excludeTeam != TeamId.None && kv.Value.Team == excludeTeam)
+                    continue;
+                if (kv.Value.PlanetId == 0)
+                    continue;
+                if (!_proxies.TryGetValue(kv.Key, out GameObject go) || go == null)
+                    continue;
+
+                float d = ToroidalMap.ToroidalDistance(aim, go.transform.position);
+                if (d >= best)
+                    continue;
+
+                best = d;
+                planetId = kv.Value.PlanetId;
+                worldPos = go.transform.position;
+                found = true;
+            }
+
+            return found;
+        }
+
+        /// <summary>
+        /// World pose of a planet proxy by <see cref="PlanetState.PlanetId"/>.
+        /// Dictionary walk only — comms viewers resolve the sender's locked planet.
+        /// </summary>
+        public bool TryGetPlanetWorldPosition(int planetId, out Vector3 worldPos)
+        {
+            worldPos = default;
+            if (planetId == 0)
+                return false;
+
+            foreach (var kv in _proxyPlanetVisuals)
+            {
+                if (kv.Value.PlanetId != planetId)
+                    continue;
+                if (!_proxies.TryGetValue(kv.Key, out GameObject go) || go == null)
+                    continue;
+                worldPos = go.transform.position;
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Collider-scale planet radius from the visual-body child. Dictionary walk only.
+        /// </summary>
+        public bool TryGetPlanetColliderRadius(int planetId, out float radius)
+        {
+            radius = 0f;
+            if (planetId == 0)
+                return false;
+
+            foreach (var kv in _proxyPlanetVisuals)
+            {
+                if (kv.Value.PlanetId != planetId)
+                    continue;
+                if (!_proxies.TryGetValue(kv.Key, out GameObject go) || go == null)
+                    continue;
+
+                float scale = 1f;
+                if (PlanetVisualBody.TryGet(go.transform, out Transform body) && body != null)
+                    scale = Mathf.Max(0.25f, body.localScale.x);
+                radius = BodyCollisionMath.GetPlanetBodyRadiusWorld(scale);
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Closest live asteroid proxy to <paramref name="aim"/> on the torus.
+        /// Optional territory filter (Red / Orange Asteroid) uses live ownership, not the
+        /// viewer-biased tint cache. <paramref name="allowFallback"/> may widen to any rock
+        /// when the filter misses — callers that named a color should pass false.
+        /// Map size from <see cref="ToroidalMap"/>.
+        /// </summary>
+        public bool TryFindClosestAsteroid(Vector3 aim, TeamId territoryFilter, out Vector3 worldPos)
+        {
+            return TryFindClosestAsteroid(aim, territoryFilter, out worldPos, out _);
+        }
+
+        /// <summary>
+        /// Closest live asteroid plus collider-scale radius from proxy scale.
+        /// </summary>
+        public bool TryFindClosestAsteroid(
+            Vector3 aim, TeamId territoryFilter, out Vector3 worldPos, out float radius,
+            TeamId excludeTeam = TeamId.None, bool allowFallback = true)
+        {
+            if (TryFindClosestAsteroidFiltered(aim, territoryFilter, excludeTeam, out worldPos, out radius))
+                return true;
+            if (allowFallback && territoryFilter != TeamId.None && excludeTeam == TeamId.None)
+                return TryFindClosestAsteroidFiltered(aim, TeamId.None, excludeTeam, out worldPos, out radius);
+            return false;
+        }
+
+        bool TryFindClosestAsteroidFiltered(
+            Vector3 aim, TeamId territoryFilter, TeamId excludeTeam, out Vector3 worldPos, out float radius)
+        {
+            worldPos = default;
+            radius = 0f;
+            float best = float.MaxValue;
+            bool found = false;
+
+            foreach (Entity entity in _asteroidProxyEntities)
+            {
+                if (!_proxies.TryGetValue(entity, out GameObject go) || go == null)
+                    continue;
+                if (territoryFilter != TeamId.None || excludeTeam != TeamId.None)
+                {
+                    // Live PIT ownership — the tint cache prefers the viewer's team on
+                    // overlap and may still be empty (budgeted). "Red Asteroid" must
+                    // match Red territory, not the nearest painted rock.
+                    Vector3 wrapped = ToroidalMap.WrapPosition(go.transform.position);
+                    PlanetConnectionPresentationTriangles.GetOwnershipAtPosition(
+                        new float3(wrapped.x, 0f, wrapped.z), out byte mask, out _);
+                    if (territoryFilter != TeamId.None
+                        && !PlanetConnectionGraphLogic.TeamMaskContains(mask, territoryFilter))
+                        continue;
+                    if (excludeTeam != TeamId.None
+                        && PlanetConnectionGraphLogic.TeamMaskContains(mask, excludeTeam))
+                        continue;
+                }
+
+                float d = ToroidalMap.ToroidalDistance(aim, go.transform.position);
+                if (d >= best)
+                    continue;
+
+                best = d;
+                worldPos = go.transform.position;
+                radius = BodyCollisionMath.GetAsteroidBodyRadiusWorld(
+                    Mathf.Max(0.1f, go.transform.lossyScale.x));
+                found = true;
+            }
+
+            return found;
+        }
+
+        /// <summary>
+        /// Closest live gem proxy to <paramref name="aim"/> on the torus.
+        /// Never returns an asteroid. <paramref name="maxRange"/> ≤ 0 is unbounded.
+        /// Map size from <see cref="ToroidalMap"/>.
+        /// </summary>
+        public bool TryFindClosestGem(
+            Vector3 aim, float maxRange, out Vector3 worldPos, out float radius)
+        {
+            worldPos = default;
+            radius = 0f;
+            float best = float.MaxValue;
+            bool found = false;
+            float cap = maxRange > 0f ? maxRange : float.MaxValue;
+
+            foreach (Entity entity in _gemProxyEntities)
+            {
+                if (!_proxies.TryGetValue(entity, out GameObject go) || go == null || !go.activeInHierarchy)
+                    continue;
+
+                float d = ToroidalMap.ToroidalDistance(aim, go.transform.position);
+                if (d >= best || d > cap)
+                    continue;
+
+                best = d;
+                worldPos = go.transform.position;
+                if (GemVisualDiameterRegistry.TryGetDiameter(entity, out float diameter) && diameter > 0.05f)
+                    radius = diameter * 0.5f;
+                else
+                    radius = Mathf.Max(0.12f, go.transform.lossyScale.x * 0.5f);
+                found = true;
+            }
+
+            return found;
+        }
+
         /// <summary>Per-entity planet read — safe under TransformQuarantine.</summary>
         static bool TryReadPlanetPose(
             EntityManager em,
@@ -813,6 +1076,7 @@ namespace TitanOrbit.Game
         /// </summary>
         void OnBeforeRenderSync()
         {
+            using var _memVizR = WebGlAllocBuckets.Measure(WebGlAllocBuckets.VisualizerRender);
             TryBecomeActiveIfPreferred();
             if (Active != this)
                 return;
@@ -822,6 +1086,7 @@ namespace TitanOrbit.Game
         /// <summary>Fallback when onBeforeRender does not fire (some batch/headless paths).</summary>
         void LateUpdate()
         {
+            using var _memViz = WebGlAllocBuckets.Measure(WebGlAllocBuckets.Visualizer);
             TryBecomeActiveIfPreferred();
             if (Active != this)
                 return;
@@ -867,6 +1132,9 @@ namespace TitanOrbit.Game
                 return;
             s_GlobalVisualSyncFrame = Time.frameCount;
             _lastVisualSyncFrame = Time.frameCount;
+
+            // One colour compare per frame so AsteroidSettings.DefaultGemColor updates live crystals.
+            GemVisualApplier.RefreshStandardTintFromSettings();
 
             var world = PickVisualizationWorld();
             if (world == null || !world.IsCreated)
@@ -1020,6 +1288,9 @@ namespace TitanOrbit.Game
             // without waiting for GhostSpawn idle (314/315 hang).
             ClientJoinSettleCache.SetMapProxyBuildReady(
                 EcsGameBridge.IsMapProxyCountReady(out _, out _, out _));
+
+            // Cannon lasers are world-space lines — pin them to the barrels just posed.
+            CannonLaserBeamVisual.SyncAfterHullProxies();
         }
 
         /// <summary>
@@ -1041,12 +1312,15 @@ namespace TitanOrbit.Game
             // is stable between graph publishes. Running PIT for every rock every frame cost
             // ~2.3 ms with ~236 asteroids — budget + revision invalidate instead.
             TeamId viewerTeam = TeamId.None;
+            int localNetworkId = 0;
             if (TryResolveLocalPlayerShipEntityCached(em, out var localShip) &&
                 localShip != Entity.Null &&
                 em.Exists(localShip) &&
                 em.HasComponent<ShipState>(localShip))
             {
                 viewerTeam = em.GetComponentData<ShipState>(localShip).Team;
+                if (em.HasComponent<GhostOwner>(localShip))
+                    localNetworkId = em.GetComponentData<GhostOwner>(localShip).NetworkId;
             }
 
             int graphRevision = PlanetConnectionGraphCache.ClientPublishRevision;
@@ -1057,9 +1331,8 @@ namespace TitanOrbit.Game
                 _lastAsteroidTintViewerTeam = viewerTeam;
                 // Invalidate applied tints so rocks re-enter the budgeted uncached queue.
                 _proxyAsteroidTerritory.Clear();
+                _asteroidTintResume = Entity.Null;
             }
-
-            int tintBudget = MaxAsteroidTerritoryTintsPerFrame;
 
             foreach (var kv in _proxies)
             {
@@ -1096,20 +1369,51 @@ namespace TitanOrbit.Game
                         continue;
                     }
                     gemValue = gemState.Value;
-                    // [TITAN-ORBIT] IsBonusGem can arrive one snapshot after Instantiates — retint
-                    // so a territory yellow gem does not stay on the pooled red material.
-                    // Skip GetComponentInChildren + sharedMaterial write when the flag is unchanged
+                    // [TITAN-ORBIT] Tint can arrive one snapshot after Instantiates — retint
+                    // so a yellow / blue extra does not stay on the pooled red material.
+                    // Skip GetComponentInChildren + sharedMaterial write when the tint is unchanged
                     // (grind dumps gems at 4 Hz; walking them all used to retint every frame).
-                    if (!_proxyGemBonusTint.TryGetValue(entity, out bool appliedBonus) ||
-                        appliedBonus != gemState.IsBonusGem)
-                    {
-                        GemVisualApplier.ApplyTintForBonusFlag(go, gemState.IsBonusGem);
-                        _proxyGemBonusTint[entity] = gemState.IsBonusGem;
-                    }
+                    bool tintChanged = !_proxyGemBonusTint.TryGetValue(entity, out GemVisualTint appliedTint) ||
+                                       appliedTint != gemState.Tint;
                     // [TITAN-ORBIT] ServerTick clock — World.Time diverges on late-join (moon orbit rule).
                     float now = PlanetGemMoonOrbitClock.TryGetElapsedSeconds(out double tickNow, includeTickFraction: true)
                         ? (float)tickNow
                         : (float)Time.timeAsDouble;
+                    // Own expelled gems stay faded until SelfPickupBlockSeconds, then go opaque.
+                    // Other ships still see the normal tint — they can scoop immediately.
+                    byte fade = 0;
+                    if (localNetworkId > 0 &&
+                        GemSelfPickupBlock.IsPickupBlockedForShip(gemState, localNetworkId, now))
+                    {
+                        fade = 1;
+                    }
+                    else if (_proxyGemSelfPickupFade.TryGetValue(entity, out byte prevFade) && prevFade != 0)
+                    {
+                        fade = 2;
+                    }
+
+                    if (tintChanged && fade == 0)
+                    {
+                        GemVisualApplier.ApplyTint(go, gemState.Tint);
+                        _proxyGemBonusTint[entity] = gemState.Tint;
+                    }
+                    else if (tintChanged)
+                    {
+                        _proxyGemBonusTint[entity] = gemState.Tint;
+                    }
+
+                    if (tintChanged ||
+                        !_proxyGemSelfPickupFade.TryGetValue(entity, out byte appliedFade) ||
+                        appliedFade != fade)
+                    {
+                        if (fade == 1)
+                            GemVisualApplier.ApplySelfPickupConsumeAlpha(go, gemState.Tint, blocked: true);
+                        else if (fade == 2)
+                            GemVisualApplier.ApplySelfPickupConsumeAlpha(go, gemState.Tint, blocked: false);
+                        else if (!tintChanged)
+                            GemVisualApplier.ApplyTint(go, gemState.Tint);
+                        _proxyGemSelfPickupFade[entity] = fade;
+                    }
                     scale = GemVisualApplier.ComputeLifetimeVisualScale(
                         gemValue, gemState.SpawnServerTime, now);
                 }
@@ -1170,25 +1474,61 @@ namespace TitanOrbit.Game
                 // Instantiates-time Configure. Refresh in place from ghosted PlanetState — per known
                 // proxy only (no planet ToEntityArray / map gather).
                 if (kind == ProxyVisualKind.Planet)
-                    RefreshPlanetProxyAppearanceIfChanged(em, entity, go, scale);
-
-                // --- Asteroid territory tint (budgeted PIT) ---
-                // Untinted / invalidated rocks only; MaxAsteroidTerritoryTintsPerFrame per sync.
-                if (kind == ProxyVisualKind.Asteroid &&
-                    !_proxyAsteroidTerritory.ContainsKey(entity) &&
-                    tintBudget > 0)
                 {
-                    RefreshAsteroidTerritoryTintIfChanged(em, entity, go, lt.Position, viewerTeam);
-                    tintBudget--;
+                    TryApplyNeutralPlanetSurfaceWater(entity, go);
+                    RefreshPlanetProxyAppearanceIfChanged(em, entity, go, scale);
                 }
             }
+
+            TintAsteroidTerritoryBudget(em, viewerTeam);
+        }
+
+        /// <summary>
+        /// Point-in-triangle tint for rocks that do not yet have a latched team.
+        /// Walks forward from <see cref="_asteroidTintResume"/> so a slice of neutral
+        /// rocks cannot consume the budget forever while later rocks sit in a triangle.
+        /// </summary>
+        void TintAsteroidTerritoryBudget(EntityManager em, TeamId viewerTeam)
+        {
+            if (_asteroidProxyEntities.Count == 0)
+                return;
+
+            int budget = MaxAsteroidTerritoryTintsPerFrame;
+            bool armed = _asteroidTintResume == Entity.Null;
+
+            foreach (Entity entity in _asteroidProxyEntities)
+            {
+                if (!armed)
+                {
+                    if (entity == _asteroidTintResume)
+                        armed = true;
+                    continue;
+                }
+
+                if (_proxyAsteroidTerritory.ContainsKey(entity))
+                    continue;
+                if (!_proxies.TryGetValue(entity, out GameObject go) || go == null)
+                    continue;
+                if (!em.Exists(entity) || !em.HasComponent<LocalTransform>(entity))
+                    continue;
+
+                float3 pos = em.GetComponentData<LocalTransform>(entity).Position;
+                RefreshAsteroidTerritoryTintIfChanged(em, entity, go, pos, viewerTeam);
+                _asteroidTintResume = entity;
+                budget--;
+                if (budget <= 0)
+                    return;
+            }
+
+            // End of the set (or the resume entity was removed). Next sync starts over.
+            _asteroidTintResume = Entity.Null;
         }
 
         /// <summary>
         /// Applies team territory highlight so rock colour matches the drawn territory fill.
-        /// Uses <see cref="PlanetConnectionPresentationTriangles"/> (same Client graph + moon
-        /// verts as <see cref="PlanetConnectionShapesVisual"/>). Overlap prefers the local
-        /// player's team. Per known proxy only — no asteroid archetype gather.
+        /// Uses <see cref="PlanetConnectionPresentationTriangles"/> (same Client graph and
+        /// planet-center verts as <see cref="PlanetConnectionShapesVisual"/>). Overlap prefers
+        /// the local player's team. Per known proxy only — no asteroid archetype gather.
         /// </summary>
         /// <param name="em">Client EntityManager.</param>
         /// <param name="entity">Asteroid ghost already in <see cref="_proxies"/>.</param>
@@ -1201,7 +1541,7 @@ namespace TitanOrbit.Game
             if (go == null || !em.Exists(entity))
                 return;
 
-            // --- Canonical XZ (same space as moon verts / drawn fill topology) ---
+            // --- Canonical XZ (same space as planet-center verts / drawn fill) ---
             // [TITAN-ORBIT] Do not use display-retiled proxy position — wrap copies would
             // fail PIT against canonical triangle verts.
             Vector3 wrapped = ToroidalMap.WrapPosition(new Vector3(logicalPos.x, 0f, logicalPos.z));
@@ -1209,9 +1549,16 @@ namespace TitanOrbit.Game
 
             PlanetConnectionPresentationTriangles.GetOwnershipAtPosition(
                 canonical, out byte mask, out TeamId primary);
+            bool authoritative = PlanetConnectionPresentationTriangles.IsOwnershipAuthoritative();
 
             TeamId displayTeam = PlanetConnectionGraphLogic.ResolveAsteroidTintTeam(
                 mask, primary, viewerTeam);
+
+            // Partial vertex resolve still returns mask 0 for triangles that are not built yet.
+            // Painting None now would clear a real tint, and latching it would stick after
+            // the fill shows up (graph revision does not bump again).
+            if (!authoritative && displayTeam == TeamId.None)
+                return;
 
             // --- Skip before GetComponentInChildren / material writes ---
             if (_proxyAsteroidTerritory.TryGetValue(entity, out var applied) && applied == displayTeam)
@@ -1219,8 +1566,42 @@ namespace TitanOrbit.Game
 
             // [TITAN-ORBIT] Only latch when SgtPlanet actually applied — missing material
             // used to freeze "applied" forever and leave the rock untinted.
-            if (WorldBodyVisualApplier.ApplyAsteroidTerritoryTint(go, displayTeam))
+            // Latch only once the triangle set matches the published graph.
+            if (WorldBodyVisualApplier.ApplyAsteroidTerritoryTint(go, displayTeam) && authoritative)
                 _proxyAsteroidTerritory[entity] = displayTeam;
+        }
+
+        /// <summary>
+        /// Rolls ocean coverage once per map seed. Skips after the seed is latched so
+        /// sync does not touch <c>SgtPlanet</c> every frame. Homes keep their prefab water.
+        /// </summary>
+        void TryApplyNeutralPlanetSurfaceWater(Entity entity, GameObject go)
+        {
+            uint seed = ClientMapHydrateCache.MatchSeed;
+            if (seed == 0 || go == null)
+                return;
+
+            if (planetMaterialPool == null)
+                planetMaterialPool = WorldBodyVisualApplier.LoadDefaultMaterialPool();
+
+            float min = planetMaterialPool != null ? planetMaterialPool.NeutralWaterLevelMin : 0.07f;
+            float max = planetMaterialPool != null ? planetMaterialPool.NeutralWaterLevelMax : 0.26f;
+            if (_planetSurfaceWaterSeeds.TryGetValue(entity, out PlanetSurfaceWaterRoll applied) &&
+                applied.Seed == seed &&
+                applied.Min == min &&
+                applied.Max == max)
+                return;
+
+            if (!_proxyPlanetVisuals.TryGetValue(entity, out var key))
+                return;
+
+            WorldBodyVisualApplier.ApplyNeutralSurfaceWater(go, key.PlanetId, key.IsHome, seed, planetMaterialPool);
+            _planetSurfaceWaterSeeds[entity] = new PlanetSurfaceWaterRoll
+            {
+                Seed = seed,
+                Min = min,
+                Max = max,
+            };
         }
 
         /// <summary>
@@ -1600,8 +1981,7 @@ namespace TitanOrbit.Game
             if (em.HasComponent<AsteroidState>(entity) || em.HasComponent<AsteroidTag>(entity))
             {
                 scale = ResolveAsteroidDisplayScale(em, entity, lt.Scale);
-                if (!WorldBodyVisualApplier.TryCreateAsteroidVisual(
-                        asteroidVisualPrefab, lt.Position, scale, out go))
+                if (!TryAcquireAsteroidProxy(em, entity, lt.Position, scale, out go))
                 {
                     go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
                     go.name = "AsteroidTagProxy";
@@ -1634,7 +2014,7 @@ namespace TitanOrbit.Game
                 // [TITAN-ORBIT] No ClientGemBurstPresenter invent. Pose comes from the
                 // interpolated gem ghost; GemClientMotionApplier copies LocalTransform.
                 if (!GemVisualApplier.TryCreateGemVisual(
-                        gemVisualPrefab, state.Value, state.IsBonusGem, out go))
+                        gemVisualPrefab, state.Value, state.Tint, out go))
                 {
                     go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
                     go.name = "GemTagProxy";
@@ -1643,7 +2023,7 @@ namespace TitanOrbit.Game
                     var renderer = go.GetComponent<Renderer>();
                     if (renderer != null)
                         renderer.material = WorldBodyVisualApplier.CreateLitMaterial(
-                            state.IsBonusGem ? new Color(1f, 0.9f, 0.15f) : Color.red);
+                            GemVisualTintColors.FallbackLit(state.Tint));
                 }
                 else
                 {
@@ -1680,6 +2060,8 @@ namespace TitanOrbit.Game
                 UnregisterProxyKindCounts(prev);
                 if (prev == ProxyVisualKind.Asteroid)
                     _asteroidProxyEntities.Remove(entity);
+                else if (prev == ProxyVisualKind.Gem)
+                    _gemProxyEntities.Remove(entity);
                 else if (prev == ProxyVisualKind.Ship)
                     _shipProxyEntities.Remove(entity);
             }
@@ -1687,6 +2069,8 @@ namespace TitanOrbit.Game
             _proxyKinds[entity] = kind;
             if (kind == ProxyVisualKind.Asteroid)
                 _asteroidProxyEntities.Add(entity);
+            else if (kind == ProxyVisualKind.Gem)
+                _gemProxyEntities.Add(entity);
             else if (kind == ProxyVisualKind.Ship)
                 _shipProxyEntities.Add(entity);
 
@@ -2869,7 +3253,87 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Soft-kill GO teardown: destroy/hide the hybrid mesh but keep
+        /// Reuses a parked asteroid at this layout slot, or builds one. Position and size
+        /// are applied by the caller. A recycled rock keeps its mesh.
+        /// </summary>
+        bool TryAcquireAsteroidProxy(EntityManager em, Entity entity, float3 position, float scale, out GameObject go)
+        {
+            int slot = AsteroidLayoutSlot.Read(em, entity);
+            if (AsteroidVisualPool.TryTake(slot, out go) && go != null)
+            {
+                _asteroidLayoutSlots[entity] = slot;
+                return true;
+            }
+
+            if (slot >= 0 && TryDetachHiddenAsteroid(slot, out go))
+            {
+                _asteroidLayoutSlots[entity] = slot;
+                return true;
+            }
+
+            if (!WorldBodyVisualApplier.TryCreateAsteroidVisual(asteroidVisualPrefab, position, scale, out go))
+            {
+                go = null;
+                return false;
+            }
+
+            _asteroidLayoutSlots[entity] = slot;
+            return true;
+        }
+
+        /// <summary>
+        /// Hides an asteroid proxy for its layout slot. Returns false for every other proxy kind.
+        /// </summary>
+        bool TryRecycleAsteroidProxy(Entity entity, GameObject go)
+        {
+            if (go == null)
+                return false;
+            if (!_proxyKinds.TryGetValue(entity, out ProxyVisualKind kind) || kind != ProxyVisualKind.Asteroid)
+                return false;
+
+            _asteroidLayoutSlots.TryGetValue(entity, out int slot);
+            _asteroidLayoutSlots.Remove(entity);
+            return AsteroidVisualPool.TryPark(slot, go);
+        }
+
+        /// <summary>
+        /// Takes a hidden rock that is still registered to a dead entity at <paramref name="slot"/>.
+        /// Respawn can arrive before the kill teardown parks it.
+        /// </summary>
+        bool TryDetachHiddenAsteroid(int slot, out GameObject go)
+        {
+            go = null;
+            Entity owner = Entity.Null;
+            foreach (KeyValuePair<Entity, int> pair in _asteroidLayoutSlots)
+            {
+                if (pair.Value != slot)
+                    continue;
+                owner = pair.Key;
+                break;
+            }
+
+            if (owner == Entity.Null || !_proxies.TryGetValue(owner, out go) || go == null || go.activeSelf)
+            {
+                go = null;
+                return false;
+            }
+
+            _proxies.Remove(owner);
+            _asteroidLayoutSlots.Remove(owner);
+            _asteroidProxyEntities.Remove(owner);
+            _proxyAsteroidTerritory.Remove(owner);
+            if (_proxyKinds.TryGetValue(owner, out ProxyVisualKind kind))
+            {
+                UnregisterProxyKindCounts(kind);
+                _proxyKinds.Remove(owner);
+            }
+
+            go.SetActive(true);
+            return true;
+        }
+
+        /// <summary>
+        /// Soft-kill GO teardown: hide the hybrid mesh but keep
         /// <see cref="AsteroidClientEntityRegistry"/> so respawn can hard-DestroyEntity the zombie.
         /// </summary>
         void TearDownAsteroidProxyKeepRegistry(Entity entity)
@@ -2885,7 +3349,7 @@ namespace TitanOrbit.Game
             if (!_proxies.TryGetValue(entity, out var go))
                 return;
 
-            if (go != null)
+            if (go != null && !TryRecycleAsteroidProxy(entity, go))
             {
                 if (!GemVisualPool.TryReturn(go))
                     Destroy(go);
@@ -2899,7 +3363,10 @@ namespace TitanOrbit.Game
 
             _proxies.Remove(entity);
             _proxyNetworkIds.Remove(entity);
-            // Mesh is gone — strip ECS collision now or the ship rams empty space.
+            _asteroidLayoutSlots.Remove(entity);
+            _asteroidProxyEntities.Remove(entity);
+            _proxyAsteroidTerritory.Remove(entity);
+            // Mesh is parked — strip ECS collision now or the ship rams empty space.
             ClientAsteroidCollisionCull.TryDisablePhysicsCollider(entity);
             // Intentionally skip AsteroidClientEntityRegistry.NotifyDestroyed — ECS zombie remains.
         }
@@ -2979,8 +3446,8 @@ namespace TitanOrbit.Game
                         LocalPlayerShipVisualRoot = null;
                     }
 
-                    // [TITAN-ORBIT] Gem visuals recycle via GemVisualPool — Destroy only non-pooled proxies.
-                    if (!GemVisualPool.TryReturn(go))
+                    // Asteroid rocks park by layout slot. Gems recycle via GemVisualPool.
+                    if (!TryRecycleAsteroidProxy(entity, go) && !GemVisualPool.TryReturn(go))
                         Destroy(go);
                 }
 
@@ -2991,6 +3458,8 @@ namespace TitanOrbit.Game
                 }
 
                 _asteroidProxyEntities.Remove(entity);
+                _asteroidLayoutSlots.Remove(entity);
+                _gemProxyEntities.Remove(entity);
                 _shipProxyEntities.Remove(entity);
                 _proxies.Remove(entity);
                 _proxyNetworkIds.Remove(entity);
@@ -3000,8 +3469,10 @@ namespace TitanOrbit.Game
                 _proxyTeams.Remove(entity);
                 _proxyAccentKeys.Remove(entity);
                 _proxyPlanetVisuals.Remove(entity);
+                _planetSurfaceWaterSeeds.Remove(entity);
                 _proxyAsteroidTerritory.Remove(entity);
                 _proxyGemBonusTint.Remove(entity);
+                _proxyGemSelfPickupFade.Remove(entity);
                 _bulletStretchVisuals.Remove(entity);
             }
         }
@@ -3147,7 +3618,8 @@ namespace TitanOrbit.Game
                         scaleMul,
                         tracer.Damage);
                     AudioManager.Instance?.PlayWeaponShootSound(
-                        BulletVisualFactory.GetFirePowerSoundPitch(tracer.Damage));
+                        BulletVisualFactory.GetFirePowerSoundPitch(tracer.Damage),
+                        BulletVisualFactory.GetFirePowerShootVolume(tracer.Damage));
 
                     GameObject visual = BulletVisualFactory.BuildVisual(
                         go.transform,
@@ -3290,11 +3762,7 @@ namespace TitanOrbit.Game
                 if (!TryConsumeWorldBodyProxyBudget())
                     continue;
 
-                if (!WorldBodyVisualApplier.TryCreateAsteroidVisual(
-                        asteroidVisualPrefab,
-                        lt.Position,
-                        scale,
-                        out go))
+                if (!TryAcquireAsteroidProxy(em, entity, lt.Position, scale, out go))
                 {
                     go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
                     go.name = "AsteroidTagProxy";
@@ -3365,7 +3833,7 @@ namespace TitanOrbit.Game
                 // DrawGems catch-up — same pool Rent + motion applier as urgent Instantiates path.
                 GemVisualPool.EnsurePrefab(gemVisualPrefab);
                 if (!GemVisualApplier.TryCreateGemVisual(
-                        gemVisualPrefab, state.Value, state.IsBonusGem, out go))
+                        gemVisualPrefab, state.Value, state.Tint, out go))
                 {
                     go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
                     go.name = "GemTagProxy";
@@ -3374,7 +3842,7 @@ namespace TitanOrbit.Game
                     var renderer = go.GetComponent<Renderer>();
                     if (renderer != null)
                         renderer.material = WorldBodyVisualApplier.CreateLitMaterial(
-                            state.IsBonusGem ? new Color(1f, 0.9f, 0.15f) : Color.red);
+                            GemVisualTintColors.FallbackLit(state.Tint));
                 }
 
                 _proxies[entity] = go;
@@ -3546,14 +4014,18 @@ namespace TitanOrbit.Game
             }
             _proxies.Clear();
             _proxyNetworkIds.Clear();
+            AsteroidVisualPool.DestroyParked();
+            _asteroidLayoutSlots.Clear();
             _proxyShipLevels.Clear();
             _proxyBranchIndices.Clear();
             _proxyChassisIds.Clear();
             _proxyTeams.Clear();
             _proxyAccentKeys.Clear();
             _proxyPlanetVisuals.Clear();
+            _planetSurfaceWaterSeeds.Clear();
             _proxyAsteroidTerritory.Clear();
             _proxyGemBonusTint.Clear();
+            _proxyGemSelfPickupFade.Clear();
             ClearProxyCountStaticsIfOwner();
         }
     }

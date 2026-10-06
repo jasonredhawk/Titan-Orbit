@@ -81,10 +81,12 @@ namespace TitanOrbit.NetCode
                 return;
 
             var em = world.EntityManager;
-            if (!em.CreateEntityQuery(typeof(NetworkSnapshotAck)).TryGetSingleton<NetworkSnapshotAck>(out var ack))
+            using var ackQuery = em.CreateEntityQuery(typeof(NetworkSnapshotAck));
+            if (!ackQuery.TryGetSingleton<NetworkSnapshotAck>(out var ack))
                 return;
 
-            if (!em.CreateEntityQuery(typeof(NetworkTimeSystemData)).TryGetSingleton<NetworkTimeSystemData>(out var timeData))
+            using var timeQuery = em.CreateEntityQuery(typeof(NetworkTimeSystemData));
+            if (!timeQuery.TryGetSingleton<NetworkTimeSystemData>(out var timeData))
                 return;
 
             float rttMs = ack.EstimatedRTT;

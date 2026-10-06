@@ -16,9 +16,10 @@ namespace TitanOrbit.Data
         public static ShipComponentAbilityStats ApplyProfileToComponentStats(
             ShipComponentAbilityStats stats,
             ShipFamilyComponentEntry entry,
-            ShipFamilyDefinition family = null)
+            ShipFamilyDefinition family = null,
+            int planetOrHullBankIndex = -1)
         {
-            int bankIndex = ResolveBankIndexForFamily(family);
+            int bankIndex = ResolveBankIndexForComponentEntry(entry, family, planetOrHullBankIndex);
             var bank = BulletVfxBank.LoadDefault();
             if (bank == null || !bank.TryGetProfile(bankIndex, out BulletBankProfile profile) || profile == null)
                 return stats;
@@ -52,13 +53,22 @@ namespace TitanOrbit.Data
         static float Mul(float authored) => authored > 0f ? authored : 1f;
 
         /// <summary>
-        /// Family default bank category from <see cref="ShipFamilyDefinition.bulletPrefabIndex"/>.
+        /// Family fallback bank from <see cref="ShipFamilyDefinition.bulletPrefabIndex"/>.
+        /// Every gameplay family authors Laserbolt (0). Live hulls use the planet-stamped
+        /// <c>ShipState.HullBulletBankIndex</c> instead — this is the asset default only.
         /// Negative authored values clamp to 0 (Laserbolt / first bank category).
         /// </summary>
-        public static int ResolveBankIndexForFamily(ShipFamilyDefinition family)
+        public static int ResolveBankIndexForFamily(
+            ShipFamilyDefinition family,
+            int planetOrHullBankIndex = -1)
         {
-            // --- Family → bank ---
-            // [TITAN-ORBIT] Wired into ShipLoadoutState.RuntimeBulletIndex by ShipStatApplyLogic.
+            // --- Planet / hull stamp wins ---
+            // [TITAN-ORBIT] Neutral planets roll a gun. That index is the family's live
+            // default on that world — Cosmic Shark at a Rift planet fires Rift, not Laserbolt.
+            if (planetOrHullBankIndex >= 0)
+                return PlanetShipFamilyAssignment.SanitizeSelectableDamageBank(planetOrHullBankIndex);
+
+            // --- Family asset fallback (Laserbolt) ---
             if (family == null)
                 return 0;
             int index = family.bulletPrefabIndex < 0 ? 0 : family.bulletPrefabIndex;
@@ -128,12 +138,18 @@ namespace TitanOrbit.Data
         /// <summary>
         /// Bank a planetary-defense pad fires. <paramref name="config"/> may pin a category;
         /// <see cref="PlanetaryDefenseConfig.UseFamilyBulletBankIndex"/> (-1, the default)
-        /// inherits the owning family's damage bank. Heal and store-reserved (Rockets)
-        /// never win — those fall back to the family default.
+        /// inherits the planet's rolled gun, then the owning family's Laserbolt fallback.
+        /// Heal and store-reserved (Rockets) never win.
         /// </summary>
+        /// <param name="config">Turret recipe (may pin a bank).</param>
+        /// <param name="family">Owning family — used only when the planet did not stamp a gun.</param>
+        /// <param name="planetBulletBankIndex">
+        /// Ghosted <c>PlanetState.BulletBankIndex</c> (−1 = ignore and use family fallback).
+        /// </param>
         public static int ResolveBankIndexForPlanetaryDefense(
             PlanetaryDefenseConfig config,
-            ShipFamilyDefinition family)
+            ShipFamilyDefinition family,
+            int planetBulletBankIndex = -1)
         {
             if (config != null && config.bulletBankIndex >= 0)
             {
@@ -141,6 +157,9 @@ namespace TitanOrbit.Data
                 if (!IsHealBankIndex(authored) && !IsStoreReservedBankIndex(authored))
                     return authored;
             }
+
+            if (planetBulletBankIndex >= 0)
+                return PlanetShipFamilyAssignment.SanitizeSelectableDamageBank(planetBulletBankIndex);
 
             return Mathf.Max(0, ResolveBankIndexForFamily(family));
         }
@@ -155,28 +174,60 @@ namespace TitanOrbit.Data
         /// <summary>Prefix stamped on drone <c>EquippedEquipmentElement.ComponentId</c> at purchase.</summary>
         public const string DroneSourceFamilyIdPrefix = "DroneFam:";
 
-        /// <summary>Encodes the store planet's family config index onto a purchased drone.</summary>
-        public static string FormatDroneSourceFamilyId(int familyConfigIndex) =>
-            DroneSourceFamilyIdPrefix + Mathf.Max(0, familyConfigIndex);
+        /// <summary>
+        /// Encodes the store planet's family + rolled gun onto a purchased drone
+        /// (<c>DroneFam:{family}:{bank}</c>). Older saves used <c>DroneFam:{family}</c> only.
+        /// </summary>
+        public static string FormatDroneSourceFamilyId(int familyConfigIndex, int bulletBankIndex = -1)
+        {
+            int family = Mathf.Max(0, familyConfigIndex);
+            if (bulletBankIndex < 0)
+                return DroneSourceFamilyIdPrefix + family;
+            int bank = PlanetShipFamilyAssignment.SanitizeSelectableDamageBank(bulletBankIndex);
+            return DroneSourceFamilyIdPrefix + family + ":" + bank;
+        }
 
         /// <summary>True when <paramref name="componentId"/> is a drone source-family stamp.</summary>
         public static bool TryParseDroneSourceFamilyId(string componentId, out int familyConfigIndex)
         {
-            familyConfigIndex = 0;
-            if (string.IsNullOrEmpty(componentId) ||
-                !componentId.StartsWith(DroneSourceFamilyIdPrefix, System.StringComparison.Ordinal))
-                return false;
-            return int.TryParse(componentId.Substring(DroneSourceFamilyIdPrefix.Length), out familyConfigIndex);
+            return TryParseDroneSource(componentId, out familyConfigIndex, out _);
         }
 
         /// <summary>
-        /// Bank for a combat drone: stamped purchase-planet family, else the hull family default.
-        /// Never returns the heal bank.
+        /// Reads <c>DroneFam:{family}</c> or <c>DroneFam:{family}:{bank}</c>.
+        /// <paramref name="bulletBankIndex"/> is −1 when the older family-only stamp is present.
+        /// </summary>
+        public static bool TryParseDroneSource(string componentId, out int familyConfigIndex, out int bulletBankIndex)
+        {
+            familyConfigIndex = 0;
+            bulletBankIndex = -1;
+            if (string.IsNullOrEmpty(componentId) ||
+                !componentId.StartsWith(DroneSourceFamilyIdPrefix, System.StringComparison.Ordinal))
+                return false;
+
+            string rest = componentId.Substring(DroneSourceFamilyIdPrefix.Length);
+            int colon = rest.IndexOf(':');
+            if (colon < 0)
+                return int.TryParse(rest, out familyConfigIndex);
+
+            if (!int.TryParse(rest.Substring(0, colon), out familyConfigIndex))
+                return false;
+            if (int.TryParse(rest.Substring(colon + 1), out int bank))
+                bulletBankIndex = bank;
+            return true;
+        }
+
+        /// <summary>
+        /// Bank for a combat drone: stamped purchase-planet gun when present, else that
+        /// planet's family fallback, else the hull family default. Never returns the heal bank.
         /// </summary>
         public static int ResolveBankIndexForDrone(string componentId, ShipFamilyDefinition hullFallback = null)
         {
-            if (TryParseDroneSourceFamilyId(componentId, out int familyIndex))
+            if (TryParseDroneSource(componentId, out int familyIndex, out int stampedBank))
             {
+                if (stampedBank >= 0)
+                    return PlanetShipFamilyAssignment.SanitizeSelectableDamageBank(stampedBank);
+
                 var config = PlanetShipFamilyConfig.LoadDefault();
                 var entry = config != null ? config.GetFamilyByConfigIndex(familyIndex) : null;
                 if (entry?.shipFamilyDefinition != null)
@@ -238,11 +289,28 @@ namespace TitanOrbit.Data
         /// <returns>Zero-based <see cref="BulletVfxBank"/> category index (0 when both inputs are missing).</returns>
         public static int ResolveBankIndexForComponentEntry(
             ShipFamilyComponentEntry entry,
-            ShipFamilyDefinition family)
+            ShipFamilyDefinition family,
+            int planetOrHullBankIndex = -1)
         {
-            // --- Authored override ---
-            // [TITAN-ORBIT] -1 (default) means "same bank as this family's hull guns."
-            // A heal bank on a store weapon is remapped: players buy a gun, then toggle heal with B.
+            // --- Planet / hull stamp ---
+            // [TITAN-ORBIT] Inherit (−1), heal remap, and the family Laserbolt default
+            // all adopt the planet's rolled gun. A unique authored bank still wins.
+            if (planetOrHullBankIndex >= 0)
+            {
+                int planetBank = PlanetShipFamilyAssignment.SanitizeSelectableDamageBank(planetOrHullBankIndex);
+                if (entry == null || entry.bulletPrefabIndex < 0)
+                    return planetBank;
+                if (IsHealBankIndex(entry.bulletPrefabIndex))
+                    return planetBank;
+                int familyDefault = family != null && family.bulletPrefabIndex >= 0
+                    ? family.bulletPrefabIndex
+                    : 0;
+                if (entry.bulletPrefabIndex == familyDefault)
+                    return planetBank;
+                return entry.bulletPrefabIndex;
+            }
+
+            // --- Authored override / family Laserbolt fallback ---
             if (entry != null && entry.bulletPrefabIndex >= 0)
             {
                 if (IsHealBankIndex(entry.bulletPrefabIndex))
@@ -250,7 +318,6 @@ namespace TitanOrbit.Data
                 return entry.bulletPrefabIndex;
             }
 
-            // --- Family default ---
             return ResolveBankIndexForFamily(family);
         }
 
@@ -258,15 +325,14 @@ namespace TitanOrbit.Data
         /// Player-facing default gun bank name for a ship family (Fireballs, Rift, Laserbolt, …).
         /// Same string planet world labels and the Gear tab use. Empty when the family or bank is missing.
         /// </summary>
-        public static string FormatFamilyBulletTypeName(ShipFamilyDefinition family)
+        public static string FormatFamilyBulletTypeName(
+            ShipFamilyDefinition family,
+            int planetOrHullBankIndex = -1)
         {
-            if (family == null)
+            if (family == null && planetOrHullBankIndex < 0)
                 return string.Empty;
 
-            // --- Family default bank ---
-            // [TITAN-ORBIT] Each gameplay family authors one bulletPrefabIndex. Planet labels
-            // show that type under the family name so players can spot the gun from orbit.
-            int bankIndex = ResolveBankIndexForFamily(family);
+            int bankIndex = ResolveBankIndexForFamily(family, planetOrHullBankIndex);
             return FormatBankCategoryName(bankIndex);
         }
 
@@ -276,11 +342,10 @@ namespace TitanOrbit.Data
         /// </summary>
         public static string FormatComponentBulletTypeName(
             ShipFamilyComponentEntry entry,
-            ShipFamilyDefinition family)
+            ShipFamilyDefinition family,
+            int planetOrHullBankIndex = -1)
         {
-            // --- Resolve then look up ---
-            // Same index combat uses for this part; name matches Bullet Type HUD / B-key cycle.
-            int bankIndex = ResolveBankIndexForComponentEntry(entry, family);
+            int bankIndex = ResolveBankIndexForComponentEntry(entry, family, planetOrHullBankIndex);
             return FormatBankCategoryName(bankIndex);
         }
 
@@ -288,7 +353,7 @@ namespace TitanOrbit.Data
         /// Looks up the VFX-bank category name for <paramref name="bankIndex"/>.
         /// Cached <see cref="BulletVfxBank.LoadDefault"/> — safe to call from UI refresh, not a hot sim tick.
         /// </summary>
-        static string FormatBankCategoryName(int bankIndex)
+        public static string FormatBankCategoryName(int bankIndex)
         {
             var bank = BulletVfxBank.LoadDefault();
             if (bank == null || !bank.TryGetCategoryName(bankIndex, out string name))
@@ -297,17 +362,25 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Bank for a purchased component: authored override, else the part's source family default.
+        /// Bank for a purchased component: authored override, else the hull/planet stamp,
+        /// else the part's source family Laserbolt fallback.
         /// Walks every family in the planet config until the component id is found.
         /// </summary>
-        public static int ResolveBankIndexForComponent(string componentId, PlanetShipFamilyConfig config = null)
+        public static int ResolveBankIndexForComponent(
+            string componentId,
+            PlanetShipFamilyConfig config = null,
+            int planetOrHullBankIndex = -1)
         {
             if (string.IsNullOrWhiteSpace(componentId))
-                return 0;
+                return planetOrHullBankIndex >= 0
+                    ? PlanetShipFamilyAssignment.SanitizeSelectableDamageBank(planetOrHullBankIndex)
+                    : 0;
             if (config == null)
                 config = PlanetShipFamilyConfig.LoadDefault();
             if (config?.families == null)
-                return 0;
+                return planetOrHullBankIndex >= 0
+                    ? PlanetShipFamilyAssignment.SanitizeSelectableDamageBank(planetOrHullBankIndex)
+                    : 0;
 
             // --- Find the authored row ---
             // Component ids are unique across families in PlanetShipFamilyConfig.
@@ -316,10 +389,12 @@ namespace TitanOrbit.Data
                 var family = config.families[i]?.shipFamilyDefinition;
                 if (family == null || !family.TryGetComponentEntry(componentId, out ShipFamilyComponentEntry entry))
                     continue;
-                return ResolveBankIndexForComponentEntry(entry, family);
+                return ResolveBankIndexForComponentEntry(entry, family, planetOrHullBankIndex);
             }
 
-            return 0;
+            return planetOrHullBankIndex >= 0
+                ? PlanetShipFamilyAssignment.SanitizeSelectableDamageBank(planetOrHullBankIndex)
+                : 0;
         }
 
         /// <summary>Looks up a component id on any family in the planet config.</summary>
@@ -328,7 +403,23 @@ namespace TitanOrbit.Data
             out ShipFamilyComponentEntry entry,
             PlanetShipFamilyConfig config = null)
         {
+            return TryFindComponentInAnyFamily(componentId, out entry, out _, out _, config);
+        }
+
+        /// <summary>
+        /// Same catalog walk as <see cref="TryFindComponentInAnyFamily(string,out ShipFamilyComponentEntry,PlanetShipFamilyConfig)"/>,
+        /// plus the owning family and its <c>PlanetShipFamilyConfig</c> list index.
+        /// </summary>
+        public static bool TryFindComponentInAnyFamily(
+            string componentId,
+            out ShipFamilyComponentEntry entry,
+            out ShipFamilyDefinition family,
+            out int familyConfigIndex,
+            PlanetShipFamilyConfig config = null)
+        {
             entry = null;
+            family = null;
+            familyConfigIndex = -1;
             if (string.IsNullOrWhiteSpace(componentId))
                 return false;
             if (config == null)
@@ -338,9 +429,12 @@ namespace TitanOrbit.Data
 
             for (int i = 0; i < config.families.Count; i++)
             {
-                var family = config.families[i]?.shipFamilyDefinition;
-                if (family != null && family.TryGetComponentEntry(componentId, out entry) && entry != null)
-                    return true;
+                var candidate = config.families[i]?.shipFamilyDefinition;
+                if (candidate == null || !candidate.TryGetComponentEntry(componentId, out entry) || entry == null)
+                    continue;
+                family = candidate;
+                familyConfigIndex = i;
+                return true;
             }
 
             return false;

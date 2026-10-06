@@ -5,7 +5,6 @@ using TitanOrbit.ECS;
 using TitanOrbit.Simulation;
 using TMPro;
 using UnityEngine;
-using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
 namespace TitanOrbit.Game
@@ -14,8 +13,7 @@ namespace TitanOrbit.Game
     /// Full-screen Customize Ship studio: hull presets, profile badge, and thrusters.
     /// Color1 stays the team Colorize material. Color2 / Color3 / Glow come from
     /// authored <see cref="ShipAccentPreset"/> assets — not free HSV picks.
-    /// Thruster color swaps the authored JetFlame prefab (Blue / Green / Purple / Red /
-    /// Yellow) instead of tinting materials.
+    /// Thruster type swaps the authored JetFlame prefab. Jets always follow team Color1.
     /// <para>
     /// The world-space preview hull lives on the unused ShipPreview layer over the
     /// same star + gas shader as the match. Close() disables that camera and hides
@@ -29,9 +27,6 @@ namespace TitanOrbit.Game
         public const string OverlayObjectName = "ShipCustomizeScreen";
 
         const int OverlaySortingOrder = 540;
-        const int SvSize = 160;
-        const int HueBarW = 22;
-        const int HueBarH = 160;
 
         static readonly Color PanelFill = new Color(0.012f, 0.016f, 0.028f, 0.96f);
         static readonly Color CaptionColor = new Color(0.62f, 0.78f, 0.95f, 0.92f);
@@ -41,20 +36,6 @@ namespace TitanOrbit.Game
         static readonly Color CardFill = new Color(0.04f, 0.07f, 0.12f, 0.92f);
         static readonly Color RowFill = new Color(0.06f, 0.09f, 0.14f, 0.96f);
         static readonly Color FrameTint = new Color(0.22f, 0.36f, 0.52f, 0.55f);
-
-        enum AccentSlot
-        {
-            Color2 = 0,
-            Color3 = 1,
-            Emission1 = 2,
-            Emission2 = 3,
-            Emission3 = 4,
-            Thruster = 5,
-            Life0 = 6,
-            Life1 = 7,
-            Life2 = 8,
-            Life3 = 9,
-        }
 
         TeamId _team = TeamId.TeamA;
         Color32 _color2;
@@ -76,10 +57,6 @@ namespace TitanOrbit.Game
         TextMeshProUGUI _paintStateLabel;
         TextMeshProUGUI _paintPresetLabel;
         TextMeshProUGUI _thrusterStyleLabel;
-        TextMeshProUGUI _thrusterColorLabel;
-        TextMeshProUGUI _thrusterModeLabel;
-        Image _thrusterColorWell;
-        readonly Image[] _lifetimeSwatches = new Image[4];
         readonly Image[] _presetSwatches = new Image[6];
         MainMenuBadgePicker _badgePicker;
         readonly Image[] _teamChips = new Image[5];
@@ -104,21 +81,8 @@ namespace TitanOrbit.Game
         int _previewBadgeId = int.MinValue;
         string _previewFlameColorName;
 
-        RectTransform _pickerPanel;
-        RawImage _svImage;
-        RawImage _hueImage;
-        RectTransform _svCursor;
-        RectTransform _hueCursor;
-        Texture2D _svTex;
-        Texture2D _hueTex;
         Texture2D _whiteTex;
-        Texture2D _ringTex;
         Sprite _whiteSprite;
-        Sprite _ringSprite;
-        AccentSlot _pickerSlot;
-        float _hue;
-        float _sat;
-        float _val;
 
         /// <summary>
         /// Finds or creates the overlay under <paramref name="canvasRoot"/> and shows it.
@@ -164,7 +128,6 @@ namespace TitanOrbit.Game
             RefreshFromStore();
             RefreshThrusterSection();
             RefreshUnlockBanner();
-            HidePicker(persist: false);
             gameObject.SetActive(true);
             transform.SetAsLastSibling();
         }
@@ -172,7 +135,6 @@ namespace TitanOrbit.Game
         /// <summary>Hides the studio and tears down the leftover preview camera / hull.</summary>
         public void Close()
         {
-            HidePicker(persist: false);
             if (TitanOrbitCosmeticGate.IsCustomizationUnlocked)
                 FlushPersist();
             TitanOrbitCosmeticGate.EndHangarPreview();
@@ -274,14 +236,8 @@ namespace TitanOrbit.Game
                 Destroy(_previewRt);
             }
 
-            if (_svTex != null)
-                Destroy(_svTex);
-            if (_hueTex != null)
-                Destroy(_hueTex);
             if (_whiteTex != null)
                 Destroy(_whiteTex);
-            if (_ringTex != null)
-                Destroy(_ringTex);
             if (_previewRoot != null)
                 Destroy(_previewRoot);
         }
@@ -297,13 +253,11 @@ namespace TitanOrbit.Game
             }
 
             BindChromeRefs();
+            EnsureTeamPreviewSection();
             EnsureHullSection();
             EnsureBadgeSection();
             EnsureThrusterSection();
             EnsureUnlockBanner();
-            EnsureColorPicker();
-            EnsurePickerCloseButton();
-            StripPanelDismissesPicker();
             PaintTeamStrip();
             RefreshUnlockBanner();
         }
@@ -323,11 +277,6 @@ namespace TitanOrbit.Game
             _glow3Well = null;
             _paintStateLabel = null;
             _paintPresetLabel = null;
-            _pickerPanel = null;
-            _svImage = null;
-            _hueImage = null;
-            _svCursor = null;
-            _hueCursor = null;
             _badgeChip = null;
             _badgeEmpty = null;
             _badgeCaption = null;
@@ -335,28 +284,11 @@ namespace TitanOrbit.Game
             _unlockBanner = null;
             _unlockBannerLabel = null;
             _thrusterStyleLabel = null;
-            _thrusterColorLabel = null;
-            _thrusterModeLabel = null;
-            _thrusterColorWell = null;
             _previewNameplate = null;
-            for (int i = 0; i < _lifetimeSwatches.Length; i++)
-                _lifetimeSwatches[i] = null;
             for (int i = 0; i < _presetSwatches.Length; i++)
                 _presetSwatches[i] = null;
             for (int i = 0; i < _teamChips.Length; i++)
                 _teamChips[i] = null;
-
-            if (_svTex != null)
-            {
-                Destroy(_svTex);
-                _svTex = null;
-            }
-
-            if (_hueTex != null)
-            {
-                Destroy(_hueTex);
-                _hueTex = null;
-            }
         }
 
         Transform ContentRoot()
@@ -415,7 +347,7 @@ namespace TitanOrbit.Game
             var subtitle = CreateTmp(
                 panel.transform,
                 "Subtitle",
-                "Team Color1 stays locked. Jets use a four-stop lifetime fade.",
+                "Team Color1 stays locked. Jets follow team color.",
                 12f,
                 FontStyles.Normal);
             PlaceTop(subtitle.rectTransform, 34f, 16f);
@@ -555,7 +487,6 @@ namespace TitanOrbit.Game
         void BindChromeRefs()
         {
             Transform content = ContentRoot();
-            Transform panel = transform.Find("Panel");
             if (content == null)
                 return;
 
@@ -581,19 +512,38 @@ namespace TitanOrbit.Game
                 _glow3Well = content.Find("GLOW 3Well/Well")?.GetComponent<Image>();
             if (_paintStateLabel == null)
                 _paintStateLabel = content.Find("PaintState")?.GetComponent<TextMeshProUGUI>();
-            if (_pickerPanel == null)
-            {
-                Transform thruster = content.Find("ThrusterSection");
-                _pickerPanel = (thruster != null ? thruster.Find("ColorPicker") : null) as RectTransform
-                    ?? transform.Find("ColorPicker") as RectTransform
-                    ?? (panel != null ? panel.Find("Right/ColorPicker") as RectTransform : null)
-                    ?? (panel != null ? panel.Find("ColorPicker") as RectTransform : null);
-            }
         }
 
         /// <summary>
-        /// One Hull card (header + team chips + paint preset), matching Thrusters.
+        /// Team A–E chips so the player can preview Color1. This does not change
+        /// their match team — Color1 stays locked to the palette asset.
         /// </summary>
+        void EnsureTeamPreviewSection()
+        {
+            Transform right = ContentRoot();
+            if (right == null)
+                return;
+
+            DestroyNamedChild(right, "TeamStrip");
+            Transform hull = right.Find("HullSection");
+            if (hull != null)
+                DestroyNamedChild(hull, "TeamStrip");
+
+            Transform existing = right.Find("TeamPreviewSection");
+            GameObject section = existing != null
+                ? existing.gameObject
+                : CreateUi("TeamPreviewSection", right, typeof(Image));
+            var rt = section.GetComponent<RectTransform>();
+            BindLayoutSlot(rt, 78f);
+            section.GetComponent<Image>().color = CardFill;
+            EnsureCardAccent(section.transform);
+            section.transform.SetSiblingIndex(0);
+            EnsureSectionHeader(section.transform, "TEAM PREVIEW");
+            DestroyNamedChild(section.transform, "Blurb");
+            EnsureTeamStrip(section.transform);
+        }
+
+        /// <summary>Hull paint cycle — arrows and name only, no Preset caption.</summary>
         void EnsureHullSection()
         {
             Transform right = ContentRoot();
@@ -610,45 +560,13 @@ namespace TitanOrbit.Game
                 ? existing.gameObject
                 : CreateUi("HullSection", right, typeof(Image));
             var rt = section.GetComponent<RectTransform>();
-            BindLayoutSlot(rt, 186f);
+            BindLayoutSlot(rt, 108f);
             section.GetComponent<Image>().color = CardFill;
             EnsureCardAccent(section.transform);
-
-            Transform headerTf = section.transform.Find("Header");
-            TextMeshProUGUI header = headerTf != null
-                ? headerTf.GetComponent<TextMeshProUGUI>()
-                : CreateTmp(section.transform, "Header", "HULL", 15f, FontStyles.Bold);
-            var headerRt = header.rectTransform;
-            headerRt.anchorMin = new Vector2(0f, 1f);
-            headerRt.anchorMax = new Vector2(1f, 1f);
-            headerRt.pivot = new Vector2(0.5f, 1f);
-            headerRt.sizeDelta = new Vector2(-20f, 18f);
-            headerRt.anchoredPosition = new Vector2(0f, -4f);
-            header.fontSize = 12f;
-            header.alignment = TextAlignmentOptions.MidlineLeft;
-            header.color = AccentCyan;
-            header.characterSpacing = 1.2f;
-
-            Transform blurbTf = section.transform.Find("Blurb");
-            TextMeshProUGUI blurb = blurbTf != null
-                ? blurbTf.GetComponent<TextMeshProUGUI>()
-                : CreateTmp(
-                    section.transform,
-                    "Blurb",
-                    "Team Color1 stays locked. Cycle authored Color2, Color3, and glow presets.",
-                    11f,
-                    FontStyles.Normal);
-            var blurbRt = blurb.rectTransform;
-            blurbRt.anchorMin = new Vector2(0f, 1f);
-            blurbRt.anchorMax = new Vector2(1f, 1f);
-            blurbRt.pivot = new Vector2(0.5f, 1f);
-            blurbRt.sizeDelta = new Vector2(-20f, 20f);
-            blurbRt.anchoredPosition = new Vector2(0f, -22f);
-            blurb.text = "Team Color1 stays locked. Cycle authored Color2, Color3, and glow presets.";
-            blurb.alignment = TextAlignmentOptions.TopLeft;
-            blurb.color = CaptionColor;
-
-            EnsureTeamStrip(section.transform);
+            section.transform.SetSiblingIndex(1);
+            EnsureSectionHeader(section.transform, "HULL");
+            DestroyNamedChild(section.transform, "Blurb");
+            DestroyNamedChild(section.transform, "TeamStrip");
             EnsurePaintPresetSection(section.transform);
         }
 
@@ -669,22 +587,10 @@ namespace TitanOrbit.Game
             rt.anchorMin = new Vector2(0f, 1f);
             rt.anchorMax = new Vector2(1f, 1f);
             rt.pivot = new Vector2(0.5f, 1f);
-            rt.sizeDelta = new Vector2(-16f, 56f);
-            rt.anchoredPosition = new Vector2(0f, -44f);
+            rt.sizeDelta = new Vector2(-16f, 40f);
+            rt.anchoredPosition = new Vector2(0f, -28f);
             row.GetComponent<Image>().color = RowFill;
-
-            Transform labelTf = row.transform.Find("Label");
-            TextMeshProUGUI label = labelTf != null
-                ? labelTf.GetComponent<TextMeshProUGUI>()
-                : CreateTmp(row.transform, "Label", "PREVIEW TEAM", 12f, FontStyles.Bold);
-            var labelRt = label.rectTransform;
-            labelRt.anchorMin = new Vector2(0f, 1f);
-            labelRt.anchorMax = new Vector2(1f, 1f);
-            labelRt.pivot = new Vector2(0.5f, 1f);
-            labelRt.sizeDelta = new Vector2(-8f, 18f);
-            labelRt.anchoredPosition = new Vector2(0f, -3f);
-            label.alignment = TextAlignmentOptions.Center;
-            label.color = CaptionColor;
+            DestroyNamedChild(row.transform, "Label");
 
             for (int i = 0; i < 5; i++)
             {
@@ -695,11 +601,11 @@ namespace TitanOrbit.Game
                     ? chipTf.gameObject
                     : CreateUi(name, row.transform, typeof(Image), typeof(Button));
                 var chipRt = chipGo.GetComponent<RectTransform>();
-                chipRt.anchorMin = new Vector2(0.5f, 0f);
-                chipRt.anchorMax = new Vector2(0.5f, 0f);
-                chipRt.pivot = new Vector2(0.5f, 0f);
+                chipRt.anchorMin = new Vector2(0.5f, 0.5f);
+                chipRt.anchorMax = new Vector2(0.5f, 0.5f);
+                chipRt.pivot = new Vector2(0.5f, 0.5f);
                 chipRt.sizeDelta = new Vector2(30f, 24f);
-                chipRt.anchoredPosition = new Vector2((i - 2) * 36f, 6f);
+                chipRt.anchoredPosition = new Vector2((i - 2) * 36f, 0f);
                 var chipImg = chipGo.GetComponent<Image>();
                 chipImg.sprite = _whiteSprite;
                 chipImg.color = ShipColorizeAccentApplier.Opaque(TeamColor1Palette.GetColor1(team));
@@ -783,8 +689,8 @@ namespace TitanOrbit.Game
             _paintPresetLabel = EnsureCycleRow(
                 content,
                 "PaintPresetRow",
-                "PRESET",
-                -106f,
+                string.Empty,
+                -28f,
                 () => CyclePaintPreset(-1),
                 () => CyclePaintPreset(1));
 
@@ -806,7 +712,7 @@ namespace TitanOrbit.Game
             rt.anchorMax = new Vector2(1f, 1f);
             rt.pivot = new Vector2(0.5f, 1f);
             rt.sizeDelta = new Vector2(-16f, 28f);
-            rt.anchoredPosition = new Vector2(0f, -144f);
+            rt.anchoredPosition = new Vector2(0f, -64f);
             row.GetComponent<Image>().color = RowFill;
 
             const float swatch = 22f;
@@ -883,6 +789,27 @@ namespace TitanOrbit.Game
             Transform child = parent.Find(name);
             if (child != null)
                 DestroyImmediate(child.gameObject);
+        }
+
+        static TextMeshProUGUI EnsureSectionHeader(Transform section, string title)
+        {
+            Transform headerTf = section.Find("Header");
+            TextMeshProUGUI header = headerTf != null
+                ? headerTf.GetComponent<TextMeshProUGUI>()
+                : CreateTmp(section, "Header", title, 15f, FontStyles.Bold);
+            var headerRt = header.rectTransform;
+            headerRt.anchorMin = new Vector2(0f, 1f);
+            headerRt.anchorMax = new Vector2(1f, 1f);
+            headerRt.pivot = new Vector2(0.5f, 1f);
+            headerRt.sizeDelta = new Vector2(-20f, 18f);
+            headerRt.anchoredPosition = new Vector2(0f, -4f);
+            header.text = title;
+            header.fontSize = 12f;
+            header.alignment = TextAlignmentOptions.MidlineLeft;
+            header.color = AccentCyan;
+            header.characterSpacing = 1.2f;
+            header.gameObject.SetActive(true);
+            return header;
         }
 
         /// <summary>
@@ -1008,7 +935,7 @@ namespace TitanOrbit.Game
                 _badgePicker.OpenOverlay();
         }
 
-        /// <summary>Player-chosen flame type and team-follow vs locked color.</summary>
+        /// <summary>Flame type cycle — arrows and name only. Jets follow team Color1.</summary>
         void EnsureThrusterSection()
         {
             Transform content = ContentRoot();
@@ -1020,237 +947,30 @@ namespace TitanOrbit.Game
                 ? existing.gameObject
                 : CreateUi("ThrusterSection", content, typeof(Image));
             var rt = section.GetComponent<RectTransform>();
-            BindLayoutSlot(rt, 220f);
+            BindLayoutSlot(rt, 70f);
             section.GetComponent<Image>().color = CardFill;
             EnsureCardAccent(section.transform);
+            section.transform.SetSiblingIndex(2);
 
-            Transform headerTf = section.transform.Find("Header");
-            TextMeshProUGUI header = headerTf != null
-                ? headerTf.GetComponent<TextMeshProUGUI>()
-                : CreateTmp(section.transform, "Header", "THRUSTERS", 15f, FontStyles.Bold);
-            var headerRt = header.rectTransform;
-            headerRt.anchorMin = new Vector2(0f, 1f);
-            headerRt.anchorMax = new Vector2(1f, 1f);
-            headerRt.pivot = new Vector2(0.5f, 1f);
-            headerRt.sizeDelta = new Vector2(-20f, 18f);
-            headerRt.anchoredPosition = new Vector2(0f, -4f);
-            header.fontSize = 12f;
-            header.alignment = TextAlignmentOptions.MidlineLeft;
-            header.color = AccentCyan;
-            header.characterSpacing = 1.2f;
+            DestroyNamedChild(section.transform, "ColorRow");
+            DestroyNamedChild(section.transform, "ThrusterColorRow");
+            DestroyNamedChild(section.transform, "LifetimeRow");
+            DestroyNamedChild(section.transform, "Mode");
+            DestroyNamedChild(section.transform, "ResetThrusters");
+            DestroyNamedChild(section.transform, "Blurb");
+            DestroyNamedChild(section.transform, "ColorPicker");
+            Transform right = transform.Find("Panel/Right");
+            DestroyNamedChild(right, "ColorPicker");
+            DestroyNamedChild(transform.Find("Panel"), "ColorPicker");
 
-            Transform blurbTf = section.transform.Find("Blurb");
-            TextMeshProUGUI blurb = blurbTf != null
-                ? blurbTf.GetComponent<TextMeshProUGUI>()
-                : CreateTmp(
-                    section.transform,
-                    "Blurb",
-                    "Swap authored JetFlame colors. Dark picks snap to a visible flame.",
-                    12f,
-                    FontStyles.Normal);
-            var blurbRt = blurb.rectTransform;
-            blurbRt.anchorMin = new Vector2(0f, 1f);
-            blurbRt.anchorMax = new Vector2(1f, 1f);
-            blurbRt.pivot = new Vector2(0.5f, 1f);
-            blurbRt.sizeDelta = new Vector2(-20f, 20f);
-            blurbRt.anchoredPosition = new Vector2(0f, -22f);
-            blurb.text = "Color over lifetime: hot core, team or picked color, then fade.";
-            blurb.fontSize = 11f;
-            blurb.alignment = TextAlignmentOptions.TopLeft;
-            blurb.color = CaptionColor;
-
+            EnsureSectionHeader(section.transform, "THRUSTERS");
             _thrusterStyleLabel = EnsureCycleRow(
                 section.transform,
                 "StyleRow",
-                "TYPE",
-                -44f,
+                string.Empty,
+                -28f,
                 () => CycleThrusterStyle(-1),
                 () => CycleThrusterStyle(1));
-
-            Transform leftoverColor = section.transform.Find("ColorRow");
-            if (leftoverColor != null)
-                DestroyImmediate(leftoverColor.gameObject);
-
-            Transform colorRowTf = section.transform.Find("ThrusterColorRow");
-            GameObject colorRow = colorRowTf != null
-                ? colorRowTf.gameObject
-                : CreateUi("ThrusterColorRow", section.transform, typeof(Image));
-            var colorRt = colorRow.GetComponent<RectTransform>();
-            colorRt.anchorMin = new Vector2(0.5f, 1f);
-            colorRt.anchorMax = new Vector2(0.5f, 1f);
-            colorRt.pivot = new Vector2(0.5f, 1f);
-            colorRt.anchorMin = new Vector2(0f, 1f);
-            colorRt.anchorMax = new Vector2(1f, 1f);
-            colorRt.pivot = new Vector2(0.5f, 1f);
-            colorRt.sizeDelta = new Vector2(-16f, 32f);
-            colorRt.anchoredPosition = new Vector2(0f, -80f);
-            colorRow.GetComponent<Image>().color = RowFill;
-
-            Transform colorCapTf = colorRow.transform.Find("Caption");
-            TextMeshProUGUI colorCap = colorCapTf != null
-                ? colorCapTf.GetComponent<TextMeshProUGUI>()
-                : CreateTmp(colorRow.transform, "Caption", "COLOR", 12f, FontStyles.Bold);
-            var colorCapRt = colorCap.rectTransform;
-            colorCapRt.anchorMin = new Vector2(0f, 0f);
-            colorCapRt.anchorMax = new Vector2(0.22f, 1f);
-            colorCapRt.offsetMin = new Vector2(10f, 0f);
-            colorCapRt.offsetMax = Vector2.zero;
-            colorCap.alignment = TextAlignmentOptions.MidlineLeft;
-            colorCap.color = CaptionColor;
-
-            Transform colorValueTf = colorRow.transform.Find("Value");
-            _thrusterColorLabel = colorValueTf != null
-                ? colorValueTf.GetComponent<TextMeshProUGUI>()
-                : CreateTmp(colorRow.transform, "Value", "TEAM COLOR", 13f, FontStyles.Bold);
-            var colorValueRt = _thrusterColorLabel.rectTransform;
-            colorValueRt.anchorMin = new Vector2(0.22f, 0f);
-            colorValueRt.anchorMax = new Vector2(0.62f, 1f);
-            colorValueRt.offsetMin = Vector2.zero;
-            colorValueRt.offsetMax = Vector2.zero;
-            _thrusterColorLabel.alignment = TextAlignmentOptions.MidlineLeft;
-            _thrusterColorLabel.color = BodyColor;
-
-            Transform wellTf = colorRow.transform.Find("Well");
-            GameObject wellGo = wellTf != null
-                ? wellTf.gameObject
-                : CreateUi("Well", colorRow.transform, typeof(Image), typeof(Button));
-            var wellRt = wellGo.GetComponent<RectTransform>();
-            wellRt.anchorMin = new Vector2(1f, 0.5f);
-            wellRt.anchorMax = new Vector2(1f, 0.5f);
-            wellRt.pivot = new Vector2(1f, 0.5f);
-            wellRt.sizeDelta = new Vector2(56f, 22f);
-            wellRt.anchoredPosition = new Vector2(-16f, 0f);
-            _thrusterColorWell = wellGo.GetComponent<Image>();
-            _thrusterColorWell.sprite = _whiteSprite;
-            _thrusterColorWell.raycastTarget = true;
-            var wellBtn = wellGo.GetComponent<Button>();
-            if (wellBtn == null)
-                wellBtn = wellGo.AddComponent<Button>();
-            wellBtn.targetGraphic = _thrusterColorWell;
-            wellBtn.transition = Selectable.Transition.None;
-            wellBtn.onClick.RemoveAllListeners();
-            wellBtn.onClick.AddListener(OpenThrusterColorPicker);
-
-            EnsureLifetimeStrip(section.transform);
-
-            Transform modeTf = section.transform.Find("Mode");
-            GameObject modeGo = modeTf != null
-                ? modeTf.gameObject
-                : CreateUi("Mode", section.transform, typeof(Image), typeof(Button));
-            var modeRt = modeGo.GetComponent<RectTransform>();
-            modeRt.anchorMin = new Vector2(0.5f, 1f);
-            modeRt.anchorMax = new Vector2(0.5f, 1f);
-            modeRt.pivot = new Vector2(0.5f, 1f);
-            modeRt.sizeDelta = new Vector2(300f, 28f);
-            modeRt.anchoredPosition = new Vector2(-110f, -154f);
-            var modeBg = modeGo.GetComponent<Image>();
-            modeBg.sprite = _whiteSprite;
-            modeBg.color = new Color(0.16f, 0.28f, 0.40f, 0.96f);
-            var modeBtn = modeGo.GetComponent<Button>();
-            modeBtn.targetGraphic = modeBg;
-            modeBtn.transition = Selectable.Transition.None;
-            modeBtn.onClick.RemoveAllListeners();
-            modeBtn.onClick.AddListener(ToggleThrusterFollowTeam);
-
-            Transform modeLabelTf = modeGo.transform.Find("Label");
-            _thrusterModeLabel = modeLabelTf != null
-                ? modeLabelTf.GetComponent<TextMeshProUGUI>()
-                : CreateTmp(modeGo.transform, "Label", "FOLLOW TEAM COLOR", 12f, FontStyles.Bold);
-            StretchFull(_thrusterModeLabel.rectTransform);
-            _thrusterModeLabel.alignment = TextAlignmentOptions.Center;
-            _thrusterModeLabel.color = BodyColor;
-            _thrusterModeLabel.raycastTarget = false;
-
-            Transform resetTf = section.transform.Find("ResetThrusters");
-            GameObject resetGo = resetTf != null
-                ? resetTf.gameObject
-                : CreateUi("ResetThrusters", section.transform, typeof(Image), typeof(Button));
-            var resetRt = resetGo.GetComponent<RectTransform>();
-            resetRt.anchorMin = new Vector2(0.5f, 1f);
-            resetRt.anchorMax = new Vector2(0.5f, 1f);
-            resetRt.pivot = new Vector2(0.5f, 1f);
-            resetRt.sizeDelta = new Vector2(140f, 28f);
-            resetRt.anchoredPosition = new Vector2(196f, -154f);
-            var resetBg = resetGo.GetComponent<Image>();
-            resetBg.sprite = _whiteSprite;
-            resetBg.color = new Color(0.32f, 0.16f, 0.12f, 0.96f);
-            var resetBtn = resetGo.GetComponent<Button>();
-            resetBtn.targetGraphic = resetBg;
-            resetBtn.transition = Selectable.Transition.None;
-            resetBtn.onClick.RemoveAllListeners();
-            resetBtn.onClick.AddListener(OnResetThrustersClicked);
-
-            Transform resetLabelTf = resetGo.transform.Find("Label");
-            TextMeshProUGUI resetLabel = resetLabelTf != null
-                ? resetLabelTf.GetComponent<TextMeshProUGUI>()
-                : CreateTmp(resetGo.transform, "Label", "RESET JETS", 12f, FontStyles.Bold);
-            StretchFull(resetLabel.rectTransform);
-            resetLabel.alignment = TextAlignmentOptions.Center;
-            resetLabel.color = BodyColor;
-            resetLabel.raycastTarget = false;
-        }
-
-        /// <summary>
-        /// HSV popup sits under the right-column cards, inset from the panel edge
-        /// so the cyan frame is not clipped.
-        /// </summary>
-        void EnsureColorPicker()
-        {
-            Transform panel = transform.Find("Panel");
-            if (panel == null)
-                return;
-
-            if (_pickerPanel == null)
-            {
-                Transform existing = panel.Find("Right/ColorPicker")
-                    ?? panel.Find("ColorPicker")
-                    ?? transform.Find("ColorPicker")
-                    ?? (ContentRoot() != null ? ContentRoot().Find("ThrusterSection/ColorPicker") : null);
-                if (existing != null)
-                    _pickerPanel = existing as RectTransform;
-                else
-                    BuildPickerPanel(panel);
-            }
-
-            if (_pickerPanel == null)
-                return;
-
-            var le = _pickerPanel.GetComponent<LayoutElement>();
-            if (le == null)
-                le = _pickerPanel.gameObject.AddComponent<LayoutElement>();
-            le.ignoreLayout = true;
-
-            // Dock under the right-column cards, inset so the cyan frame stays inside the panel.
-            Transform right = transform.Find("Panel/Right");
-            Transform pickerParent = right != null ? right : panel;
-            if (_pickerPanel.parent != pickerParent)
-                _pickerPanel.SetParent(pickerParent, false);
-
-            _pickerPanel.anchorMin = new Vector2(1f, 0f);
-            _pickerPanel.anchorMax = new Vector2(1f, 0f);
-            _pickerPanel.pivot = new Vector2(1f, 0f);
-            _pickerPanel.sizeDelta = new Vector2(236f, 196f);
-            _pickerPanel.anchoredPosition = new Vector2(-8f, 8f);
-
-            var pickerOutline = _pickerPanel.GetComponent<Outline>();
-            if (pickerOutline == null)
-                pickerOutline = _pickerPanel.gameObject.AddComponent<Outline>();
-            pickerOutline.effectColor = AccentCyan;
-            pickerOutline.effectDistance = new Vector2(2f, -2f);
-
-            if (_svImage != null)
-            {
-                var svRt = _svImage.rectTransform;
-                svRt.sizeDelta = new Vector2(128f, 128f);
-                svRt.anchoredPosition = new Vector2(10f, -6f);
-            }
-
-            if (_hueImage != null)
-            {
-                var hueRt = _hueImage.rectTransform;
-                hueRt.sizeDelta = new Vector2(18f, 128f);
-                hueRt.anchoredPosition = new Vector2(-10f, 0f);
-            }
         }
 
         TextMeshProUGUI EnsureCycleRow(
@@ -1281,29 +1001,38 @@ namespace TitanOrbit.Game
 
             row.GetComponent<Image>().color = RowFill;
 
+            bool showCaption = !string.IsNullOrEmpty(caption);
             Transform capTf = row.transform.Find("Caption");
-            TextMeshProUGUI cap = capTf != null
-                ? capTf.GetComponent<TextMeshProUGUI>()
-                : CreateTmp(row.transform, "Caption", caption, 12f, FontStyles.Bold);
-            var capRt = cap.rectTransform;
-            capRt.anchorMin = new Vector2(0f, 0f);
-            capRt.anchorMax = new Vector2(0.22f, 1f);
-            capRt.offsetMin = new Vector2(10f, 0f);
-            capRt.offsetMax = Vector2.zero;
-            cap.text = caption;
-            cap.alignment = TextAlignmentOptions.MidlineLeft;
-            cap.color = CaptionColor;
+            if (showCaption)
+            {
+                TextMeshProUGUI cap = capTf != null
+                    ? capTf.GetComponent<TextMeshProUGUI>()
+                    : CreateTmp(row.transform, "Caption", caption, 12f, FontStyles.Bold);
+                var capRt = cap.rectTransform;
+                capRt.anchorMin = new Vector2(0f, 0f);
+                capRt.anchorMax = new Vector2(0.22f, 1f);
+                capRt.offsetMin = new Vector2(10f, 0f);
+                capRt.offsetMax = Vector2.zero;
+                cap.text = caption;
+                cap.alignment = TextAlignmentOptions.MidlineLeft;
+                cap.color = CaptionColor;
+                cap.gameObject.SetActive(true);
+            }
+            else if (capTf != null)
+            {
+                capTf.gameObject.SetActive(false);
+            }
 
-            EnsureArrow(row.transform, "Prev", new Vector2(0.24f, 0.5f), "<", onPrev);
-            EnsureArrow(row.transform, "Next", new Vector2(0.94f, 0.5f), ">", onNext);
+            EnsureArrow(row.transform, "Prev", new Vector2(showCaption ? 0.24f : 0.08f, 0.5f), "<", onPrev);
+            EnsureArrow(row.transform, "Next", new Vector2(showCaption ? 0.94f : 0.92f, 0.5f), ">", onNext);
 
             Transform valueTf = row.transform.Find("Value");
             TextMeshProUGUI value = valueTf != null
                 ? valueTf.GetComponent<TextMeshProUGUI>()
                 : CreateTmp(row.transform, "Value", caption, 14f, FontStyles.Bold);
             var valueRt = value.rectTransform;
-            valueRt.anchorMin = new Vector2(0.32f, 0f);
-            valueRt.anchorMax = new Vector2(0.80f, 1f);
+            valueRt.anchorMin = new Vector2(showCaption ? 0.32f : 0.16f, 0f);
+            valueRt.anchorMax = new Vector2(showCaption ? 0.80f : 0.84f, 1f);
             valueRt.offsetMin = Vector2.zero;
             valueRt.offsetMax = Vector2.zero;
             value.alignment = TextAlignmentOptions.Center;
@@ -1349,102 +1078,6 @@ namespace TitanOrbit.Game
             int styleIndex = LocalPlayerThrusterStyle.ResolveStyleIndex(style);
             if (_thrusterStyleLabel != null)
                 _thrusterStyleLabel.text = ThrusterVfxBank.GetStyleDisplayName(styleIndex).ToUpperInvariant();
-
-            Color32 tint = LocalPlayerThrusterStyle.ResolveTint(style, _team);
-            string flameName = LocalPlayerThrusterStyle.ResolveFlameColorName(style, _team);
-            bool followTeam = style.UseTeamColor;
-            if (_thrusterColorWell != null)
-            {
-                _thrusterColorWell.color = (Color)tint;
-                SetColorWellInteractable(_thrusterColorWell, !followTeam);
-            }
-
-            if (_thrusterColorLabel != null)
-                _thrusterColorLabel.text = followTeam
-                    ? "TEAM · " + flameName.ToUpperInvariant()
-                    : flameName.ToUpperInvariant();
-            if (_thrusterModeLabel != null)
-                _thrusterModeLabel.text = followTeam ? "FOLLOW TEAM COLOR" : "LOCKED CHOSEN COLOR";
-            PaintLifetimeStrip(style);
-        }
-
-        void EnsureLifetimeStrip(Transform section)
-        {
-            Transform existing = section.Find("LifetimeRow");
-            GameObject row = existing != null
-                ? existing.gameObject
-                : CreateUi("LifetimeRow", section, typeof(Image));
-            var rt = row.GetComponent<RectTransform>();
-            rt.anchorMin = new Vector2(0f, 1f);
-            rt.anchorMax = new Vector2(1f, 1f);
-            rt.pivot = new Vector2(0.5f, 1f);
-            rt.sizeDelta = new Vector2(-16f, 28f);
-            rt.anchoredPosition = new Vector2(0f, -118f);
-            row.GetComponent<Image>().color = RowFill;
-
-            Transform capTf = row.transform.Find("Caption");
-            TextMeshProUGUI cap = capTf != null
-                ? capTf.GetComponent<TextMeshProUGUI>()
-                : CreateTmp(row.transform, "Caption", "LIFETIME", 11f, FontStyles.Bold);
-            var capRt = cap.rectTransform;
-            capRt.anchorMin = new Vector2(0f, 0f);
-            capRt.anchorMax = new Vector2(0.28f, 1f);
-            capRt.offsetMin = new Vector2(10f, 0f);
-            capRt.offsetMax = Vector2.zero;
-            cap.alignment = TextAlignmentOptions.MidlineLeft;
-            cap.color = CaptionColor;
-
-            for (int i = 0; i < _lifetimeSwatches.Length; i++)
-            {
-                string name = "Stop" + i;
-                Transform stopTf = row.transform.Find(name);
-                GameObject stopGo = stopTf != null
-                    ? stopTf.gameObject
-                    : CreateUi(name, row.transform, typeof(Image), typeof(Button));
-                if (stopGo.GetComponent<Button>() == null)
-                    stopGo.AddComponent<Button>();
-                var stopRt = stopGo.GetComponent<RectTransform>();
-                stopRt.anchorMin = new Vector2(0.30f, 0.2f);
-                stopRt.anchorMax = new Vector2(0.30f, 0.2f);
-                stopRt.pivot = new Vector2(0f, 0f);
-                stopRt.sizeDelta = new Vector2(72f, 16f);
-                stopRt.anchoredPosition = new Vector2(i * 78f, 0f);
-                var img = stopGo.GetComponent<Image>();
-                img.sprite = _whiteSprite;
-                img.raycastTarget = true;
-                var stopBtn = stopGo.GetComponent<Button>();
-                stopBtn.targetGraphic = img;
-                stopBtn.transition = Selectable.Transition.None;
-                stopBtn.onClick.RemoveAllListeners();
-                int captured = i;
-                stopBtn.onClick.AddListener(() => OpenLifetimeStopPicker(captured));
-                _lifetimeSwatches[i] = img;
-            }
-        }
-
-        void PaintLifetimeStrip(in LocalPlayerThrusterStyle.Style style)
-        {
-            bool followTeam = style.UseTeamColor;
-            for (int i = 0; i < _lifetimeSwatches.Length; i++)
-            {
-                Image swatch = _lifetimeSwatches[i];
-                if (swatch == null)
-                    continue;
-                Color c = LocalPlayerThrusterStyle.GetLifetimeStop(style, i, _team);
-                c.a = 1f;
-                swatch.color = c;
-                SetColorWellInteractable(swatch, !followTeam);
-            }
-        }
-
-        static void SetColorWellInteractable(Image well, bool interactable)
-        {
-            if (well == null)
-                return;
-            well.raycastTarget = interactable;
-            var button = well.GetComponent<Button>();
-            if (button != null)
-                button.interactable = interactable;
         }
 
         LocalPlayerThrusterStyle.Style BeginCustomThruster()
@@ -1456,8 +1089,6 @@ namespace TitanOrbit.Game
             style.HasCustom = 1;
             style.FollowTeam = 1;
             style.StyleIndex = (byte)ThrusterVfxBank.DefaultStyleIndex;
-            style.ColorPacked = ShipAccentColors.Pack(
-                ShipColorizeAccentApplier.Opaque(TeamColor1Palette.GetColor1(_team)));
             return style;
         }
 
@@ -1486,112 +1117,6 @@ namespace TitanOrbit.Game
             PersistThruster(style, rebuildJets: true);
         }
 
-        void OpenThrusterColorPicker()
-        {
-            var style = LocalPlayerThrusterStyle.Get();
-            if (style.UseTeamColor)
-                return;
-
-            OpenPicker(AccentSlot.Thruster);
-        }
-
-        void OpenLifetimeStopPicker(int index)
-        {
-            var style = LocalPlayerThrusterStyle.Get();
-            if (style.UseTeamColor)
-                return;
-
-            OpenPicker(LifetimeSlot(index));
-        }
-
-        void ToggleThrusterFollowTeam()
-        {
-            HidePicker(persist: false);
-            var style = BeginCustomThruster();
-            bool follow = style.FollowTeam != 0;
-            style.FollowTeam = (byte)(follow ? 0 : 1);
-            if (style.FollowTeam == 0)
-            {
-                if (style.ColorPacked == 0)
-                {
-                    style.ColorPacked = ShipAccentColors.Pack(
-                        ShipColorizeAccentApplier.Opaque(TeamColor1Palette.GetColor1(_team)));
-                }
-
-                if (style.LifeCustom == 0)
-                    LocalPlayerThrusterStyle.WriteAnchorStops(ref style, _team);
-            }
-
-            PersistThruster(style, rebuildJets: true);
-        }
-
-        void OnResetThrustersClicked()
-        {
-            HidePicker(persist: false);
-            int styleIndex = LocalPlayerThrusterStyle.ResolveStyleIndex(LocalPlayerThrusterStyle.Get());
-            PersistThruster(LocalPlayerThrusterStyle.CreateLockedWhite(styleIndex), rebuildJets: true);
-        }
-
-        /// <summary>X on the HSV popup so the palette can leave without closing the studio.</summary>
-        void EnsurePickerCloseButton()
-        {
-            if (_pickerPanel == null)
-                return;
-
-            Transform existing = _pickerPanel.Find("Close");
-            GameObject go = existing != null
-                ? existing.gameObject
-                : CreateUi("Close", _pickerPanel, typeof(Image), typeof(Button));
-            var rt = go.GetComponent<RectTransform>();
-            rt.anchorMin = new Vector2(1f, 1f);
-            rt.anchorMax = new Vector2(1f, 1f);
-            rt.pivot = new Vector2(1f, 1f);
-            rt.sizeDelta = new Vector2(56f, 22f);
-            rt.anchoredPosition = new Vector2(-6f, -6f);
-            var bg = go.GetComponent<Image>();
-            bg.sprite = _whiteSprite;
-            bg.color = new Color(0.22f, 0.14f, 0.16f, 0.96f);
-            var button = go.GetComponent<Button>();
-            button.targetGraphic = bg;
-            button.transition = Selectable.Transition.None;
-            button.onClick.RemoveAllListeners();
-            button.onClick.AddListener(HidePicker);
-
-            Transform labelTf = go.transform.Find("Label");
-            TextMeshProUGUI tmp = labelTf != null
-                ? labelTf.GetComponent<TextMeshProUGUI>()
-                : CreateTmp(go.transform, "Label", "CLOSE", 11f, FontStyles.Bold);
-            StretchFull(tmp.rectTransform);
-            tmp.alignment = TextAlignmentOptions.Center;
-            tmp.color = BodyColor;
-            tmp.raycastTarget = false;
-        }
-
-        /// <summary>Picker stays open until CLOSE — strip leftover panel/preview dismiss buttons.</summary>
-        void StripPanelDismissesPicker()
-        {
-            Transform panel = transform.Find("Panel");
-            if (panel != null)
-            {
-                var button = panel.GetComponent<Button>();
-                if (button != null)
-                {
-                    button.onClick.RemoveAllListeners();
-                    Destroy(button);
-                }
-            }
-
-            if (_previewImage == null)
-                return;
-
-            var previewBtn = _previewImage.GetComponent<Button>();
-            if (previewBtn == null)
-                return;
-
-            previewBtn.onClick.RemoveAllListeners();
-            Destroy(previewBtn);
-        }
-
         void EnsureSprites()
         {
             if (_whiteSprite == null)
@@ -1606,30 +1131,6 @@ namespace TitanOrbit.Game
                 _whiteTex.Apply(false, true);
                 _whiteSprite = Sprite.Create(_whiteTex, new Rect(0f, 0f, 2f, 2f), new Vector2(0.5f, 0.5f), 2f);
             }
-
-            if (_ringSprite == null)
-            {
-                const int n = 24;
-                _ringTex = new Texture2D(n, n, TextureFormat.RGBA32, false)
-                {
-                    filterMode = FilterMode.Bilinear,
-                    wrapMode = TextureWrapMode.Clamp,
-                    hideFlags = HideFlags.HideAndDontSave,
-                };
-                float cx = (n - 1) * 0.5f;
-                for (int y = 0; y < n; y++)
-                {
-                    for (int x = 0; x < n; x++)
-                    {
-                        float d = Mathf.Sqrt((x - cx) * (x - cx) + (y - cx) * (y - cx));
-                        float ring = 1f - Mathf.Abs(d - 8.5f) / 1.8f;
-                        _ringTex.SetPixel(x, y, new Color(1f, 1f, 1f, Mathf.Clamp01(ring)));
-                    }
-                }
-
-                _ringTex.Apply(false, true);
-                _ringSprite = Sprite.Create(_ringTex, new Rect(0f, 0f, n, n), new Vector2(0.5f, 0.5f), n);
-            }
         }
 
         Image CreateLockedWell(Transform parent, string caption, float x, float y)
@@ -1640,21 +1141,6 @@ namespace TitanOrbit.Game
             var button = well.GetComponent<Button>();
             if (button != null)
                 button.enabled = false;
-            return well;
-        }
-
-        Image CreatePickWell(Transform parent, string caption, float x, float y, AccentSlot slot)
-        {
-            var row = CreateWellRow(parent, caption + "Well", caption, x, y);
-            var wellGo = row.transform.Find("Well").gameObject;
-            var well = wellGo.GetComponent<Image>();
-            well.raycastTarget = true;
-            var button = wellGo.GetComponent<Button>();
-            if (button == null)
-                button = wellGo.AddComponent<Button>();
-            button.targetGraphic = well;
-            button.transition = Selectable.Transition.None;
-            button.onClick.AddListener(() => OpenPicker(slot));
             return well;
         }
 
@@ -1745,88 +1231,6 @@ namespace TitanOrbit.Game
             tmp.alignment = TextAlignmentOptions.Center;
             tmp.color = BodyColor;
             tmp.raycastTarget = false;
-        }
-
-        void BuildPickerPanel(Transform parent)
-        {
-            _pickerPanel = CreateUi("ColorPicker", parent, typeof(Image), typeof(Outline)).GetComponent<RectTransform>();
-            _pickerPanel.anchorMin = new Vector2(1f, 0.5f);
-            _pickerPanel.anchorMax = new Vector2(1f, 0.5f);
-            _pickerPanel.pivot = new Vector2(1f, 0.5f);
-            _pickerPanel.sizeDelta = new Vector2(260f, 236f);
-            _pickerPanel.anchoredPosition = new Vector2(-14f, -40f);
-            _pickerPanel.GetComponent<Image>().color = new Color(0.04f, 0.07f, 0.12f, 0.98f);
-            var pickerOutline = _pickerPanel.GetComponent<Outline>();
-            pickerOutline.effectColor = AccentCyan;
-            pickerOutline.effectDistance = new Vector2(1.2f, -1.2f);
-
-            var pickerTitle = CreateTmp(_pickerPanel, "PickerTitle", "JET COLOR", 12f, FontStyles.Bold);
-            var titleRt = pickerTitle.rectTransform;
-            titleRt.anchorMin = new Vector2(0f, 1f);
-            titleRt.anchorMax = new Vector2(1f, 1f);
-            titleRt.pivot = new Vector2(0.5f, 1f);
-            titleRt.sizeDelta = new Vector2(-16f, 22f);
-            titleRt.anchoredPosition = new Vector2(0f, -8f);
-            pickerTitle.alignment = TextAlignmentOptions.MidlineLeft;
-            pickerTitle.color = AccentCyan;
-
-            _svTex = new Texture2D(SvSize, SvSize, TextureFormat.RGB24, false)
-            {
-                wrapMode = TextureWrapMode.Clamp,
-                filterMode = FilterMode.Bilinear,
-            };
-            _hueTex = new Texture2D(HueBarW, HueBarH, TextureFormat.RGB24, false)
-            {
-                wrapMode = TextureWrapMode.Clamp,
-                filterMode = FilterMode.Bilinear,
-            };
-            PaintHueBar();
-
-            var svGo = CreateUi("Sv", _pickerPanel, typeof(RawImage), typeof(RectMask2D), typeof(SvPad));
-            _svImage = svGo.GetComponent<RawImage>();
-            var svRt = _svImage.rectTransform;
-            svRt.anchorMin = new Vector2(0f, 0.5f);
-            svRt.anchorMax = new Vector2(0f, 0.5f);
-            svRt.pivot = new Vector2(0f, 0.5f);
-            svRt.sizeDelta = new Vector2(SvSize, SvSize);
-            svRt.anchoredPosition = new Vector2(12f, -10f);
-            _svImage.texture = _svTex;
-            svGo.GetComponent<SvPad>().OnNorm = OnSvPicked;
-            svGo.GetComponent<SvPad>().OnReleased = OnSvReleased;
-
-            var hueGo = CreateUi("Hue", _pickerPanel, typeof(RawImage), typeof(RectMask2D), typeof(HuePad));
-            _hueImage = hueGo.GetComponent<RawImage>();
-            var hueRt = _hueImage.rectTransform;
-            hueRt.anchorMin = new Vector2(1f, 0.5f);
-            hueRt.anchorMax = new Vector2(1f, 0.5f);
-            hueRt.pivot = new Vector2(1f, 0.5f);
-            hueRt.sizeDelta = new Vector2(HueBarW, HueBarH);
-            hueRt.anchoredPosition = new Vector2(-12f, 0f);
-            _hueImage.texture = _hueTex;
-            hueGo.GetComponent<HuePad>().OnNorm = OnHuePicked;
-            hueGo.GetComponent<HuePad>().OnReleased = FlushPersist;
-
-            _svCursor = CreateUi("SvCursor", _svImage.transform, typeof(Image)).GetComponent<RectTransform>();
-            _svCursor.anchorMin = Vector2.zero;
-            _svCursor.anchorMax = Vector2.zero;
-            _svCursor.pivot = new Vector2(0.5f, 0.5f);
-            _svCursor.sizeDelta = new Vector2(16f, 16f);
-            var svCursorImg = _svCursor.GetComponent<Image>();
-            svCursorImg.sprite = _ringSprite;
-            svCursorImg.color = Color.white;
-            svCursorImg.raycastTarget = false;
-
-            _hueCursor = CreateUi("HueCursor", _hueImage.transform, typeof(Image)).GetComponent<RectTransform>();
-            _hueCursor.anchorMin = new Vector2(0.5f, 0f);
-            _hueCursor.anchorMax = new Vector2(0.5f, 0f);
-            _hueCursor.pivot = new Vector2(0.5f, 0.5f);
-            _hueCursor.sizeDelta = new Vector2(HueBarW + 8f, 6f);
-            var hueCursorImg = _hueCursor.GetComponent<Image>();
-            hueCursorImg.sprite = _whiteSprite;
-            hueCursorImg.color = Color.white;
-            hueCursorImg.raycastTarget = false;
-
-            _pickerPanel.gameObject.SetActive(false);
         }
 
         void BuildPreviewWorld()
@@ -2195,78 +1599,6 @@ namespace TitanOrbit.Game
             RefreshPreviewNameplate();
         }
 
-        void OpenPicker(AccentSlot slot)
-        {
-            _pickerSlot = slot;
-            Color32 current = ColorForSlot(slot);
-            Color.RGBToHSV((Color)current, out _hue, out _sat, out _val);
-            PaintSvSquare();
-            UpdatePickerCursors();
-            _pickerPanel.gameObject.SetActive(true);
-        }
-
-        void HidePicker()
-        {
-            HidePicker(persist: true);
-        }
-
-        void HidePicker(bool persist)
-        {
-            if (_pickerPanel != null)
-                _pickerPanel.gameObject.SetActive(false);
-            if (persist)
-                FlushPersist();
-        }
-
-        void OnSvPicked(Vector2 norm)
-        {
-            _sat = Mathf.Clamp01(norm.x);
-            _val = Mathf.Clamp01(norm.y);
-            ApplyPickerColor(flush: false);
-            UpdatePickerCursors();
-        }
-
-        void OnSvReleased()
-        {
-            ApplyPickerColor(flush: true);
-            HidePicker(persist: false);
-        }
-
-        void OnHuePicked(float norm)
-        {
-            _hue = Mathf.Clamp01(norm);
-            PaintSvSquare();
-            ApplyPickerColor(flush: false);
-            UpdatePickerCursors();
-        }
-
-        void ApplyPickerColor(bool flush)
-        {
-            Color32 color = ShipColorizeAccentApplier.Opaque(Color.HSVToRGB(_hue, _sat, _val));
-            if (_pickerSlot == AccentSlot.Thruster)
-            {
-                var style = BeginCustomThruster();
-                style.FollowTeam = 0;
-                style.ColorPacked = ShipAccentColors.Pack(color);
-                LocalPlayerThrusterStyle.WriteAnchorStops(ref style, _team);
-                PersistThrusterStyleFromPicker(style, flush);
-                return;
-            }
-
-            if (TryGetLifetimeIndex(_pickerSlot, out int lifeIndex))
-            {
-                var style = BeginCustomThruster();
-                style.FollowTeam = 0;
-                LocalPlayerThrusterStyle.SetLifetimeStop(ref style, lifeIndex, color, _team);
-                PersistThrusterStyleFromPicker(style, flush);
-                return;
-            }
-
-            SetSlotColor(_pickerSlot, color);
-            _hasCustom = true;
-            PersistAndPreview(flush);
-        }
-
         /// <summary>
         /// Drops saved Color2 / Color3 / Glow 1–3 so the hull uses the Colorize
         /// material defaults again. Color1 stays the team swatch.
@@ -2275,16 +1607,7 @@ namespace TitanOrbit.Game
         {
             LocalPlayerShipAccents.Clear();
             NotifyOwnedCosmeticsChanged();
-            HidePicker(persist: false);
             RefreshFromStore();
-        }
-
-        void PersistAndPreview(bool flush)
-        {
-            if (flush)
-                NotifyOwnedCosmeticsChanged();
-            PaintWells();
-            PaintPreview();
         }
 
         void FlushPersist()
@@ -2336,140 +1659,6 @@ namespace TitanOrbit.Game
                 _team);
         }
 
-        Color32 ColorForSlot(AccentSlot slot)
-        {
-            switch (slot)
-            {
-                case AccentSlot.Color3: return _color3;
-                case AccentSlot.Emission1: return _emission1;
-                case AccentSlot.Emission2: return _emission2;
-                case AccentSlot.Emission3: return _emission3;
-                case AccentSlot.Thruster:
-                    return LocalPlayerThrusterStyle.ResolveTint(LocalPlayerThrusterStyle.Get(), _team);
-                case AccentSlot.Life0:
-                case AccentSlot.Life1:
-                case AccentSlot.Life2:
-                case AccentSlot.Life3:
-                    return LocalPlayerThrusterStyle.GetLifetimeStop(
-                        LocalPlayerThrusterStyle.Get(),
-                        (int)slot - (int)AccentSlot.Life0,
-                        _team);
-                default: return _color2;
-            }
-        }
-
-        void PersistThrusterStyleFromPicker(LocalPlayerThrusterStyle.Style style, bool flush)
-        {
-            LocalPlayerThrusterStyle.Set(style);
-            _previewFlameColorName = LocalPlayerThrusterStyle.ResolveFlameColorName(style, _team);
-            RefreshThrusterSection();
-            if (TitanOrbitCosmeticGate.IsCustomizationUnlocked)
-                ShipPropulsionVisualApplier.ApplyTintToAllLive();
-            RefreshPreviewThrusters(rebuild: false);
-            if (flush)
-                NotifyOwnedCosmeticsChanged();
-        }
-
-        static AccentSlot LifetimeSlot(int index)
-        {
-            switch (index)
-            {
-                case 1: return AccentSlot.Life1;
-                case 2: return AccentSlot.Life2;
-                case 3: return AccentSlot.Life3;
-                default: return AccentSlot.Life0;
-            }
-        }
-
-        static bool TryGetLifetimeIndex(AccentSlot slot, out int index)
-        {
-            switch (slot)
-            {
-                case AccentSlot.Life0:
-                    index = 0;
-                    return true;
-                case AccentSlot.Life1:
-                    index = 1;
-                    return true;
-                case AccentSlot.Life2:
-                    index = 2;
-                    return true;
-                case AccentSlot.Life3:
-                    index = 3;
-                    return true;
-                default:
-                    index = 0;
-                    return false;
-            }
-        }
-
-        void SetSlotColor(AccentSlot slot, Color32 color)
-        {
-            switch (slot)
-            {
-                case AccentSlot.Color3:
-                    _color3 = color;
-                    break;
-                case AccentSlot.Emission1:
-                    _emission1 = color;
-                    break;
-                case AccentSlot.Emission2:
-                    _emission2 = color;
-                    break;
-                case AccentSlot.Emission3:
-                    _emission3 = color;
-                    break;
-                default:
-                    _color2 = color;
-                    break;
-            }
-        }
-
-        void PaintHueBar()
-        {
-            for (int y = 0; y < HueBarH; y++)
-            {
-                float h = (float)y / (HueBarH - 1);
-                Color c = Color.HSVToRGB(h, 1f, 1f);
-                for (int x = 0; x < HueBarW; x++)
-                    _hueTex.SetPixel(x, y, c);
-            }
-
-            _hueTex.Apply(false, false);
-        }
-
-        void PaintSvSquare()
-        {
-            for (int y = 0; y < SvSize; y++)
-            {
-                float v = (float)y / (SvSize - 1);
-                for (int x = 0; x < SvSize; x++)
-                {
-                    float s = (float)x / (SvSize - 1);
-                    _svTex.SetPixel(x, y, Color.HSVToRGB(_hue, s, v));
-                }
-            }
-
-            _svTex.Apply(false, false);
-        }
-
-        void UpdatePickerCursors()
-        {
-            // Bottom-left anchors + 0.5 pivot: (0,0) is the dark corner, (w,h) is the bright corner.
-            if (_svCursor != null)
-            {
-                float w = _svImage != null ? _svImage.rectTransform.rect.width : SvSize;
-                float h = _svImage != null ? _svImage.rectTransform.rect.height : SvSize;
-                _svCursor.anchoredPosition = new Vector2(_sat * w, _val * h);
-            }
-
-            if (_hueCursor != null)
-            {
-                float h = _hueImage != null ? _hueImage.rectTransform.rect.height : HueBarH;
-                _hueCursor.anchoredPosition = new Vector2(0f, _hue * h);
-            }
-        }
-
         static GameObject CreateUi(string name, Transform parent, params Type[] extras)
         {
             var types = new Type[extras.Length + 1];
@@ -2508,67 +1697,6 @@ namespace TitanOrbit.Game
             rt.pivot = new Vector2(0.5f, 1f);
             rt.sizeDelta = new Vector2(-32f, height);
             rt.anchoredPosition = new Vector2(0f, -down);
-        }
-
-        /// <summary>
-        /// Click/drag pad that reports 0–1 coordinates inside a RawImage rect.
-        /// Uses the overlay canvas camera so a Screen Space Overlay press does not
-        /// invent a stray world camera and throw the cursor off the square.
-        /// </summary>
-        sealed class SvPad : MonoBehaviour, IPointerDownHandler, IDragHandler, IPointerUpHandler
-        {
-            public Action<Vector2> OnNorm;
-            public Action OnReleased;
-
-            public void OnPointerDown(PointerEventData eventData) => Report(eventData);
-
-            public void OnDrag(PointerEventData eventData) => Report(eventData);
-
-            public void OnPointerUp(PointerEventData eventData) => OnReleased?.Invoke();
-
-            void Report(PointerEventData eventData)
-            {
-                var rt = (RectTransform)transform;
-                Camera cam = EventCamera(rt);
-                if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(
-                        rt, eventData.position, cam, out Vector2 local))
-                    return;
-                float x = Mathf.Clamp01((local.x - rt.rect.xMin) / Mathf.Max(1f, rt.rect.width));
-                float y = Mathf.Clamp01((local.y - rt.rect.yMin) / Mathf.Max(1f, rt.rect.height));
-                OnNorm?.Invoke(new Vector2(x, y));
-            }
-        }
-
-        /// <summary>Vertical hue bar: bottom = hue 0, top = hue 1.</summary>
-        sealed class HuePad : MonoBehaviour, IPointerDownHandler, IDragHandler, IPointerUpHandler
-        {
-            public Action<float> OnNorm;
-            public Action OnReleased;
-
-            public void OnPointerDown(PointerEventData eventData) => Report(eventData);
-
-            public void OnDrag(PointerEventData eventData) => Report(eventData);
-
-            public void OnPointerUp(PointerEventData eventData) => OnReleased?.Invoke();
-
-            void Report(PointerEventData eventData)
-            {
-                var rt = (RectTransform)transform;
-                Camera cam = EventCamera(rt);
-                if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(
-                        rt, eventData.position, cam, out Vector2 local))
-                    return;
-                float y = Mathf.Clamp01((local.y - rt.rect.yMin) / Mathf.Max(1f, rt.rect.height));
-                OnNorm?.Invoke(y);
-            }
-        }
-
-        static Camera EventCamera(Transform t)
-        {
-            var canvas = t.GetComponentInParent<Canvas>();
-            if (canvas == null || canvas.renderMode == RenderMode.ScreenSpaceOverlay)
-                return null;
-            return canvas.worldCamera != null ? canvas.worldCamera : canvas.rootCanvas.worldCamera;
         }
     }
 }

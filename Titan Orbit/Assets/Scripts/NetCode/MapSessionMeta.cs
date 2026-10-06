@@ -80,6 +80,12 @@ namespace TitanOrbit.NetCode
 
         /// <summary>Live ship ghosts on the server at send time (0 in an empty match is valid).</summary>
         public int LiveShipCount;
+
+        /// <summary>
+        /// Power-law Size bias used during BuildAsteroids (1 = uniform, 2+ = more small).
+        /// Last on the recipe so older payloads deserialize this as 0 → client falls back to 2.
+        /// </summary>
+        public float AsteroidSizeSmallBias;
     }
 
     /// <summary>
@@ -212,6 +218,7 @@ namespace TitanOrbit.NetCode
                 AsteroidVisualScaleAtMaxSize = asteroid.VisualScaleAtMaxSize,
                 LivePlanetCount = livePlanets,
                 LiveShipCount = liveShips,
+                AsteroidSizeSmallBias = asteroid.SizeSmallBias,
             };
             return true;
         }
@@ -219,17 +226,7 @@ namespace TitanOrbit.NetCode
         /// <summary>Copies AsteroidSettings into Burst-safe tuning (same as map generation).</summary>
         public static MapGenerationLogic.AsteroidBodyTuning ResolveAsteroidBodyTuning()
         {
-            var settings = AsteroidSettingsCache.ResolveOrDefault();
-            settings.ClampValues();
-            return new MapGenerationLogic.AsteroidBodyTuning
-            {
-                MinSize = settings.MinSize,
-                MaxSize = settings.MaxSize,
-                HealthPerSize = settings.HealthPerSize,
-                GemsPerSize = settings.GemsPerSize,
-                VisualScaleAtMinSize = settings.VisualScaleAtMinSize,
-                VisualScaleAtMaxSize = settings.VisualScaleAtMaxSize,
-            };
+            return MapGenerationLogic.FromAsteroidSettings(AsteroidSettingsCache.ResolveOrDefault());
         }
 
         /// <summary>
@@ -267,6 +264,7 @@ namespace TitanOrbit.NetCode
             {
                 MinSize = rpc.AsteroidMinSize > 0f ? rpc.AsteroidMinSize : 1f,
                 MaxSize = rpc.AsteroidMaxSize > 0f ? rpc.AsteroidMaxSize : 70f,
+                SizeSmallBias = rpc.AsteroidSizeSmallBias > 0f ? rpc.AsteroidSizeSmallBias : 2f,
                 HealthPerSize = rpc.AsteroidHealthPerSize > 0f ? rpc.AsteroidHealthPerSize : 1f,
                 GemsPerSize = rpc.AsteroidGemsPerSize > 0f ? rpc.AsteroidGemsPerSize : 1f,
                 VisualScaleAtMinSize = rpc.AsteroidVisualScaleAtMinSize > 0f

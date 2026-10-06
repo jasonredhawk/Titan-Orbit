@@ -9,11 +9,12 @@ using UnityEngine;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Bottom-bar attribute upgrades: gem cost, per-level caps, and server-side purchase validation.
-    /// Ability purchase counts feed <see cref="ShipComponentExtraLevelMath"/> —
+    /// Bottom-bar attribute upgrades: gem cost, per-level caps, and server-side purchase / reset
+    /// validation. Ability purchase counts feed <see cref="ShipComponentExtraLevelMath"/> —
     /// each part uses its own PerExtra × (shipLevel + ability) — applied in
-    /// <see cref="ShipStatApplyLogic"/>. Client sends PurchaseAttributeUpgradeCommand RPC;
-    /// ShipAttributeUpgradeSystem invokes TryPurchaseForNetworkId on the server.
+    /// <see cref="ShipStatApplyLogic"/>. Client sends PurchaseAttributeUpgradeCommand or
+    /// ResetAttributeUpgradeCommand; ShipAttributeUpgradeSystem invokes TryPurchaseForNetworkId
+    /// or TryResetForNetworkId on the server. Reset zeros one ability and does not refund gems.
     /// </summary>
     public static class ShipAttributeUpgradeLogic
     {
@@ -81,6 +82,24 @@ namespace TitanOrbit.ECS
                 case 7: state.RotationSpeed++; break;
                 case 8: state.GemCapacity++; break;
                 case 9: state.PeopleCapacity++; break;
+            }
+        }
+
+        /// <summary>Zeros one attribute field by index (0–9). No gem refund.</summary>
+        public static void ResetAttribute(ref ShipAttributeUpgradeState state, int index)
+        {
+            switch (index)
+            {
+                case 0: state.FirePower = 0; break;
+                case 1: state.BulletSpeed = 0; break;
+                case 2: state.MaxHealth = 0; break;
+                case 3: state.HealthRegen = 0; break;
+                case 4: state.EnergyCapacity = 0; break;
+                case 5: state.EnergyRegen = 0; break;
+                case 6: state.MovementSpeed = 0; break;
+                case 7: state.RotationSpeed = 0; break;
+                case 8: state.GemCapacity = 0; break;
+                case 9: state.PeopleCapacity = 0; break;
             }
         }
 
@@ -220,6 +239,66 @@ namespace TitanOrbit.ECS
                     continue;
                 shipEntity = entities[i];
                 return TryPurchase(em, shipEntity, attributeIndex);
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Server-side reset: zeros one ability when the ship is eligible. Does not refund gems.
+        /// Re-applies motor / weapon / vitals so mass-taxed Move Speed can recover immediately.
+        /// </summary>
+        public static bool TryReset(EntityManager em, Entity shipEntity, int attributeIndex)
+        {
+            if (attributeIndex < 0 || attributeIndex > 9)
+                return false;
+            if (!em.HasComponent<ShipState>(shipEntity))
+                return false;
+
+            var ship = em.GetComponentData<ShipState>(shipEntity);
+            if (ship.IsDead || ship.AwaitingTeamSelection || ship.Team == TeamId.None)
+                return false;
+
+            if (em.HasComponent<MegaShipState>(shipEntity)
+                && em.GetComponentData<MegaShipState>(shipEntity).IsMega)
+                return false;
+
+            if (!em.HasComponent<ShipAttributeUpgradeState>(shipEntity))
+                return false;
+
+            var attrs = em.GetComponentData<ShipAttributeUpgradeState>(shipEntity);
+            if (GetAttributeLevel(attrs, attributeIndex) <= 0)
+                return false;
+
+            ResetAttribute(ref attrs, attributeIndex);
+            em.SetComponentData(shipEntity, attrs);
+
+            int branch = 0;
+            if (em.HasComponent<ShipLoadoutState>(shipEntity))
+                branch = em.GetComponentData<ShipLoadoutState>(shipEntity).BranchIndex;
+
+            ShipStatApplyLogic.ApplyToShip(em, shipEntity, ship.Team, ship.ShipLevel, branch);
+            return true;
+        }
+
+        /// <summary>
+        /// Finds ship ghost by NetCode NetworkId and runs TryReset. Used by ShipAttributeUpgradeSystem.
+        /// </summary>
+        public static bool TryResetForNetworkId(EntityManager em, int networkId, int attributeIndex, out Entity shipEntity)
+        {
+            shipEntity = Entity.Null;
+            if (networkId <= 0)
+                return false;
+
+            using var query = em.CreateEntityQuery(typeof(ShipTag), typeof(GhostOwner));
+            using var owners = query.ToComponentDataArray<GhostOwner>(Allocator.Temp);
+            using var entities = query.ToEntityArray(Allocator.Temp);
+            for (int i = 0; i < owners.Length; i++)
+            {
+                if (owners[i].NetworkId != networkId)
+                    continue;
+                shipEntity = entities[i];
+                return TryReset(em, shipEntity, attributeIndex);
             }
 
             return false;

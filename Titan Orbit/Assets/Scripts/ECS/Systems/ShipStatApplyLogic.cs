@@ -1,3 +1,4 @@
+using TitanOrbit;
 using TitanOrbit.Core;
 using TitanOrbit.Data;
 using TitanOrbit.Simulation;
@@ -23,6 +24,12 @@ namespace TitanOrbit.ECS
         /// from AstroEagle to a captured-neutral family re-runs ApplyToShip at the same level/branch.
         /// </summary>
         public byte AppliedShipFamilyConfigIndex;
+
+        /// <summary>
+        /// [TITAN-ORBIT] Last applied <see cref="ShipState.HullBulletBankIndex"/> so buying the
+        /// same family at a different planet (Fireballs → Rift) re-runs apply and adopts the new gun.
+        /// </summary>
+        public byte AppliedHullBulletBankIndex;
         /// <summary>
         /// Sum of ghosted <see cref="ShipAttributeUpgradeState"/> levels at last apply.
         /// Client re-applies motor when attribute RPCs land without a level change.
@@ -53,6 +60,9 @@ namespace TitanOrbit.ECS
     /// </summary>
     public static class ShipStatApplyLogic
     {
+        /// <summary>Scratch for "is this B-key bank still owned?" after a gear discard.</summary>
+        static readonly int[] s_OwnedBankScratch = new int[16];
+
         static PlanetShipFamilyConfig s_config;
 
         /// <summary>Lazily loads PlanetShipFamilyConfig from Resources (cached until InvalidateConfigCache).</summary>
@@ -301,7 +311,9 @@ namespace TitanOrbit.ECS
             if (em.Exists(shipEntity) && em.HasComponent<ShipState>(shipEntity))
                 familyIndex = em.GetComponentData<ShipState>(shipEntity).ShipFamilyConfigIndex;
 
-            // --- MEGA hulls use a frozen stat table (no Extra Level / attributes) ---
+            // --- MEGA hulls: frozen catalog + PerExtra-only moon-store gear ---
+            // [TITAN-ORBIT] Unique-component totals stay static. LOADOUT ShipComponent
+            // rows add PerExtra × shipLevel only (no second Base).
             if (em.Exists(shipEntity)
                 && em.HasComponent<MegaShipState>(shipEntity)
                 && em.GetComponentData<MegaShipState>(shipEntity).IsMega)
@@ -479,43 +491,105 @@ namespace TitanOrbit.ECS
             // with averages of the mounts for HUD while each mount keeps its own shot strength.
             TryApplyPerMountWeaponCombat(em, shipEntity, chassisId, shipLevel);
 
-            // --- Bullet VFX bank from ShipFamilyDefinition.bulletPrefabIndex ---
+            // --- Bullet VFX bank from the planet-stamped hull default ---
             // [NETCODE] RuntimeBulletIndex is ghosted — server writes; clients read replica / predict.
-            // [TITAN-ORBIT] Reset ONLY when hull family identity changes (ChassisId / branch),
-            // not on ship level or attribute re-applies — otherwise B-key cycle is wiped every
-            // level tick. ShipCycleBulletSystem owns mid-flight index changes.
+            // [TITAN-ORBIT] Family assets default to Laserbolt. The live gun is
+            // ShipState.HullBulletBankIndex (copied from the planet at spawn / moon purchase).
+            // Reset ONLY when hull family identity changes (ChassisId / branch), not on ship
+            // level or attribute re-applies — otherwise B-key cycle is wiped every level tick.
+            // ShipCycleBulletSystem owns mid-flight index changes.
             bool bulletBankIdentityChanged = true;
+            bool adoptPlanetHullGun = true;
             if (em.HasComponent<ShipChassisState>(shipEntity))
             {
                 var prevForBank = em.GetComponentData<ShipChassisState>(shipEntity);
                 var chassisKeyForBank = new FixedString64Bytes(chassisId);
-                bulletBankIdentityChanged = !prevForBank.ChassisId.Equals(chassisKeyForBank)
+                byte liveFamily = 0;
+                byte liveHullBank = PlanetShipFamilyAssignment.DefaultBulletBankIndex;
+                if (em.HasComponent<ShipState>(shipEntity))
+                {
+                    var liveShip = em.GetComponentData<ShipState>(shipEntity);
+                    liveFamily = liveShip.ShipFamilyConfigIndex;
+                    liveHullBank = liveShip.HullBulletBankIndex;
+                }
+
+                bool chassisChanged = !prevForBank.ChassisId.Equals(chassisKeyForBank)
                     || prevForBank.AppliedBranchIndex != branchIndex;
+                bool familyOrPlanetGunChanged =
+                    prevForBank.AppliedShipFamilyConfigIndex != liveFamily
+                    || prevForBank.AppliedHullBulletBankIndex != liveHullBank;
+                bulletBankIdentityChanged = chassisChanged || familyOrPlanetGunChanged;
+                // [TITAN-ORBIT] Family / planet-gun swap must adopt the planet's type
+                // (Cosmic Shark at a Rift world fires Rift). Same-family level-up keeps B-key
+                // if that bank is still owned.
+                adoptPlanetHullGun = familyOrPlanetGunChanged;
             }
 
             if (writeGhostedShipState &&
                 bulletBankIdentityChanged &&
-                em.HasComponent<ShipLoadoutState>(shipEntity) &&
-                TryResolveFamilyForChassisId(chassisId, out ShipFamilyDefinition bankFamily))
+                em.HasComponent<ShipLoadoutState>(shipEntity))
             {
                 var loadout = em.GetComponentData<ShipLoadoutState>(shipEntity);
-                int familyBank = BulletBankProfileUtility.ResolveBankIndexForFamily(bankFamily);
-                int[] owned = new int[16];
-                int ownedCount = BulletBankOwnership.CollectOwnedDamageBanks(em, shipEntity, owned);
-                bool stillOwned = false;
-                for (int i = 0; i < ownedCount; i++)
+                int hullBank = PlanetShipFamilyAssignment.DefaultBulletBankIndex;
+                if (em.HasComponent<ShipState>(shipEntity))
+                    hullBank = PlanetShipFamilyAssignment.SanitizeSelectableDamageBank(
+                        em.GetComponentData<ShipState>(shipEntity).HullBulletBankIndex);
+                else if (TryResolveFamilyForChassisId(chassisId, out ShipFamilyDefinition bankFamily))
+                    hullBank = BulletBankProfileUtility.ResolveBankIndexForFamily(bankFamily);
+
+                if (adoptPlanetHullGun)
                 {
-                    if (owned[i] == loadout.RuntimeBulletIndex)
+                    // Family / planet stamp changed → take that gun. Missing
+                    // chassis state (first apply) must not wipe a live B-key.
+                    if (em.HasComponent<ShipChassisState>(shipEntity))
                     {
-                        stillOwned = true;
-                        break;
+                        loadout.RuntimeBulletIndex = hullBank;
+                    }
+                    else
+                    {
+                        int[] ownedFirst = new int[16];
+                        int ownedFirstCount = BulletBankOwnership.CollectOwnedDamageBanks(
+                            em, shipEntity, ownedFirst);
+                        bool firstOwned = false;
+                        for (int i = 0; i < ownedFirstCount; i++)
+                        {
+                            if (ownedFirst[i] == loadout.RuntimeBulletIndex)
+                            {
+                                firstOwned = true;
+                                break;
+                            }
+                        }
+
+                        if (!firstOwned)
+                            loadout.RuntimeBulletIndex = hullBank;
                     }
                 }
+                else
+                {
+                    int[] owned = new int[16];
+                    int ownedCount = BulletBankOwnership.CollectOwnedDamageBanks(em, shipEntity, owned);
+                    bool stillOwned = false;
+                    for (int i = 0; i < ownedCount; i++)
+                    {
+                        if (owned[i] == loadout.RuntimeBulletIndex)
+                        {
+                            stillOwned = true;
+                            break;
+                        }
+                    }
 
-                if (!stillOwned)
-                    loadout.RuntimeBulletIndex = familyBank;
+                    if (!stillOwned)
+                        loadout.RuntimeBulletIndex = hullBank;
+                }
+
                 em.SetComponentData(shipEntity, loadout);
             }
+
+            // Discarding the weapon that owned the live bank must return the hull gun.
+            // Otherwise the mesh swap keeps the bought barrels and the next gear buy
+            // eats whatever is left under them.
+            if (writeGhostedShipState)
+                SnapRuntimeBankIfUnowned(em, shipEntity, chassisId);
 
             // --- Physics tuning (ShipPhysicsDriveSystem reads these) ---
             if (em.HasComponent<ShipMotorConfig>(shipEntity))
@@ -524,9 +598,9 @@ namespace TitanOrbit.ECS
                 // [TITAN-ORBIT] No ×10 EngineThrustVisibility — EngineThrust stores acceleration.
                 // No bake-time capacity tax — collecting gems/people updates Speed/Accel/Turn live.
                 float moveVal = Mathf.Max(0.1f, effective.moveSpeed);
-                // [TITAN-ORBIT] Definition turnSpeed × 10 → °/s. Mass tax scales by the same 10 in
-                // ShipMobilityResolution so cargo ratio matches Speed/Accel (those are never ×10).
-                float turnVal = ShipPropulsionAggregation.ConvertTurnDefinitionToDegreesPerSecond(effective.turnSpeed);
+                // [TITAN-ORBIT] turnSpeed is already degrees per second. Mass tax subtracts
+                // in the same unit — no hidden scale between the chassis number and yaw.
+                float turnVal = Mathf.Max(0f, effective.turnSpeed);
                 float accel = Mathf.Max(0.1f, effective.accelerationCap > 0f
                     ? effective.accelerationCap
                     : moveVal);
@@ -600,7 +674,7 @@ namespace TitanOrbit.ECS
             {
                 HealthRegenPerSecond = Mathf.Max(0f, effective.healthRegen),
                 EnergyRegenPerSecond = Mathf.Max(0f, effective.energyRegen),
-                HealthRegenDelayAfterDamage = 0.35f,
+                HealthRegenDelayAfterDamage = ShipVitalsSettingsCache.HealthRegenDelayAfterDamage,
             };
             if (em.HasComponent<ShipVitalsConfig>(shipEntity))
                 em.SetComponentData(shipEntity, vitals);
@@ -639,6 +713,9 @@ namespace TitanOrbit.ECS
                 AppliedShipLevel = shipLevel,
                 AppliedBranchIndex = branchIndex,
                 AppliedShipFamilyConfigIndex = (byte)familyIndex,
+                AppliedHullBulletBankIndex = em.HasComponent<ShipState>(shipEntity)
+                    ? em.GetComponentData<ShipState>(shipEntity).HullBulletBankIndex
+                    : PlanetShipFamilyAssignment.DefaultBulletBankIndex,
                 AppliedAttributeSum = attributeSum,
                 AppliedEquipmentFingerprint = equipmentFingerprint,
             };
@@ -689,6 +766,47 @@ namespace TitanOrbit.ECS
 
                 return hash;
             }
+        }
+
+        /// <summary>
+        /// B-key stays put while the bank is still on the hull or a purchased weapon.
+        /// Deleting that weapon drops it from the owned set — snap back to the hull gun
+        /// so presentation restores the original barrels.
+        /// </summary>
+        static void SnapRuntimeBankIfUnowned(EntityManager em, Entity shipEntity, string chassisId)
+        {
+            if (!em.HasComponent<ShipLoadoutState>(shipEntity))
+                return;
+
+            // Debug "cycle all banks" is allowed to sit on a type the hull does not own.
+            if (TitanOrbitDebugFlags.CycleAllBulletBanks)
+                return;
+
+            var loadout = em.GetComponentData<ShipLoadoutState>(shipEntity);
+
+            int count = BulletBankOwnership.CollectOwnedDamageBanks(em, shipEntity, s_OwnedBankScratch);
+            for (int i = 0; i < count; i++)
+            {
+                if (s_OwnedBankScratch[i] == loadout.RuntimeBulletIndex)
+                    return;
+            }
+
+            int hullBank = PlanetShipFamilyAssignment.DefaultBulletBankIndex;
+            if (em.HasComponent<ShipState>(shipEntity))
+            {
+                hullBank = PlanetShipFamilyAssignment.SanitizeSelectableDamageBank(
+                    em.GetComponentData<ShipState>(shipEntity).HullBulletBankIndex);
+            }
+            else if (TryResolveFamilyForChassisId(chassisId, out ShipFamilyDefinition bankFamily))
+            {
+                hullBank = BulletBankProfileUtility.ResolveBankIndexForFamily(bankFamily);
+            }
+
+            if (loadout.RuntimeBulletIndex == hullBank)
+                return;
+
+            loadout.RuntimeBulletIndex = hullBank;
+            em.SetComponentData(shipEntity, loadout);
         }
 
         /// <summary>
@@ -747,6 +865,18 @@ namespace TitanOrbit.ECS
 
             return sum.MatchedComponentIds != null && sum.MatchedComponentIds.Count > 0;
         }
+
+        /// <summary>
+        /// Adds flat CardData stat modifiers from equipped upgrade cards onto the chassis baseline.
+        /// The motor writes this result onto <see cref="ShipMotorConfig.MaxSpeed"/>. HUD cruise
+        /// must call the same method or the chip stays at the pre-card number while the ship flies faster.
+        /// </summary>
+        public static void ApplyEquippedCardStatModifiers(
+            EntityManager em,
+            Entity shipEntity,
+            string chassisId,
+            ref ShipComponentAbilityStats baseline) =>
+            TryAddEquippedCardStatModifiers(em, shipEntity, chassisId, ref baseline);
 
         /// <summary>
         /// Adds flat CardData stat modifiers from equipped upgrade cards onto the chassis baseline.

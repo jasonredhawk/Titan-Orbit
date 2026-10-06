@@ -2,7 +2,9 @@ using System.Collections.Generic;
 using SpaceGraphicsToolkit;
 using TitanOrbit.Core;
 using TitanOrbit.Data;
+using TitanOrbit.ECS;
 using TitanOrbit.Simulation;
+using Unity.Mathematics;
 using UnityEngine;
 
 namespace TitanOrbit.Game
@@ -70,6 +72,7 @@ namespace TitanOrbit.Game
             float size = Mathf.Max(0.25f, worldScale);
             Transform visualBody = PlanetVisualBody.EnsureAndApplyScale(instance, size);
             EnsurePlanetSpin(instance, visualBody);
+            ApplyNeutralSurfaceWater(instance, planetId, isHome, ClientMapHydrateCache.MatchSeed, materialPool);
 
             var stats = instance.GetComponent<PlanetWorldStatsLabel>();
             if (stats == null)
@@ -129,6 +132,7 @@ namespace TitanOrbit.Game
             // Keep unit root + body scale in sync when ECS diameter changes.
             Transform visualBody = PlanetVisualBody.EnsureAndApplyScale(instance, worldScale);
             EnsurePlanetSpin(instance, visualBody);
+            ApplyNeutralSurfaceWater(instance, planetId, isHome, ClientMapHydrateCache.MatchSeed, materialPool);
 
             // --- Surface material (capture / home identity only) ---
             // [TITAN-ORBIT] Level-up does not change the planet surface — only ring band count.
@@ -317,6 +321,34 @@ namespace TitanOrbit.Game
         static readonly int ShaderIdTiling = Shader.PropertyToID("_Tiling");
         static readonly int ShaderIdBumpScale = Shader.PropertyToID("_BumpScale");
         static readonly int ShaderIdDetailTiling = Shader.PropertyToID("_DetailTiling");
+        static readonly int ShaderIdColor = Shader.PropertyToID("_Color");
+        static readonly int ShaderIdBaseColor = Shader.PropertyToID("_BaseColor");
+
+        /// <summary>
+        /// One draw material per (source, team). PC URP has the SRP Batcher on, and the planet
+        /// shader keeps <c>_Color</c> in <c>UnityPerMaterial</c>, so a MaterialPropertyBlock tint
+        /// never reaches the rock. Five shared instances cover every asteroid of that team.
+        /// </summary>
+        static readonly Dictionary<AsteroidTintMaterialKey, Material> s_AsteroidTeamMaterials =
+            new Dictionary<AsteroidTintMaterialKey, Material>(8);
+
+        struct AsteroidTintMaterialKey : System.IEquatable<AsteroidTintMaterialKey>
+        {
+            public int SourceId;
+            public byte Team;
+
+            public bool Equals(AsteroidTintMaterialKey other) =>
+                SourceId == other.SourceId && Team == other.Team;
+
+            public override bool Equals(object obj) =>
+                obj is AsteroidTintMaterialKey other && Equals(other);
+
+            public override int GetHashCode() => (SourceId * 397) ^ Team;
+        }
+
+        /// <summary>[UNITY] Domain reload drops runtime team-material instances.</summary>
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetAsteroidTeamMaterials() => s_AsteroidTeamMaterials.Clear();
 
         public static bool TryCreateAsteroidVisual(
             GameObject asteroidPrefab,
@@ -371,7 +403,13 @@ namespace TitanOrbit.Game
         /// team color (0.7 blend) when the rock sits inside a territory triangle; restore when None.
         /// Caller resolves overlap (prefer local team) via
         /// <see cref="PlanetConnectionGraphLogic.ResolveAsteroidTintTeam"/> before calling.
-        /// Caches the original color on first call via <see cref="AsteroidTerritoryTintCache"/>.
+        /// Caches the original material on first call via <see cref="AsteroidTerritoryTintCache"/>.
+        /// <para>
+        /// The color is baked into a shared per-team material. PC URP keeps the SRP Batcher on, and
+        /// the planet shader stores <c>_Color</c> in <c>UnityPerMaterial</c>, so a property-block
+        /// write alone leaves every rock the neutral Barren color inside a team triangle.
+        /// The property block is still updated so WebGL (batcher off) matches the same color.
+        /// </para>
         /// </summary>
         /// <param name="root">Asteroid hybrid proxy root.</param>
         /// <param name="team">Display territory team, or <see cref="TeamId.None"/> to clear.</param>
@@ -388,23 +426,20 @@ namespace TitanOrbit.Game
             if (cache == null)
                 cache = root.AddComponent<AsteroidTerritoryTintCache>();
 
-            // --- Skip identical writes ---
-            if (cache.AppliedTeam == team && cache.HasOriginal)
-                return true;
-
             var sgt = root.GetComponentInChildren<SgtPlanet>(true);
             if (sgt == null || sgt.Material == null)
                 return false;
 
-            // --- Cache original SgtPlanet color once ---
-            if (!cache.HasOriginal)
+            // --- Cache the shared prefab material once (never a team clone) ---
+            if (!cache.HasOriginal || cache.OriginalMaterial == null)
             {
-                if (sgt.Material.HasProperty("_Color"))
-                    cache.OriginalColor = sgt.Material.GetColor("_Color");
-                else if (sgt.Material.HasProperty("_BaseColor"))
-                    cache.OriginalColor = sgt.Material.GetColor("_BaseColor");
-                else
-                    cache.OriginalColor = new Color(0.5f, 0.5f, 0.5f, 1f);
+                Material current = sgt.Material;
+                if (current != null && !IsAsteroidTeamTintMaterial(current))
+                    cache.OriginalMaterial = current;
+                if (cache.OriginalMaterial == null)
+                    return false;
+
+                cache.OriginalColor = ReadMaterialColor(cache.OriginalMaterial);
                 cache.HasOriginal = true;
             }
 
@@ -412,10 +447,78 @@ namespace TitanOrbit.Game
                 ? cache.OriginalColor
                 : Color.Lerp(cache.OriginalColor, team.ToColor(), 0.7f);
 
-            int id = Shader.PropertyToID("_Color");
-            sgt.Properties.SetColor(id, color);
+            Material draw = team == TeamId.None
+                ? cache.OriginalMaterial
+                : GetAsteroidTeamMaterial(cache.OriginalMaterial, team, color);
+            if (draw == null)
+                return false;
+
+            // --- Skip identical writes ---
+            if (cache.AppliedTeam == team && sgt.Material == draw)
+                return true;
+
+            if (sgt.Material != draw)
+                sgt.Material = draw;
+
+            // WebGL draws asteroids with the property block (SRP Batcher forced off).
+            sgt.Properties.SetColor(ShaderIdColor, color);
             cache.AppliedTeam = team;
             return true;
+        }
+
+        /// <summary>Neutral <c>_Color</c> / <c>_BaseColor</c> on the prefab material.</summary>
+        static Color ReadMaterialColor(Material material)
+        {
+            if (material == null)
+                return new Color(0.5f, 0.5f, 0.5f, 1f);
+            if (material.HasProperty(ShaderIdColor))
+                return material.GetColor(ShaderIdColor);
+            if (material.HasProperty(ShaderIdBaseColor))
+                return material.GetColor(ShaderIdBaseColor);
+            return new Color(0.5f, 0.5f, 0.5f, 1f);
+        }
+
+        /// <summary>True when <paramref name="material"/> is one of the shared team clones.</summary>
+        static bool IsAsteroidTeamTintMaterial(Material material)
+        {
+            if (material == null)
+                return false;
+            foreach (var pair in s_AsteroidTeamMaterials)
+            {
+                if (pair.Value == material)
+                    return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Shared team draw material cloned from <paramref name="source"/>. All rocks of one
+        /// team share it so we do not allocate a material per asteroid.
+        /// </summary>
+        static Material GetAsteroidTeamMaterial(Material source, TeamId team, Color color)
+        {
+            if (source == null || team == TeamId.None)
+                return source;
+
+            var key = new AsteroidTintMaterialKey
+            {
+                SourceId = source.GetInstanceID(),
+                Team = (byte)team,
+            };
+            if (s_AsteroidTeamMaterials.TryGetValue(key, out Material existing) && existing != null)
+                return existing;
+
+            var copy = new Material(source)
+            {
+                name = source.name + " " + team,
+            };
+            if (copy.HasProperty(ShaderIdColor))
+                copy.SetColor(ShaderIdColor, color);
+            if (copy.HasProperty(ShaderIdBaseColor))
+                copy.SetColor(ShaderIdBaseColor, color);
+            s_AsteroidTeamMaterials[key] = copy;
+            return copy;
         }
 
         /// <summary>Same Barren asteroid texture for every rock; vary UV scale, normals, and displacement per instance.</summary>
@@ -426,7 +529,7 @@ namespace TitanOrbit.Game
                 return;
 
             var sgt = root.GetComponentInChildren<SgtPlanet>(true);
-            if (sgt == null || sgt.Material == null || !sgt.Material.HasProperty(ShaderIdTiling))
+            if (sgt == null)
                 return;
 
             int seed = unchecked((int)((long)(worldPosition.x * 1000) * 73856093
@@ -434,25 +537,149 @@ namespace TitanOrbit.Game
                 ^ (long)(worldPosition.y * 100) * 83492791));
             var rng = new System.Random(seed);
 
-            float sizeTiling = BaseTextureTiling * (rawSize / MinAsteroidRadius);
-            float scaleMul = Mathf.Lerp(TextureScaleRandomMin, TextureScaleRandomMax, (float)rng.NextDouble());
-            sgt.Properties.SetFloat(ShaderIdTiling, sizeTiling * scaleMul);
-
-            if (sgt.Material.HasProperty(ShaderIdBumpScale))
+            if (sgt.Material != null && sgt.Material.HasProperty(ShaderIdTiling))
             {
-                float bump = Mathf.Lerp(BumpScaleMin, BumpScaleMax, (float)rng.NextDouble());
-                sgt.Properties.SetFloat(ShaderIdBumpScale, bump);
+                float sizeTiling = BaseTextureTiling * (rawSize / MinAsteroidRadius);
+                float scaleMul = Mathf.Lerp(TextureScaleRandomMin, TextureScaleRandomMax, (float)rng.NextDouble());
+                sgt.Properties.SetFloat(ShaderIdTiling, sizeTiling * scaleMul);
+
+                if (sgt.Material.HasProperty(ShaderIdBumpScale))
+                {
+                    float bump = Mathf.Lerp(BumpScaleMin, BumpScaleMax, (float)rng.NextDouble());
+                    sgt.Properties.SetFloat(ShaderIdBumpScale, bump);
+                }
+
+                if (sgt.Material.HasProperty(ShaderIdDetailTiling))
+                {
+                    float detailTiling = Mathf.Lerp(DetailTilingMin, DetailTilingMax, (float)rng.NextDouble());
+                    sgt.Properties.SetFloat(ShaderIdDetailTiling, detailTiling);
+                }
             }
 
-            if (sgt.Material.HasProperty(ShaderIdDetailTiling))
+            // Share the mesh even when the material has no _Tiling. Missing tiling only
+            // skips UV variation. A private Geosphere50 per rock filled ~2.1 GB and abort("OOM").
+            // The property block above is what the WebGL draw actually uses. Planets bake those
+            // values into a material instance; asteroids do not, so a null block draws nothing.
+            if (Application.platform == RuntimePlatform.WebGLPlayer)
             {
-                float detailTiling = Mathf.Lerp(DetailTilingMin, DetailTilingMax, (float)rng.NextDouble());
-                sgt.Properties.SetFloat(ShaderIdDetailTiling, detailTiling);
+                AssignSharedAsteroidMesh(sgt, rng);
+                return;
             }
+
+            if (sgt.Material == null || !sgt.Material.HasProperty(ShaderIdTiling))
+                return;
 
             sgt.Displacement = Mathf.Lerp(
                 DisplacementMin, BodyCollisionMath.AsteroidVisualDisplacementLocal, (float)rng.NextDouble());
             sgt.DirtyMesh();
+        }
+
+        const int WebGlAsteroidMeshBuckets = 6;
+
+        static Mesh[] s_WebGlAsteroidMeshes;
+
+        /// <summary>
+        /// Reuses one displaced mesh per bucket. The prefab material stays Barren5.
+        /// <see cref="SgtPlanet.Displacement"/> marks the mesh dirty, so the write happens
+        /// only while building a bucket, and never after the share is locked.
+        /// </summary>
+        static void AssignSharedAsteroidMesh(SgtPlanet sgt, System.Random rng)
+        {
+            if (s_WebGlAsteroidMeshes == null)
+                s_WebGlAsteroidMeshes = new Mesh[WebGlAsteroidMeshBuckets];
+
+            int bucket = rng.Next(WebGlAsteroidMeshBuckets);
+            sgt.BindSharedMeshBucket(bucket);
+            Mesh shared = s_WebGlAsteroidMeshes[bucket];
+            if (shared != null)
+            {
+                sgt.AssignSharedGeneratedMesh(shared);
+                return;
+            }
+
+            float t = bucket / (float)(WebGlAsteroidMeshBuckets - 1);
+            sgt.Displacement = Mathf.Lerp(
+                DisplacementMin, BodyCollisionMath.AsteroidVisualDisplacementLocal, t);
+            s_WebGlAsteroidMeshes[bucket] = sgt.RebuildAsSharedMesh();
+        }
+
+        /// <summary>
+        /// Salt so this roll does not share a stream with bullet-bank or placement RNG.
+        /// </summary>
+        const uint SurfaceWaterRollSalt = 0xA7E21u;
+
+        /// <summary>
+        /// Oceans on non-home planets. The planet shader already has water; neutral prefabs
+        /// force <c>SgtPlanet.waterLevel</c> to 0, which hides it. Homes keep the authored level.
+        /// Min and max come from <see cref="PlanetMaterialPool"/>.
+        /// </summary>
+        /// <param name="root">Planet proxy root (spin pivot may already have migrated <c>SgtPlanet</c>).</param>
+        /// <param name="planetId">Stable <c>PlanetState.PlanetId</c>.</param>
+        /// <param name="isHome">Home worlds are unchanged.</param>
+        /// <param name="matchSeed">Map seed. Zero skips the roll so a later recipe can fill the oceans in.</param>
+        /// <param name="pool">Surface pool. Null loads <c>Resources/PlanetMaterialPool</c>.</param>
+        public static void ApplyNeutralSurfaceWater(
+            GameObject root,
+            int planetId,
+            bool isHome,
+            uint matchSeed,
+            PlanetMaterialPool pool)
+        {
+            if (root == null || isHome || matchSeed == 0)
+                return;
+
+            if (pool == null)
+                pool = LoadDefaultMaterialPool();
+
+            float level = RollNeutralSurfaceWaterLevel(matchSeed, planetId, pool);
+            var planets = root.GetComponentsInChildren<SgtPlanet>(true);
+            for (int i = 0; i < planets.Length; i++)
+            {
+                SgtPlanet sgt = planets[i];
+                if (sgt == null)
+                    continue;
+                EnsureWaterKeyword(sgt);
+                sgt.WaterLevel = level;
+            }
+        }
+
+        /// <summary>
+        /// Deterministic ocean line for one planet on one map. Same seed, id, and pool range on every client.
+        /// </summary>
+        public static float RollNeutralSurfaceWaterLevel(uint matchSeed, int planetId, PlanetMaterialPool pool)
+        {
+            float min = pool != null ? pool.NeutralWaterLevelMin : 0.07f;
+            float max = pool != null ? pool.NeutralWaterLevelMax : 0.26f;
+            if (max < min)
+            {
+                float swap = min;
+                min = max;
+                max = swap;
+            }
+
+            uint salt = unchecked((uint)planetId * 2654435761u);
+            uint index = matchSeed ^ salt ^ SurfaceWaterRollSalt;
+            if (index == 0)
+                index = 1u;
+            var rng = Unity.Mathematics.Random.CreateFromIndex(index);
+            return math.lerp(min, max, rng.NextFloat());
+        }
+
+        /// <summary>
+        /// Family skins ship with <c>_WATER</c>. If a fallback material does not, instance it
+        /// so the shared asset is not edited and other bodies keep their keyword state.
+        /// </summary>
+        static void EnsureWaterKeyword(SgtPlanet sgt)
+        {
+            Material mat = sgt.Material;
+            if (mat == null || mat.IsKeywordEnabled("_WATER"))
+                return;
+
+            var instance = new Material(mat);
+            instance.EnableKeyword("_WATER");
+            if (instance.HasProperty("_HasWater"))
+                instance.SetFloat("_HasWater", 1f);
+            sgt.Material = instance;
         }
 
         public static void ApplyPlanetMaterial(

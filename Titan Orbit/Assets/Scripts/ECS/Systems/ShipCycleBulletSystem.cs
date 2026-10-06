@@ -6,11 +6,15 @@ using Unity.NetCode;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// B-key and bullet-type HUD selection. Production: owned damage banks only (hull family +
-    /// purchased foreign weapons). Orbit Menu heal mode ignores B and HUD clicks.
-    /// GameManager <c>CycleAllBulletBanks</c> wraps every <see cref="BulletVfxBank"/> category
-    /// including EnergySpheres, but does <b>not</b> latch <c>HealingBulletsActive</c> —
-    /// that flag is Orbit Menu only. HUD clicks arrive as <see cref="ShipInput.SetBulletBank"/>.
+    /// B-key and bullet-type HUD selection. Production: owned damage banks only
+    /// (a Titan's original catalog gun, then the ship-family weapon, then purchased
+    /// foreign weapons). MEGA hulls use that same owned list; only Titan Bullet mounts
+    /// retarget. Orbit Menu heal mode ignores B and HUD clicks.
+    /// GameManager <c>CycleAllBulletBanks</c> walks the same non-reserved catalog the
+    /// Weapons HUD paints (EnergySpheres included, Rockets skipped) and does <b>not</b>
+    /// latch <c>HealingBulletsActive</c> — that flag is Orbit Menu only. B and tile
+    /// clicks both arrive as <see cref="ShipInput.SetBulletBank"/> when the client
+    /// can resolve the next visible row; CycleBullet is the fallback increment.
     /// </summary>
     [UpdateInGroup(typeof(PredictedSimulationSystemGroup))]
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation | WorldSystemFilterFlags.ClientSimulation)]
@@ -59,11 +63,6 @@ namespace TitanOrbit.ECS
                 if (!setBank && !cycle)
                     continue;
 
-                // MEGA mounts each fire a catalog bank — B-key / HUD must not retarget the volley.
-                if (SystemAPI.HasComponent<MegaShipState>(entity) &&
-                    SystemAPI.GetComponentRO<MegaShipState>(entity).ValueRO.IsMega)
-                    continue;
-
                 int previousBank = loadout.ValueRO.RuntimeBulletIndex;
 
                 // --- HUD click: jump to a specific bank ---
@@ -85,20 +84,14 @@ namespace TitanOrbit.ECS
                     continue;
                 }
 
-                if (TitanOrbitDebugFlags.CycleAllBulletBanks)
-                {
-                    int current = loadout.ValueRO.RuntimeBulletIndex;
-                    loadout.ValueRW.RuntimeBulletIndex =
-                        BulletBankProfileUtility.NextDebugCycleBankIndex(current, _categoryCount);
-                    if (loadout.ValueRO.RuntimeBulletIndex != previousBank)
-                        ResetMountCooldowns(state.EntityManager, entity);
-                    continue;
-                }
-
-                if (loadout.ValueRO.HealingBulletsActive)
+                // --- B key: same walk as the Weapons HUD ---
+                // [TITAN-ORBIT] Production = owned damage banks. Cycle-all = catalog
+                // minus Rockets. Heal mode is Orbit Menu only and ignores B unless
+                // the Test flag is on (testers still need to walk EnergySpheres).
+                if (loadout.ValueRO.HealingBulletsActive && !TitanOrbitDebugFlags.CycleAllBulletBanks)
                     continue;
 
-                loadout.ValueRW.RuntimeBulletIndex = BulletBankOwnership.NextOwnedDamageBank(
+                loadout.ValueRW.RuntimeBulletIndex = BulletBankOwnership.NextVisibleBank(
                     state.EntityManager, entity, loadout.ValueRO.RuntimeBulletIndex);
                 if (loadout.ValueRO.RuntimeBulletIndex != previousBank)
                     ResetMountCooldowns(state.EntityManager, entity);
@@ -108,13 +101,25 @@ namespace TitanOrbit.ECS
         /// <summary>
         /// Bank-swap: clear leftover per-barrel timers so the newly selected type can fire
         /// immediately. Cooldown is stored on the mount, not on the bank index.
+        /// MEGA: only Titan Bullet mounts reset — cannons / missiles / snipers stay put.
         /// </summary>
         static void ResetMountCooldowns(EntityManager em, Entity ship)
         {
             if (!em.HasBuffer<ShipWeaponMountElement>(ship))
                 return;
 
-            ShipWeaponFireLogic.ResetMountCooldowns(em.GetBuffer<ShipWeaponMountElement>(ship));
+            var mounts = em.GetBuffer<ShipWeaponMountElement>(ship);
+            if (em.HasComponent<MegaShipState>(ship) && em.GetComponentData<MegaShipState>(ship).IsMega)
+                ShipWeaponFireLogic.ResetCycledBulletMountCooldowns(mounts);
+            else
+                ShipWeaponFireLogic.ResetMountCooldowns(mounts);
+
+            if (em.HasComponent<ShipWeaponState>(ship))
+            {
+                var weaponState = em.GetComponentData<ShipWeaponState>(ship);
+                weaponState.NextMountIndex = 0;
+                em.SetComponentData(ship, weaponState);
+            }
         }
     }
 }

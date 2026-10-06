@@ -78,11 +78,16 @@ namespace TitanOrbit.ECS
             // [TITAN-ORBIT] Hard teardown on kill froze client predicted ship movement.
             // Respawn RPC hard-destroys the zombie immediately before Instantiates.
             // Must not radius-wipe neighbors — that hid live rocks in a dense belt.
+            bool playDeathVfx = !state.WorldUnmanaged.IsThinClient();
             for (int i = 0; i < pending.Length; i++)
             {
                 var p = pending[i];
                 float3 pos = p.Position;
                 pos.y = 0f;
+                // Presentation: Fire/V1 burst at this wrapped pose (tint resolved on the driver).
+                // Enqueue even when the local mesh is not found yet — VFX does not need the GO.
+                if (playDeathVfx)
+                    AsteroidDeathVfxBridge.Enqueue(pos, p.Scale);
                 int culled = ClientLocalAsteroidCombatSync.SoftDestroyLocalAsteroidsNear(em, pos, p.Scale);
                 // Join skip / registry lag: keep the pose until a later tick finds the rock.
                 if (culled <= 0)

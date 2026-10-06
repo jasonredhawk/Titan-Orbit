@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using TitanOrbit.Core;
+using TitanOrbit.Diagnostics;
 using TitanOrbit.ECS;
 using TitanOrbit.Game;
 using TitanOrbit.Generation;
@@ -65,6 +66,9 @@ namespace TitanOrbit.UI
 
         Transform _root;
         MinimapBlipAnchor _localPlayer;
+        Entity _localPlayerEntity;
+        /// <summary>Last <see cref="ClientTeamFlowState.PlaySessionGeneration"/> whose anchors we built.</summary>
+        int _seenPlaySessionGeneration = -1;
         float _lastCacheRefreshTime = -999f;
         float _lastMapWidth = float.NaN;
         float _lastMapHeight = float.NaN;
@@ -104,12 +108,35 @@ namespace TitanOrbit.UI
         /// <summary>Per-frame minimap blip sync — rebuild or position-only update.</summary>
         void LateUpdate()
         {
+            using var _memMap = WebGlAllocBuckets.Measure(WebGlAllocBuckets.Minimap);
+            // A new play session (main menu, then join) must not keep blips from the hull you left.
+            if (ClientTeamFlowState.PlaySessionGeneration != _seenPlaySessionGeneration)
+            {
+                _seenPlaySessionGeneration = ClientTeamFlowState.PlaySessionGeneration;
+                ClearAllAnchors();
+            }
+
             // --- Join settle / ship Instantiates gate ---
             // [TITAN-ORBIT] During GhostSpawn Instantiates the loading screen owns the UI
             // (Settling). After Join Team, Settling stays OFF but GhostSpawnBacklog covers the
             // ship Instantiates window — SyncShips ToEntityArray then Crash!!! (2026-07-19).
             if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+            {
+                // Ship gathers are closed. Drop the center only when that hull is already gone
+                // so a post–Join Team hold does not blank a live radar.
+                if (_localPlayerEntity != Entity.Null)
+                {
+                    var skipWorld = EcsGameBridge.GetVisualizationWorld();
+                    if (skipWorld == null || !skipWorld.IsCreated ||
+                        !skipWorld.EntityManager.Exists(_localPlayerEntity) ||
+                        !skipWorld.EntityManager.HasComponent<ShipTag>(_localPlayerEntity))
+                    {
+                        _localPlayer = null;
+                        _localPlayerEntity = Entity.Null;
+                    }
+                }
                 return;
+            }
 
             // --- Per-frame refresh ---
             var world = EcsGameBridge.GetVisualizationWorld();
@@ -180,6 +207,31 @@ namespace TitanOrbit.UI
         /// <summary>Local player blip for minimap centering and team tint.</summary>
         public bool TryGetLocalPlayer(out MinimapBlipAnchor anchor)
         {
+            // Center on the hull the bridge is flying now. A cached blip from the exited ship
+            // stays in the dictionary until the next rebuild and used to pin the radar there.
+            var world = EcsGameBridge.GetVisualizationWorld();
+            if (world != null && world.IsCreated &&
+                EcsGameBridge.TryGetLocalShipEntityOnWorld(world, out Entity ship) &&
+                _anchors.TryGetValue(ship, out var current) &&
+                current != null)
+            {
+                _localPlayer = current;
+                _localPlayerEntity = ship;
+                anchor = current;
+                return true;
+            }
+
+            bool cachedAlive = _localPlayer != null &&
+                               world != null && world.IsCreated &&
+                               _localPlayerEntity != Entity.Null &&
+                               world.EntityManager.Exists(_localPlayerEntity) &&
+                               world.EntityManager.HasComponent<ShipTag>(_localPlayerEntity);
+            if (!cachedAlive)
+            {
+                _localPlayer = null;
+                _localPlayerEntity = Entity.Null;
+            }
+
             anchor = _localPlayer;
             return anchor != null;
         }
@@ -244,6 +296,7 @@ namespace TitanOrbit.UI
             var alive = _rebuildAliveScratch;
             alive.Clear();
             _localPlayer = null;
+            _localPlayerEntity = Entity.Null;
 
             SyncShips(em, alive);
             SyncPlanets(em, alive);
@@ -264,6 +317,7 @@ namespace TitanOrbit.UI
             var alive = _rebuildAliveScratch;
             alive.Clear();
             _localPlayer = null;
+            _localPlayerEntity = Entity.Null;
 
             // Ships stay few; same ToEntityArray shape as EcsWorldVisualizer.SyncShipProxyTransforms.
             SyncShips(em, alive);
@@ -349,6 +403,12 @@ namespace TitanOrbit.UI
         {
             // --- Per-frame refresh ---
             // [TITAN-ORBIT] Shared ServerTick moon clock — not Unity Time.timeAsDouble.
+            // Rebuild the local-player pick every frame so a new hull replaces the one
+            // left behind after exit / rejoin. The old anchor can still exist for a tick.
+            _localPlayer = null;
+            _localPlayerEntity = Entity.Null;
+            var dead = _pruneScratch;
+            dead.Clear();
             double elapsed = PlanetGemMoonOrbitClock.TryGetElapsedSeconds(out double orbitElapsed, includeTickFraction: true)
                 ? orbitElapsed
                 : Time.timeAsDouble;
@@ -357,7 +417,18 @@ namespace TitanOrbit.UI
                 var entity = kv.Key;
                 var anchor = kv.Value;
                 if (anchor == null || !em.Exists(entity))
+                {
+                    dead.Add(entity);
                     continue;
+                }
+
+                // Ghost cleanup keeps the entity id after DestroyEntity strips ShipTag.
+                // That id must not stay the radar center.
+                if (anchor.Kind == MinimapBlipKind.Ship && !em.HasComponent<ShipTag>(entity))
+                {
+                    dead.Add(entity);
+                    continue;
+                }
 
                 if (!em.HasComponent<LocalTransform>(entity))
                     continue;
@@ -373,7 +444,7 @@ namespace TitanOrbit.UI
                     var ship = em.GetComponentData<ShipState>(entity);
                     ApplyShipAnchorPresentation(em, entity, anchor, ship, lt);
                     if (anchor.IsLocalPlayer)
-                        _localPlayer = anchor;
+                        ConsiderLocalPlayer(em, entity, anchor);
                 }
                 else if ((anchor.Kind == MinimapBlipKind.Planet || anchor.Kind == MinimapBlipKind.HomePlanet) &&
                          em.HasComponent<PlanetState>(entity))
@@ -386,6 +457,7 @@ namespace TitanOrbit.UI
                     anchor.PlanetId = planet.PlanetId;
                     anchor.IsHomePlanet = planet.IsHomePlanet;
                     anchor.ShipFamilyConfigIndex = planet.ShipFamilyConfigIndex;
+                    anchor.BulletBankIndex = planet.BulletBankIndex;
                     anchor.BodySize = math.max(0.25f, lt.Scale);
                     // Per-entity buffer read — not a map-body archetype gather (quarantine-safe).
                     anchor.DefenseTurretBuiltMask = ReadDefenseTurretBuiltMask(em, entity);
@@ -406,8 +478,33 @@ namespace TitanOrbit.UI
                 }
             }
 
+            for (int i = 0; i < dead.Count; i++)
+                DestroyAnchor(dead[i]);
+
             if (_localPlayer == null)
                 TryResolveLocalPlayerByNetworkId(em);
+        }
+
+        /// <summary>Destroys every blip so the next join cannot reuse the exited hull's anchor.</summary>
+        void ClearAllAnchors()
+        {
+            foreach (var anchor in _anchors.Values)
+            {
+                if (anchor != null)
+                    Destroy(anchor.gameObject);
+            }
+
+            _anchors.Clear();
+            foreach (var moon in _gemMoonsByPlanetId.Values)
+            {
+                if (moon != null)
+                    Destroy(moon.gameObject);
+            }
+
+            _gemMoonsByPlanetId.Clear();
+            _localPlayer = null;
+            _localPlayerEntity = Entity.Null;
+            RebuildLists();
         }
 
         /// <summary>
@@ -446,18 +543,30 @@ namespace TitanOrbit.UI
             using var query = em.CreateEntityQuery(typeof(ShipTag), typeof(GhostOwner));
             using var entities = query.ToEntityArray(Allocator.Temp);
             using var owners = query.ToComponentDataArray<GhostOwner>(Allocator.Temp);
-            for (int i = 0; i < entities.Length; i++)
+            int newest = ShipGhostAge.IndexOfNewest(em, entities, owners, localId);
+            if (newest < 0)
+                return;
+            if (_anchors.TryGetValue(entities[newest], out var anchor))
             {
-                if (owners[i].NetworkId != localId)
-                    continue;
-                if (_anchors.TryGetValue(entities[i], out var anchor))
-                {
-                    anchor.IsLocalPlayer = true;
-                    _localPlayer = anchor;
-                }
-
-                break;
+                anchor.IsLocalPlayer = true;
+                ConsiderLocalPlayer(em, entities[newest], anchor);
             }
+        }
+
+        /// <summary>
+        /// Keeps the minimap center on the newest locally owned hull when exit/rejoin
+        /// left the previous ship in the world for a tick.
+        /// </summary>
+        void ConsiderLocalPlayer(EntityManager em, Entity entity, MinimapBlipAnchor anchor)
+        {
+            if (anchor == null || !anchor.IsLocalPlayer)
+                return;
+            if (_localPlayer != null &&
+                _localPlayerEntity != Entity.Null &&
+                !ShipGhostAge.IsNewerThan(em, entity, _localPlayerEntity))
+                return;
+            _localPlayer = anchor;
+            _localPlayerEntity = entity;
         }
 
         void SyncShips(EntityManager em, HashSet<Entity> alive)
@@ -479,7 +588,7 @@ namespace TitanOrbit.UI
                 anchor.transform.position = lt.Position;
                 anchor.transform.localScale = Vector3.one * anchor.BodySize;
                 if (anchor.IsLocalPlayer)
-                    _localPlayer = anchor;
+                    ConsiderLocalPlayer(em, entity, anchor);
             }
         }
 
@@ -502,15 +611,16 @@ namespace TitanOrbit.UI
             // [TITAN-ORBIT] No local blip until Join Team / resume confirms.
             anchor.IsLocalPlayer = !ClientTeamFlowState.ShouldSuppressLocalPlayerControl() &&
                                    (em.HasComponent<LocalPlayerShipTag>(entity) ||
-                                    em.HasComponent<GhostOwnerIsLocal>(entity));
+                                    (em.HasComponent<GhostOwnerIsLocal>(entity) &&
+                                     em.IsComponentEnabled<GhostOwnerIsLocal>(entity)));
             anchor.BodySize = math.max(0.25f, lt.Scale);
 
-            // --- Chassis ladder (minimap scales the regular-ship Cross from ShipLevel; MEGA stays a triangle) ---
+            // --- Chassis ladder (minimap scales the regular-ship X-in-square from ShipLevel; MEGA stays a triangle) ---
             anchor.ShipLevel = ship.ShipLevel;
             anchor.BranchIndex = ship.BranchIndex;
             anchor.ShipFamilyConfigIndex = ship.ShipFamilyConfigIndex;
 
-            // --- MEGA hull flag (hex vs Cross on the minimap) ---
+            // --- MEGA hull flag (triangle vs X-in-square on the minimap) ---
             // [NETCODE] MegaShipState is baked on StarshipGhost and ghosted, so late joiners
             // already see IsMega. Per-entity HasComponent matches ShipMatchStats below —
             // not a map-body gather, so this stays quarantine-safe.
@@ -601,6 +711,7 @@ namespace TitanOrbit.UI
             // Home + family index — world labels and the minimap hover tip resolve the name from these.
             anchor.IsHomePlanet = state.IsHomePlanet;
             anchor.ShipFamilyConfigIndex = state.ShipFamilyConfigIndex;
+            anchor.BulletBankIndex = state.BulletBankIndex;
             anchor.BodySize = math.max(0.25f, lt.Scale);
             // Per-entity buffer read — not a map-body archetype gather (quarantine-safe).
             anchor.DefenseTurretBuiltMask = ReadDefenseTurretBuiltMask(em, entity);
@@ -731,7 +842,10 @@ namespace TitanOrbit.UI
                 return;
 
             if (_localPlayer == anchor)
+            {
                 _localPlayer = null;
+                _localPlayerEntity = Entity.Null;
+            }
 
             if (anchor != null)
                 Destroy(anchor.gameObject);

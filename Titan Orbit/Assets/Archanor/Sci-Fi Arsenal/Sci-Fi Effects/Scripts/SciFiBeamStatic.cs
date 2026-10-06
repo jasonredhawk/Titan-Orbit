@@ -5,6 +5,7 @@ using UnityEngine;
 namespace SciFiArsenal
 {
 
+[DefaultExecutionOrder(67045)]
 public class SciFiArsenalBeamStatic : MonoBehaviour
 {
 
@@ -40,7 +41,12 @@ public class SciFiArsenalBeamStatic : MonoBehaviour
 		customWidth = originalWidth * widthMultiplier;
     }
 
-    void FixedUpdate()
+    /// <summary>
+    /// World-space line must sample the posed muzzle on the render frame.
+    /// FixedUpdate left the laser on the last physics tick while the hull interpolated.
+    /// Runs after <c>CannonLaserBeamVisual</c> (67040) so length / transform are current.
+    /// </summary>
+    void LateUpdate()
 	{
 		if (beam) 
 		{

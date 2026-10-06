@@ -19,7 +19,7 @@ namespace TitanOrbit.ECS
     /// or people transport within absolute engage range (world units from the pad; Level 1→6
     /// from <see cref="PlanetaryDefenseConfig"/>, default 20 at Lv1 then +4/level) and append
     /// <see cref="BulletElement"/> shots with <see cref="BulletDamageFilter.ShipsAndTransports"/>
-    /// (enemy ships, people transports, and asteroids — rocks block + take damage like ship guns).
+    /// (aim: ships and transports; collision also stops on asteroids and drones in the beam).
     /// <para>
     /// [TITAN-ORBIT] No turret ghosts — muzzle pose is derived from planet transform + slot index
     /// (same formula as client visuals / hit spheres). OwnerNetworkId is 0; OwnerTeam is planet
@@ -32,8 +32,8 @@ namespace TitanOrbit.ECS
     /// Lead uses <see cref="PlanetaryDefenseAimMath.ShipVelocityLeadScale"/> (1 — no accel bias)
     /// for ships and transports so constant-velocity strafe matches the quadratic.
     /// <see cref="BulletVisualScale"/> grows tracers with fire power. Bullet bank is the
-    /// recipe's inherit / pinned category (default: family's
-    /// <see cref="ShipFamilyDefinition.bulletPrefabIndex"/>). Combat stats come from
+    /// recipe's inherit / pinned category (default: this planet's rolled
+    /// <c>PlanetState.BulletBankIndex</c>, then Laserbolt). Combat stats come from
     /// <see cref="PlanetaryDefenseConfig.GetCombatLevelStats"/> so that bank's
     /// fire-power / fire-rate / speed / range multipliers rewrite the recipe defaults.
     /// Each shot's <see cref="BulletElement.MaxDistance"/> is
@@ -142,9 +142,12 @@ namespace TitanOrbit.ECS
                 var xf = EntityManager.GetComponentData<LocalTransform>(planetEntity);
                 float3 planetPos = xf.Position;
                 float planetSize = math.max(0.25f, xf.Scale);
+                int planetGhostId = EntityManager.HasComponent<GhostInstance>(planetEntity)
+                    ? EntityManager.GetComponentData<GhostInstance>(planetEntity).ghostId
+                    : 0;
                 int slotCount = buffer.Length;
                 byte ownerTeam = (byte)planet.Ownership;
-                int bankIndex = config.ResolveBulletBankIndex(familyDef);
+                int bankIndex = config.ResolveBulletBankIndex(familyDef, planet.BulletBankIndex);
                 if (_vfxBank != null)
                     categoryUpgradeScale = _vfxBank.GetCategoryUpgradeVisualScaleMultiplier(bankIndex);
 
@@ -257,8 +260,11 @@ namespace TitanOrbit.ECS
                         Sequence = sequence,
                         BankIndex = math.max(0, bankIndex),
                         ScaleMultiplier = math.max(0.1f, visualScale),
-                        // Ships + transports + asteroids (rocks block/damage like ship guns).
+                        // Aim stays ships/transports; drones in the beam still take a hit.
                         DamageFilter = BulletDamageFilter.ShipsAndTransports,
+                        SourceGhostId = planetGhostId,
+                        SourceKind = (byte)DeathVfxSourceKind.Turret,
+                        SourceOriginXZ = new float2(muzzle.x, muzzle.z),
                     };
 
                     spawnEvents.Add(new BulletSpawnEventElement
@@ -337,26 +343,41 @@ namespace TitanOrbit.ECS
                     continue;
 
                 bool moonStowed = ShipMoonDockState.IsFullyLandedOnMoon(EntityManager, e);
-                if (!moonStowed)
+                if (moonStowed)
+                    continue;
+
+                var shipXf = EntityManager.GetComponentData<LocalTransform>(e);
+                float3 pos = MegaShipCombatAim.GetAimPoint(EntityManager, e, shipXf);
+                pos.y = PlanetaryDefenseMath.FixedY;
+
+                float3 fromMuzzle = ToroidalMapEcs.ShortestOffsetXZ(muzzle, pos, mapW, mapH);
+                float muzzleDistSq = math.lengthsq(new float3(fromMuzzle.x, 0f, fromMuzzle.z));
+                if (muzzleDistSq <= engageRangeSq && muzzleDistSq < bestMuzzleDistSq)
                 {
-                    var shipXf = EntityManager.GetComponentData<LocalTransform>(e);
-                    float3 pos = MegaShipCombatAim.GetAimPoint(EntityManager, e, shipXf);
-                    pos.y = PlanetaryDefenseMath.FixedY;
-
-                    float3 fromMuzzle = ToroidalMapEcs.ShortestOffsetXZ(muzzle, pos, mapW, mapH);
-                    float muzzleDistSq = math.lengthsq(new float3(fromMuzzle.x, 0f, fromMuzzle.z));
-                    if (muzzleDistSq <= engageRangeSq && muzzleDistSq < bestMuzzleDistSq)
+                    bestMuzzleDistSq = muzzleDistSq;
+                    targetPos = pos;
+                    targetVel = float3.zero;
+                    if (EntityManager.HasComponent<ShipKinematics>(e))
                     {
-                        bestMuzzleDistSq = muzzleDistSq;
-                        targetPos = pos;
-                        targetVel = float3.zero;
-                        if (EntityManager.HasComponent<ShipKinematics>(e))
-                        {
-                            float3 vel = EntityManager.GetComponentData<ShipKinematics>(e).Velocity;
-                            vel.y = 0f;
-                            targetVel = vel;
-                        }
+                        float3 vel = EntityManager.GetComponentData<ShipKinematics>(e).Velocity;
+                        vel.y = 0f;
+                        targetVel = vel;
+                    }
 
+                    found = true;
+                }
+
+                if (PeopleTransportEscortHitScan.TryFindNearestEscortOnShip(
+                        EntityManager, e, muzzle, bestMuzzleDistSq, mapW, mapH, timeSeconds,
+                        out float3 escortPos, out float3 escortVel))
+                {
+                    float3 fromMuzzleEscort = ToroidalMapEcs.ShortestOffsetXZ(muzzle, escortPos, mapW, mapH);
+                    float escortDistSq = math.lengthsq(new float3(fromMuzzleEscort.x, 0f, fromMuzzleEscort.z));
+                    if (escortDistSq <= engageRangeSq && escortDistSq < bestMuzzleDistSq)
+                    {
+                        bestMuzzleDistSq = escortDistSq;
+                        targetPos = escortPos;
+                        targetVel = escortVel;
                         found = true;
                     }
                 }

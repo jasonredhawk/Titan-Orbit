@@ -20,6 +20,7 @@ namespace TitanOrbit.Game
         struct Entry
         {
             public int GhostId;
+            public Entity Entity;
             public Vector3 DisplayPos;
         }
 
@@ -44,9 +45,28 @@ namespace TitanOrbit.Game
                 Entries.Add(new Entry
                 {
                     GhostId = ghostId,
+                    Entity = kv.Key,
                     DisplayPos = kv.Value.transform.position,
                 });
             }
+        }
+
+        /// <summary>Ghost entity for a live hybrid proxy, if this id was rebuilt this frame.</summary>
+        public static bool TryGetEntity(int ghostId, out Entity entity)
+        {
+            entity = Entity.Null;
+            if (ghostId == 0)
+                return false;
+
+            for (int i = 0; i < Entries.Count; i++)
+            {
+                if (Entries[i].GhostId != ghostId)
+                    continue;
+                entity = Entries[i].Entity;
+                return entity != Entity.Null;
+            }
+
+            return false;
         }
 
         /// <summary>Display position of a ghost id, tiled near <paramref name="reference"/>.</summary>
@@ -78,6 +98,123 @@ namespace TitanOrbit.Game
             return true;
         }
 
+        /// <summary>
+        /// True when this ghost / world point still has a live ship, rock, pad, or
+        /// moon. Closest obstacle wins — a corpse at the last AimWorld must not
+        /// stay locked just because a neighbor sits inside a wide reach. That
+        /// pinned parked Titan beams on dead rocks until the hull moved.
+        /// </summary>
+        public static bool IsLiveLock(EntityManager em, int ghostId, float aimX, float aimZ)
+        {
+            if (ghostId != 0)
+            {
+                if (TryGetEntity(ghostId, out Entity ghost) && !IsLiveVisualTarget(em, ghost))
+                    return false;
+                return true;
+            }
+
+            return TryGetAimWorldLockEntity(em, aimX, aimZ, out _);
+        }
+
+        /// <summary>
+        /// Server lock entity for ramp identity. Ghost id when the target is a
+        /// ship; otherwise the obstacle sitting on AimWorld (asteroid / pad / moon).
+        /// Do not use a clipped contact in front of that lock — that is not a retarget.
+        /// </summary>
+        public static bool TryGetLockEntity(
+            EntityManager em,
+            int ghostId,
+            float aimX,
+            float aimZ,
+            out Entity entity)
+        {
+            entity = Entity.Null;
+            if (ghostId != 0)
+            {
+                if (TryGetEntity(ghostId, out entity) && IsLiveVisualTarget(em, entity))
+                    return true;
+                entity = Entity.Null;
+                return false;
+            }
+
+            return TryGetAimWorldLockEntity(em, aimX, aimZ, out entity);
+        }
+
+        static bool TryGetAimWorldLockEntity(
+            EntityManager em,
+            float aimX,
+            float aimZ,
+            out Entity entity)
+        {
+            entity = Entity.Null;
+            if (math.abs(aimX) <= 0.05f && math.abs(aimZ) <= 0.05f)
+                return false;
+
+            var obstacles = BulletCosmeticHitQuery.CurrentObstacles;
+            if (obstacles == null || obstacles.Count == 0)
+                return false;
+            if (!ToroidalMapEcs.TryGetMapSize(out float mapW, out float mapH))
+                return false;
+
+            float3 aim = new float3(aimX, 0f, aimZ);
+            float bestDist = float.MaxValue;
+            int best = -1;
+            for (int i = 0; i < obstacles.Count; i++)
+            {
+                var o = obstacles[i];
+                if (o.Kind != BulletCosmeticHitQuery.ObstacleKind.Asteroid
+                    && o.Kind != BulletCosmeticHitQuery.ObstacleKind.Ship
+                    && o.Kind != BulletCosmeticHitQuery.ObstacleKind.PlanetaryDefense
+                    && o.Kind != BulletCosmeticHitQuery.ObstacleKind.Moon)
+                    continue;
+
+                float d = ToroidalMapEcs.ToroidalDistance(aim, o.LogicalCenter, mapW, mapH);
+                if (d >= bestDist)
+                    continue;
+                bestDist = d;
+                best = i;
+            }
+
+            if (best < 0)
+                return false;
+
+            var closest = obstacles[best];
+            if (closest.SourceEntity != Entity.Null && !IsLiveVisualTarget(em, closest.SourceEntity))
+                return false;
+
+            // Tight body fit — leftover AimWorld after a kill sits on the corpse
+            // center, not on a neighbor. A wide radius+1.5 swallow kept the beam
+            // on empty space while Fire was held and the ship was parked.
+            if (bestDist > closest.Radius + 0.75f)
+                return false;
+
+            entity = closest.SourceEntity;
+            return entity != Entity.Null;
+        }
+
+        /// <summary>
+        /// Dead ships, mined-out rocks, and client-culled asteroids are not locks.
+        /// Seed-hydrated <see cref="AsteroidState.Health"/> stays full until
+        /// <c>AsteroidDestroyedRpc</c>, so a client laser HP estimate of 0 is not
+        /// a corpse — treating it as one dropped the beam and paused damage floats
+        /// until the 1.25s optimistic hold snapped spawn HP back.
+        /// </summary>
+        public static bool IsLiveVisualTarget(EntityManager em, Entity target)
+        {
+            if (target == Entity.Null || !em.Exists(target))
+                return false;
+            if (em.HasComponent<ShipState>(target))
+                return !em.GetComponentData<ShipState>(target).IsDead;
+            if (em.HasComponent<AsteroidState>(target))
+            {
+                if (em.HasComponent<AsteroidClientCulledTag>(target))
+                    return false;
+                return em.GetComponentData<AsteroidState>(target).IsAliveForCombat;
+            }
+
+            return true;
+        }
+
         static Vector3 TileNear(Vector3 logical, Vector3 reference)
         {
             if (!ToroidalMapEcs.TryGetMapSize(out float mapW, out float mapH))
@@ -93,11 +230,15 @@ namespace TitanOrbit.Game
     /// Hybrid presentation: while a MEGA gun is tracking, LookAt the lock's <b>live</b>
     /// display pose from the current muzzle. Do not yaw to the lead intercept — that
     /// heading swings away from the target while the hull accelerates or turns.
-    /// Idle guns park at ship-forward + hull-local yaw.
+    /// Idle guns park at ship-forward + hull-local yaw. Barrels muted in the arsenal
+    /// HUD park on the hull and do not follow the cursor or a lock.
     /// </summary>
     public static class MegaShipWeaponVisualSync
     {
-        /// <summary>Rotates cached turret joints on <paramref name="proxy"/> to the live MEGA aim.</summary>
+        /// <summary>
+        /// Rotates cached turret joints on <paramref name="proxy"/> to the live MEGA aim.
+        /// Barrels the arsenal HUD muted stay on the hull instead of tracking a lock or the cursor.
+        /// </summary>
         public static void Apply(EntityManager em, Entity shipEntity, GameObject proxy)
         {
             if (proxy == null || shipEntity == Entity.Null || !em.Exists(shipEntity))
@@ -118,12 +259,18 @@ namespace TitanOrbit.Game
             var mounts = hasMounts
                 ? em.GetBuffer<ShipWeaponMountElement>(shipEntity)
                 : default;
+            if (hasMounts && hasGunners)
+                ShipWeaponKind.RestoreMountKindsFromGhostedSlots(mounts, gunners);
 
             Vector3 hullFwd = Flatten(proxy.transform.forward);
             Quaternion shipHeading = Quaternion.LookRotation(hullFwd, Vector3.up);
             bool ownerFiring = em.HasComponent<LocalPlayerShipTag>(shipEntity)
                 && em.HasComponent<ShipInput>(shipEntity)
                 && em.GetComponentData<ShipInput>(shipEntity).Fire.IsSet;
+            bool localOwner = em.HasComponent<LocalPlayerShipTag>(shipEntity);
+            var arm = ShipWeaponArmState.Resolve(em, shipEntity);
+            if (localOwner && hasMounts)
+                arm = WeaponArmSelection.Overlay(in arm, mounts);
 
             int count = binding.YawRoots.Length;
             for (int i = 0; i < count; i++)
@@ -134,16 +281,31 @@ namespace TitanOrbit.Game
 
                 Quaternion desiredBarrelWorld;
                 float yawDeg = 0f;
-                bool tracking = hasGunners && i < gunners.Length
+                bool ghostTracking = hasGunners && i < gunners.Length
                     && MegaShipWeaponAim.IsTrackingAim(gunners[i]);
-                if (TryGetLocalOwnerMouseWorldDir(
+                bool liveTracking = ghostTracking
+                    && MegaShipWeaponVisualTargets.IsLiveLock(
+                        em,
+                        gunners[i].TargetGhostId,
+                        gunners[i].AimWorldX,
+                        gunners[i].AimWorldZ);
+                bool isCannon = hasMounts && hasGunners && i < mounts.Length
+                    && ShipWeaponKind.IsCannonLaser(mounts[i], gunners, i);
+                // Arsenal mute. Park on the hull — a silenced barrel must not
+                // keep a world-yaw lock or swing onto the cursor.
+                bool userOff = hasMounts && i < mounts.Length && !ShipWeaponArmState.IsArmed(in arm, i);
+                if (userOff)
+                {
+                    desiredBarrelWorld = shipHeading;
+                }
+                else if (TryGetLocalOwnerMouseWorldDir(
                         em, shipEntity, yawRoot.position, out Vector3 ownerMouseDir))
                 {
                     desiredBarrelWorld = Quaternion.LookRotation(ownerMouseDir, Vector3.up);
                     binding.RememberWorldYaw(i, PlanarYaw(ownerMouseDir));
                 }
                 else if (TryGetLiveTargetDir(
-                    hasGunners, gunners, i, yawRoot.position, out Vector3 toTarget))
+                    em, hasGunners, gunners, i, yawRoot.position, out Vector3 toTarget))
                 {
                     desiredBarrelWorld = Quaternion.LookRotation(toTarget, Vector3.up);
                     binding.RememberWorldYaw(i, PlanarYaw(toTarget));
@@ -166,13 +328,16 @@ namespace TitanOrbit.Game
                         continue;
 
                     // Client predicted TargetDistance often drops to 0 between snapshots.
-                    // Hold the last LookAt / world yaw while Fire is still down.
-                    if (tracking)
+                    // Hold the last LookAt / world yaw while Fire is still down —
+                    // except cannon lasers whose lock is gone: park so they can
+                    // pick up the next in-range target instead of staring at a corpse.
+                    if (liveTracking)
                     {
                         desiredBarrelWorld = Quaternion.AngleAxis(yawDeg, Vector3.up);
                         binding.RememberWorldYaw(i, yawDeg);
                     }
-                    else if (binding.TryGetHeldWorldYaw(i, ownerFiring, out float heldYaw))
+                    else if (!isCannon
+                        && binding.TryGetHeldWorldYaw(i, ownerFiring, out float heldYaw))
                     {
                         desiredBarrelWorld = Quaternion.AngleAxis(heldYaw, Vector3.up);
                     }
@@ -197,6 +362,7 @@ namespace TitanOrbit.Game
         /// tiled current target point — not the lead intercept).
         /// </summary>
         static bool TryGetLiveTargetDir(
+            EntityManager em,
             bool hasGunners,
             DynamicBuffer<MegaShipGunnerSlotElement> gunners,
             int mountIndex,
@@ -210,6 +376,7 @@ namespace TitanOrbit.Game
             var slot = gunners[mountIndex];
             int ghostId = slot.TargetGhostId;
             if (ghostId != 0
+                && MegaShipWeaponVisualTargets.IsLiveLock(em, ghostId, slot.AimWorldX, slot.AimWorldZ)
                 && MegaShipWeaponVisualTargets.TryGetDisplayPos(
                     ghostId, muzzleDisplay, out Vector3 lockPos))
             {
@@ -221,9 +388,10 @@ namespace TitanOrbit.Game
                 }
             }
 
-            // AimWorldX/Z is the target's current point. Planets have ghostId 0
-            // (stripped map bodies), so this is the usual LookAt path.
-            if (MegaShipWeaponAim.IsTrackingAim(in slot)
+            // AimWorldX/Z is the target's current point. Planets / asteroids have
+            // ghostId 0, so this is the usual LookAt path — only while something
+            // live is still at that point (interpolated leftover after a kill is not).
+            if (MegaShipWeaponVisualTargets.IsLiveLock(em, ghostId, slot.AimWorldX, slot.AimWorldZ)
                 && MegaShipWeaponVisualTargets.TryGetTiledPoint(
                     slot.AimWorldX, slot.AimWorldZ, muzzleDisplay, out Vector3 aimPos))
             {
@@ -299,12 +467,27 @@ namespace TitanOrbit.Game
     [DefaultExecutionOrder(67020)]
     public sealed class MegaShipWeaponVisualBinding : MonoBehaviour
     {
+        /// <summary>Live hybrid MEGA turret bindings for cannon-laser beams.</summary>
+        public static readonly List<MegaShipWeaponVisualBinding> Live =
+            new List<MegaShipWeaponVisualBinding>(8);
+
         public Transform[] YawRoots;
         public Transform[] Barrels;
         public Vector3[] RestBarrelLocalFwd;
         public Entity ShipEntity;
         float[] _heldWorldYawDeg;
         float[] _heldWorldYawTime;
+
+        void OnEnable()
+        {
+            if (!Live.Contains(this))
+                Live.Add(this);
+        }
+
+        void OnDisable()
+        {
+            Live.Remove(this);
+        }
 
         static readonly List<Transform> JointScratch = new List<Transform>(16);
 

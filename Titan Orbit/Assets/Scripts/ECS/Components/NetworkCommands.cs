@@ -66,6 +66,29 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
+    /// [NETCODE] Client publishes a stable player id after GoInGame so the server can
+    /// restore that player's ship for this match only. NetworkId comes from the connection,
+    /// not this payload. Adding fields changes RPC layout: client and Linux headless must
+    /// rebuild together.
+    /// </summary>
+    public struct SetSessionPlayerIdCommand : IRpcCommand
+    {
+        /// <summary>UGS player id, or a local guid when auth is not signed in.</summary>
+        public FixedString128Bytes PlayerId;
+    }
+
+    /// <summary>
+    /// [NETCODE] Server → one client: this match still has their ship, gear, and cargo.
+    /// The hull itself was destroyed on leave so a recycled NetworkId cannot fly it.
+    /// Handled by <see cref="SessionShipOfferClientSystem"/>.
+    /// </summary>
+    public struct SessionShipOfferRpc : IRpcCommand
+    {
+        /// <summary>Summary the continue / start-fresh screen shows.</summary>
+        public ShipState Ship;
+    }
+
+    /// <summary>
     /// [NETCODE] Client publishes the Main Menu display name after GoInGame.
     /// Server: <see cref="PlayerNameServerSystem"/> (NetworkId comes from the connection, not this
     /// payload — clients cannot spoof another player's name). Adding fields changes RPC layout:
@@ -169,7 +192,7 @@ namespace TitanOrbit.ECS
         /// <summary>1 when the owner picked a thruster style / color.</summary>
         public byte ThrusterCustom;
 
-        /// <summary>0 Ribbon, 1 Modular, 2 Heavy, 3 Soft.</summary>
+        /// <summary>0 V1, 1 V2, 2 V3, 3 Soft.</summary>
         public byte ThrusterStyle;
 
         /// <summary>Packed RGBA for the locked flame tint.</summary>
@@ -328,6 +351,16 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
+    /// [NETCODE] Client zeros one bottom-bar ability. No gem refund. Server validates in
+    /// <see cref="ShipAttributeUpgradeLogic.TryResetForNetworkId"/>.
+    /// </summary>
+    public struct ResetAttributeUpgradeCommand : IRpcCommand
+    {
+        /// <summary>[TITAN-ORBIT] Index into ship attribute upgrade table (0–9).</summary>
+        public int AttributeIndex;
+    }
+
+    /// <summary>
     /// [NETCODE] Client reconnected to a match that still has their ship — resume control without
     /// re-picking team. Handled by <see cref="RejoinShipManagementSystem"/>.
     /// </summary>
@@ -338,6 +371,12 @@ namespace TitanOrbit.ECS
     /// CommandTarget. Handled by <see cref="RejoinShipManagementSystem"/>.
     /// </summary>
     public struct AbandonShipForRejoinCommand : IRpcCommand { }
+
+    /// <summary>
+    /// [NETCODE] Client is leaving to the main menu. Server destroys that connection's hull
+    /// immediately and frees a titan (MEGA) bay. Handled by <see cref="OrphanPlayerShipCleanupSystem"/>.
+    /// </summary>
+    public struct LeaveMatchDespawnShipCommand : IRpcCommand { }
 
     /// <summary>
     /// [NETCODE] Dead player picks a friendly planet on the expanded minimap after the 10s
@@ -389,8 +428,10 @@ namespace TitanOrbit.ECS
     /// Ghost Instantiates are too slow under MaxSendChunks/Instantiates caps for ~1s flights;
     /// clients create local VFX from this RPC (see PeopleTransportSpawnRpcClientSystem).
     /// <para>
-    /// Wire size is 62 bytes (includes <see cref="TargetPosition"/>). Client and Linux headless
-    /// must share this layout — hash mismatch triggers RpcSystem skip (TitanOrbit patch) or disconnect.
+    /// Wire size stays 62 bytes (includes <see cref="TargetPosition"/>). The seeded escort seat
+    /// rides in <see cref="SpawnPosition"/>.y as <c>seatId + 1</c> (0 = unknown) so the layout hash
+    /// does not change. Client and Linux headless must share this layout — hash mismatch triggers
+    /// RpcSystem skip (TitanOrbit patch) or disconnect.
     /// </para>
     /// </summary>
     public struct PeopleTransportSpawnRpc : IRpcCommand
@@ -398,7 +439,11 @@ namespace TitanOrbit.ECS
         /// <summary>Monotonic id for host queue + RPC dedupe.</summary>
         public uint Sequence;
 
-        /// <summary>World spawn position (XZ plane).</summary>
+        /// <summary>
+        /// World spawn position on XZ. Y carries the seeded escort seat as
+        /// <c>seatId + 1</c> (0 = unknown) so the 62-byte layout stays put.
+        /// Clients flatten Y after reading the seat.
+        /// </summary>
         public float3 SpawnPosition;
 
         /// <summary>
@@ -481,6 +526,15 @@ namespace TitanOrbit.ECS
 
         /// <summary>Display damage (impact VFX intensity; server owns real damage).</summary>
         public float Damage;
+
+        /// <summary>Extra Level fire power (pre-bank) for the per-weapon pitch piano.</summary>
+        public float FirePowerLive;
+
+        /// <summary>Catalog / unique-component base fire power (top C for this gun / cannon / rocket / sniper).</summary>
+        public float FirePowerBase;
+
+        /// <summary>Catalog Per Extra Level. 0 on MEGA unique weapons and PD / drones.</summary>
+        public float FirePowerPerExtra;
 
         /// <summary>Shooter team as byte.</summary>
         public byte OwnerTeam;
@@ -578,7 +632,8 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Shooter NetworkId for orphan-tracer reconcile when Sequence was never bound.
-        /// 0 on ram/grind (Sequence 0).
+        /// Ram/grind (Sequence 0) carries the ramming ship so the local client does not
+        /// replay its own grind SFX. 0 when the shooter is unknown (burn ticks).
         /// </summary>
         public int OwnerNetworkId;
 
@@ -647,6 +702,31 @@ namespace TitanOrbit.ECS
                 PlanetaryDefenseHealthAfter = troopHealthAfter;
             }
         }
+    }
+
+    /// <summary>
+    /// [NETCODE] Server → all clients: one team is the only color left on the map.
+    /// Neutral worlds may remain. <see cref="MatchStateSingleton"/> is not a ghost, so
+    /// clients never see <c>WinningTeam</c> unless this RPC (or the host in-process
+    /// mirror) writes it. Opens the congrats card. Wire layout must match Linux headless.
+    /// </summary>
+    public struct MatchWonRpc : IRpcCommand
+    {
+        /// <summary>Winning team as a byte (<see cref="TeamId"/>).</summary>
+        public byte WinningTeam;
+
+        /// <summary>Server match clock in seconds at the moment the win was decided.</summary>
+        public float MatchTimer;
+    }
+
+    /// <summary>
+    /// [NETCODE] Server → clients still on the congrats card: the finished match is closed
+    /// and the next game is published. The card stays up until this arrives, then the
+    /// client disconnects and the main menu is allowed on screen.
+    /// Wire layout must match Linux headless.
+    /// </summary>
+    public struct MatchCloseCompletedRpc : IRpcCommand
+    {
     }
 
     /// <summary>
@@ -784,12 +864,13 @@ namespace TitanOrbit.ECS
     /// [NETCODE] Client → server: hold-S comms sentence. Payload is keyword <b>indices</b>
     /// into <c>ShipCommsKeywordCatalog</c> — never strings. The server reads the owner from
     /// <see cref="ReceiveRpcCommandRequest.SourceConnection"/> (this struct has no NetworkId
-    /// so a client cannot spoof another ship). Adding fields changes RPC layout: client and
-    /// Linux headless must rebuild together.
+    /// so a client cannot spoof another ship). <see cref="TeamOnly"/> is a channel request;
+    /// the server looks up the speaker's team and targets those connections. Adding fields
+    /// changes RPC layout: client and Linux headless must rebuild together.
     /// </summary>
     public struct ShipCommsCommand : IRpcCommand
     {
-        /// <summary>How many chips are live (1–3). Slots after this are ignored.</summary>
+        /// <summary>How many chips are live (1–5). Slots after this are ignored.</summary>
         public byte Count;
 
         /// <summary>First keyword index. Required when <see cref="Count"/> ≥ 1.</summary>
@@ -800,19 +881,84 @@ namespace TitanOrbit.ECS
 
         /// <summary>Third keyword index. Ignored when <see cref="Count"/> is under 3.</summary>
         public byte K2;
+
+        /// <summary>Fourth keyword index. Ignored when <see cref="Count"/> is under 4.</summary>
+        public byte K3;
+
+        /// <summary>Fifth keyword index. Ignored when <see cref="Count"/> is under 5.</summary>
+        public byte K4;
+
+        /// <summary>
+        /// Audience request: 0 = All, 1 = Team, 2 = Commander. The server re-reads the
+        /// speaker's <c>ShipState.Team</c> and earned command seat — this byte is a request,
+        /// not a team id or title the client can spoof. Field name stayed <c>TeamOnly</c>
+        /// so older clients still deserialize the same RPC layout.
+        /// </summary>
+        public byte TeamOnly;
+
+        /// <summary>1 when <see cref="WaypointX"/> / <see cref="WaypointZ"/> is a map ping.</summary>
+        public byte HasWaypoint;
+
+        /// <summary>World X of the optional minimap ping (canonical torus rectangle).</summary>
+        public float WaypointX;
+
+        /// <summary>World Z of the optional minimap ping (canonical torus rectangle).</summary>
+        public float WaypointZ;
+
+        /// <summary>
+        /// 0 = none, 1 = minimap ping, 2 = asteroid, 3 = planet, 4 = moon,
+        /// 5 = pad, 6 = turret, 7 = gem.
+        /// Coords live in <see cref="WaypointX"/> / <see cref="WaypointZ"/> when 1, 2, or 7.
+        /// Moon / planet / pad / turret also use <see cref="PlanetId"/>.
+        /// </summary>
+        public byte FocusKind;
+
+        /// <summary>Resolved "You" / pointed ship. 0 when the sentence has no player lock.</summary>
+        public int YouNetworkId;
+
+        /// <summary>Resolved planet id for "Orange Planet" / Base. 0 when unused.</summary>
+        public int PlanetId;
+
+        /// <summary>1 when the sentence fans out to every teammate (Everyone / Team).</summary>
+        public byte Everyone;
+
+        /// <summary>Closest-in-range ships for "Us" (0 when unused).</summary>
+        public int Us0;
+
+        /// <summary>Second closest-in-range ship for "Us".</summary>
+        public int Us1;
+
+        /// <summary>Third closest-in-range ship for "Us".</summary>
+        public int Us2;
+
+        /// <summary>Fourth closest-in-range ship for "Us".</summary>
+        public int Us3;
+
+        public float MeX; public float MeZ;
+        public float YouX; public float YouZ;
+        public byte GroupCount;
+        public float G0X; public float G0Z;
+        public float G1X; public float G1Z;
+        public float G2X; public float G2Z;
+        public float G3X; public float G3Z;
+        public float G4X; public float G4Z;
+        public float G5X; public float G5Z;
+        public float G6X; public float G6Z;
+        public float G7X; public float G7Z;
     }
 
     /// <summary>
-    /// [NETCODE] Server → all clients: one player's 1–3 keyword callout. Presentation-only
+    /// [NETCODE] Server → clients: one player's 1–5 keyword callout. Presentation-only
     /// on the client (<c>ShipCommsInbox</c> → chips above the hull). Not a ghost field —
     /// the sentence is ephemeral and must not pay snapshot bandwidth every tick.
+    /// Team-only rows are targeted per connection; All rows use TargetConnection Null.
     /// </summary>
     public struct ShipCommsRpc : IRpcCommand
     {
         /// <summary>[NETCODE] Speaker's GhostOwner.NetworkId (from the connection, not the client).</summary>
         public int NetworkId;
 
-        /// <summary>How many chips are live (1–3).</summary>
+        /// <summary>How many chips are live (1–5).</summary>
         public byte Count;
 
         /// <summary>First keyword index. See <see cref="ShipCommsCommand.K0"/>.</summary>
@@ -823,6 +969,64 @@ namespace TitanOrbit.ECS
 
         /// <summary>Third keyword index. See <see cref="ShipCommsCommand.K2"/>.</summary>
         public byte K2;
+
+        /// <summary>Fourth keyword index. See <see cref="ShipCommsCommand.K3"/>.</summary>
+        public byte K3;
+
+        /// <summary>Fifth keyword index. See <see cref="ShipCommsCommand.K4"/>.</summary>
+        public byte K4;
+
+        /// <summary>
+        /// Audience the server accepted: 0 = All, 1 = Team, 2 = Commander. Clients use
+        /// it for chip chrome (white / team color / command gold), not for filtering —
+        /// enemies never receive the RPC.
+        /// </summary>
+        public byte TeamOnly;
+
+        /// <summary>1 when this callout includes a minimap world ping.</summary>
+        public byte HasWaypoint;
+
+        /// <summary>World X of the optional minimap ping.</summary>
+        public float WaypointX;
+
+        /// <summary>World Z of the optional minimap ping.</summary>
+        public float WaypointZ;
+
+        /// <summary>0 = none, 1 = ping, 2 = asteroid, 3 = planet, 4 = moon, 5 = pad, 6 = turret, 7 = gem.</summary>
+        public byte FocusKind;
+
+        /// <summary>Resolved "You" ship NetworkId. 0 when unused.</summary>
+        public int YouNetworkId;
+
+        /// <summary>Resolved planet id. 0 when unused.</summary>
+        public int PlanetId;
+
+        /// <summary>1 when the sentence fans out to every teammate (Everyone / Team).</summary>
+        public byte Everyone;
+
+        /// <summary>Closest-in-range ships for "Us" (0 when unused).</summary>
+        public int Us0;
+
+        /// <summary>Second closest-in-range ship for "Us".</summary>
+        public int Us1;
+
+        /// <summary>Third closest-in-range ship for "Us".</summary>
+        public int Us2;
+
+        /// <summary>Fourth closest-in-range ship for "Us".</summary>
+        public int Us3;
+
+        public float MeX; public float MeZ;
+        public float YouX; public float YouZ;
+        public byte GroupCount;
+        public float G0X; public float G0Z;
+        public float G1X; public float G1Z;
+        public float G2X; public float G2Z;
+        public float G3X; public float G3Z;
+        public float G4X; public float G4Z;
+        public float G5X; public float G5Z;
+        public float G6X; public float G6Z;
+        public float G7X; public float G7Z;
     }
 
     /// <summary>
@@ -834,4 +1038,185 @@ namespace TitanOrbit.ECS
         /// <summary>[ECS/DOTS] <c>SystemAPI.Time.ElapsedTime</c> of the last accepted send.</summary>
         public double LastSendElapsed;
     }
+
+    /// <summary>
+    /// [NETCODE] Server → all clients: one loose gem (mining, combat/ram spill, V-dump, moon drain).
+    /// Clients hydrate a local entity from this recipe — gems are not ghost-replicated.
+    /// Adding fields changes RPC layout: client and Linux headless must rebuild together.
+    /// </summary>
+    public struct GemSpawnRpc : IRpcCommand
+    {
+        /// <summary>Stable id from <c>GemSpawnMath.ComputeSpawnId</c>.</summary>
+        public int SpawnId;
+
+        /// <summary>Spawn origin (Y forced to 0 on apply).</summary>
+        public float3 Position;
+
+        /// <summary>Gem value (size / pickup / pitch).</summary>
+        public float Value;
+
+        /// <summary>RNG salt (heading, offset, tumble).</summary>
+        public uint Salt;
+
+        /// <summary>ServerTick-timeline seconds when the gem spawned.</summary>
+        public float SpawnServerTime;
+
+        /// <summary>Bit 0 = burst, bit 1 = yellow triangle, bit 2 = blue top-miner. See <c>GemSpawnRecipe</c>.</summary>
+        public byte Flags;
+
+        /// <summary>Asteroid-burst slot (0 for mining / combat nuggets).</summary>
+        public byte BurstIndex;
+
+        /// <summary>0..1 launch hardness for damage expulsion.</summary>
+        public float BurstIntensity;
+
+        /// <summary>Spilling ship NetworkId, or 0.</summary>
+        public int ExcludePickupNetworkId;
+
+        /// <summary>When that ship may collect again (0 = none).</summary>
+        public float ExcludePickupUntilServerTime;
+
+        /// <summary>Voluntary dump heading; zero = random XZ.</summary>
+        public float3 LaunchDir;
+
+        /// <summary>Extra world velocity (usually ship velocity on V-dump).</summary>
+        public float3 AddVelocity;
+
+        /// <summary>Burst / nudge speed multiplier (V-dump uses 2).</summary>
+        public float LaunchSpeedMul;
+    }
+
+    /// <summary>
+    /// [NETCODE] Server → all clients: asteroid destroy leftover as a seed (1–10 gems).
+    /// One RPC replaces N ghost Instantiates. Bonus yield is a second burst (different seed).
+    /// </summary>
+    public struct GemBurstRpc : IRpcCommand
+    {
+        /// <summary>Asteroid center (Y forced to 0 on apply).</summary>
+        public float3 Origin;
+
+        /// <summary>Total leftover (or bonus) value to chord-split.</summary>
+        public float RemainingValue;
+
+        /// <summary>Deterministic burst seed (<c>hash(entityIndex, pos)</c> on the server).</summary>
+        public uint Seed;
+
+        /// <summary>ServerTick-timeline seconds for the whole burst.</summary>
+        public float SpawnServerTime;
+
+        /// <summary>
+        /// Crystal tint for this burst: 0 = red leftover, 1 = yellow triangle, 2 = blue top-miner.
+        /// <see cref="TitanOrbit.Simulation.GemVisualTint"/>. Yellow and blue are separate RPCs.
+        /// </summary>
+        public byte IsBonus;
+    }
+
+    /// <summary>
+    /// [NETCODE] Server → all clients: this SpawnId was scooped into cargo. Hide and destroy locally.
+    /// </summary>
+    public struct GemConsumedRpc : IRpcCommand
+    {
+        /// <summary>Recipe SpawnId of the scooped crystal.</summary>
+        public int SpawnId;
+    }
+
+    /// <summary>
+    /// [NETCODE] Server → all clients: partial scoop — leftover value / size on the same SpawnId.
+    /// </summary>
+    public struct GemValueChangedRpc : IRpcCommand
+    {
+        /// <summary>Recipe SpawnId.</summary>
+        public int SpawnId;
+
+        /// <summary>Value remaining after the partial take.</summary>
+        public float RemainingValue;
+    }
+
+    /// <summary>
+    /// [NETCODE] Server → all clients: tractor lock or unlock. Not a per-tick pose stream.
+    /// TractorShipId 0 = unlocked (return to coast).
+    /// </summary>
+    public struct GemTractorLockRpc : IRpcCommand
+    {
+        /// <summary>Recipe SpawnId.</summary>
+        public int SpawnId;
+
+        /// <summary>Locking ship NetworkId, or 0 to unlock.</summary>
+        public int TractorShipId;
+
+        /// <summary>Primary wing index (ignored when unlocked).</summary>
+        public byte TractorWingIndex;
+
+        /// <summary>ServerTick index when deploy started (0 = unlocked).</summary>
+        public uint TractorLockTick;
+
+        /// <summary>Beam extend duration in seconds at lock time.</summary>
+        public float TractorExtendDuration;
+
+        /// <summary>
+        /// <c>GemMotionState</c> phase at send (Coast while extending, Tractor after pull starts).
+        /// </summary>
+        public byte Phase;
+    }
+
+    /// <summary>
+    /// [NETCODE] Server → one joining connection: current snapshot of one live gem
+    /// (pose already integrated; value may be a leftover after a partial scoop).
+    /// </summary>
+    public struct GemCatchUpRpc : IRpcCommand
+    {
+        /// <summary>Recipe SpawnId.</summary>
+        public int SpawnId;
+
+        /// <summary>Current wrapped logical pose.</summary>
+        public float3 Position;
+
+        /// <summary>Current velocity.</summary>
+        public float3 Velocity;
+
+        /// <summary>Current tumble.</summary>
+        public float3 AngularVelocity;
+
+        /// <summary>Current remaining value.</summary>
+        public float Value;
+
+        /// <summary>Current visual scale.</summary>
+        public float Size;
+
+        /// <summary>Original spawn time (lifetime / shrink).</summary>
+        public float SpawnServerTime;
+
+        /// <summary>Coast / Tractor / Idle.</summary>
+        public byte Phase;
+
+        /// <summary>Burst slot (presentation only).</summary>
+        public byte BurstIndex;
+
+        /// <summary>
+        /// Crystal tint: 0 = red, 1 = yellow triangle, 2 = blue top-miner
+        /// (<see cref="TitanOrbit.Simulation.GemVisualTint"/>).
+        /// </summary>
+        public byte IsBonusGem;
+
+        /// <summary>Spilling ship NetworkId, or 0.</summary>
+        public int ExcludePickupNetworkId;
+
+        /// <summary>Self-pickup block end time, or 0.</summary>
+        public float ExcludePickupUntilServerTime;
+
+        /// <summary>Active tractor ship, or 0.</summary>
+        public int TractorShipId;
+
+        /// <summary>Primary wing when tractored.</summary>
+        public byte TractorWingIndex;
+
+        /// <summary>Deploy lock tick.</summary>
+        public uint TractorLockTick;
+
+        /// <summary>Deploy extend duration.</summary>
+        public float TractorExtendDuration;
+    }
+
+    /// <summary>Server connection tag: live-gem catch-up RPCs dumped once.</summary>
+    public struct GemCatchUpSent : IComponentData { }
 }

@@ -13,6 +13,7 @@ namespace TitanOrbit.Game
     /// a respawn planet on the expanded minimap. Reads <see cref="EcsGameBridge"/> local ship
     /// death state each frame and shows a 10s countdown. After that beat, a keep/forfeit card
     /// offers a rewarded ad to keep the loadout (cards + equipment) or respawn empty.
+    /// Orbit Unlocked (full version) skips that card and keeps the loadout.
     /// Hidden when not in-game, when the ship is alive, or when
     /// <see cref="PlayerEliminatedScreenController"/> takes over.
     /// <para>
@@ -43,13 +44,14 @@ namespace TitanOrbit.Game
         public static bool IsRespawnReady => IsShowing && RemainingSeconds <= 0.05f;
 
         /// <summary>
-        /// True after the player picked keep-via-ad or forfeit, or when the loadout was empty
-        /// (nothing to keep). The minimap planet picker waits on this.
+        /// True after the player picked keep-via-ad or forfeit, when the loadout was empty
+        /// (nothing to keep), or when Orbit Unlocked auto-keeps gear. The minimap planet picker waits on this.
         /// </summary>
         public static bool IsLoadoutChoiceResolved { get; private set; }
 
         /// <summary>
-        /// Sent on the respawn RPC. True only after a completed keep-loadout ad or remove-ads skip.
+        /// Sent on the respawn RPC. True after a completed keep-loadout ad, or automatically
+        /// when Orbit Unlocked is owned so full version keeps gear with no prompt.
         /// </summary>
         public static bool KeepLoadoutOnRespawn { get; private set; }
 
@@ -97,6 +99,13 @@ namespace TitanOrbit.Game
         /// <summary>Last integer second we painted. Skips TMP writes when the count has not ticked.</summary>
         int _lastShownSeconds = int.MinValue;
 
+        /// <summary>
+        /// Last "planet picker is open" value painted on the plaque. The second stays at 0
+        /// after the timer, so this is what lets the caption flip from KEEP OR FORFEIT to
+        /// CLICK A FRIENDLY PLANET when the ad is canceled or the player forfeits.
+        /// </summary>
+        bool _paintedPicking;
+
         /// <summary>True while the overlay is up this death. Used to detect the alive→dead edge.</summary>
         bool _wasDead;
 
@@ -120,6 +129,27 @@ namespace TitanOrbit.Game
 
         /// <summary>WATCHING / AD FAILED line under the buttons.</summary>
         TextMeshProUGUI _choiceStatus;
+
+        /// <summary>
+        /// True after we wrote a result line (ad unavailable). Tick must not replace it
+        /// with CHOOSE HOW TO REBOOT every frame.
+        /// </summary>
+        bool _choiceStatusSticky;
+
+        /// <summary>
+        /// Bumped when a death starts or the plaque hides. A rewarded-ad callback from
+        /// the previous life compares this and bails, so it cannot leave this death's
+        /// buttons on the disabled tint.
+        /// </summary>
+        int _choiceGeneration;
+
+        /// <summary>
+        /// True only while this death is waiting on a keep-loadout video. Choice buttons
+        /// stay non-interactable for that wait. Cleared when the ad returns or the plaque
+        /// hides — the disabled flag used to stick on the Button and the next death
+        /// showed dimmed plates that ignored clicks.
+        /// </summary>
+        bool _choiceLockedForAd;
 
         /// <summary>Horizontal scroll content that holds one chip per equipped item / card.</summary>
         RectTransform _gearStripContent;
@@ -245,30 +275,39 @@ namespace TitanOrbit.Game
         /// <param name="remaining">Seconds until server respawn. 0 means the reboot is imminent.</param>
         void PaintCountdown(float remaining)
         {
-            int seconds = remaining > 0.05f ? Mathf.CeilToInt(remaining) : 0;
-            bool assembling = remaining <= 0.05f;
+            bool timerDone = remaining <= 0.05f;
+            // Picker is live only after keep/forfeit. During the ad card the map is hidden,
+            // so the plaque must not tell the player to click a world yet.
+            bool picking = timerDone && IsLoadoutChoiceResolved;
+            int seconds = timerDone ? 0 : Mathf.CeilToInt(remaining);
 
             // --- Progress fill (grows toward respawn) ---
             // [TITAN-ORBIT] Fill-up reads as "reassembly", not a depleting health bar.
             if (_progressFill != null && _progressTrackWidth > 1f)
             {
                 float delay = Mathf.Max(0.01f, ShipRespawnSystem.RespawnDelaySeconds);
-                float t = assembling ? 1f : 1f - Mathf.Clamp01(remaining / delay);
+                float t = timerDone ? 1f : 1f - Mathf.Clamp01(remaining / delay);
                 _progressFill.sizeDelta = new Vector2(_progressTrackWidth * t, _progressFill.sizeDelta.y);
             }
 
-            if (seconds == _lastShownSeconds && _timerText != null && _timerText.text.Length > 0)
+            if (seconds == _lastShownSeconds && _paintedPicking == picking
+                && _timerText != null && _timerText.text.Length > 0)
                 return;
             _lastShownSeconds = seconds;
+            _paintedPicking = picking;
 
             if (messageText != null)
-                messageText.text = assembling ? "SELECT RESPAWN WORLD" : "SHIP DESTROYED";
+                messageText.text = picking ? "SELECT RESPAWN WORLD" : "SHIP DESTROYED";
 
             if (_timerCaption != null)
-                _timerCaption.text = assembling ? "CLICK A FRIENDLY PLANET" : "REASSEMBLY";
+            {
+                _timerCaption.text = picking
+                    ? "CLICK A FRIENDLY PLANET"
+                    : (timerDone ? "KEEP OR FORFEIT" : "REASSEMBLY");
+            }
 
             if (_timerText != null)
-                _timerText.text = assembling ? "--" : seconds.ToString("00");
+                _timerText.text = timerDone ? "--" : seconds.ToString("00");
         }
 
         /// <summary>
@@ -309,9 +348,11 @@ namespace TitanOrbit.Game
             if (overlayRoot != null)
                 overlayRoot.SetActive(false);
             _lastShownSeconds = int.MinValue;
+            _paintedPicking = false;
             RemainingSeconds = ShipRespawnSystem.RespawnDelaySeconds;
             IsShowing = false;
             ResetLoadoutChoice();
+            _choiceStatusSticky = false;
             _gearStripPainted = false;
             if (_choiceRoot != null)
                 _choiceRoot.SetActive(false);
@@ -519,15 +560,21 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Clears keep/forfeit flags at the start of a death so a previous life cannot leak.
+        /// Also re-enables the choice buttons. A finished watch-ad used to leave
+        /// <c>Button.interactable</c> false, and the next death reused those same plates.
         /// </summary>
-        static void ResetLoadoutChoice()
+        void ResetLoadoutChoice()
         {
             IsLoadoutChoiceResolved = false;
             KeepLoadoutOnRespawn = false;
+            _choiceGeneration++;
+            _choiceLockedForAd = false;
+            SetChoiceInteractable(true);
         }
 
         /// <summary>
-        /// After the 10s beat: skip the ad if the loadout is empty, otherwise show keep/forfeit.
+        /// After the 10s beat: Orbit Unlocked auto-keeps gear with no prompt, an empty
+        /// loadout skips the ad, otherwise show keep/forfeit.
         /// Hides the card while the countdown is still running.
         /// </summary>
         void TickLoadoutChoice(float remaining)
@@ -541,20 +588,32 @@ namespace TitanOrbit.Game
                 return;
             }
 
+            // Full version (Orbit Unlocked from the main menu): no keep/forfeit ads.
+            // The respawn RPC still sends KeepLoadout so cards and equipment stay.
+            // Checked before the empty-loadout path so a late count cannot strip gear.
+            if (!TitanOrbitAdsGate.ShouldShowAds)
+            {
+                ResolveKeepLoadout();
+                return;
+            }
+
             if (!EcsGameBridge.TryGetLocalLoadoutUsedCount(out int used) || used <= 0)
             {
                 // Nothing to keep — forfeit is a no-op on empty buffers.
-                KeepLoadoutOnRespawn = false;
-                IsLoadoutChoiceResolved = true;
-                _choiceRoot.SetActive(false);
+                ResolveForfeitLoadout();
                 return;
             }
 
             _choiceRoot.SetActive(true);
             PaintKeepButtonLabel();
+            // Plates are disabled only while this death's video is in flight.
+            // Re-enable otherwise so a prior ad cannot leave them dimmed.
+            if (!_choiceLockedForAd)
+                SetChoiceInteractable(true);
             if (!_gearStripPainted)
                 PaintGearStrip();
-            if (_choiceStatus != null && !TitanOrbitRewardedAds.IsShowing)
+            // Don't wipe AD UNAVAILABLE on the next frame — that line is the retry hint.
+            if (_choiceStatus != null && !TitanOrbitRewardedAds.IsShowing && !_choiceStatusSticky)
                 _choiceStatus.text = "CHOOSE HOW TO REBOOT";
         }
 
@@ -830,36 +889,77 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Keep path: remove-ads / Editor simulate / Google IMA / LevelPlay.
-        /// On fail we stay on the card — the player can retry or forfeit.
+        /// A completed watch keeps the loadout and opens the planet picker.
+        /// Cancel / skip (Failed) does not keep gear, but still opens the picker —
+        /// the Google placeholder used to return here with the map locked, so every
+        /// world click was ignored. Unavailable stays on this card so they can retry.
         /// </summary>
         void OnKeepLoadoutClicked()
         {
-            if (IsLoadoutChoiceResolved || TitanOrbitRewardedAds.IsShowing)
+            if (IsLoadoutChoiceResolved || _choiceLockedForAd || TitanOrbitRewardedAds.IsShowing)
                 return;
 
+            int generation = _choiceGeneration;
+            _choiceLockedForAd = true;
             SetChoiceInteractable(false);
+            _choiceStatusSticky = false;
             if (_choiceStatus != null)
                 _choiceStatus.text = TitanOrbitAdsGate.ShouldShowAds ? "WATCHING…" : "GRANTING…";
 
             TitanOrbitRewardedAds.Show(TitanOrbitRewardedAds.PlacementKeepLoadout, result =>
             {
+                // Death ended (respawn, hide) before the video returned. Do not
+                // touch the next life's buttons or resolve its choice.
+                if (generation != _choiceGeneration)
+                    return;
+
+                _choiceLockedForAd = false;
+
                 if (result == TitanOrbitRewardedAdResult.Completed)
                 {
-                    KeepLoadoutOnRespawn = true;
-                    IsLoadoutChoiceResolved = true;
-                    if (_choiceRoot != null)
-                        _choiceRoot.SetActive(false);
+                    ResolveKeepLoadout();
+                    return;
+                }
+
+                // Player hit CANCEL — NO REWARD (IMA "skipped") or closed the video.
+                // Same outcome as RESPAWN WITHOUT LOADOUT: picker opens, gear is stripped.
+                if (result == TitanOrbitRewardedAdResult.Failed)
+                {
+                    ResolveForfeitLoadout();
                     return;
                 }
 
                 SetChoiceInteractable(true);
+                _choiceStatusSticky = true;
                 if (_choiceStatus != null)
-                {
-                    _choiceStatus.text = result == TitanOrbitRewardedAdResult.Unavailable
-                        ? "AD UNAVAILABLE — FORFEIT OR RETRY"
-                        : "AD FAILED — FORFEIT OR RETRY";
-                }
+                    _choiceStatus.text = "AD UNAVAILABLE — FORFEIT OR RETRY";
             });
+        }
+
+        /// <summary>Ad completed or Orbit Unlocked: gear stays, planet picker may open.</summary>
+        void ResolveKeepLoadout()
+        {
+            KeepLoadoutOnRespawn = true;
+            IsLoadoutChoiceResolved = true;
+            _choiceLockedForAd = false;
+            _choiceStatusSticky = false;
+            // Card hides, but the same Button objects are reused next death.
+            // Leave them clickable so they do not come back on the disabled tint.
+            SetChoiceInteractable(true);
+            if (_choiceRoot != null)
+                _choiceRoot.SetActive(false);
+        }
+
+        /// <summary>No reward: cards and equipment clear on respawn, planet picker opens.</summary>
+        void ResolveForfeitLoadout()
+        {
+            KeepLoadoutOnRespawn = false;
+            IsLoadoutChoiceResolved = true;
+            _choiceLockedForAd = false;
+            _choiceStatusSticky = false;
+            SetChoiceInteractable(true);
+            if (_choiceRoot != null)
+                _choiceRoot.SetActive(false);
         }
 
         /// <summary>Player accepts the death penalty: cards + equipment clear on respawn.</summary>
@@ -867,10 +967,7 @@ namespace TitanOrbit.Game
         {
             if (IsLoadoutChoiceResolved)
                 return;
-            KeepLoadoutOnRespawn = false;
-            IsLoadoutChoiceResolved = true;
-            if (_choiceRoot != null)
-                _choiceRoot.SetActive(false);
+            ResolveForfeitLoadout();
         }
 
         /// <summary>Creates a full-stretch or empty-rect child <see cref="Image"/>.</summary>

@@ -43,8 +43,10 @@ namespace TitanOrbit.Game
             ResetRemoteMapLoadTracking();
             s_WasNetworkInGame = false;
             s_NotInGameFrames = 0;
+            s_SeenLeaveGeneration = 0;
             ClientJoinSettleCache.Clear();
             GemClientEntityRegistry.Clear();
+            ClientLocalGemSpawn.Clear();
             PlanetClientEntityRegistry.Clear();
             AsteroidClientEntityRegistry.Clear();
             ClientLocalAsteroidCombatSync.ClearPendingQueues();
@@ -56,7 +58,10 @@ namespace TitanOrbit.Game
             s_PlanetStateCacheFrame = -1;
             InvalidateLocalPlayerShipFrameCache();
             PlayerNameRosterCache.Clear();
+            CommsMuteList.Clear();
             PlayerNameRpcClient.ResetSession();
+            SessionPlayerIdRpcClient.ResetSession();
+            SessionShipOfferCache.Clear();
             ShipAccentColorsRpcClient.ResetSession();
         }
 
@@ -281,6 +286,53 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// One ship lookup for troop-slot flight: sim pose, lagged formation heading, and
+        /// covering-hull extents. Cached by the VFX driver so a swarm does not re-query.
+        /// </summary>
+        public static bool TryGetShipEscortFrame(
+            int networkId,
+            out LocalTransform transform,
+            out float3 velocity,
+            out float3 formationHeading,
+            out float extentX,
+            out float extentZ)
+        {
+            transform = default;
+            velocity = float3.zero;
+            formationHeading = float3.zero;
+            extentX = 1f;
+            extentZ = 1f;
+            if (networkId <= 0 || ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+                return false;
+
+            var world = GetLocalPlayerShipWorld();
+            if (world == null || !world.IsCreated)
+                world = ClientWorld;
+            if (world == null || !world.IsCreated)
+                return false;
+
+            var em = world.EntityManager;
+            using var query = em.CreateEntityQuery(typeof(ShipTag), typeof(GhostOwner), typeof(LocalTransform));
+            using var owners = query.ToComponentDataArray<GhostOwner>(Allocator.Temp);
+            using var entities = query.ToEntityArray(Allocator.Temp);
+            int newest = ShipGhostAge.IndexOfNewest(em, entities, owners, networkId);
+            if (newest < 0)
+                return false;
+
+            Entity ship = entities[newest];
+            transform = em.GetComponentData<LocalTransform>(ship);
+            if (em.HasComponent<ShipKinematics>(ship))
+            {
+                var kin = em.GetComponentData<ShipKinematics>(ship);
+                velocity = kin.Velocity;
+                formationHeading = kin.FormationHeading;
+            }
+
+            PeopleTransportEscortLogic.GetEscortHullExtents(em, ship, transform.Scale, out extentX, out extentZ);
+            return true;
+        }
+
+        /// <summary>
         /// Resolves local ship pose from a specific ECS world using tag, ownership, CommandTarget, and NetworkId fallbacks.
         /// </summary>
         public static bool TryGetLocalShipTransformFromWorld(World world, out LocalTransform transform)
@@ -495,34 +547,27 @@ namespace TitanOrbit.Game
         public static bool TryGetLocalShipAttributeUpgrades(out ShipAttributeUpgradeState attributes)
         {
             attributes = default;
+
+            // --- Cached / seeded local hull (no extra CreateEntityQuery) ---
+            // [TITAN-ORBIT] ShipAttributeUpgradeHUD called this every Update + LateUpdate.
+            // A fresh tagged query here was ~dozens of KB GC on top of the frame-cached
+            // LocalPlayerShipTag resolve already used by TryGetLocalShipState.
+            if (TryGetCachedLocalPlayerShipEntity(out var em, out var shipEntity))
+            {
+                if (!em.HasComponent<ShipAttributeUpgradeState>(shipEntity))
+                    return true;
+                attributes = em.GetComponentData<ShipAttributeUpgradeState>(shipEntity);
+                return true;
+            }
+
+            if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+                return false;
+
             var world = GetLocalPlayerShipWorld();
             if (world == null || !world.IsCreated)
                 return false;
 
-            var em = world.EntityManager;
-
-            // --- Instantiates / post–TeamChoice hold: no tagged CalculateEntityCount ---
-            // [TITAN-ORBIT] Same Crash!!! window as TryGetCachedLocalPlayerShipEntity (2026-07-30).
-            if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
-                return false;
-
-            // --- Tiny tagged lookup first (safe after Instantiates idle) ---
-            // [TITAN-ORBIT] TryGetLocalShipEntity scans all ships and is gated off during Instantiates
-            // (asteroid destroy → gem ghosts). Without this path, ShipAttributeUpgradeHUD set attrs
-            // to default and flashed empty tick marks every burst.
-            using (var tagged = em.CreateEntityQuery(typeof(LocalPlayerShipTag), typeof(ShipTag)))
-            {
-                if (tagged.CalculateEntityCount() == 1)
-                {
-                    var shipEntity = tagged.GetSingletonEntity();
-                    if (!em.HasComponent<ShipAttributeUpgradeState>(shipEntity))
-                        return true;
-                    attributes = em.GetComponentData<ShipAttributeUpgradeState>(shipEntity);
-                    return true;
-                }
-            }
-
-            // --- Broader resolve (skipped during Settling / GhostSpawnBacklog — Crash!!! risk) ---
+            em = world.EntityManager;
             if (!TryGetLocalShipEntity(em, out var resolvedShip))
                 return false;
 
@@ -537,29 +582,139 @@ namespace TitanOrbit.Game
         static EntityQuery s_MatchStateQuery;
         static bool s_MatchQueryValid;
 
-        /// <summary>Match timer and started flag from <see cref="MatchStateSingleton"/>.</summary>
+        static World s_ServerMatchQueryWorld;
+        static EntityQuery s_ServerMatchStateQuery;
+        static bool s_ServerMatchQueryValid;
+
+        /// <summary>
+        /// Match timer and win flag. A local host keeps the real
+        /// <see cref="MatchStateSingleton"/> on the server world — the client world
+        /// often has no copy — so a server winner wins over an empty client read.
+        /// If neither world has recorded a winner yet, a complete planet list that
+        /// shows only one team color (neutrals ignored) still counts. That is the
+        /// board the player is already looking at.
+        /// </summary>
         public static bool TryGetMatchState(out MatchStateSingleton match)
         {
             match = default;
-            var world = ClientWorld ?? ServerWorld;
-            if (world == null || !world.IsCreated)
+            bool haveServer = TryReadMatchSingleton(ServerWorld, server: true, out var serverMatch);
+            bool haveClient = TryReadMatchSingleton(ClientWorld, server: false, out var clientMatch);
+
+            // --- Authoritative win ---
+            // [TITAN-ORBIT] CaptureSystem writes the server singleton. Reading ClientWorld
+            // first hid the congrats card on a local host after the last enemy planet fell.
+            if (haveServer && serverMatch.WinningTeam != TeamId.None)
+            {
+                match = serverMatch;
+                return true;
+            }
+
+            if (haveClient && clientMatch.WinningTeam != TeamId.None)
+            {
+                match = clientMatch;
+                return true;
+            }
+
+            if (TryInferSolePlanetOwner(out TeamId inferred))
+            {
+                match = haveServer ? serverMatch : (haveClient ? clientMatch : default);
+                match.WinningTeam = inferred;
+                match.GameState = 2;
+                match.MatchStarted = true;
+                return true;
+            }
+
+            if (haveClient)
+            {
+                match = clientMatch;
+                return true;
+            }
+
+            if (haveServer)
+            {
+                match = serverMatch;
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// True when this frame's planet cache covers the whole map recipe and every
+        /// owned world belongs to one team. Neutral worlds do not count as a second color.
+        /// </summary>
+        /// <param name="owner">The only team that still holds a planet.</param>
+        static bool TryInferSolePlanetOwner(out TeamId owner)
+        {
+            owner = TeamId.None;
+
+            // Incomplete cache (join, or meta not in yet) must not declare a win.
+            int expected = MapSessionMetaCache.LivePlanetCount;
+            if (expected <= 0)
                 return false;
 
-            // --- Cached singleton query ---
-            // [TITAN-ORBIT] HUD / flow called this every frame with a fresh CreateEntityQuery.
-            // That allocates and walks archetypes — keep one query per world.
-            if (!TryGetCachedMatchQuery(world, out var query))
+            EnsurePlanetStateCacheForFrame();
+            if (s_PlanetStateByIdCache.Count < expected)
+                return false;
+
+            bool anyOwned = false;
+            foreach (var pair in s_PlanetStateByIdCache)
+            {
+                TeamId team = pair.Value.Ownership;
+                if (team == TeamId.None)
+                    continue;
+
+                if (!anyOwned)
+                {
+                    owner = team;
+                    anyOwned = true;
+                    continue;
+                }
+
+                if (team != owner)
+                {
+                    owner = TeamId.None;
+                    return false;
+                }
+            }
+
+            return anyOwned;
+        }
+
+        /// <summary>Reads <see cref="MatchStateSingleton"/> from one world. Cached query, no alloc per frame.</summary>
+        static bool TryReadMatchSingleton(World world, bool server, out MatchStateSingleton match)
+        {
+            match = default;
+            if (world == null || !world.IsCreated)
+                return false;
+            if (!TryGetCachedMatchQuery(world, server, out var query))
                 return false;
             return query.TryGetSingleton(out match);
         }
 
-        static bool TryGetCachedMatchQuery(World world, out EntityQuery query)
+        static bool TryGetCachedMatchQuery(World world, bool server, out EntityQuery query)
         {
             query = default;
             if (world == null || !world.IsCreated)
                 return false;
 
-            if (s_MatchQueryValid && s_MatchQueryWorld == world && world.IsCreated)
+            if (server)
+            {
+                if (s_ServerMatchQueryValid && s_ServerMatchQueryWorld == world)
+                {
+                    query = s_ServerMatchStateQuery;
+                    return true;
+                }
+
+                DisposeServerMatchQuery();
+                s_ServerMatchQueryWorld = world;
+                s_ServerMatchStateQuery = world.EntityManager.CreateEntityQuery(typeof(MatchStateSingleton));
+                s_ServerMatchQueryValid = true;
+                query = s_ServerMatchStateQuery;
+                return true;
+            }
+
+            if (s_MatchQueryValid && s_MatchQueryWorld == world)
             {
                 query = s_MatchStateQuery;
                 return true;
@@ -580,6 +735,15 @@ namespace TitanOrbit.Game
 
             s_MatchQueryValid = false;
             s_MatchQueryWorld = null;
+        }
+
+        static void DisposeServerMatchQuery()
+        {
+            if (s_ServerMatchQueryValid && s_ServerMatchQueryWorld != null && s_ServerMatchQueryWorld.IsCreated)
+                s_ServerMatchStateQuery.Dispose();
+
+            s_ServerMatchQueryValid = false;
+            s_ServerMatchQueryWorld = null;
         }
 
         /// <summary>Death / respawn timer state for the local ship — drives death screen UI.</summary>
@@ -862,11 +1026,10 @@ namespace TitanOrbit.Game
             using var query = em.CreateEntityQuery(typeof(ShipTag), typeof(GhostOwner));
             using var owners = query.ToComponentDataArray<GhostOwner>(Allocator.Temp);
             using var entities = query.ToEntityArray(Allocator.Temp);
-            for (int i = 0; i < owners.Length; i++)
+            int newest = ShipGhostAge.IndexOfNewest(em, entities, owners, localId);
+            if (newest >= 0)
             {
-                if (owners[i].NetworkId != localId)
-                    continue;
-                shipEntity = entities[i];
+                shipEntity = entities[newest];
                 return true;
             }
 
@@ -1028,6 +1191,23 @@ namespace TitanOrbit.Game
             return ClientWorld != null && ClientWorld.IsCreated && ServerWorld != null && ServerWorld.IsCreated &&
                    TitanOrbitSessionManager.IsClientGameplayReady(ClientWorld) &&
                    TitanOrbitSessionManager.IsClientConnectionReady(ServerWorld);
+        }
+
+        /// <summary>
+        /// Applies a dedicated-client leave signaled by <see cref="ClientMapHydrateCache.NotifySessionLeave"/>.
+        /// A dropped WebGL connection used to leave <c>s_MapLoadingLatchedComplete</c> true, so the next
+        /// Join skipped the map build until a full page refresh.
+        /// </summary>
+        public static void ConsumeSessionLeave()
+        {
+            int gen = ClientMapHydrateCache.LeaveGeneration;
+            if (gen == s_SeenLeaveGeneration)
+                return;
+
+            s_SeenLeaveGeneration = gen;
+            ResetRemoteMapLoadTracking();
+            s_WasNetworkInGame = false;
+            s_NotInGameFrames = 0;
         }
 
         /// <summary>NetCode <see cref="NetworkId"/> for this client's connection entity.</summary>
@@ -1607,11 +1787,10 @@ namespace TitanOrbit.Game
                 using var query = em.CreateEntityQuery(typeof(ShipTag), typeof(GhostOwner));
                 using var owners = query.ToComponentDataArray<GhostOwner>(Allocator.Temp);
                 using var entities = query.ToEntityArray(Allocator.Temp);
-                for (int i = 0; i < owners.Length; i++)
+                int newest = ShipGhostAge.IndexOfNewest(em, entities, owners, localId);
+                if (newest >= 0)
                 {
-                    if (owners[i].NetworkId != localId)
-                        continue;
-                    shipEntity = entities[i];
+                    shipEntity = entities[newest];
                     return true;
                 }
             }
@@ -1700,11 +1879,11 @@ namespace TitanOrbit.Game
             using var query = em.CreateEntityQuery(typeof(ShipTag), typeof(GhostOwner), typeof(LocalTransform));
             using var owners = query.ToComponentDataArray<GhostOwner>(Allocator.Temp);
             using var transforms = query.ToComponentDataArray<LocalTransform>(Allocator.Temp);
-            for (int i = 0; i < owners.Length; i++)
+            using var entities = query.ToEntityArray(Allocator.Temp);
+            int newest = ShipGhostAge.IndexOfNewest(em, entities, owners, networkId);
+            if (newest >= 0)
             {
-                if (owners[i].NetworkId != networkId)
-                    continue;
-                transform = transforms[i];
+                transform = transforms[newest];
                 return true;
             }
 
@@ -1720,11 +1899,11 @@ namespace TitanOrbit.Game
             using var query = em.CreateEntityQuery(typeof(ShipTag), typeof(GhostOwner), typeof(ShipState));
             using var owners = query.ToComponentDataArray<GhostOwner>(Allocator.Temp);
             using var states = query.ToComponentDataArray<ShipState>(Allocator.Temp);
-            for (int i = 0; i < owners.Length; i++)
+            using var entities = query.ToEntityArray(Allocator.Temp);
+            int newest = ShipGhostAge.IndexOfNewest(em, entities, owners, networkId);
+            if (newest >= 0)
             {
-                if (owners[i].NetworkId != networkId)
-                    continue;
-                state = states[i];
+                state = states[newest];
                 return true;
             }
 
@@ -1740,11 +1919,11 @@ namespace TitanOrbit.Game
             using var query = em.CreateEntityQuery(typeof(ShipTag), typeof(GhostOwner), typeof(ShipOrbitState));
             using var owners = query.ToComponentDataArray<GhostOwner>(Allocator.Temp);
             using var states = query.ToComponentDataArray<ShipOrbitState>(Allocator.Temp);
-            for (int i = 0; i < owners.Length; i++)
+            using var entities = query.ToEntityArray(Allocator.Temp);
+            int newest = ShipGhostAge.IndexOfNewest(em, entities, owners, networkId);
+            if (newest >= 0)
             {
-                if (owners[i].NetworkId != networkId)
-                    continue;
-                orbitState = states[i];
+                orbitState = states[newest];
                 return true;
             }
 
@@ -1786,16 +1965,15 @@ namespace TitanOrbit.Game
             using var orbits = query.ToComponentDataArray<ShipOrbitState>(Allocator.Temp);
             using var docks = query.ToComponentDataArray<ShipMoonDockState>(Allocator.Temp);
             using var transforms = query.ToComponentDataArray<LocalTransform>(Allocator.Temp);
-            for (int i = 0; i < owners.Length; i++)
+            using var entities = query.ToEntityArray(Allocator.Temp);
+            int newest = ShipGhostAge.IndexOfNewest(em, entities, owners, networkId);
+            if (newest >= 0)
             {
-                if (owners[i].NetworkId != networkId)
-                    continue;
-
-                shipState = states[i];
-                shipInput = inputs[i];
-                shipOrbit = orbits[i];
-                moonDock = docks[i];
-                shipTransform = transforms[i];
+                shipState = states[newest];
+                shipInput = inputs[newest];
+                shipOrbit = orbits[newest];
+                moonDock = docks[newest];
+                shipTransform = transforms[newest];
                 return true;
             }
 
@@ -1965,6 +2143,9 @@ namespace TitanOrbit.Game
         /// </summary>
         static bool s_WasNetworkInGame;
 
+        /// <summary>Last <see cref="ClientMapHydrateCache.LeaveGeneration"/> applied by <see cref="ConsumeSessionLeave"/>.</summary>
+        static int s_SeenLeaveGeneration;
+
         /// <summary>
         /// Frames observed without <c>NetworkStreamInGame</c> while we still thought we were in-game.
         /// TearDown only after this many consecutive frames (debounce false gaps).
@@ -2029,6 +2210,7 @@ namespace TitanOrbit.Game
             // Tear down hybrid GOs only on true leave-session — not a soft count reset.
             EcsWorldVisualizer.TearDownHybridProxiesForSessionEnd();
             GemClientEntityRegistry.Clear();
+            ClientLocalGemSpawn.Clear();
             PlanetClientEntityRegistry.Clear();
             AsteroidClientEntityRegistry.Clear();
             ClientLocalAsteroidCombatSync.ClearPendingQueues();
@@ -2040,7 +2222,10 @@ namespace TitanOrbit.Game
             s_PlanetStateCacheFrame = -1;
             GemTractorBeamVisibilityTracker.Clear();
             PlayerNameRosterCache.Clear();
+            CommsMuteList.Clear();
             PlayerNameRpcClient.ResetSession();
+            SessionPlayerIdRpcClient.ResetSession();
+            SessionShipOfferCache.Clear();
             ShipAccentColorsRpcClient.ResetSession();
         }
 
@@ -2343,8 +2528,9 @@ namespace TitanOrbit.Game
         // --- Team / match queries ---
 
         /// <summary>
-        /// One Join Team panel's live numbers: roster, home economy, and owned planet count.
-        /// Filled by <see cref="TryGetJoinTeamSlotStats"/> for <see cref="JoinTeamPanelStatsBinder"/>.
+        /// One Join Team panel's live numbers: roster, worlds, gem banks, crew, and team score.
+        /// Filled by <see cref="FillJoinTeamSlotStats"/> for <see cref="JoinTeamPanelStatsBinder"/>.
+        /// Client UI only — these fields are a snapshot of ghosts, not a second sim.
         /// </summary>
         public struct JoinTeamSlotStats
         {
@@ -2354,17 +2540,51 @@ namespace TitanOrbit.Game
             /// <summary>Per-team cap from bootstrap (typically 20).</summary>
             public int MaxPlayers;
 
-            /// <summary>Home planet level (0 if home not found yet).</summary>
+            /// <summary>Home planet level (0 if that home ghost has not been read yet).</summary>
             public int HomeLevel;
 
-            /// <summary>Home planet gem reservoir.</summary>
+            /// <summary>
+            /// Home planet gem bar (<see cref="PlanetState.CurrentGems"/>). Kept so callers can
+            /// still show the spawn world alone; the panel sums <see cref="TeamGems"/> instead.
+            /// </summary>
             public float HomeGems;
 
             /// <summary>Home planet gem capacity at <see cref="HomeLevel"/>.</summary>
             public float HomeMaxGems;
 
-            /// <summary>Planets owned by this team (home + captured).</summary>
+            /// <summary>Worlds this team owns right now (home + captured). Neutrals are not included.</summary>
             public int PlanetCount;
+
+            /// <summary>
+            /// Worlds that can be owned this match (homes + neutrals). Same number on every slot
+            /// so each card can show "4/18" instead of a bare owned count.
+            /// </summary>
+            public int CapturableWorldCount;
+
+            /// <summary>
+            /// Sum of <see cref="PlanetState.CurrentGems"/> on worlds this team owns.
+            /// This is the live gem bars on the map, not lifetime deposits (those are inside
+            /// <see cref="TeamScore"/>).
+            /// </summary>
+            public float TeamGems;
+
+            /// <summary>Sum of gem-bar caps for the same owned worlds.</summary>
+            public float TeamMaxGems;
+
+            /// <summary>Sum of <see cref="PlanetState.Population"/> on worlds this team owns.</summary>
+            public int TeamPopulation;
+
+            /// <summary>
+            /// Sum of every member's combined score (kills×100 + deposited gems×2 + people×5).
+            /// Dead hulls still count. Meaningful only when <see cref="TeamScoreKnown"/> is true.
+            /// </summary>
+            public int TeamScore;
+
+            /// <summary>
+            /// True after this refresh actually read ship ghosts. False while the join-settle
+            /// ship-query gate is closed — the card should show a dash, not a fake zero.
+            /// </summary>
+            public bool TeamScoreKnown;
 
             /// <summary>Multi-line player list for the panel, or "No players".</summary>
             public string PlayersLabel;
@@ -2372,9 +2592,16 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// [TITAN-ORBIT] Bootstrap default when <see cref="TeamStateSingleton.MaxPlayersPerTeam"/>
-        /// is missing on the client (that field is not a GhostField).
+        /// is missing on the client (that field is not a GhostField). Prefer the live
+        /// <see cref="MapGenerationSettings"/> asset so Join Team matches the server cap.
         /// </summary>
-        const int DefaultMaxPlayersPerTeam = 20;
+        static int ResolveDefaultMaxPlayersPerTeam()
+        {
+            var settings = MapGenerationSettingsCache.Settings;
+            if (settings != null && settings.maxPlayersPerTeam > 0)
+                return settings.maxPlayersPerTeam;
+            return MapGenerationSettings.DefaultMaxPlayersPerTeam;
+        }
 
         /// <summary>Per-slot StringBuilders reused across Join Team refreshes (TeamA…E).</summary>
         static readonly System.Text.StringBuilder[] s_JoinTeamLabelBuilders =
@@ -2388,6 +2615,12 @@ namespace TitanOrbit.Game
 
         /// <summary>Per-slot ship counts for the current Join Team ship pass.</summary>
         static readonly int[] s_JoinTeamShipCounts = new int[5];
+
+        /// <summary>
+        /// Per-slot combined scores for the current Join Team ship pass.
+        /// Same weights as the in-game leaderboard (<see cref="TeamCommanderRules.CombinedScore"/>).
+        /// </summary>
+        static readonly int[] s_JoinTeamScores = new int[5];
 
         /// <summary>Team roster singleton — prefers ServerWorld on host, else ClientWorld.</summary>
         public static TeamStateSingleton GetTeamState()
@@ -2411,8 +2644,8 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Fills Join Team panel stats for active slots A… (one planet-cache pass + one ship pass).
-        /// Planet reads use the per-frame planet cache (proxy / registry under TransformQuarantine —
-        /// never a full client map-body gather). Ship listing skips while
+        /// Planet reads use the per-frame planet cache (registry while a ghost-spawn backlog is
+        /// open — never an extra map-body gather). Ship listing skips while
         /// <see cref="ClientJoinSettleCache.ShouldSkipShipEntityQueries"/> is true.
         /// </summary>
         /// <param name="into">Length ≥ active team count; index 0 = TeamA.</param>
@@ -2428,11 +2661,11 @@ namespace TitanOrbit.Game
 
             // --- Roster cap + singleton counts ---
             // [NETCODE] TeamACount… are GhostFields when the singleton replicates; MaxPlayersPerTeam
-            // is server-local — Local Host reads it; dedicated clients fall back to the bootstrap default.
+            // is server-local — Local Host reads it; dedicated clients use MapGenerationSettings.
             var teamState = GetTeamState();
             int maxPlayers = teamState.MaxPlayersPerTeam > 0
                 ? teamState.MaxPlayersPerTeam
-                : DefaultMaxPlayersPerTeam;
+                : ResolveDefaultMaxPlayersPerTeam();
 
             for (int i = 0; i < slots; i++)
             {
@@ -2445,18 +2678,32 @@ namespace TitanOrbit.Game
                 };
             }
 
-            // --- Home / planets from quarantine-safe planet cache ---
-            // [TITAN-ORBIT] EnsurePlanetStateCacheForFrame walks PlanetClientEntityRegistry under
-            // TransformQuarantine — safe on Windows Join Team (Settling OFF, quarantine ON).
+            // --- Worlds, gem bars, and crew from the planet cache ---
+            // [TITAN-ORBIT] One pass over every replicated world. Ownership uses the capture
+            // RPC override on dedicated clients so a planet ghost that is still rate-limited
+            // does not keep the card on the old owner. Local Host reads the server world,
+            // which is already authoritative — do not apply the client override there.
             EnsurePlanetStateCacheForFrame();
+            bool applyClientOwnershipOverride = !IsLocalHost();
+            int seenWorlds = 0;
             foreach (var pair in s_PlanetStateByIdCache)
             {
                 PlanetState planet = pair.Value;
-                int index = (int)planet.Ownership - 1; // TeamA → 0
+                if (planet.PlanetId == 0)
+                    continue;
+
+                seenWorlds++;
+                TeamId owner = ResolveJoinTeamPlanetOwner(planet, applyClientOwnershipOverride);
+                int index = (int)owner - 1; // TeamA → 0. None (−1) stays in the unowned remainder.
                 if (index < 0 || index >= slots)
                     continue;
 
+                // --- This team's live slice of the map ---
                 into[index].PlanetCount++;
+                into[index].TeamGems += math.max(0f, planet.CurrentGems);
+                into[index].TeamMaxGems += PlanetEconomyMath.GetMaxGemsForLevel(planet.PlanetLevel);
+                into[index].TeamPopulation += math.max(0, planet.Population);
+
                 if (!planet.IsHomePlanet)
                     continue;
 
@@ -2466,7 +2713,12 @@ namespace TitanOrbit.Game
                 into[index].HomeMaxGems = PlanetEconomyMath.GetMaxGemsForLevel(planet.PlanetLevel);
             }
 
-            // --- One ship pass for all slots (names + roster fallback) ---
+            // Same denominator on every card: "4/18 WORLDS".
+            int capturable = ResolveCapturableWorldCount(seenWorlds);
+            for (int i = 0; i < slots; i++)
+                into[i].CapturableWorldCount = capturable;
+
+            // --- One ship pass for all slots (names, roster fallback, team score) ---
             TryEnrichAllJoinTeamStatsFromShips(into, slots);
 
             for (int i = 0; i < slots; i++)
@@ -2486,6 +2738,38 @@ namespace TitanOrbit.Game
             }
         }
 
+        /// <summary>
+        /// Who owns this world for the Join Team card.
+        /// Dedicated clients prefer <see cref="PlanetConnectionGraphCache.ResolveClientOwnership"/>
+        /// so a capture RPC paints the card before the rate-limited planet ghost catches up.
+        /// </summary>
+        static TeamId ResolveJoinTeamPlanetOwner(in PlanetState planet, bool applyClientOwnershipOverride)
+        {
+            if (!applyClientOwnershipOverride || planet.PlanetId == 0)
+                return planet.Ownership;
+
+            return PlanetConnectionGraphCache.ResolveClientOwnership(planet.PlanetId, planet.Ownership);
+        }
+
+        /// <summary>
+        /// How many worlds can be owned this match. Prefers the live ghost count we just walked,
+        /// then the session recipe (homes + neutrals) so the "4/18" denominator stays full
+        /// before every planet ghost has arrived.
+        /// </summary>
+        static int ResolveCapturableWorldCount(int seenWorlds)
+        {
+            int metaTotal = 0;
+            if (MapSessionMetaCache.LivePlanetCount > 0)
+                metaTotal = MapSessionMetaCache.LivePlanetCount;
+            else if (MapSessionMetaCache.TeamCount > 0 || MapSessionMetaCache.NeutralPlanetCount > 0)
+            {
+                metaTotal = math.max(0, MapSessionMetaCache.TeamCount)
+                            + math.max(0, MapSessionMetaCache.NeutralPlanetCount);
+            }
+
+            return math.max(seenWorlds, metaTotal);
+        }
+
         /// <summary>Reads TeamACount…TeamECount from the roster singleton.</summary>
         static int GetTeamRosterCountFromSingleton(in TeamStateSingleton teamState, TeamId team)
         {
@@ -2501,9 +2785,10 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// One ship query for all Join Team slots: builds name lists and bumps PlayerCount when
-        /// live ships outnumber <see cref="TeamStateSingleton"/>. Skips during Settling /
-        /// GhostSpawnBacklog / TeamChoice hold.
+        /// One ship query for all Join Team slots: builds name lists, bumps PlayerCount when
+        /// live ships outnumber <see cref="TeamStateSingleton"/>, and sums team score.
+        /// Skips during Settling / GhostSpawnBacklog / TeamChoice hold — a ship
+        /// <c>ToComponentDataArray</c> in that window is the Join Team Crash!!!.
         /// </summary>
         static void TryEnrichAllJoinTeamStatsFromShips(JoinTeamSlotStats[] into, int slots)
         {
@@ -2524,11 +2809,18 @@ namespace TitanOrbit.Game
             using var query = em.CreateEntityQuery(
                 ComponentType.ReadOnly<ShipTag>(),
                 ComponentType.ReadOnly<ShipState>(),
+                ComponentType.ReadOnly<ShipMatchStats>(),
                 ComponentType.ReadOnly<GhostOwner>());
             if (query.IsEmptyIgnoreFilter)
+            {
+                // No hulls in the match yet — score really is zero, not "still syncing".
+                for (int i = 0; i < slots; i++)
+                    into[i].TeamScoreKnown = true;
                 return;
+            }
 
             using var ships = query.ToComponentDataArray<ShipState>(Allocator.Temp);
+            using var matchStats = query.ToComponentDataArray<ShipMatchStats>(Allocator.Temp);
             using var owners = query.ToComponentDataArray<GhostOwner>(Allocator.Temp);
 
             // --- Name lookup once per refresh ---
@@ -2541,13 +2833,24 @@ namespace TitanOrbit.Game
             {
                 s_JoinTeamLabelBuilders[i].Clear();
                 s_JoinTeamShipCounts[i] = 0;
+                s_JoinTeamScores[i] = 0;
             }
 
             for (int i = 0; i < ships.Length; i++)
             {
+                // Still choosing a team — not on a roster and not in the score.
+                if (ships[i].AwaitingTeamSelection)
+                    continue;
+
                 int index = (int)ships[i].Team - 1;
                 if (index < 0 || index >= slots)
                     continue;
+
+                // Dead hulls stay in the sum — same rule as the in-game leaderboard.
+                s_JoinTeamScores[index] += TeamCommanderRules.CombinedScore(
+                    math.max(0, matchStats[i].Kills),
+                    math.max(0, matchStats[i].GemsDeposited),
+                    math.max(0, matchStats[i].PeopleDelivered));
 
                 string label = ResolveJoinTeamPlayerLabel(owners[i].NetworkId);
                 if (string.IsNullOrEmpty(label))
@@ -2561,6 +2864,8 @@ namespace TitanOrbit.Game
 
             for (int i = 0; i < slots; i++)
             {
+                into[i].TeamScore = s_JoinTeamScores[i];
+                into[i].TeamScoreKnown = true;
                 if (s_JoinTeamShipCounts[i] > into[i].PlayerCount)
                     into[i].PlayerCount = s_JoinTeamShipCounts[i];
                 if (s_JoinTeamShipCounts[i] > 0)
@@ -2961,6 +3266,43 @@ namespace TitanOrbit.Game
                 return true;
 
             return TryFindPlanetState(ClientWorld, planetId, out state);
+        }
+
+        /// <summary>
+        /// Live gun for the family sold at this planet. Homes are Laserbolt; neutrals
+        /// use the rolled <c>PlanetState.BulletBankIndex</c>. −1 when the planet is unknown
+        /// so callers can fall back to the family asset default.
+        /// </summary>
+        public static int ResolvePlanetFamilyBulletBankIndex(int planetId)
+        {
+            if (planetId <= 0 || !TryGetPlanetStateByPlanetId(planetId, out PlanetState planet))
+                return -1;
+            if (planet.IsHomePlanet)
+                return PlanetShipFamilyAssignment.DefaultBulletBankIndex;
+            return PlanetShipFamilyAssignment.SanitizeSelectableDamageBank(planet.BulletBankIndex);
+        }
+
+        /// <summary>
+        /// Rolled gun on the planet that owns this family this match. Home family is
+        /// Laserbolt. −1 when no planet has that config index yet (join settle).
+        /// </summary>
+        public static int ResolvePlanetBulletBankForFamilyConfigIndex(int familyConfigIndex)
+        {
+            if (familyConfigIndex <= PlanetShipFamilyAssignment.HomeFamilyConfigIndex)
+                return PlanetShipFamilyAssignment.DefaultBulletBankIndex;
+
+            EnsurePlanetStateCacheForFrame();
+            foreach (var kv in s_PlanetStateByIdCache)
+            {
+                PlanetState planet = kv.Value;
+                if (planet.IsHomePlanet)
+                    continue;
+                if (planet.ShipFamilyConfigIndex != familyConfigIndex)
+                    continue;
+                return PlanetShipFamilyAssignment.SanitizeSelectableDamageBank(planet.BulletBankIndex);
+            }
+
+            return -1;
         }
 
         /// <summary>

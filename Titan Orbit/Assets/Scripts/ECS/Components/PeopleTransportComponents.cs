@@ -38,7 +38,7 @@ namespace TitanOrbit.ECS
         /// <summary>[ECS/DOTS] Toroidal spawn position for trail VFX and min-travel checks.</summary>
         public float3 SpawnPosition;
 
-        /// <summary>[UNITY] Server ElapsedTime when this transport was spawned.</summary>
+        /// <summary>NetworkTime seconds when this hop spawned (closed-form t = now − this).</summary>
         public float SpawnTime;
 
         /// <summary>[TITAN-ORBIT] Target cruise speed in world units per second.</summary>
@@ -63,6 +63,48 @@ namespace TitanOrbit.ECS
 
         /// <summary>[TITAN-ORBIT] Owning team as byte (cast to <see cref="TeamId"/>).</summary>
         public byte Team;
+
+        /// <summary>
+        /// Reserved escort seat for this hop. Load hops park here on consume;
+        /// unload hops launch from this seat.
+        /// </summary>
+        public byte SeatId;
+
+        /// <summary>
+        /// Planet <see cref="PlanetState.Ownership"/> when this unload launched.
+        /// Capture flips ownership and recalls leftover hops to the source ship.
+        /// </summary>
+        public byte TargetOwnerAtSpawn;
+
+        /// <summary>
+        /// 1 after the hop turned around (load → source planet, unload → source ship).
+        /// </summary>
+        public byte Returning;
+
+        /// <summary>
+        /// 1 once this unload has been far enough from its slot that coming home
+        /// is a real rejoin, not the spawn frame.
+        /// </summary>
+        public byte ReturnArmed;
+
+        /// <summary>Drone-style offset from the current home (slot or planet anchor).</summary>
+        public float3 FormationOffset;
+
+        /// <summary>Offset-space velocity. World speed is derived after each step.</summary>
+        public float3 FormationVelocity;
+
+        /// <summary>Previous home used to cancel slot motion while a target is held.</summary>
+        public float3 FormationPrevIdle;
+
+        /// <summary>1 after the offset has been seeded so the sphere does not teleport.</summary>
+        public byte FormationReady;
+
+        /// <summary>
+        /// <see cref="PeopleTransportEscortLogic.TroopAnchorSlot"/> or
+        /// <see cref="PeopleTransportEscortLogic.TroopAnchorPlanet"/>.
+        /// A change rebases the offset so the world position stays continuous.
+        /// </summary>
+        public byte FormationAnchor;
     }
 
     /// <summary>
@@ -80,8 +122,8 @@ namespace TitanOrbit.ECS
         public const byte Destroyed = 2;
 
         /// <summary>
-        /// Load flight refunded to the source planet (ship left orbit / destination gone).
-        /// Client shows +N on the planet, never on the ship.
+        /// Hop refunded to its origin (load → source planet, unload → source ship).
+        /// Client shows +N on that origin, never on the aborted destination.
         /// </summary>
         public const byte Returned = 3;
     }
@@ -130,10 +172,12 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
-    /// Ghosted leftover buffer on the starship. Kept baked so the ghost layout stays stable
-    /// after voyage escorts were removed. Always empty at runtime.
+    /// Ghosted troop-escort seats on the starship (≤12). Pose is derived
+    /// (<c>EvaluateEscortSwarmPose</c> + lagged <c>ShipKinematics.FormationHeading</c>);
+    /// only HP / amount / in-flight travel on the wire.
+    /// Sent to predicted owners too — otherwise the local ship never sees parked escorts
+    /// after a load hop is consumed (Same as equipment / drones).
     /// </summary>
-    [GhostComponent(SendTypeOptimization = GhostSendType.OnlyInterpolatedClients)]
     [InternalBufferCapacity(16)]
     public struct PeopleEscortVitalElement : IBufferElementData
     {

@@ -45,55 +45,70 @@ namespace TitanOrbit.Data
         public const float DefaultLevelAccelPenaltyFractionPerLevel = 0f;
 
         /// <summary>
-        /// Family-authored <see cref="ShipComponentAbilityStats.turnSpeed"/> uses small definition units;
-        /// multiply by this at runtime only (rotation/banking), not in power-score UI.
-        /// <see cref="ShipMobilityResolution"/> scales turn mass tax by the same factor so cargo
-        /// bite stays in ratio with Speed/Accel (those stats are never ×10).
-        /// </summary>
-        public const float TurnDefinitionToDegreesPerSecond = 10f;
-
-        /// <summary>
-        /// Visual banking (°) when turn rate equals the global max ship turn speed
+        /// Visual banking (°) earned by a hull whose turn speed matches the full-bank reference
         /// (see <see cref="ShipFamilyDefinition.GetGlobalMaxUpgradeTreeTurnSpeedAuthoredUnits"/>).
+        /// Slower turn speed earns a shallower roll.
         /// </summary>
         public const float VisualBankReferenceMaxAngleDegrees = 111f;
 
         /// <summary>
-        /// Fallback max turn speed (authored units, level 1) when no upgrade-tree breakdown is available.
+        /// Fallback max yaw (°/s) when no upgrade-tree breakdown is available.
+        /// Same unit as family <c>turnSpeed</c> — already degrees per second.
         /// </summary>
         public const float VisualBankReferenceMaxTurnSpeedAuthoredUnits = 43.40541f;
 
-        public static float ConvertTurnDefinitionToDegreesPerSecond(float turnDefinition) =>
-            Mathf.Max(1f, turnDefinition) * TurnDefinitionToDegreesPerSecond;
-
         /// <summary>
-        /// Target visual bank angle (°): 0 turn rate → 0°, enough turn rate → <paramref name="maxBankDegrees"/>.
-        /// <paramref name="sensitivity"/> scales how fast bank builds with yaw rate (1 = linear;
-        /// &gt;1 reaches max bank sooner — feels more responsive while turning).
+        /// Target visual bank angle (°): straight flight stays flat. When
+        /// <paramref name="shipTurnSpeedDegPerSec"/> is set, the peak lean scales with that
+        /// hull's turn speed (a slow titan stays shallower than a fast one) and the current
+        /// yaw fades the lean when the ship is not using all of its turn.
+        /// <paramref name="sensitivity"/> scales how fast bank builds with yaw (1 = linear;
+        /// &gt;1 reaches the turn-speed peak sooner).
         /// </summary>
         /// <param name="signedAngularVelDegPerSec">Smoothed yaw rate (°/s); sign chooses bank direction.</param>
-        /// <param name="maxBankDegrees">Peak roll at (or before) full turn.</param>
-        /// <param name="globalMaxTurnDegPerSec">Reference max turn speed for the fleet (°/s).</param>
+        /// <param name="maxBankDegrees">Peak roll earned by a hull turning at the reference turn speed.</param>
+        /// <param name="referenceTurnDegPerSec">
+        /// Turn speed (°/s) that earns <paramref name="maxBankDegrees"/>. Fleet global max when unset.
+        /// </param>
         /// <param name="sensitivity">
-        /// Multiplier on turn fraction before clamp. Default 1 matches the old linear curve.
+        /// Multiplier on the yaw fraction before clamp. Default 1 matches a linear curve.
         /// Tuned on <see cref="ShipBankVisualSettings"/> (family asset, MEGA catalog asset, or Resources default).
+        /// </param>
+        /// <param name="shipTurnSpeedDegPerSec">
+        /// This hull's live turn speed (°/s). ≤ 0 keeps the yaw-only curve (turrets, preview).
         /// </param>
         public static float ComputeVisualBankTargetAngle(
             float signedAngularVelDegPerSec,
             float maxBankDegrees,
-            float globalMaxTurnDegPerSec,
-            float sensitivity = 1f)
+            float referenceTurnDegPerSec,
+            float sensitivity = 1f,
+            float shipTurnSpeedDegPerSec = 0f)
         {
             // --- Guards ---
-            // No reference turn speed, or not turning → stay flat.
-            if (globalMaxTurnDegPerSec <= 0f || Mathf.Abs(signedAngularVelDegPerSec) <= 0f)
+            // Not turning, or no peak roll → stay flat.
+            if (maxBankDegrees <= 0f || Mathf.Abs(signedAngularVelDegPerSec) <= 0f)
                 return 0f;
 
-            // --- Turn fraction → bank ---
-            // [TITAN-ORBIT] sensitivity > 1 makes modest stick deflections lean harder without
-            // raising the peak roll (maxBankDegrees still clamps the result).
-            float turnRatio = Mathf.Clamp01(
-                Mathf.Abs(signedAngularVelDegPerSec) / globalMaxTurnDegPerSec * Mathf.Max(0f, sensitivity));
+            float sens = Mathf.Max(0f, sensitivity);
+            float yaw = Mathf.Abs(signedAngularVelDegPerSec);
+
+            // --- Peak lean follows this hull's turn speed ---
+            // referenceTurn is the yaw rate that earns maxBank. A 30°/s hull earns a
+            // shallower roll than an 80°/s hull. Current yaw then scales that peak so a
+            // gentle correction does not slam to the full lean.
+            if (shipTurnSpeedDegPerSec > 0.01f && referenceTurnDegPerSec > 0.01f)
+            {
+                float ownTurn = shipTurnSpeedDegPerSec;
+                float agility = Mathf.Clamp01(ownTurn / referenceTurnDegPerSec);
+                float effort = Mathf.Clamp01(yaw / ownTurn * sens);
+                return Mathf.Sign(signedAngularVelDegPerSec) * effort * agility * maxBankDegrees;
+            }
+
+            // Turrets and preview have no ship turn stat — map raw yaw onto the reference.
+            if (referenceTurnDegPerSec <= 0f)
+                return 0f;
+
+            float turnRatio = Mathf.Clamp01(yaw / referenceTurnDegPerSec * sens);
             return Mathf.Sign(signedAngularVelDegPerSec) * turnRatio * maxBankDegrees;
         }
 
@@ -244,12 +259,13 @@ namespace TitanOrbit.Data
                 maxPitchUpDegrees);
         }
 
-        /// <summary>Global max ship turn speed in °/s for visual banking (family definition units × scale).</summary>
-        public static float GetGlobalMaxTurnSpeedDegreesPerSecond(
-            float definitionUnitsToDegreesPerSecond = TurnDefinitionToDegreesPerSecond)
+        /// <summary>
+        /// Global max ship yaw (°/s) for visual banking.
+        /// Family <c>turnSpeed</c> is already degrees per second, so this returns that max directly.
+        /// </summary>
+        public static float GetGlobalMaxTurnSpeedDegreesPerSecond()
         {
-            float authored = ShipFamilyDefinition.GetGlobalMaxUpgradeTreeTurnSpeedAuthoredUnits();
-            return authored * definitionUnitsToDegreesPerSecond;
+            return ShipFamilyDefinition.GetGlobalMaxUpgradeTreeTurnSpeedAuthoredUnits();
         }
 
         /// <summary>Scan/auto-populate move speed for engine/thruster version 1 (Engine_1).</summary>

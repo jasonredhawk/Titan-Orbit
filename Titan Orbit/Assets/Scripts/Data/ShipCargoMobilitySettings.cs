@@ -5,9 +5,8 @@ namespace TitanOrbit.Data
     /// <summary>
     /// [UNITY] Designer-tunable cargo + hull size → mobility tax.
     /// One mass number feeds Speed / Accel / Turn subtractive drag — no per-stat gem weights,
-    /// no ×10 thrust visibility, no F/m for flight accel. Turn tax weights stay in
-    /// authored turnSpeed units; <see cref="ShipMobilityResolution"/> multiplies them by 10
-    /// when subtracting from motor RotationSpeed (°/s).
+    /// no ×10 thrust visibility, no F/m for flight accel. Turn tax is degrees per second,
+    /// the same unit as family <c>turnSpeed</c> and motor RotationSpeed.
     /// <para>
     /// [TITAN-ORBIT] Mental model:
     /// <c>totalMass = gems×MassPerGem + people×MassPerPerson + componentSize×MassPerComponentSize</c>
@@ -90,9 +89,8 @@ namespace TitanOrbit.Data
         public float accelWeightPerMass = 0.1f;
 
         [Tooltip(
-            "Turn lost per unit of totalMass, in authored turnSpeed units (not °/s). " +
-            "Runtime yaw is definition × 10; mass tax is scaled by that same 10 so the " +
-            "cargo ratio matches Speed/Accel. Example: 0.04 with totalMass 50 → −20 °/s.")]
+            "Yaw lost per unit of totalMass, in degrees per second. " +
+            "Example: 0.05 with totalMass 50 → −2.5 °/s.")]
         [Min(0f)]
         public float turnWeightPerMass = 0.5f;
 
@@ -112,9 +110,8 @@ namespace TitanOrbit.Data
         public float minAccel = 0.1f;
 
         [Tooltip(
-            "Minimum turn after subtractive mass tax, in authored turnSpeed units (not °/s). " +
-            "Scaled ×10 at apply time — 0.25 here floors yaw at 2.5 °/s. " +
-            "0 allows mass tax to zero out turn.")]
+            "Minimum yaw after subtractive mass tax, in degrees per second. " +
+            "20 here floors yaw at 20 °/s. 0 allows mass tax to zero out turn.")]
         [Min(0f)]
         public float minTurn = 1f;
 

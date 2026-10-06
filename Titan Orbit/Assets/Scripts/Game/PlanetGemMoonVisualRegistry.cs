@@ -1,4 +1,6 @@
 using System.Collections.Generic;
+using TitanOrbit.Core;
+using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
 using UnityEngine;
 
@@ -36,5 +38,77 @@ namespace TitanOrbit.Game
 
         public static bool TryGetMoon(int planetId, out PlanetGemMoonVisualProxy proxy) =>
             ByPlanetId.TryGetValue(planetId, out proxy);
+
+        /// <summary>
+        /// Live moon pose for the planet's gem moon. Registry lookup only — no ECS gather.
+        /// </summary>
+        public static bool TryGetMoonWorldPosition(int planetId, out Vector3 worldPos)
+        {
+            worldPos = default;
+            if (planetId <= 0 || !TryGetMoon(planetId, out PlanetGemMoonVisualProxy moon) || moon == null)
+                return false;
+            worldPos = moon.MoonWorldPosition;
+            return true;
+        }
+
+        /// <summary>
+        /// Closest registered gem moon to <paramref name="aim"/> on the torus.
+        /// Optional team / home filters match comms "Orange Moon". Falls back to any moon
+        /// when the filter matches none. Map size from <see cref="ToroidalMap"/>.
+        /// </summary>
+        public static bool TryFindClosestMoon(
+            Vector3 aim,
+            TeamId teamFilter,
+            bool homeOnly,
+            out int planetId,
+            out Vector3 worldPos,
+            bool allowFallback = true,
+            TeamId excludeTeam = TeamId.None)
+        {
+            if (TryFindClosestMoonFiltered(aim, teamFilter, homeOnly, excludeTeam, out planetId, out worldPos))
+                return true;
+            if (allowFallback && excludeTeam == TeamId.None && (teamFilter != TeamId.None || homeOnly))
+                return TryFindClosestMoonFiltered(aim, TeamId.None, homeOnly: false, excludeTeam, out planetId, out worldPos);
+            return false;
+        }
+
+        static bool TryFindClosestMoonFiltered(
+            Vector3 aim,
+            TeamId teamFilter,
+            bool homeOnly,
+            TeamId excludeTeam,
+            out int planetId,
+            out Vector3 worldPos)
+        {
+            planetId = 0;
+            worldPos = default;
+            float best = float.MaxValue;
+            bool found = false;
+
+            foreach (var kv in ByPlanetId)
+            {
+                PlanetGemMoonVisualProxy moon = kv.Value;
+                if (moon == null || moon.PlanetId <= 0)
+                    continue;
+                if (homeOnly && !moon.IsHome)
+                    continue;
+                if (teamFilter != TeamId.None && moon.Team != teamFilter)
+                    continue;
+                if (excludeTeam != TeamId.None && moon.Team == excludeTeam)
+                    continue;
+
+                Vector3 pos = moon.MoonWorldPosition;
+                float d = ToroidalMap.ToroidalDistance(aim, pos);
+                if (d >= best)
+                    continue;
+
+                best = d;
+                planetId = moon.PlanetId;
+                worldPos = pos;
+                found = true;
+            }
+
+            return found;
+        }
     }
 }

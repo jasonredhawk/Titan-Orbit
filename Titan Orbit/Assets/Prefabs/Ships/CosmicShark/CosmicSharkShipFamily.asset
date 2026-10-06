@@ -72,7 +72,7 @@ MonoBehaviour:
     tractorDistanceMul: 1
     tractorPowerMul: 1
     cameraHeightMul: 1
-  bulletPrefabIndex: 9
+  bulletPrefabIndex: 0
   weaponFireMode: 0
   planetaryDefense: {fileID: 0}
   cameraFollowSettings: {fileID: 11400000, guid: 90d7e8197d9477d40bc1400865e6a4af, type: 2}
@@ -182,7 +182,7 @@ MonoBehaviour:
       energyRegen: 3
       energyRegenPerExtraLevel: 1
       moveSpeed: 6
-      moveSpeedPerExtraLevel: 0.2
+      moveSpeedPerExtraLevel: 0.1
       accelerationCap: 0
       accelerationCapPerExtraLevel: 0
       extraSpeedPercent: 0.25
@@ -255,11 +255,11 @@ MonoBehaviour:
       healthRegen: 0
       healthRegenPerExtraLevel: 0
       energyCap: 24
-      energyCapPerExtraLevel: 8
+      energyCapPerExtraLevel: 7
       energyRegen: 4
       energyRegenPerExtraLevel: 1.3333334
-      moveSpeed: 8
-      moveSpeedPerExtraLevel: 0.3
+      moveSpeed: 7
+      moveSpeedPerExtraLevel: 0.15
       accelerationCap: 0
       accelerationCapPerExtraLevel: 0
       extraSpeedPercent: 0.25
@@ -497,8 +497,8 @@ MonoBehaviour:
       extraSpeedPercentPerExtraLevel: 0
       extraSpeedEnergyDrain: 0
       extraSpeedEnergyDrainPerExtraLevel: 0
-      turnSpeed: 5
-      turnSpeedPerExtraLevel: 0.5
+      turnSpeed: 50
+      turnSpeedPerExtraLevel: 5
       maxGems: 0
       maxGemsPerExtraLevel: 0
       tractorBeamDistance: 0
@@ -659,8 +659,8 @@ MonoBehaviour:
       tractorBeamDistancePerExtraLevel: 0.75
       tractorBeamPower: 4
       tractorBeamPowerPerExtraLevel: 1
-      maxPeople: 5
-      maxPeoplePerExtraLevel: 2
+      maxPeople: 4
+      maxPeoplePerExtraLevel: 1
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: 8ab9a94ab23a11948a3d720b464f5963, type: 3}
     theatricalMenuPreviewSprite: {fileID: 21300000, guid: 8ab9a94ab23a11948a3d720b464f5963, type: 3}
@@ -736,8 +736,8 @@ MonoBehaviour:
       tractorBeamDistancePerExtraLevel: 1.5
       tractorBeamPower: 8
       tractorBeamPowerPerExtraLevel: 2
-      maxPeople: 8
-      maxPeoplePerExtraLevel: 3
+      maxPeople: 6
+      maxPeoplePerExtraLevel: 2
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: d8b308ce27c2f884f9013bb3acbd02fd, type: 3}
     theatricalMenuPreviewSprite: {fileID: 21300000, guid: d8b308ce27c2f884f9013bb3acbd02fd, type: 3}
@@ -776,166 +776,6 @@ MonoBehaviour:
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
   upgradeTree:
-  - chassisId: CosmicShark_03
-    upgradeTreeShipName: Breach
-    prefab: {fileID: 8127381702121887465, guid: 70c972c17dfe8be4ea1f86fca85962b7, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 1463f4f1c254dc1449327dcf2e3fc410, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: 1463f4f1c254dc1449327dcf2e3fc410, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: 7d834041f5a32514ea50ac990e50fb3d, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: 2a623041550e80743a2420c583c8d36f, type: 3}
-    - variantName: Yellow
-      team: 4
-      sprite: {fileID: 21300000, guid: 73458de873faefa4a975e629915c1283, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: 39a7de2609b12c942b76a25ff4fbab16, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 1463f4f1c254dc1449327dcf2e3fc410, type: 3}
-    teamTheatricalMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: 1463f4f1c254dc1449327dcf2e3fc410, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: 7d834041f5a32514ea50ac990e50fb3d, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: 2a623041550e80743a2420c583c8d36f, type: 3}
-    - variantName: Yellow
-      team: 4
-      sprite: {fileID: 21300000, guid: 73458de873faefa4a975e629915c1283, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: 39a7de2609b12c942b76a25ff4fbab16, type: 3}
-    minHomePlanetLevel: 1
-    powerScore: 169.93192
-    powerScoreAtMaxLevel: 240.61983
-    powerScoreBreakdown:
-      offense: 46.8
-      defense: 45.95182
-      energy: 59.666054
-      mobility: 21.544
-      capacity: 33.203518
-      firePower: 7.5
-      bulletSpeed: 10
-      fireRate: 6
-      sustainedDps: 22.5
-      rammingPower: 1.3
-      healthCap: 44.13897
-      healthRegen: 1.8128504
-      energyCap: 58.856617
-      energyRegen: 0.809436
-      moveSpeed: 6.944
-      turnSpeed: 6
-      gemCap: 21.973438
-      peopleCap: 11.230079
-    powerScoreBreakdownAtShipLevel:
-      offense: 49.3
-      defense: 80.19159
-      energy: 79.082565
-      mobility: 23.368
-      capacity: 45.407036
-      firePower: 9
-      bulletSpeed: 11
-      fireRate: 6
-      sustainedDps: 27
-      rammingPower: 1.3
-      healthCap: 77.02794
-      healthRegen: 3.1636477
-      energyCap: 78.07077
-      energyRegen: 1.011795
-      moveSpeed: 7.168
-      turnSpeed: 7
-      gemCap: 28.946877
-      peopleCap: 16.460157
-    componentMass: 9.979266
-    lockedInUpgradeTree: 0
-  - chassisId: CosmicShark_15
-    upgradeTreeShipName: Ripcurrent
-    prefab: {fileID: 1192508902719806313, guid: 950a7e4e6d97fdb40b3f1578b1d12221, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: d1b077e511f44c04286cc352617337a4, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: d1b077e511f44c04286cc352617337a4, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: 34e2e403539149a4caa10ec170097bbb, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: b6d3773bec7614e4db3aada45d68b883, type: 3}
-    - variantName: Yellow
-      team: 4
-      sprite: {fileID: 21300000, guid: dcf0d011abebe4e498b662efd785b005, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: c99895c4cec47f74b9cbba59721eb06e, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: d1b077e511f44c04286cc352617337a4, type: 3}
-    teamTheatricalMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: d1b077e511f44c04286cc352617337a4, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: 34e2e403539149a4caa10ec170097bbb, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: b6d3773bec7614e4db3aada45d68b883, type: 3}
-    - variantName: Yellow
-      team: 4
-      sprite: {fileID: 21300000, guid: dcf0d011abebe4e498b662efd785b005, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: c99895c4cec47f74b9cbba59721eb06e, type: 3}
-    minHomePlanetLevel: 2
-    powerScore: 180.34018
-    powerScoreAtMaxLevel: 428.63354
-    powerScoreBreakdown:
-      offense: 19.3
-      defense: 42.372833
-      energy: 65.333336
-      mobility: 28.104002
-      capacity: 33.330017
-      firePower: 3
-      bulletSpeed: 12
-      fireRate: 3
-      sustainedDps: 0
-      rammingPower: 1.3
-      healthCap: 40.70118
-      healthRegen: 1.6716555
-      energyCap: 56
-      energyRegen: 9.333333
-      moveSpeed: 10.304001
-      turnSpeed: 8
-      gemCap: 22.045725
-      peopleCap: 11.284293
-    powerScoreBreakdownAtShipLevel:
-      offense: 19.3
-      defense: 128.64415
-      energy: 177.33334
-      mobility: 46.536
-      capacity: 70.32007
-      firePower: 3
-      bulletSpeed: 12
-      fireRate: 3
-      sustainedDps: 0
-      rammingPower: 1.3
-      healthCap: 123.569
-      healthRegen: 5.0751553
-      energyCap: 152
-      energyRegen: 25.333336
-      moveSpeed: 14.3359995
-      turnSpeed: 17
-      gemCap: 43.182896
-      peopleCap: 27.137173
-    componentMass: 15.103362
-    lockedInUpgradeTree: 0
   - chassisId: CosmicShark_01
     upgradeTreeShipName: Fin
     prefab: {fileID: 8939703252465728748, guid: 5760bc85eded69246bb370773ff9dcfa, type: 3}
@@ -973,208 +813,128 @@ MonoBehaviour:
     - variantName: Purple
       team: 5
       sprite: {fileID: 21300000, guid: 7bb9160aaad332c42a056a89b99476a9, type: 3}
-    minHomePlanetLevel: 2
-    powerScore: 180.45975
-    powerScoreAtMaxLevel: 388.00595
+    minHomePlanetLevel: 1
+    powerScore: 176.91956
+    powerScoreAtMaxLevel: 244.02347
     powerScoreBreakdown:
-      offense: 46.8
+      offense: 50.037502
       defense: 35.71857
       energy: 74.39688
-      mobility: 25.968
-      capacity: 27.327087
-      firePower: 7.5
+      mobility: 25.744
+      capacity: 24.010883
+      firePower: 3.3651524
       bulletSpeed: 10
-      fireRate: 6
-      sustainedDps: 22.5
+      fireRate: 13.372351
+      sustainedDps: 22.499998
       rammingPower: 1.3
       healthCap: 34.309433
       healthRegen: 1.4091372
       energyCap: 71.48304
       energyRegen: 2.91384
-      moveSpeed: 7.1679997
+      moveSpeed: 6.944
       turnSpeed: 14
       gemCap: 17.872902
-      peopleCap: 9.454186
+      peopleCap: 6.1379824
+    powerScoreBreakdownAtShipLevel:
+      offense: 51.710533
+      defense: 61.812393
+      energy: 100.55563
+      mobility: 25.968
+      capacity: 33.348522
+      firePower: 4.038183
+      bulletSpeed: 11
+      fireRate: 13.372351
+      sustainedDps: 27.000002
+      rammingPower: 1.3
+      healthCap: 59.373825
+      healthRegen: 2.4385676
+      energyCap: 96.47626
+      energyRegen: 4.079376
+      moveSpeed: 7.1679997
+      turnSpeed: 14
+      gemCap: 24.45869
+      peopleCap: 8.889832
+    componentMass: 6.673217
+    lockedInUpgradeTree: 0
+  - chassisId: CosmicShark_03
+    upgradeTreeShipName: Breach
+    prefab: {fileID: 8127381702121887465, guid: 70c972c17dfe8be4ea1f86fca85962b7, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 1463f4f1c254dc1449327dcf2e3fc410, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 1463f4f1c254dc1449327dcf2e3fc410, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 7d834041f5a32514ea50ac990e50fb3d, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 2a623041550e80743a2420c583c8d36f, type: 3}
+    - variantName: Yellow
+      team: 4
+      sprite: {fileID: 21300000, guid: 73458de873faefa4a975e629915c1283, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 39a7de2609b12c942b76a25ff4fbab16, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 1463f4f1c254dc1449327dcf2e3fc410, type: 3}
+    teamTheatricalMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 1463f4f1c254dc1449327dcf2e3fc410, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 7d834041f5a32514ea50ac990e50fb3d, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 2a623041550e80743a2420c583c8d36f, type: 3}
+    - variantName: Yellow
+      team: 4
+      sprite: {fileID: 21300000, guid: 73458de873faefa4a975e629915c1283, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 39a7de2609b12c942b76a25ff4fbab16, type: 3}
+    minHomePlanetLevel: 2
+    powerScore: 220.45486
+    powerScoreAtMaxLevel: 452.5875
+    powerScoreBreakdown:
+      offense: 46.8
+      defense: 45.95182
+      energy: 59.666054
+      mobility: 75.432
+      capacity: 29.838478
+      firePower: 7.5
+      bulletSpeed: 10
+      fireRate: 6
+      sustainedDps: 22.5
+      rammingPower: 1.3
+      healthCap: 44.13897
+      healthRegen: 1.8128504
+      energyCap: 58.856617
+      energyRegen: 0.809436
+      moveSpeed: 6.832
+      turnSpeed: 60
+      gemCap: 21.973438
+      peopleCap: 7.8650393
     powerScoreBreakdownAtShipLevel:
       offense: 55.3
-      defense: 114.00004
-      energy: 152.87314
-      mobility: 27.312
-      capacity: 61.90249
+      defense: 148.67111
+      energy: 117.91559
+      mobility: 107.568
+      capacity: 60.853912
       firePower: 12
       bulletSpeed: 12
       fireRate: 6
       sustainedDps: 36
       rammingPower: 1.3
-      healthCap: 109.50261
-      healthRegen: 4.497429
-      energyCap: 146.46269
-      energyRegen: 6.410448
-      moveSpeed: 8.512
-      turnSpeed: 14
-      gemCap: 37.630272
-      peopleCap: 24.272215
-    componentMass: 6.673217
-    lockedInUpgradeTree: 0
-  - chassisId: CosmicShark_17
-    upgradeTreeShipName: Voidfin
-    prefab: {fileID: 8201846083371079771, guid: cf406224ed1e1594c8e461e1fce4e5ff, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: e61d39a432c8f52409e54df7bda9e05a, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: e61d39a432c8f52409e54df7bda9e05a, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: 94858ab393a2375449c7d4bb01c37036, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: 2fd8e659f8ad78041b49f8009cc6abb0, type: 3}
-    - variantName: Yellow
-      team: 4
-      sprite: {fileID: 21300000, guid: e16e4b16e9b0823428ba6aafb0285725, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: 6ab8f244eaa4e184c924005a00d5deef, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: e61d39a432c8f52409e54df7bda9e05a, type: 3}
-    teamTheatricalMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: e61d39a432c8f52409e54df7bda9e05a, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: 94858ab393a2375449c7d4bb01c37036, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: 2fd8e659f8ad78041b49f8009cc6abb0, type: 3}
-    - variantName: Yellow
-      team: 4
-      sprite: {fileID: 21300000, guid: e16e4b16e9b0823428ba6aafb0285725, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: 6ab8f244eaa4e184c924005a00d5deef, type: 3}
-    minHomePlanetLevel: 3
-    powerScore: 218.12915
-    powerScoreAtMaxLevel: 696.87054
-    powerScoreBreakdown:
-      offense: 46.8
-      defense: 45.736
-      energy: 95.49608
-      mobility: 22.216
-      capacity: 36.157043
-      firePower: 7.5
-      bulletSpeed: 10
-      fireRate: 6
-      sustainedDps: 22.5
-      rammingPower: 1.3
-      healthCap: 43.931664
-      healthRegen: 1.804336
-      energyCap: 89.56807
-      energyRegen: 5.928012
-      moveSpeed: 7.6159997
-      turnSpeed: 6
-      gemCap: 23.661167
-      peopleCap: 12.495875
-    powerScoreBreakdownAtShipLevel:
-      offense: 61.3
-      defense: 215.85574
-      energy: 287.97653
-      mobility: 34.696
-      capacity: 111.94227
-      firePower: 15
-      bulletSpeed: 13
-      fireRate: 6
-      sustainedDps: 45
-      rammingPower: 1.3
-      healthCap: 207.34
-      healthRegen: 8.515749
-      energyCap: 267.40845
-      energyRegen: 20.568073
-      moveSpeed: 12.096001
-      turnSpeed: 11
-      gemCap: 66.96701
-      peopleCap: 44.975258
-    componentMass: 13.971352
-    lockedInUpgradeTree: 0
-  - chassisId: CosmicShark_07
-    upgradeTreeShipName: Riptide
-    prefab: {fileID: 6827438406329532865, guid: 4910f2c6a6aa2c749b8eca296aa784b9, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 4d95ec90a2ba9a641ada011176bf2a7a, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: 4d95ec90a2ba9a641ada011176bf2a7a, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: e9239a39cc69dfc49ba04b4f415809e9, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: 41abf0fa549829f4b9bd513d9fb3dded, type: 3}
-    - variantName: Yellow
-      team: 4
-      sprite: {fileID: 21300000, guid: 97a7bdb80b35de84a91f8ca6787847a0, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: 129df5f5461a6b24f948927c89fdbf80, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 4d95ec90a2ba9a641ada011176bf2a7a, type: 3}
-    teamTheatricalMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: 4d95ec90a2ba9a641ada011176bf2a7a, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: e9239a39cc69dfc49ba04b4f415809e9, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: 41abf0fa549829f4b9bd513d9fb3dded, type: 3}
-    - variantName: Yellow
-      team: 4
-      sprite: {fileID: 21300000, guid: 97a7bdb80b35de84a91f8ca6787847a0, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: 129df5f5461a6b24f948927c89fdbf80, type: 3}
-    minHomePlanetLevel: 3
-    powerScore: 217.65817
-    powerScoreAtMaxLevel: 702.83923
-    powerScoreBreakdown:
-      offense: 46.8
-      defense: 47.821102
-      energy: 96.177895
-      mobility: 24.232002
-      capacity: 30.732704
-      firePower: 7.5
-      bulletSpeed: 10
-      fireRate: 6
-      sustainedDps: 22.5
-      rammingPower: 1.3
-      healthCap: 45.934505
-      healthRegen: 1.8865956
-      energyCap: 90.15248
-      energyRegen: 6.0254135
-      moveSpeed: 9.632001
-      turnSpeed: 6
-      gemCap: 19.684513
-      peopleCap: 11.048191
-    powerScoreBreakdownAtShipLevel:
-      offense: 61.3
-      defense: 240.22119
-      energy: 270.5337
-      mobility: 35.592003
-      capacity: 110.09233
-      firePower: 15
-      bulletSpeed: 13
-      fireRate: 6
-      sustainedDps: 45
-      rammingPower: 1.3
-      healthCap: 230.7442
-      healthRegen: 9.476994
-      energyCap: 252.45744
-      energyRegen: 18.07624
-      moveSpeed: 12.992001
-      turnSpeed: 11
-      gemCap: 65.032875
-      peopleCap: 45.05946
-    componentMass: 12.852068
+      healthCap: 142.80588
+      healthRegen: 5.8652415
+      energyCap: 116.49908
+      energyRegen: 1.416513
+      moveSpeed: 7.168
+      turnSpeed: 90
+      gemCap: 42.893753
+      peopleCap: 17.960157
+    componentMass: 9.979266
     lockedInUpgradeTree: 0
   - chassisId: CosmicShark_08
     upgradeTreeShipName: Tide
@@ -1213,48 +973,128 @@ MonoBehaviour:
     - variantName: Purple
       team: 5
       sprite: {fileID: 21300000, guid: d73cbca247ec28b4eb853da6ded7466f, type: 3}
-    minHomePlanetLevel: 3
-    powerScore: 184.1691
-    powerScoreAtMaxLevel: 586.9413
+    minHomePlanetLevel: 2
+    powerScore: 181.07867
+    powerScoreAtMaxLevel: 415.57767
     powerScoreBreakdown:
-      offense: 46.8
+      offense: 46.736225
       defense: 36.554653
       energy: 82.55563
-      mobility: 26.416
-      capacity: 19.553898
-      firePower: 7.5
+      mobility: 25.968
+      capacity: 16.91148
+      firePower: 7.0828724
       bulletSpeed: 10
-      fireRate: 6
+      fireRate: 6.3533545
       sustainedDps: 22.5
       rammingPower: 1.3
       healthCap: 35.11253
       healthRegen: 1.4421219
       energyCap: 78.47626
       energyRegen: 4.079376
-      moveSpeed: 7.615999
+      moveSpeed: 7.1679997
       turnSpeed: 14
       gemCap: 12.683611
-      peopleCap: 6.870288
+      peopleCap: 4.22787
     powerScoreBreakdownAtShipLevel:
-      offense: 61.3
-      defense: 179.8231
-      energy: 254.14316
-      mobility: 30.896
-      capacity: 68.87904
-      firePower: 15
-      bulletSpeed: 13
-      fireRate: 6
-      sustainedDps: 45
+      offense: 54.98595
+      defense: 122.51571
+      energy: 185.50815
+      mobility: 27.312
+      capacity: 40.16476
+      firePower: 11.332596
+      bulletSpeed: 12
+      fireRate: 6.3533545
+      sustainedDps: 36
       rammingPower: 1.3
-      healthCap: 172.72888
-      healthRegen: 7.094221
-      energyCap: 238.40842
-      energyRegen: 15.734737
-      moveSpeed: 12.095999
+      healthCap: 117.68233
+      healthRegen: 4.8333817
+      energyCap: 174.43556
+      energyRegen: 11.072592
+      moveSpeed: 8.512
       turnSpeed: 14
-      gemCap: 40.869408
-      peopleCap: 28.009638
+      gemCap: 29.595087
+      peopleCap: 10.5696745
     componentMass: 10.1388035
+    lockedInUpgradeTree: 0
+  - chassisId: CosmicShark_02
+    upgradeTreeShipName: Orbitjaw
+    prefab: {fileID: 4126335546369428372, guid: 876345f8fde18eb4980d9e6efc388ce6, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 04b127a9bd20cb44681662a99ddf69d0, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 04b127a9bd20cb44681662a99ddf69d0, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 1605ae68711918d408c0639d416e8028, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: f0671a8a727c9b6479d6bf229c82d7f7, type: 3}
+    - variantName: Yellow
+      team: 4
+      sprite: {fileID: 21300000, guid: 4ac9cc7e143256a4da4b540472f2da7e, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 2c2be9d1841a4cd418f469f26c6eadf7, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 04b127a9bd20cb44681662a99ddf69d0, type: 3}
+    teamTheatricalMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 04b127a9bd20cb44681662a99ddf69d0, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 1605ae68711918d408c0639d416e8028, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: f0671a8a727c9b6479d6bf229c82d7f7, type: 3}
+    - variantName: Yellow
+      team: 4
+      sprite: {fileID: 21300000, guid: 4ac9cc7e143256a4da4b540472f2da7e, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 2c2be9d1841a4cd418f469f26c6eadf7, type: 3}
+    minHomePlanetLevel: 3
+    powerScore: 223.12735
+    powerScoreAtMaxLevel: 698.3538
+    powerScoreBreakdown:
+      offense: 47.742516
+      defense: 57.35449
+      energy: 82
+      mobility: 25.632
+      capacity: 39.190857
+      firePower: 9.894563
+      bulletSpeed: 10
+      fireRate: 4.5479527
+      sustainedDps: 22.500002
+      rammingPower: 1.3
+      healthCap: 55.09179
+      healthRegen: 2.2626982
+      energyCap: 78
+      energyRegen: 4
+      moveSpeed: 6.832
+      turnSpeed: 14
+      gemCap: 28.77517
+      peopleCap: 10.4156885
+    powerScoreBreakdownAtShipLevel:
+      offense: 64.63708
+      defense: 285.56665
+      energy: 207
+      mobility: 26.192
+      capacity: 137.64514
+      firePower: 19.789125
+      bulletSpeed: 13
+      fireRate: 4.5479527
+      sustainedDps: 45.000004
+      rammingPower: 1.3
+      healthCap: 274.30072
+      healthRegen: 11.265922
+      energyCap: 198
+      energyRegen: 9
+      moveSpeed: 7.3919997
+      turnSpeed: 14
+      gemCap: 97.65102
+      peopleCap: 39.994133
+    componentMass: 10.526135
     lockedInUpgradeTree: 0
   - chassisId: CosmicShark_10
     upgradeTreeShipName: Pulsefin
@@ -1293,48 +1133,128 @@ MonoBehaviour:
     - variantName: Purple
       team: 5
       sprite: {fileID: 21300000, guid: 0c5ba5fc14e09584eb0fb426a3598419, type: 3}
-    minHomePlanetLevel: 4
-    powerScore: 221.26178
-    powerScoreAtMaxLevel: 992.38983
+    minHomePlanetLevel: 3
+    powerScore: 262.55835
+    powerScoreAtMaxLevel: 808.0897
     powerScoreBreakdown:
-      offense: 40.05
+      offense: 40.44352
       defense: 50.3912
-      energy: 93.626465
-      mobility: 23.880001
-      capacity: 40.414116
-      firePower: 3.75
+      energy: 91.626465
+      mobility: 71.7
+      capacity: 35.89067
+      firePower: 2.3439713
       bulletSpeed: 10
-      fireRate: 3
-      sustainedDps: 11.25
+      fireRate: 4.799547
+      sustainedDps: 11.250001
       rammingPower: 1.3
       healthCap: 48.403214
       healthRegen: 1.987989
-      energyCap: 84.1084
+      energyCap: 82.1084
       energyRegen: 9.518066
-      moveSpeed: 10.08
-      turnSpeed: 5.5
+      moveSpeed: 8.4
+      turnSpeed: 55
       gemCap: 26.09378
-      peopleCap: 14.320335
+      peopleCap: 9.796889
     powerScoreBreakdownAtShipLevel:
-      offense: 55.3
-      defense: 321.14517
-      energy: 427.01172
-      mobility: 37.32
-      capacity: 176.31293
-      firePower: 9
-      bulletSpeed: 14
-      fireRate: 3
-      sustainedDps: 27
+      offense: 49.78749
+      defense: 243.78691
+      energy: 319.7588
+      mobility: 101
+      capacity: 117.844025
+      firePower: 4.6879425
+      bulletSpeed: 13
+      fireRate: 4.799547
+      sustainedDps: 22.500002
       rammingPower: 1.3
-      healthCap: 308.47565
-      healthRegen: 12.669537
-      energyCap: 378.8672
-      energyRegen: 48.144535
-      moveSpeed: 17.92
-      turnSpeed: 9
-      gemCap: 103.750244
-      peopleCap: 72.56268
+      healthCap: 234.16925
+      healthRegen: 9.617664
+      energyCap: 282.6504
+      energyRegen: 37.1084
+      moveSpeed: 11.2
+      turnSpeed: 80
+      gemCap: 81.56268
+      peopleCap: 36.28134
     componentMass: 12.507719
+    lockedInUpgradeTree: 0
+  - chassisId: CosmicShark_15
+    upgradeTreeShipName: Ripcurrent
+    prefab: {fileID: 1192508902719806313, guid: 950a7e4e6d97fdb40b3f1578b1d12221, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: d1b077e511f44c04286cc352617337a4, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: d1b077e511f44c04286cc352617337a4, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 34e2e403539149a4caa10ec170097bbb, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: b6d3773bec7614e4db3aada45d68b883, type: 3}
+    - variantName: Yellow
+      team: 4
+      sprite: {fileID: 21300000, guid: dcf0d011abebe4e498b662efd785b005, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: c99895c4cec47f74b9cbba59721eb06e, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: d1b077e511f44c04286cc352617337a4, type: 3}
+    teamTheatricalMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: d1b077e511f44c04286cc352617337a4, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 34e2e403539149a4caa10ec170097bbb, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: b6d3773bec7614e4db3aada45d68b883, type: 3}
+    - variantName: Yellow
+      team: 4
+      sprite: {fileID: 21300000, guid: dcf0d011abebe4e498b662efd785b005, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: c99895c4cec47f74b9cbba59721eb06e, type: 3}
+    minHomePlanetLevel: 3
+    powerScore: 243.15604
+    powerScoreAtMaxLevel: 759.1576
+    powerScoreBreakdown:
+      offense: 19.3
+      defense: 42.372833
+      energy: 61.333332
+      mobility: 98.312004
+      capacity: 29.937872
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
+      sustainedDps: 0
+      rammingPower: 1.3
+      healthCap: 40.70118
+      healthRegen: 1.6716555
+      energyCap: 52
+      energyRegen: 9.333333
+      moveSpeed: 8.512
+      turnSpeed: 80
+      gemCap: 22.045725
+      peopleCap: 7.892147
+    powerScoreBreakdownAtShipLevel:
+      offense: 19.3
+      defense: 186.15839
+      energy: 228
+      mobility: 260.672
+      capacity: 82.12723
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
+      sustainedDps: 0
+      rammingPower: 1.3
+      healthCap: 178.81422
+      healthRegen: 7.344155
+      energyCap: 192
+      energyRegen: 36
+      moveSpeed: 11.872
+      turnSpeed: 230
+      gemCap: 57.274345
+      peopleCap: 24.852879
+    componentMass: 15.103362
     lockedInUpgradeTree: 0
   - chassisId: CosmicShark_06
     upgradeTreeShipName: Nebulafin
@@ -1374,46 +1294,46 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 712fb227634e6a74982cdfdd4f12d8f8, type: 3}
     minHomePlanetLevel: 4
-    powerScore: 218.74681
-    powerScoreAtMaxLevel: 813.53406
+    powerScore: 266.76303
+    powerScoreAtMaxLevel: 902.0039
     powerScoreBreakdown:
-      offense: 46.8
+      offense: 48.459385
       defense: 41.049572
-      energy: 101.867966
-      mobility: 24.344
-      capacity: 31.368267
-      firePower: 7.5
+      energy: 100.867966
+      mobility: 76.832
+      capacity: 28.021496
+      firePower: 4.0509896
       bulletSpeed: 10
-      fireRate: 6
-      sustainedDps: 22.5
+      fireRate: 11.108396
+      sustainedDps: 22.499998
       rammingPower: 1.3
       healthCap: 39.430122
       healthRegen: 1.6194514
-      energyCap: 95.029686
+      energyCap: 94.029686
       energyRegen: 6.8382816
-      moveSpeed: 9.7439995
-      turnSpeed: 6
+      moveSpeed: 8.232
+      turnSpeed: 60
       gemCap: 20.924725
-      peopleCap: 10.443543
+      peopleCap: 7.0967717
     powerScoreBreakdownAtShipLevel:
-      offense: 67.3
+      offense: 64.13077
       defense: 246.41219
-      energy: 366.94373
-      mobility: 41.031998
-      capacity: 103.94614
-      firePower: 18
+      energy: 358.94373
+      mobility: 153.776
+      capacity: 87.67197
+      firePower: 9.722376
       bulletSpeed: 14
-      fireRate: 6
+      fireRate: 11.108396
       sustainedDps: 54
       rammingPower: 1.3
       healthCap: 236.69095
       healthRegen: 9.721236
-      energyCap: 340.2375
+      energyCap: 332.2375
       energyRegen: 26.706251
-      moveSpeed: 15.231999
-      turnSpeed: 13
+      moveSpeed: 10.976
+      turnSpeed: 130
       gemCap: 62.397793
-      peopleCap: 41.548344
+      peopleCap: 25.274174
     componentMass: 11.497492
     lockedInUpgradeTree: 0
   - chassisId: CosmicShark_06B
@@ -1454,46 +1374,46 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: d10fdd8d69d8eef4dae90f1d7556cbec, type: 3}
     minHomePlanetLevel: 4
-    powerScore: 218.74681
-    powerScoreAtMaxLevel: 813.53406
+    powerScore: 266.76303
+    powerScoreAtMaxLevel: 902.0039
     powerScoreBreakdown:
-      offense: 46.8
+      offense: 48.459385
       defense: 41.049572
-      energy: 101.867966
-      mobility: 24.344
-      capacity: 31.368267
-      firePower: 7.5
+      energy: 100.867966
+      mobility: 76.832
+      capacity: 28.021496
+      firePower: 4.0509896
       bulletSpeed: 10
-      fireRate: 6
-      sustainedDps: 22.5
+      fireRate: 11.108396
+      sustainedDps: 22.499998
       rammingPower: 1.3
       healthCap: 39.430122
       healthRegen: 1.6194514
-      energyCap: 95.029686
+      energyCap: 94.029686
       energyRegen: 6.8382816
-      moveSpeed: 9.7439995
-      turnSpeed: 6
+      moveSpeed: 8.232
+      turnSpeed: 60
       gemCap: 20.924725
-      peopleCap: 10.443543
+      peopleCap: 7.0967717
     powerScoreBreakdownAtShipLevel:
-      offense: 67.3
+      offense: 64.13077
       defense: 246.41219
-      energy: 366.94373
-      mobility: 41.031998
-      capacity: 103.94614
-      firePower: 18
+      energy: 358.94373
+      mobility: 153.776
+      capacity: 87.67197
+      firePower: 9.722376
       bulletSpeed: 14
-      fireRate: 6
+      fireRate: 11.108396
       sustainedDps: 54
       rammingPower: 1.3
       healthCap: 236.69095
       healthRegen: 9.721236
-      energyCap: 340.2375
+      energyCap: 332.2375
       energyRegen: 26.706251
-      moveSpeed: 15.231999
-      turnSpeed: 13
+      moveSpeed: 10.976
+      turnSpeed: 130
       gemCap: 62.397793
-      peopleCap: 41.548344
+      peopleCap: 25.274174
     componentMass: 11.497492
     lockedInUpgradeTree: 0
   - chassisId: CosmicShark_14
@@ -1534,127 +1454,127 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: aaa8a3d9602d75d42a798b69bc35a685, type: 3}
     minHomePlanetLevel: 4
-    powerScore: 219.49709
-    powerScoreAtMaxLevel: 965.749
+    powerScore: 265.99918
+    powerScoreAtMaxLevel: 1036.789
     powerScoreBreakdown:
-      offense: 46.8
+      offense: 54.075603
       defense: 51.924313
-      energy: 93.88326
-      mobility: 24.68
-      capacity: 30.88871
-      firePower: 7.5
+      energy: 92.48044
+      mobility: 77
+      capacity: 26.648968
+      firePower: 2.4564452
       bulletSpeed: 10
-      fireRate: 6
-      sustainedDps: 22.5
+      fireRate: 18.319157
+      sustainedDps: 22.500002
       rammingPower: 1.3
       healthCap: 49.87584
       healthRegen: 2.0484717
-      energyCap: 88.18565
+      energyCap: 86.78283
       energyRegen: 5.697609
-      moveSpeed: 10.08
-      turnSpeed: 6
+      moveSpeed: 8.4
+      turnSpeed: 60
       gemCap: 19.60185
-      peopleCap: 11.286859
+      peopleCap: 7.047117
     powerScoreBreakdownAtShipLevel:
-      offense: 67.3
+      offense: 67.514626
       defense: 345.76926
-      energy: 361.5897
-      mobility: 43.72
-      capacity: 159.4701
-      firePower: 18
+      energy: 350.36716
+      mobility: 155.12
+      capacity: 130.3325
+      firePower: 5.895468
       bulletSpeed: 14
-      fireRate: 6
-      sustainedDps: 54
+      fireRate: 18.319157
+      sustainedDps: 54.000004
       rammingPower: 1.3
       healthCap: 332.12827
       healthRegen: 13.640984
-      energyCap: 335.64832
+      energyCap: 324.42578
       energyRegen: 25.94139
-      moveSpeed: 17.92
-      turnSpeed: 13
+      moveSpeed: 12.32
+      turnSpeed: 130
       gemCap: 93.07693
-      peopleCap: 66.393166
+      peopleCap: 37.255577
     componentMass: 12.598206
     lockedInUpgradeTree: 0
-  - chassisId: CosmicShark_02
-    upgradeTreeShipName: Orbitjaw
-    prefab: {fileID: 4126335546369428372, guid: 876345f8fde18eb4980d9e6efc388ce6, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 04b127a9bd20cb44681662a99ddf69d0, type: 3}
+  - chassisId: CosmicShark_07
+    upgradeTreeShipName: Riptide
+    prefab: {fileID: 6827438406329532865, guid: 4910f2c6a6aa2c749b8eca296aa784b9, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 4d95ec90a2ba9a641ada011176bf2a7a, type: 3}
     teamMenuPreviewSprites:
     - variantName: Red
       team: 1
-      sprite: {fileID: 21300000, guid: 04b127a9bd20cb44681662a99ddf69d0, type: 3}
+      sprite: {fileID: 21300000, guid: 4d95ec90a2ba9a641ada011176bf2a7a, type: 3}
     - variantName: Blue
       team: 2
-      sprite: {fileID: 21300000, guid: 1605ae68711918d408c0639d416e8028, type: 3}
+      sprite: {fileID: 21300000, guid: e9239a39cc69dfc49ba04b4f415809e9, type: 3}
     - variantName: Green
       team: 3
-      sprite: {fileID: 21300000, guid: f0671a8a727c9b6479d6bf229c82d7f7, type: 3}
+      sprite: {fileID: 21300000, guid: 41abf0fa549829f4b9bd513d9fb3dded, type: 3}
     - variantName: Yellow
       team: 4
-      sprite: {fileID: 21300000, guid: 4ac9cc7e143256a4da4b540472f2da7e, type: 3}
+      sprite: {fileID: 21300000, guid: 97a7bdb80b35de84a91f8ca6787847a0, type: 3}
     - variantName: Purple
       team: 5
-      sprite: {fileID: 21300000, guid: 2c2be9d1841a4cd418f469f26c6eadf7, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 04b127a9bd20cb44681662a99ddf69d0, type: 3}
+      sprite: {fileID: 21300000, guid: 129df5f5461a6b24f948927c89fdbf80, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 4d95ec90a2ba9a641ada011176bf2a7a, type: 3}
     teamTheatricalMenuPreviewSprites:
     - variantName: Red
       team: 1
-      sprite: {fileID: 21300000, guid: 04b127a9bd20cb44681662a99ddf69d0, type: 3}
+      sprite: {fileID: 21300000, guid: 4d95ec90a2ba9a641ada011176bf2a7a, type: 3}
     - variantName: Blue
       team: 2
-      sprite: {fileID: 21300000, guid: 1605ae68711918d408c0639d416e8028, type: 3}
+      sprite: {fileID: 21300000, guid: e9239a39cc69dfc49ba04b4f415809e9, type: 3}
     - variantName: Green
       team: 3
-      sprite: {fileID: 21300000, guid: f0671a8a727c9b6479d6bf229c82d7f7, type: 3}
+      sprite: {fileID: 21300000, guid: 41abf0fa549829f4b9bd513d9fb3dded, type: 3}
     - variantName: Yellow
       team: 4
-      sprite: {fileID: 21300000, guid: 4ac9cc7e143256a4da4b540472f2da7e, type: 3}
+      sprite: {fileID: 21300000, guid: 97a7bdb80b35de84a91f8ca6787847a0, type: 3}
     - variantName: Purple
       team: 5
-      sprite: {fileID: 21300000, guid: 2c2be9d1841a4cd418f469f26c6eadf7, type: 3}
-    minHomePlanetLevel: 5
-    powerScore: 229.15503
-    powerScoreAtMaxLevel: 1124.9119
+      sprite: {fileID: 21300000, guid: 129df5f5461a6b24f948927c89fdbf80, type: 3}
+    minHomePlanetLevel: 4
+    powerScore: 264.23672
+    powerScoreAtMaxLevel: 969.3359
     powerScoreBreakdown:
-      offense: 46.8
-      defense: 57.35449
-      energy: 82
-      mobility: 25.744
-      capacity: 45.106544
-      firePower: 7.5
+      offense: 46.73629
+      defense: 47.821102
+      energy: 94.37027
+      mobility: 76.776
+      capacity: 26.800835
+      firePower: 7.0834947
       bulletSpeed: 10
-      fireRate: 6
+      fireRate: 6.3527966
       sustainedDps: 22.5
       rammingPower: 1.3
-      healthCap: 55.09179
-      healthRegen: 2.2626982
-      energyCap: 78
-      energyRegen: 4
-      moveSpeed: 6.944
-      turnSpeed: 14
-      gemCap: 28.77517
-      peopleCap: 16.331377
+      healthCap: 45.934505
+      healthRegen: 1.8865956
+      energyCap: 88.34486
+      energyRegen: 6.0254135
+      moveSpeed: 8.176001
+      turnSpeed: 60
+      gemCap: 19.684513
+      peopleCap: 7.116321
     powerScoreBreakdownAtShipLevel:
-      offense: 73.3
-      defense: 468.13638
-      energy: 307
-      mobility: 27.76
-      capacity: 262.06546
-      firePower: 21
-      bulletSpeed: 15
-      fireRate: 6
-      sustainedDps: 63
+      offense: 66.65318
+      defense: 317.1812
+      energy: 325.815
+      mobility: 153.328
+      capacity: 117.81163
+      firePower: 17.000387
+      bulletSpeed: 14
+      fireRate: 6.3527966
+      sustainedDps: 54
       rammingPower: 1.3
-      healthCap: 449.66788
-      healthRegen: 18.4685
-      energyCap: 294
-      energyRegen: 13
-      moveSpeed: 8.96
-      turnSpeed: 14
-      gemCap: 152.7517
-      peopleCap: 109.31377
-    componentMass: 10.526135
+      healthCap: 304.66806
+      healthRegen: 12.513152
+      energyCap: 302.91843
+      energyRegen: 22.89657
+      moveSpeed: 10.528
+      turnSpeed: 130
+      gemCap: 83.172226
+      peopleCap: 34.639404
+    componentMass: 12.852068
     lockedInUpgradeTree: 0
   - chassisId: CosmicShark_12
     upgradeTreeShipName: Current
@@ -1694,14 +1614,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 2bff9a7980f5b9b4b9ea88e8c5cbaa79, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 286.65887
-    powerScoreAtMaxLevel: 1456.3344
+    powerScore: 277.0303
+    powerScoreAtMaxLevel: 1383.6285
     powerScoreBreakdown:
       offense: 46.8
       defense: 56.76806
-      energy: 134.47481
-      mobility: 29.216
-      capacity: 38.5
+      energy: 131.19423
+      mobility: 27.368
+      capacity: 34
       firePower: 7.5
       bulletSpeed: 10
       fireRate: 6
@@ -1709,18 +1629,18 @@ MonoBehaviour:
       rammingPower: 1.3
       healthCap: 54.528496
       healthRegen: 2.2395632
-      energyCap: 122.9784
+      energyCap: 119.69783
       energyRegen: 11.4964
-      moveSpeed: 10.416
+      moveSpeed: 8.568
       turnSpeed: 14
       gemCap: 25
-      peopleCap: 13.5
+      peopleCap: 9
     powerScoreBreakdownAtShipLevel:
       offense: 73.3
       defense: 446.7712
-      energy: 698.0431
-      mobility: 42.32
-      capacity: 196
+      energy: 665.2373
+      mobility: 33.92
+      capacity: 164.5
       firePower: 21
       bulletSpeed: 15
       fireRate: 6
@@ -1728,13 +1648,93 @@ MonoBehaviour:
       rammingPower: 1.3
       healthCap: 429.1456
       healthRegen: 17.625624
-      energyCap: 629.1798
+      energyCap: 596.374
       energyRegen: 68.863304
-      moveSpeed: 23.52
+      moveSpeed: 15.12
       turnSpeed: 14
       gemCap: 115
-      peopleCap: 81
+      peopleCap: 49.5
     componentMass: 15.351725
+    lockedInUpgradeTree: 0
+  - chassisId: CosmicShark_17
+    upgradeTreeShipName: Voidfin
+    prefab: {fileID: 8201846083371079771, guid: cf406224ed1e1594c8e461e1fce4e5ff, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: e61d39a432c8f52409e54df7bda9e05a, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: e61d39a432c8f52409e54df7bda9e05a, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 94858ab393a2375449c7d4bb01c37036, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 2fd8e659f8ad78041b49f8009cc6abb0, type: 3}
+    - variantName: Yellow
+      team: 4
+      sprite: {fileID: 21300000, guid: e16e4b16e9b0823428ba6aafb0285725, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 6ab8f244eaa4e184c924005a00d5deef, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: e61d39a432c8f52409e54df7bda9e05a, type: 3}
+    teamTheatricalMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: e61d39a432c8f52409e54df7bda9e05a, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 94858ab393a2375449c7d4bb01c37036, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 2fd8e659f8ad78041b49f8009cc6abb0, type: 3}
+    - variantName: Yellow
+      team: 4
+      sprite: {fileID: 21300000, guid: e16e4b16e9b0823428ba6aafb0285725, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 6ab8f244eaa4e184c924005a00d5deef, type: 3}
+    minHomePlanetLevel: 5
+    powerScore: 267.6832
+    powerScoreAtMaxLevel: 1179.2035
+    powerScoreBreakdown:
+      offense: 48.900837
+      defense: 45.736
+      energy: 95.49608
+      mobility: 75.768
+      capacity: 32.159103
+      firePower: 11.781187
+      bulletSpeed: 10
+      fireRate: 3.8196492
+      sustainedDps: 22.500002
+      rammingPower: 1.3
+      healthCap: 43.931664
+      healthRegen: 1.804336
+      energyCap: 89.56807
+      energyRegen: 5.928012
+      moveSpeed: 7.1679997
+      turnSpeed: 60
+      gemCap: 23.661167
+      peopleCap: 8.497938
+    powerScoreBreakdownAtShipLevel:
+      offense: 83.10697
+      defense: 351.95154
+      energy: 441.96085
+      mobility: 175.2
+      capacity: 146.09106
+      firePower: 32.987324
+      bulletSpeed: 15
+      fireRate: 3.8196492
+      sustainedDps: 63.000004
+      rammingPower: 1.3
+      healthCap: 338.06665
+      healthRegen: 13.88488
+      energyCap: 409.68073
+      energyRegen: 32.28012
+      moveSpeed: 11.2
+      turnSpeed: 150
+      gemCap: 101.61168
+      peopleCap: 44.479378
+    componentMass: 13.971352
     lockedInUpgradeTree: 0
   - chassisId: CosmicShark_09
     upgradeTreeShipName: Heliofin
@@ -1774,46 +1774,46 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: f5f3c06fba2d2ca4e92aef0a2a40c3ff, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 286.42322
-    powerScoreAtMaxLevel: 1444.209
+    powerScore: 333.40906
+    powerScoreAtMaxLevel: 1527.2124
     powerScoreBreakdown:
-      offense: 60.3
+      offense: 64.61623
       defense: 54.98476
-      energy: 147.06822
-      mobility: 24.344
-      capacity: 35.359184
-      firePower: 15
+      energy: 146.31023
+      mobility: 76.832
+      capacity: 30.709743
+      firePower: 7.584915
       bulletSpeed: 10
-      fireRate: 12
+      fireRate: 23.731314
       sustainedDps: 45
       rammingPower: 1.3
       healthCap: 52.81555
       healthRegen: 2.1692102
-      energyCap: 141.48705
+      energyCap: 140.72905
       energyRegen: 5.5811744
-      moveSpeed: 9.7439995
-      turnSpeed: 6
+      moveSpeed: 8.232
+      turnSpeed: 60
       gemCap: 22.765636
-      peopleCap: 12.59355
+      peopleCap: 7.9441066
     powerScoreBreakdownAtShipLevel:
-      offense: 100.3
+      offense: 91.26907
       defense: 456.09415
-      energy: 631.6682
-      mobility: 45.8
-      capacity: 205.72952
-      firePower: 42
+      energy: 624.0883
+      mobility: 175.76
+      capacity: 167.30032
+      firePower: 21.237762
       bulletSpeed: 15
-      fireRate: 12
+      fireRate: 23.731314
       sustainedDps: 126
       rammingPower: 1.3
       healthCap: 438.10074
       healthRegen: 17.993422
-      energyCap: 603.14417
+      energyCap: 595.5643
       energyRegen: 28.524029
-      moveSpeed: 16.8
-      turnSpeed: 15
+      moveSpeed: 11.76
+      turnSpeed: 150
       gemCap: 120.12012
-      peopleCap: 85.609406
+      peopleCap: 47.1802
     componentMass: 13.981721
     lockedInUpgradeTree: 0
   - chassisId: CosmicShark_05
@@ -1854,46 +1854,46 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: f2656b18d3f37a64bbde09a8538053aa, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 235.16028
-    powerScoreAtMaxLevel: 1041.9207
+    powerScore: 281.24344
+    powerScoreAtMaxLevel: 1124.5608
     powerScoreBreakdown:
-      offense: 46.8
+      offense: 46.934513
       defense: 39.350754
-      energy: 114.270096
-      mobility: 24.232002
-      capacity: 34.08991
-      firePower: 7.5
+      energy: 111.68709
+      mobility: 76.776
+      capacity: 30.534927
+      firePower: 5.6027627
       bulletSpeed: 10
-      fireRate: 6
+      fireRate: 8.031752
       sustainedDps: 22.5
       rammingPower: 1.3
       healthCap: 37.798325
       healthRegen: 1.552431
-      energyCap: 105.66008
+      energyCap: 103.07707
       energyRegen: 8.610014
-      moveSpeed: 9.632001
-      turnSpeed: 6
+      moveSpeed: 8.176001
+      turnSpeed: 60
       gemCap: 22.479948
-      peopleCap: 11.609961
+      peopleCap: 8.05498
     powerScoreBreakdownAtShipLevel:
-      offense: 73.3
+      offense: 70.019485
       defense: 288.09906
-      energy: 493.24243
-      mobility: 44.68
-      capacity: 151.8991
-      firePower: 21
+      energy: 467.4124
+      mobility: 175.2
+      capacity: 129.84929
+      firePower: 15.687736
       bulletSpeed: 15
-      fireRate: 6
-      sustainedDps: 63
+      fireRate: 8.031752
+      sustainedDps: 62.999996
       rammingPower: 1.3
       healthCap: 276.73325
       healthRegen: 11.3658285
-      energyCap: 453.63635
+      energyCap: 427.80634
       energyRegen: 39.606064
-      moveSpeed: 15.68
-      turnSpeed: 15
+      moveSpeed: 11.2
+      turnSpeed: 150
       gemCap: 89.799484
-      peopleCap: 62.099613
+      peopleCap: 40.049805
     componentMass: 10.23275
     lockedInUpgradeTree: 0
   - chassisId: CosmicShark_04
@@ -1934,14 +1934,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: c2f5f718a8f4c8f4eb74d3728a4408ff, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 231.63055
-    powerScoreAtMaxLevel: 1016.4768
+    powerScore: 288.06207
+    powerScoreAtMaxLevel: 1201.0599
     powerScoreBreakdown:
       offense: 46.8
       defense: 48.270267
-      energy: 104.40867
-      mobility: 25.496002
-      capacity: 33.303444
+      energy: 103.05843
+      mobility: 87.208
+      capacity: 29.541992
       firePower: 7.5
       bulletSpeed: 10
       fireRate: 6
@@ -1949,18 +1949,18 @@ MonoBehaviour:
       rammingPower: 1.3
       healthCap: 46.36595
       healthRegen: 1.9043157
-      energyCap: 97.20743
+      energyCap: 95.85719
       energyRegen: 7.2012377
-      moveSpeed: 9.2960005
-      turnSpeed: 7
+      moveSpeed: 8.008
+      turnSpeed: 70
       gemCap: 22.03054
-      peopleCap: 11.272905
+      peopleCap: 7.5114527
     powerScoreBreakdownAtShipLevel:
       offense: 73.3
       defense: 377.2942
-      energy: 379.82816
-      mobility: 57.32
-      capacity: 144.03445
+      energy: 366.32584
+      mobility: 279.52
+      capacity: 119.91992
       firePower: 21
       bulletSpeed: 15
       fireRate: 6
@@ -1968,12 +1968,12 @@ MonoBehaviour:
       rammingPower: 1.3
       healthCap: 362.40952
       healthRegen: 14.884677
-      energyCap: 356.42413
+      energyCap: 342.9218
       energyRegen: 23.404022
-      moveSpeed: 12.32
-      turnSpeed: 25
+      moveSpeed: 9.52
+      turnSpeed: 250
       gemCap: 85.3054
-      peopleCap: 58.72905
+      peopleCap: 34.614525
     componentMass: 14.911454
     lockedInUpgradeTree: 0
   - chassisId: CosmicShark_19
@@ -2014,46 +2014,46 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: f183d6c37a9d2374ba74d6f2f51a7748, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 415.43994
-    powerScoreAtMaxLevel: 2696.0586
+    powerScore: 458.1782
+    powerScoreAtMaxLevel: 2740.206
     powerScoreBreakdown:
-      offense: 73.8
+      offense: 88.96194
       defense: 83.49261
-      energy: 219.35695
-      mobility: 24.68
-      capacity: 51.921158
-      firePower: 22.5
+      energy: 217.35695
+      mobility: 77
+      capacity: 44.589386
+      firePower: 10.703895
       bulletSpeed: 10
-      fireRate: 18
+      fireRate: 44.958046
       sustainedDps: 67.5
       rammingPower: 1.3
       healthCap: 80.19873
       healthRegen: 3.2938766
-      energyCap: 211.1631
+      energyCap: 209.1631
       energyRegen: 8.1938505
-      moveSpeed: 10.08
-      turnSpeed: 6
+      moveSpeed: 8.4
+      turnSpeed: 60
       gemCap: 32.20897
-      peopleCap: 19.71219
+      peopleCap: 12.380415
     powerScoreBreakdownAtShipLevel:
-      offense: 139.3
+      offense: 128.51051
       defense: 887.31006
-      energy: 1136.2834
-      mobility: 54.600002
-      capacity: 427.4944
-      firePower: 72
+      energy: 1112.2834
+      mobility: 199.76001
+      capacity: 353.4816
+      firePower: 34.252464
       bulletSpeed: 16
-      fireRate: 18
+      fireRate: 44.958046
       sustainedDps: 216
       rammingPower: 1.3
       healthCap: 852.3047
       healthRegen: 35.005367
-      energyCap: 1081.9573
+      energyCap: 1057.9573
       energyRegen: 54.32621
-      moveSpeed: 22.400002
-      turnSpeed: 17
+      moveSpeed: 14.560001
+      turnSpeed: 170
       gemCap: 246.82224
-      peopleCap: 180.67213
+      peopleCap: 106.65937
     componentMass: 20.670462
     lockedInUpgradeTree: 0
   - chassisId: CosmicShark_20
@@ -2094,46 +2094,46 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 081bc75c77d312444ac18469acf972cc, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 359.11627
-    powerScoreAtMaxLevel: 2472.2039
+    powerScore: 402.14233
+    powerScoreAtMaxLevel: 2522.4846
     powerScoreBreakdown:
-      offense: 60.3
+      offense: 69.55193
       defense: 80.5304
-      energy: 171.97185
-      mobility: 25.576
-      capacity: 50.14508
-      firePower: 15
+      energy: 170.25435
+      mobility: 77.448
+      capacity: 43.231358
+      firePower: 8.033159
       bulletSpeed: 10
-      fireRate: 12
-      sustainedDps: 45
+      fireRate: 28.218777
+      sustainedDps: 44.999996
       rammingPower: 1.3
       healthCap: 77.353386
       healthRegen: 3.177014
-      energyCap: 162.83301
+      energyCap: 161.11551
       energyRegen: 9.138836
-      moveSpeed: 10.976
-      turnSpeed: 6
+      moveSpeed: 8.848001
+      turnSpeed: 60
       gemCap: 31.212797
-      peopleCap: 18.932283
+      peopleCap: 12.018559
     powerScoreBreakdownAtShipLevel:
-      offense: 109.3
+      offense: 103.22489
       defense: 850.1474
-      energy: 1007.1654
-      mobility: 65.352005
-      capacity: 404.7391
-      firePower: 48
+      energy: 986.5552
+      mobility: 205.136
+      capacity: 335.84595
+      firePower: 25.706112
       bulletSpeed: 16
-      fireRate: 12
+      fireRate: 28.218777
       sustainedDps: 144
       rammingPower: 1.3
       healthCap: 816.60815
       healthRegen: 33.539253
-      energyCap: 935.2846
+      energyCap: 914.67444
       energyRegen: 71.88077
-      moveSpeed: 33.152
-      turnSpeed: 17
+      moveSpeed: 19.935999
+      turnSpeed: 170
       gemCap: 233.83795
-      peopleCap: 170.90115
+      peopleCap: 102.00801
     componentMass: 21.213142
     lockedInUpgradeTree: 0
   - chassisId: CosmicShark_13
@@ -2174,46 +2174,46 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 923962aff9e1bd14eb31450bc367939e, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 328.27417
-    powerScoreAtMaxLevel: 2134.7703
+    powerScore: 372.00833
+    powerScoreAtMaxLevel: 2191.727
     powerScoreBreakdown:
-      offense: 60.3
+      offense: 66.17322
       defense: 71.86523
-      energy: 155.3868
-      mobility: 24.68
-      capacity: 49.595463
-      firePower: 15
+      energy: 153.68343
+      mobility: 77
+      capacity: 42.92588
+      firePower: 6.941235
       bulletSpeed: 10
-      fireRate: 12
-      sustainedDps: 45
+      fireRate: 25.931986
+      sustainedDps: 45.000004
       rammingPower: 1.3
       healthCap: 69.03006
       healthRegen: 2.8351636
-      energyCap: 148.61725
+      energyCap: 146.91388
       energyRegen: 6.769541
-      moveSpeed: 10.08
-      turnSpeed: 6
+      moveSpeed: 8.4
+      turnSpeed: 60
       gemCap: 31.036118
-      peopleCap: 18.559345
+      peopleCap: 11.889763
     powerScoreBreakdownAtShipLevel:
-      offense: 109.3
+      offense: 97.44394
       defense: 741.9005
-      energy: 810.324
-      mobility: 54.600002
-      capacity: 387.56482
-      firePower: 48
+      energy: 789.88367
+      mobility: 199.76001
+      capacity: 322.35703
+      firePower: 22.211952
       bulletSpeed: 16
-      fireRate: 12
+      fireRate: 25.931986
       sustainedDps: 144
       rammingPower: 1.3
       healthCap: 712.6317
       healthRegen: 29.2688
-      energyCap: 766.5634
+      energyCap: 746.1231
       energyRegen: 43.760567
-      moveSpeed: 22.400002
-      turnSpeed: 17
+      moveSpeed: 14.560001
+      turnSpeed: 170
       gemCap: 224.16145
-      peopleCap: 163.40335
+      peopleCap: 98.19557
     componentMass: 16.25998
     lockedInUpgradeTree: 0
   - chassisId: CosmicShark_18
@@ -2254,46 +2254,46 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 3e06c2803e0c1c541b859b2266ba528a, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 377.9214
-    powerScoreAtMaxLevel: 2233.4375
+    powerScore: 423.49493
+    powerScoreAtMaxLevel: 2311.861
     powerScoreBreakdown:
-      offense: 73.8
+      offense: 78.49543
       defense: 58.85357
-      energy: 220.44373
-      mobility: 24.68
-      capacity: 37.683163
-      firePower: 22.5
+      energy: 218.40501
+      mobility: 77
+      capacity: 33.230286
+      firePower: 13.215389
       bulletSpeed: 10
-      fireRate: 18
-      sustainedDps: 67.5
+      fireRate: 31.980038
+      sustainedDps: 67.49999
       rammingPower: 1.3
       healthCap: 56.53173
       healthRegen: 2.3218389
-      energyCap: 212.09462
+      energyCap: 210.05591
       energyRegen: 8.349104
-      moveSpeed: 10.08
-      turnSpeed: 6
+      moveSpeed: 8.4
+      turnSpeed: 60
       gemCap: 24.118824
-      peopleCap: 13.564339
+      peopleCap: 9.111462
     powerScoreBreakdownAtShipLevel:
-      offense: 139.3
+      offense: 123.56929
       defense: 590.22375
-      energy: 1143.3649
-      mobility: 54.600002
-      capacity: 253.1076
-      firePower: 72
+      energy: 1118.9005
+      mobility: 199.76001
+      capacity: 213.89381
+      firePower: 42.28925
       bulletSpeed: 16
-      fireRate: 18
+      fireRate: 31.980038
       sustainedDps: 216
       rammingPower: 1.3
       healthCap: 566.9388
       healthRegen: 23.284983
-      energyCap: 1088.027
+      energyCap: 1063.5626
       energyRegen: 55.337833
-      moveSpeed: 22.400002
-      turnSpeed: 17
+      moveSpeed: 14.560001
+      turnSpeed: 170
       gemCap: 147.2185
-      peopleCap: 105.8891
+      peopleCap: 66.67531
     componentMass: 18.053732
     lockedInUpgradeTree: 0
   - chassisId: CosmicShark_11
@@ -2334,46 +2334,46 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 60181bb70b8b8d44faa80b2b986071bb, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 395.0148
-    powerScoreAtMaxLevel: 2142.1904
+    powerScore: 442.03882
+    powerScoreAtMaxLevel: 2233.166
     powerScoreBreakdown:
-      offense: 87.3
+      offense: 107.682106
       defense: 43.859215
-      energy: 258.46994
-      mobility: 24.68
-      capacity: 28.988169
-      firePower: 30
+      energy: 257.0671
+      mobility: 77
+      capacity: 25.270351
+      firePower: 11.43888
       bulletSpeed: 10
-      fireRate: 24
+      fireRate: 62.94323
       sustainedDps: 90
       rammingPower: 1.3
       healthCap: 42.12892
       healthRegen: 1.730295
-      energyCap: 252.4028
+      energyCap: 250.99997
       energyRegen: 6.067133
-      moveSpeed: 10.08
-      turnSpeed: 6
+      moveSpeed: 8.4
+      turnSpeed: 60
       gemCap: 18.997774
-      peopleCap: 9.990395
+      peopleCap: 6.2725782
     powerScoreBreakdownAtShipLevel:
-      offense: 169.3
+      offense: 148.84764
       defense: 409.663
-      energy: 1301.605
-      mobility: 54.600002
-      capacity: 176.12125
-      firePower: 96
+      energy: 1284.771
+      mobility: 199.76001
+      capacity: 140.87491
+      firePower: 36.604416
       bulletSpeed: 16
-      fireRate: 24
+      fireRate: 62.94323
       sustainedDps: 288
       rammingPower: 1.3
       healthCap: 393.50134
       healthRegen: 16.161661
-      energyCap: 1259.6614
+      energyCap: 1242.8274
       energyRegen: 41.94355
-      moveSpeed: 22.400002
-      turnSpeed: 17
+      moveSpeed: 14.560001
+      turnSpeed: 170
       gemCap: 103.073814
-      peopleCap: 73.047424
+      peopleCap: 37.801094
     componentMass: 14.088717
     lockedInUpgradeTree: 0
   - chassisId: CosmicShark_16
@@ -2414,46 +2414,46 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 949119c2b75b4ac4d9002c0cd26b28e3, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 339.63376
-    powerScoreAtMaxLevel: 1920.2286
+    powerScore: 333.5107
+    powerScoreAtMaxLevel: 1863.3071
     powerScoreBreakdown:
-      offense: 73.8
+      offense: 78.136215
       defense: 63.17043
-      energy: 191.82968
-      mobility: 28.096
-      capacity: 23.630215
-      firePower: 22.5
+      energy: 191.03067
+      mobility: 26.808
+      capacity: 19.694073
+      firePower: 32.295937
       bulletSpeed: 10
-      fireRate: 18
+      fireRate: 12.540277
       sustainedDps: 67.5
       rammingPower: 1.3
       healthCap: 60.678284
       healthRegen: 2.492144
-      energyCap: 187.5683
+      energyCap: 186.76929
       energyRegen: 4.2613816
-      moveSpeed: 9.2960005
+      moveSpeed: 8.008
       turnSpeed: 14
       gemCap: 14.602957
-      peopleCap: 9.027257
+      peopleCap: 5.0911164
     powerScoreBreakdownAtShipLevel:
-      offense: 139.3
+      offense: 165.18727
       defense: 680.98755
-      energy: 867.86127
-      mobility: 31.792
-      capacity: 205.92245
-      firePower: 72
+      energy: 858.27313
+      mobility: 28.656
+      capacity: 162.9237
+      firePower: 103.347
       bulletSpeed: 16
-      fireRate: 18
-      sustainedDps: 216
+      fireRate: 12.540277
+      sustainedDps: 215.99998
       rammingPower: 1.3
       healthCap: 654.1218
       healthRegen: 26.865702
-      energyCap: 851.8811
+      energyCap: 842.29297
       energyRegen: 15.980181
-      moveSpeed: 12.992001
+      moveSpeed: 9.856
       turnSpeed: 14
       gemCap: 118.76996
-      peopleCap: 87.152504
+      peopleCap: 44.15374
     componentMass: 21.803186
     lockedInUpgradeTree: 0
   teamMaterials:
@@ -2478,4 +2478,4 @@ MonoBehaviour:
     materials:
     - {fileID: 2100000, guid: d5233a65442c5bd498f0818d59e0c59f, type: 2}
   upgradeCardDeck: {fileID: 0}
-  TotalComponentMass: 9.979266
+  TotalComponentMass: 6.673217
