@@ -214,6 +214,8 @@ namespace TitanOrbit.ECS
                 return true;
 
             var applied = em.GetComponentData<ShipHullColliderState>(entity);
+            if (applied.PivotRecentered == 0)
+                return true;
             var chassisKey = new FixedString64Bytes(chassisId);
             if (!applied.ChassisId.Equals(chassisKey)
                 || applied.AppliedShipLevel != ship.ShipLevel
@@ -353,6 +355,20 @@ namespace TitanOrbit.ECS
 
             if (expectedWings > currentWings)
                 ApplyWingTractorBeams(em, entity, entry, chassisPrefab);
+
+            // Refill writes prefab-space locals. Re-apply the hull-center shift
+            // so new barrels match a pivot that was already recentered.
+            if ((expectedWeapons > currentWeapons || expectedWings > currentWings)
+                && em.HasComponent<ShipHullColliderState>(entity))
+            {
+                var hull = em.GetComponentData<ShipHullColliderState>(entity);
+                ShipHullColliderLogic.OffsetAttachmentPlanar(
+                    em,
+                    entity,
+                    new float3(-hull.AppliedPivotShiftX, 0f, -hull.AppliedPivotShiftZ),
+                    weapons: expectedWeapons > currentWeapons,
+                    wings: expectedWings > currentWings);
+            }
         }
 
         /// <summary>
@@ -444,7 +460,11 @@ namespace TitanOrbit.ECS
             ShipHullColliderLogic.TryApplyCoveringHull(
                 em, entity, prefabToWalk, motorMass, attrs, ResolveFamilyPrefix(chassisId),
                 isMega, cachedExtents, cachedCenter, out float3 usedCenter, out float3 usedExtents,
-                storeFactors);
+                out float3 pivotShift, storeFactors);
+
+            // Mounts and wings were just baked in prefab space. Subtract the hull-center
+            // shift so barrels stay on the mesh after the pivot moves to that center.
+            ShipHullColliderLogic.OffsetAttachmentPlanar(em, entity, -pivotShift);
 
             var hullState = new ShipHullColliderState
             {
@@ -464,6 +484,9 @@ namespace TitanOrbit.ECS
                 AppliedCoveringCenterX = usedCenter.x,
                 AppliedCoveringCenterY = usedCenter.y,
                 AppliedCoveringCenterZ = usedCenter.z,
+                PivotRecentered = 1,
+                AppliedPivotShiftX = pivotShift.x,
+                AppliedPivotShiftZ = pivotShift.z,
             };
 
             if (em.HasComponent<ShipHullColliderState>(entity))

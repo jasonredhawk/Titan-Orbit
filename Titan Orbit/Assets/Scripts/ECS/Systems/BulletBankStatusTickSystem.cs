@@ -114,8 +114,8 @@ namespace TitanOrbit.ECS
                         ref var burn = ref burnRw.ValueRW;
                         burn.TickSequence += 1;
                         burn.LastTickDamage = tickDamage;
-                        float3 tickPos = bodyPos + inst.HitOffset;
-                        tickPos.y = 0f;
+                        float3 tickPos = BulletBankHitEffects.BurnTickWorldPosition(
+                            bodyPos, transform.ValueRO.Rotation, inst.HitOffset);
                         SendBurnTickHit(
                             ref ecb,
                             tickPos,
@@ -224,8 +224,8 @@ namespace TitanOrbit.ECS
                         AsteroidDeathPhysics.QueueStripColliders(ecb, state.EntityManager, entity);
                     }
 
-                    float3 tickPos = bodyPos + inst.HitOffset;
-                    tickPos.y = 0f;
+                    float3 tickPos = BulletBankHitEffects.BurnTickWorldPosition(
+                        bodyPos, transform.ValueRO.Rotation, inst.HitOffset);
                     SendBurnTickHit(
                         ref ecb,
                         tickPos,

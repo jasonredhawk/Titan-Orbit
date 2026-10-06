@@ -942,14 +942,27 @@ namespace TitanOrbit.NetCode
             return IsClientGameplayReady(ClientServerBootstrap.ClientWorld);
         }
 
+        static World s_readyQueryWorld;
+        static EntityQuery s_readyQuery;
+
         public static bool IsClientConnectionReady(World world)
         {
             if (world == null || !world.IsCreated)
                 return false;
 
-            return world.EntityManager
-                .CreateEntityQuery(typeof(NetworkStreamConnection), typeof(NetworkStreamInGame), typeof(NetworkId))
-                .CalculateEntityCount() > 0;
+            // One query for the life of the world. A new CreateEntityQuery every call
+            // (this runs several times a frame while flying) was never disposed, so the
+            // WebGL heap climbed a few megabytes every second until Chrome aborted.
+            if (s_readyQueryWorld != world)
+            {
+                if (s_readyQueryWorld != null && s_readyQueryWorld.IsCreated)
+                    s_readyQuery.Dispose();
+                s_readyQuery = world.EntityManager.CreateEntityQuery(
+                    typeof(NetworkStreamConnection), typeof(NetworkStreamInGame), typeof(NetworkId));
+                s_readyQueryWorld = world;
+            }
+
+            return s_readyQuery.CalculateEntityCount() > 0;
         }
 
         /// <summary>

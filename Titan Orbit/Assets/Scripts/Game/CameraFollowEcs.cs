@@ -274,8 +274,11 @@ namespace TitanOrbit.Game
         /// </summary>
         int _lastKnownShipLevel = 1;
 
-        /// <summary>Cached MEGA follow offset (collider center minus pivot) on XZ.</summary>
-        Vector3 _megaFollowOffset;
+        /// <summary>
+        /// Hull-center offset in ship-local XZ. Applied with the current display yaw
+        /// so the camera sits on the mesh center instead of orbiting at twice the heading.
+        /// </summary>
+        Vector3 _megaFollowLocalOffset;
 
         /// <summary>Cached MEGA view radius including catalog padding.</summary>
         float _megaViewRadius;
@@ -1758,7 +1761,7 @@ namespace TitanOrbit.Game
             {
                 if (_hasMegaView)
                 {
-                    shipPos += _megaFollowOffset;
+                    shipPos += RotateMegaFollowOffset();
                     MegaHullTopDisplayY = shipPos.y + _megaViewRadius * 0.35f;
                 }
                 return;
@@ -1774,7 +1777,7 @@ namespace TitanOrbit.Game
             }
 
             _hasMegaView = false;
-            _megaFollowOffset = Vector3.zero;
+            _megaFollowLocalOffset = Vector3.zero;
             _megaViewRadius = 0f;
 
             var world = EcsGameBridge.GetLocalPlayerShipWorld();
@@ -1797,24 +1800,29 @@ namespace TitanOrbit.Game
                 ? catalog.GetCameraHullViewPadding()
                 : MegaShipCatalog.DefaultCameraHullViewPadding;
 
-            Vector3 displayCenter = shipPos;
-            if (ShipDisplayPose.HasLocalPose)
-            {
-                Vector3 localOff = (Vector3)(center - xf.Position);
-                displayCenter = ShipDisplayPose.LocalPosition + ShipDisplayPose.LocalRotation * localOff;
-                displayCenter.y = shipPos.y;
-            }
-            else
-            {
-                displayCenter = new Vector3(center.x, shipPos.y, center.z);
-            }
-
-            _megaFollowOffset = displayCenter - shipPos;
-            _megaFollowOffset.y = 0f;
+            // TryGetHullView already rotates the collider center into world space.
+            // Undo that yaw, then reapply the display yaw once. Multiplying the world
+            // offset by the display rotation again swung the camera at 2× heading
+            // whenever an asymmetrical Titan was not facing +Z (leave orbit, swap, turn).
+            float3 worldOff = center - xf.Position;
+            float3 localOff = ShipDisplayPose.HasLocalPose
+                ? math.mul(math.inverse(xf.Rotation), worldOff)
+                : worldOff;
+            localOff.y = 0f;
+            _megaFollowLocalOffset = (Vector3)localOff;
             _megaViewRadius = radius + padding;
             _hasMegaView = true;
             MegaHullTopDisplayY = hullTopY;
-            shipPos += _megaFollowOffset;
+            shipPos += RotateMegaFollowOffset();
+        }
+
+        /// <summary>Hull-center follow delta in world XZ for the pose the camera is tracking.</summary>
+        Vector3 RotateMegaFollowOffset()
+        {
+            if (!ShipDisplayPose.HasLocalPose)
+                return _megaFollowLocalOffset;
+
+            return ShipDisplayPose.LocalRotation * _megaFollowLocalOffset;
         }
 
         /// <summary>

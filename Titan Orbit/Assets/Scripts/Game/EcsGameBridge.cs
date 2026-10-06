@@ -286,6 +286,53 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// One ship lookup for troop-slot flight: sim pose, lagged formation heading, and
+        /// covering-hull extents. Cached by the VFX driver so a swarm does not re-query.
+        /// </summary>
+        public static bool TryGetShipEscortFrame(
+            int networkId,
+            out LocalTransform transform,
+            out float3 velocity,
+            out float3 formationHeading,
+            out float extentX,
+            out float extentZ)
+        {
+            transform = default;
+            velocity = float3.zero;
+            formationHeading = float3.zero;
+            extentX = 1f;
+            extentZ = 1f;
+            if (networkId <= 0 || ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+                return false;
+
+            var world = GetLocalPlayerShipWorld();
+            if (world == null || !world.IsCreated)
+                world = ClientWorld;
+            if (world == null || !world.IsCreated)
+                return false;
+
+            var em = world.EntityManager;
+            using var query = em.CreateEntityQuery(typeof(ShipTag), typeof(GhostOwner), typeof(LocalTransform));
+            using var owners = query.ToComponentDataArray<GhostOwner>(Allocator.Temp);
+            using var entities = query.ToEntityArray(Allocator.Temp);
+            int newest = ShipGhostAge.IndexOfNewest(em, entities, owners, networkId);
+            if (newest < 0)
+                return false;
+
+            Entity ship = entities[newest];
+            transform = em.GetComponentData<LocalTransform>(ship);
+            if (em.HasComponent<ShipKinematics>(ship))
+            {
+                var kin = em.GetComponentData<ShipKinematics>(ship);
+                velocity = kin.Velocity;
+                formationHeading = kin.FormationHeading;
+            }
+
+            PeopleTransportEscortLogic.GetEscortHullExtents(em, ship, transform.Scale, out extentX, out extentZ);
+            return true;
+        }
+
+        /// <summary>
         /// Resolves local ship pose from a specific ECS world using tag, ownership, CommandTarget, and NetworkId fallbacks.
         /// </summary>
         public static bool TryGetLocalShipTransformFromWorld(World world, out LocalTransform transform)

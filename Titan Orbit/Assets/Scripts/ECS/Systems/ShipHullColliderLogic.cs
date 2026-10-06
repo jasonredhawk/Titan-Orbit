@@ -82,6 +82,22 @@ namespace TitanOrbit.ECS
 
         /// <summary>Cached covering ellipsoid center Z. Presentation space.</summary>
         public float AppliedCoveringCenterZ;
+
+        /// <summary>
+        /// 1 after the covering box XZ center was baked to the entity origin.
+        /// 0 on hulls that still rotate around an off-mesh prefab pivot.
+        /// </summary>
+        public byte PivotRecentered;
+
+        /// <summary>
+        /// Presentation-space XZ offset that was removed from the covering box
+        /// (and from weapon / wing locals) so yaw spins around the hull center.
+        /// The hybrid mesh applies the same shift on the bank prefab container.
+        /// </summary>
+        public float AppliedPivotShiftX;
+
+        /// <summary>Presentation-space Z partner of <see cref="AppliedPivotShiftX"/>.</summary>
+        public float AppliedPivotShiftZ;
     }
 
     /// <summary>
@@ -192,7 +208,7 @@ namespace TitanOrbit.ECS
             return TryApplyCoveringHull(
                 em, shipEntity, chassisPrefab, motorMass, attrs, familyPrefix,
                 megaParts: false, cachedExtents: new float3(-1f), cachedCenter: float3.zero,
-                out _, out _, default);
+                out _, out _, out _, default);
         }
 
         /// <summary>
@@ -276,10 +292,12 @@ namespace TitanOrbit.ECS
             float3 cachedCenter,
             out float3 usedCenter,
             out float3 usedExtents,
+            out float3 pivotShift,
             ShipComponentStoreVisualScaleLogic.StoreVisualScaleFactors storeFactors = default)
         {
             usedCenter = cachedCenter;
             usedExtents = cachedExtents;
+            bool remeasured = false;
 
             if (chassisPrefab != null
                 && TryComputeCoveringHull(
@@ -290,6 +308,7 @@ namespace TitanOrbit.ECS
             {
                 usedCenter = measuredCenter;
                 usedExtents = measuredExtents;
+                remeasured = true;
             }
             else if (math.cmax(cachedExtents) <= 0.01f)
             {
@@ -298,7 +317,74 @@ namespace TitanOrbit.ECS
                 usedExtents = new float3(fallback);
             }
 
+            // Prefab bounds are often not on the authoring origin. The covering box
+            // XZ center is baked to 0 and the same shift is removed from barrels and
+            // the hybrid mesh, so yaw spins around the hull center. LocalTransform
+            // stays put — a one-shot origin slide fights prediction and display smoothing.
+            // Y stays on the box so the flight-plane expand still reaches y = 0.
+
+            float3 storedShift = float3.zero;
+            byte recentered = 0;
+            if (shipEntity != Entity.Null && em.Exists(shipEntity)
+                && em.HasComponent<ShipHullColliderState>(shipEntity))
+            {
+                var prev = em.GetComponentData<ShipHullColliderState>(shipEntity);
+                storedShift = new float3(prev.AppliedPivotShiftX, 0f, prev.AppliedPivotShiftZ);
+                recentered = prev.PivotRecentered;
+            }
+
+            pivotShift = remeasured
+                ? new float3(usedCenter.x, 0f, usedCenter.z)
+                : (recentered != 0
+                    ? storedShift
+                    : new float3(usedCenter.x, 0f, usedCenter.z));
+
+            usedCenter = new float3(0f, usedCenter.y, 0f);
             return EnsureCoveringCollider(em, shipEntity, motorMass, usedExtents, usedCenter);
+        }
+
+        /// <summary>
+        /// Adds a presentation-space planar delta to weapon and wing locals.
+        /// Pass the full new shift (negated) after a fresh prefab bake, or the
+        /// change in shift when the buffers were already centered.
+        /// </summary>
+        public static void OffsetAttachmentPlanar(
+            EntityManager em,
+            Entity ship,
+            float3 deltaPresentation,
+            bool weapons = true,
+            bool wings = true)
+        {
+            if (!em.Exists(ship) || math.lengthsq(deltaPresentation) < 1e-10f)
+                return;
+
+            float inv = 1f / math.max(1e-4f, BodyCollisionMath.ShipPresentationScale);
+            float3 delta = deltaPresentation * inv;
+            delta.y = 0f;
+            if (math.lengthsq(delta) < 1e-10f)
+                return;
+
+            if (weapons && em.HasBuffer<ShipWeaponMountElement>(ship))
+            {
+                var mounts = em.GetBuffer<ShipWeaponMountElement>(ship);
+                for (int i = 0; i < mounts.Length; i++)
+                {
+                    var mount = mounts[i];
+                    mount.LocalPosition += delta;
+                    mounts[i] = mount;
+                }
+            }
+
+            if (wings && em.HasBuffer<ShipWingTractorBeamElement>(ship))
+            {
+                var wingBuffer = em.GetBuffer<ShipWingTractorBeamElement>(ship);
+                for (int i = 0; i < wingBuffer.Length; i++)
+                {
+                    var wing = wingBuffer[i];
+                    wing.LocalPosition += delta;
+                    wingBuffer[i] = wing;
+                }
+            }
         }
 
         /// <summary>
@@ -707,7 +793,7 @@ namespace TitanOrbit.ECS
             return TryApplyCoveringHull(
                 em, shipEntity, chassisPrefab, motorMass, zeroAttrs, familyPrefix: null,
                 megaParts: true, cachedExtents: new float3(-1f), cachedCenter: float3.zero,
-                out _, out _, default);
+                out _, out _, out _, default);
         }
 
         /// <summary>
@@ -727,6 +813,10 @@ namespace TitanOrbit.ECS
             int equipmentScaleKey = 0,
             int runtimeBulletIndex = 0)
         {
+            // Off-center prefab pivots yaw the mesh around a corner. One rebuild
+            // bakes that XZ center onto the entity origin.
+            if (applied.PivotRecentered == 0)
+                return true;
             if (math.cmax(GetCachedCoveringExtents(applied)) <= 0.01f)
                 return true;
             if (!applied.ChassisId.Equals(chassisKey))

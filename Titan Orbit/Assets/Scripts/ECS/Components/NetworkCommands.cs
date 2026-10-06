@@ -428,8 +428,10 @@ namespace TitanOrbit.ECS
     /// Ghost Instantiates are too slow under MaxSendChunks/Instantiates caps for ~1s flights;
     /// clients create local VFX from this RPC (see PeopleTransportSpawnRpcClientSystem).
     /// <para>
-    /// Wire size is 62 bytes (includes <see cref="TargetPosition"/>). Client and Linux headless
-    /// must share this layout — hash mismatch triggers RpcSystem skip (TitanOrbit patch) or disconnect.
+    /// Wire size stays 62 bytes (includes <see cref="TargetPosition"/>). The seeded escort seat
+    /// rides in <see cref="SpawnPosition"/>.y as <c>seatId + 1</c> (0 = unknown) so the layout hash
+    /// does not change. Client and Linux headless must share this layout — hash mismatch triggers
+    /// RpcSystem skip (TitanOrbit patch) or disconnect.
     /// </para>
     /// </summary>
     public struct PeopleTransportSpawnRpc : IRpcCommand
@@ -437,7 +439,11 @@ namespace TitanOrbit.ECS
         /// <summary>Monotonic id for host queue + RPC dedupe.</summary>
         public uint Sequence;
 
-        /// <summary>World spawn position (XZ plane).</summary>
+        /// <summary>
+        /// World spawn position on XZ. Y carries the seeded escort seat as
+        /// <c>seatId + 1</c> (0 = unknown) so the 62-byte layout stays put.
+        /// Clients flatten Y after reading the seat.
+        /// </summary>
         public float3 SpawnPosition;
 
         /// <summary>

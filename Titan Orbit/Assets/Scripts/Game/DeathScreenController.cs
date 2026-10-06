@@ -136,6 +136,21 @@ namespace TitanOrbit.Game
         /// </summary>
         bool _choiceStatusSticky;
 
+        /// <summary>
+        /// Bumped when a death starts or the plaque hides. A rewarded-ad callback from
+        /// the previous life compares this and bails, so it cannot leave this death's
+        /// buttons on the disabled tint.
+        /// </summary>
+        int _choiceGeneration;
+
+        /// <summary>
+        /// True only while this death is waiting on a keep-loadout video. Choice buttons
+        /// stay non-interactable for that wait. Cleared when the ad returns or the plaque
+        /// hides — the disabled flag used to stick on the Button and the next death
+        /// showed dimmed plates that ignored clicks.
+        /// </summary>
+        bool _choiceLockedForAd;
+
         /// <summary>Horizontal scroll content that holds one chip per equipped item / card.</summary>
         RectTransform _gearStripContent;
 
@@ -545,11 +560,16 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Clears keep/forfeit flags at the start of a death so a previous life cannot leak.
+        /// Also re-enables the choice buttons. A finished watch-ad used to leave
+        /// <c>Button.interactable</c> false, and the next death reused those same plates.
         /// </summary>
-        static void ResetLoadoutChoice()
+        void ResetLoadoutChoice()
         {
             IsLoadoutChoiceResolved = false;
             KeepLoadoutOnRespawn = false;
+            _choiceGeneration++;
+            _choiceLockedForAd = false;
+            SetChoiceInteractable(true);
         }
 
         /// <summary>
@@ -586,6 +606,10 @@ namespace TitanOrbit.Game
 
             _choiceRoot.SetActive(true);
             PaintKeepButtonLabel();
+            // Plates are disabled only while this death's video is in flight.
+            // Re-enable otherwise so a prior ad cannot leave them dimmed.
+            if (!_choiceLockedForAd)
+                SetChoiceInteractable(true);
             if (!_gearStripPainted)
                 PaintGearStrip();
             // Don't wipe AD UNAVAILABLE on the next frame — that line is the retry hint.
@@ -872,9 +896,11 @@ namespace TitanOrbit.Game
         /// </summary>
         void OnKeepLoadoutClicked()
         {
-            if (IsLoadoutChoiceResolved || TitanOrbitRewardedAds.IsShowing)
+            if (IsLoadoutChoiceResolved || _choiceLockedForAd || TitanOrbitRewardedAds.IsShowing)
                 return;
 
+            int generation = _choiceGeneration;
+            _choiceLockedForAd = true;
             SetChoiceInteractable(false);
             _choiceStatusSticky = false;
             if (_choiceStatus != null)
@@ -882,6 +908,13 @@ namespace TitanOrbit.Game
 
             TitanOrbitRewardedAds.Show(TitanOrbitRewardedAds.PlacementKeepLoadout, result =>
             {
+                // Death ended (respawn, hide) before the video returned. Do not
+                // touch the next life's buttons or resolve its choice.
+                if (generation != _choiceGeneration)
+                    return;
+
+                _choiceLockedForAd = false;
+
                 if (result == TitanOrbitRewardedAdResult.Completed)
                 {
                     ResolveKeepLoadout();
@@ -908,7 +941,11 @@ namespace TitanOrbit.Game
         {
             KeepLoadoutOnRespawn = true;
             IsLoadoutChoiceResolved = true;
+            _choiceLockedForAd = false;
             _choiceStatusSticky = false;
+            // Card hides, but the same Button objects are reused next death.
+            // Leave them clickable so they do not come back on the disabled tint.
+            SetChoiceInteractable(true);
             if (_choiceRoot != null)
                 _choiceRoot.SetActive(false);
         }
@@ -918,7 +955,9 @@ namespace TitanOrbit.Game
         {
             KeepLoadoutOnRespawn = false;
             IsLoadoutChoiceResolved = true;
+            _choiceLockedForAd = false;
             _choiceStatusSticky = false;
+            SetChoiceInteractable(true);
             if (_choiceRoot != null)
                 _choiceRoot.SetActive(false);
         }

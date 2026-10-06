@@ -161,7 +161,11 @@ namespace TitanOrbit.ECS
             float mapH,
             bool syncShipSummary)
         {
-            var instance = CreateBurnInstance(hitPoint, bodyPos, burn, in bullet, serverElapsed, mapW, mapH);
+            quaternion bodyRotation = quaternion.identity;
+            if (em.HasComponent<LocalTransform>(entity))
+                bodyRotation = em.GetComponentData<LocalTransform>(entity).Rotation;
+            var instance = CreateBurnInstance(
+                hitPoint, bodyPos, bodyRotation, burn, in bullet, serverElapsed, mapW, mapH);
             if (!em.HasBuffer<BurnOverTimeElement>(entity))
             {
                 ecb.AddBuffer<BurnOverTimeElement>(entity);
@@ -221,6 +225,7 @@ namespace TitanOrbit.ECS
         public static BurnOverTimeElement CreateBurnInstance(
             float3 hitPoint,
             float3 bodyPos,
+            quaternion bodyRotation,
             BulletBankAbility burn,
             in BulletElement bullet,
             double serverElapsed,
@@ -232,14 +237,17 @@ namespace TitanOrbit.ECS
             float dps = (burn.magnitude > 0f ? burn.magnitude : 1f) * ResolveStrengthScale(bullet.StrengthScale);
             hitPoint.y = 0f;
             bodyPos.y = 0f;
-            float3 offset = ToroidalMapEcs.IsValidMapSize(mapW, mapH)
+            float3 worldOffset = ToroidalMapEcs.IsValidMapSize(mapW, mapH)
                 ? ToroidalMapEcs.ShortestOffsetXZ(bodyPos, hitPoint, mapW, mapH)
                 : hitPoint - bodyPos;
-            offset.y = 0f;
+            worldOffset.y = 0f;
+            // Local axes so a turning hull keeps the fire on the face that was hit.
+            float3 localOffset = math.rotate(math.inverse(bodyRotation), worldOffset);
+            localOffset.y = 0f;
 
             return new BurnOverTimeElement
             {
-                HitOffset = offset,
+                HitOffset = localOffset,
                 ExpiresAt = (float)(serverElapsed + duration),
                 NextTickAt = serverElapsed + tick,
                 Dps = dps,
@@ -255,6 +263,7 @@ namespace TitanOrbit.ECS
             DynamicBuffer<BurnOverTimeElement> instances,
             float3 hitPoint,
             float3 bodyPos,
+            quaternion bodyRotation,
             BulletBankAbility burn,
             in BulletElement bullet,
             double serverElapsed,
@@ -262,7 +271,18 @@ namespace TitanOrbit.ECS
             float mapH)
         {
             AddBurnInstance(instances, CreateBurnInstance(
-                hitPoint, bodyPos, burn, in bullet, serverElapsed, mapW, mapH));
+                hitPoint, bodyPos, bodyRotation, burn, in bullet, serverElapsed, mapW, mapH));
+        }
+
+        /// <summary>
+        /// World XZ of a stored local hit. <paramref name="hitLocal"/> is world units along the
+        /// body's local axes (not divided by scale).
+        /// </summary>
+        public static float3 BurnTickWorldPosition(float3 bodyPosition, quaternion bodyRotation, float3 hitLocal)
+        {
+            float3 world = bodyPosition + math.rotate(bodyRotation, hitLocal);
+            world.y = 0f;
+            return world;
         }
 
         public static void AddBurnInstance(
@@ -301,6 +321,9 @@ namespace TitanOrbit.ECS
                 state.SourceNetworkId = inst.SourceNetworkId;
                 state.SourceTeam = inst.SourceTeam;
                 state.NextTickAt = inst.NextTickAt;
+                // Last instance is the newest hit — the looping impact follows that contact.
+                state.HitLocalX = inst.HitOffset.x;
+                state.HitLocalZ = inst.HitOffset.z;
             }
 
             em.SetComponentData(shipEntity, state);

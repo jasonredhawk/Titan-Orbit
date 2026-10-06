@@ -29,8 +29,9 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
-    /// Burn DoT. Tick schedule stays server-only; expiry, VFX bank, and tick sequence
-    /// are ghosted so clients can loop impact VFX and spawn floating damage.
+    /// Burn DoT. Tick schedule stays server-only; expiry, VFX bank, tick sequence, and the
+    /// newest collider contact are ghosted so clients can loop impact VFX on the hit and
+    /// spawn floating damage.
     /// </summary>
     public struct ShipBurnOverTimeState : IComponentData
     {
@@ -52,6 +53,17 @@ namespace TitanOrbit.ECS
         [GhostField(Quantization = 100)]
         public float LastTickDamage;
 
+        /// <summary>
+        /// Newest burn's collider contact in ship-local XZ, in world units along the hull axes.
+        /// Clients divide by the proxy scale when placing the impact loop.
+        /// </summary>
+        [GhostField(Quantization = 100, Smoothing = SmoothingAction.Clamp)]
+        public float HitLocalX;
+
+        /// <summary>Z component of <see cref="HitLocalX"/>.</summary>
+        [GhostField(Quantization = 100, Smoothing = SmoothingAction.Clamp)]
+        public float HitLocalZ;
+
         public double NextTickAt;
         public float Dps;
         public float TickInterval;
@@ -63,8 +75,8 @@ namespace TitanOrbit.ECS
 
     /// <summary>
     /// One burn from a single bullet hit. Server-only buffer on ships and asteroids.
-    /// <see cref="HitOffset"/> is the toroidal XZ offset from the body center at impact
-    /// so each tick replays at that hull location as the body moves.
+    /// <see cref="HitOffset"/> is the impact in the body's local XZ (world units along local
+    /// axes). Ticks rotate it with the body so the burn stays on the collider contact.
     /// </summary>
     public struct BurnOverTimeElement : IBufferElementData
     {

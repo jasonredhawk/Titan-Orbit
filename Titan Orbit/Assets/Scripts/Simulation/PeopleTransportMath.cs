@@ -103,6 +103,13 @@ namespace TitanOrbit.Simulation
         public const float EscortSettleSnap = 0.18f;
 
         /// <summary>
+        /// A troop sphere has joined its seeded slot (or finished a drone-style
+        /// return) once it is this close to that home. Wider than
+        /// <see cref="EscortSettleSnap"/> so one sim tick cannot skip the handoff.
+        /// </summary>
+        public const float TroopSlotArriveDistance = 0.45f;
+
+        /// <summary>
         /// Ship-frame dock radius. Seat pose yaws every tick — the tiny settle snap
         /// never latches while orbiting, so inbound loads sat beside the hull until
         /// the ship left the ring.

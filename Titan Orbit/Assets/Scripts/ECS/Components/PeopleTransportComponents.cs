@@ -80,6 +80,31 @@ namespace TitanOrbit.ECS
         /// 1 after the hop turned around (load → source planet, unload → source ship).
         /// </summary>
         public byte Returning;
+
+        /// <summary>
+        /// 1 once this unload has been far enough from its slot that coming home
+        /// is a real rejoin, not the spawn frame.
+        /// </summary>
+        public byte ReturnArmed;
+
+        /// <summary>Drone-style offset from the current home (slot or planet anchor).</summary>
+        public float3 FormationOffset;
+
+        /// <summary>Offset-space velocity. World speed is derived after each step.</summary>
+        public float3 FormationVelocity;
+
+        /// <summary>Previous home used to cancel slot motion while a target is held.</summary>
+        public float3 FormationPrevIdle;
+
+        /// <summary>1 after the offset has been seeded so the sphere does not teleport.</summary>
+        public byte FormationReady;
+
+        /// <summary>
+        /// <see cref="PeopleTransportEscortLogic.TroopAnchorSlot"/> or
+        /// <see cref="PeopleTransportEscortLogic.TroopAnchorPlanet"/>.
+        /// A change rebases the offset so the world position stays continuous.
+        /// </summary>
+        public byte FormationAnchor;
     }
 
     /// <summary>

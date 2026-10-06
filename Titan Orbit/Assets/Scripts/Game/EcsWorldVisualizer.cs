@@ -162,6 +162,12 @@ namespace TitanOrbit.Game
         /// <summary>Viewer team latched with <see cref="_lastAsteroidTintGraphRevision"/>.</summary>
         TeamId _lastAsteroidTintViewerTeam = TeamId.None;
 
+        /// <summary>
+        /// Last asteroid walked by the territory-tint budget. The next sync continues after
+        /// this entity so unlatched rocks are not stuck behind the same first slice.
+        /// </summary>
+        Entity _asteroidTintResume;
+
         /// <summary>Max asteroid territory PIT evaluations per visual sync frame.</summary>
         const int MaxAsteroidTerritoryTintsPerFrame = 24;
 
@@ -566,6 +572,7 @@ namespace TitanOrbit.Game
             // Force full asteroid tint recompute next enable (viewer team / graph may change).
             _lastAsteroidTintGraphRevision = int.MinValue;
             _lastAsteroidTintViewerTeam = TeamId.None;
+            _asteroidTintResume = Entity.Null;
             DisposeVisualizerQueries();
         }
 
@@ -1321,9 +1328,8 @@ namespace TitanOrbit.Game
                 _lastAsteroidTintViewerTeam = viewerTeam;
                 // Invalidate applied tints so rocks re-enter the budgeted uncached queue.
                 _proxyAsteroidTerritory.Clear();
+                _asteroidTintResume = Entity.Null;
             }
-
-            int tintBudget = MaxAsteroidTerritoryTintsPerFrame;
 
             foreach (var kv in _proxies)
             {
@@ -1469,24 +1475,57 @@ namespace TitanOrbit.Game
                     TryApplyNeutralPlanetSurfaceWater(entity, go);
                     RefreshPlanetProxyAppearanceIfChanged(em, entity, go, scale);
                 }
-
-                // --- Asteroid territory tint (budgeted PIT) ---
-                // Untinted / invalidated rocks only; MaxAsteroidTerritoryTintsPerFrame per sync.
-                if (kind == ProxyVisualKind.Asteroid &&
-                    !_proxyAsteroidTerritory.ContainsKey(entity) &&
-                    tintBudget > 0)
-                {
-                    RefreshAsteroidTerritoryTintIfChanged(em, entity, go, lt.Position, viewerTeam);
-                    tintBudget--;
-                }
             }
+
+            TintAsteroidTerritoryBudget(em, viewerTeam);
+        }
+
+        /// <summary>
+        /// Point-in-triangle tint for rocks that do not yet have a latched team.
+        /// Walks forward from <see cref="_asteroidTintResume"/> so a slice of neutral
+        /// rocks cannot consume the budget forever while later rocks sit in a triangle.
+        /// </summary>
+        void TintAsteroidTerritoryBudget(EntityManager em, TeamId viewerTeam)
+        {
+            if (_asteroidProxyEntities.Count == 0)
+                return;
+
+            int budget = MaxAsteroidTerritoryTintsPerFrame;
+            bool armed = _asteroidTintResume == Entity.Null;
+
+            foreach (Entity entity in _asteroidProxyEntities)
+            {
+                if (!armed)
+                {
+                    if (entity == _asteroidTintResume)
+                        armed = true;
+                    continue;
+                }
+
+                if (_proxyAsteroidTerritory.ContainsKey(entity))
+                    continue;
+                if (!_proxies.TryGetValue(entity, out GameObject go) || go == null)
+                    continue;
+                if (!em.Exists(entity) || !em.HasComponent<LocalTransform>(entity))
+                    continue;
+
+                float3 pos = em.GetComponentData<LocalTransform>(entity).Position;
+                RefreshAsteroidTerritoryTintIfChanged(em, entity, go, pos, viewerTeam);
+                _asteroidTintResume = entity;
+                budget--;
+                if (budget <= 0)
+                    return;
+            }
+
+            // End of the set (or the resume entity was removed). Next sync starts over.
+            _asteroidTintResume = Entity.Null;
         }
 
         /// <summary>
         /// Applies team territory highlight so rock colour matches the drawn territory fill.
-        /// Uses <see cref="PlanetConnectionPresentationTriangles"/> (same Client graph + moon
-        /// verts as <see cref="PlanetConnectionShapesVisual"/>). Overlap prefers the local
-        /// player's team. Per known proxy only — no asteroid archetype gather.
+        /// Uses <see cref="PlanetConnectionPresentationTriangles"/> (same Client graph and
+        /// planet-center verts as <see cref="PlanetConnectionShapesVisual"/>). Overlap prefers
+        /// the local player's team. Per known proxy only — no asteroid archetype gather.
         /// </summary>
         /// <param name="em">Client EntityManager.</param>
         /// <param name="entity">Asteroid ghost already in <see cref="_proxies"/>.</param>
@@ -1499,7 +1538,7 @@ namespace TitanOrbit.Game
             if (go == null || !em.Exists(entity))
                 return;
 
-            // --- Canonical XZ (same space as moon verts / drawn fill topology) ---
+            // --- Canonical XZ (same space as planet-center verts / drawn fill) ---
             // [TITAN-ORBIT] Do not use display-retiled proxy position — wrap copies would
             // fail PIT against canonical triangle verts.
             Vector3 wrapped = ToroidalMap.WrapPosition(new Vector3(logicalPos.x, 0f, logicalPos.z));
@@ -1507,9 +1546,16 @@ namespace TitanOrbit.Game
 
             PlanetConnectionPresentationTriangles.GetOwnershipAtPosition(
                 canonical, out byte mask, out TeamId primary);
+            bool authoritative = PlanetConnectionPresentationTriangles.IsOwnershipAuthoritative();
 
             TeamId displayTeam = PlanetConnectionGraphLogic.ResolveAsteroidTintTeam(
                 mask, primary, viewerTeam);
+
+            // Partial vertex resolve still returns mask 0 for triangles that are not built yet.
+            // Painting None now would clear a real tint, and latching it would stick after
+            // the fill shows up (graph revision does not bump again).
+            if (!authoritative && displayTeam == TeamId.None)
+                return;
 
             // --- Skip before GetComponentInChildren / material writes ---
             if (_proxyAsteroidTerritory.TryGetValue(entity, out var applied) && applied == displayTeam)
@@ -1517,7 +1563,8 @@ namespace TitanOrbit.Game
 
             // [TITAN-ORBIT] Only latch when SgtPlanet actually applied — missing material
             // used to freeze "applied" forever and leave the rock untinted.
-            if (WorldBodyVisualApplier.ApplyAsteroidTerritoryTint(go, displayTeam))
+            // Latch only once the triangle set matches the published graph.
+            if (WorldBodyVisualApplier.ApplyAsteroidTerritoryTint(go, displayTeam) && authoritative)
                 _proxyAsteroidTerritory[entity] = displayTeam;
         }
 
@@ -3271,6 +3318,7 @@ namespace TitanOrbit.Game
             _proxies.Remove(owner);
             _asteroidLayoutSlots.Remove(owner);
             _asteroidProxyEntities.Remove(owner);
+            _proxyAsteroidTerritory.Remove(owner);
             if (_proxyKinds.TryGetValue(owner, out ProxyVisualKind kind))
             {
                 UnregisterProxyKindCounts(kind);
@@ -3314,6 +3362,7 @@ namespace TitanOrbit.Game
             _proxyNetworkIds.Remove(entity);
             _asteroidLayoutSlots.Remove(entity);
             _asteroidProxyEntities.Remove(entity);
+            _proxyAsteroidTerritory.Remove(entity);
             // Mesh is parked — strip ECS collision now or the ship rams empty space.
             ClientAsteroidCollisionCull.TryDisablePhysicsCollider(entity);
             // Intentionally skip AsteroidClientEntityRegistry.NotifyDestroyed — ECS zombie remains.

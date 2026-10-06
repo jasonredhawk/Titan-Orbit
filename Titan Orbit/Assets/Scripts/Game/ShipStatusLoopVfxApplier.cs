@@ -11,7 +11,8 @@ namespace TitanOrbit.Game
     /// Client-only: loops the bullet-bank impact ("end") particle on a ship proxy for the
     /// remaining burn DoT or electric-shock stun. Reads ghosted
     /// <see cref="ShipBurnOverTimeState"/> / <see cref="ShipElectricShockState"/>.
-    /// Cosmetic — no sim change. Attached by <see cref="EcsWorldVisualizer"/>.
+    /// Burn sits on the ghosted collider contact (<see cref="ShipBurnOverTimeState.HitLocalX"/>);
+    /// shock stays on the hull center. Cosmetic — no sim change. Attached by <see cref="EcsWorldVisualizer"/>.
     /// </summary>
     [DefaultExecutionOrder(108)]
     public class ShipStatusLoopVfxApplier : MonoBehaviour
@@ -102,19 +103,20 @@ namespace TitanOrbit.Game
             bool burnActive = false;
             int burnBank = 0;
             byte burnTeam = 0;
+            Vector2 burnLocalXZ = Vector2.zero;
             if (em.HasComponent<ShipBurnOverTimeState>(_shipEntity))
             {
                 var burn = em.GetComponentData<ShipBurnOverTimeState>(_shipEntity);
                 burnActive = burn.IsActive(elapsed);
                 burnBank = burn.VfxBankIndex;
                 burnTeam = burn.VfxTeam;
+                burnLocalXZ = new Vector2(burn.HitLocalX, burn.HitLocalZ);
             }
 
-            // Shock has no damage ticks — keep the impact looping for the stun window.
-            // Burn re-emits that same impact on the hull for the whole DoT. Sequence-0 burn
-            // ticks are not ram sparks; asteroids get the same burst from BurnImpactLoop.
-            SyncSlot(_shock, shockActive, shockBank, shockTeam, ShockLocalY);
-            SyncSlot(_burn, burnActive, burnBank, burnTeam, BurnLocalY);
+            // Shock has no damage ticks — keep the impact looping on the hull center.
+            // Burn re-emits that same impact on the collider contact for the whole DoT.
+            SyncSlot(_shock, shockActive, shockBank, shockTeam, ShockLocalY, Vector2.zero);
+            SyncSlot(_burn, burnActive, burnBank, burnTeam, BurnLocalY, burnLocalXZ);
             if (burnActive)
                 ReplayBurnIfDue(_burn);
         }
@@ -134,7 +136,7 @@ namespace TitanOrbit.Game
             VfxUrpCompat.ReplayParticleBursts(slot.Instance);
         }
 
-        void SyncSlot(Slot slot, bool active, int bankIndex, byte team, float localY)
+        void SyncSlot(Slot slot, bool active, int bankIndex, byte team, float localY, Vector2 hitLocalXZ)
         {
             if (!active)
             {
@@ -147,10 +149,12 @@ namespace TitanOrbit.Game
                 ReleaseSlot(slot);
 
             if (slot.Instance == null)
-                TryStartSlot(slot, bankIndex, team, localY);
+                TryStartSlot(slot, bankIndex, team, localY, hitLocalXZ);
+            else
+                PlaceOnHull(slot.Instance.transform, localY, hitLocalXZ);
         }
 
-        void TryStartSlot(Slot slot, int bankIndex, byte team, float localY)
+        void TryStartSlot(Slot slot, int bankIndex, byte team, float localY, Vector2 hitLocalXZ)
         {
             BulletVfxBank bank = BulletVfxBank.LoadDefault();
             if (bank == null)
@@ -165,8 +169,7 @@ namespace TitanOrbit.Game
 
             go.name = prefab.name + "_StatusLoop";
             go.transform.SetParent(transform, false);
-            go.transform.localPosition = new Vector3(0f, localY, 0f);
-            go.transform.localRotation = Quaternion.identity;
+            PlaceOnHull(go.transform, localY, hitLocalXZ);
 
             float parentLossy = transform.lossyScale.x;
             if (parentLossy < 0.0001f)
@@ -182,6 +185,19 @@ namespace TitanOrbit.Game
             slot.Team = team;
             // Start already emitted the burst. The next replay is one DoT step later.
             slot.NextReplay = Time.time + BurnReplayInterval;
+        }
+
+        /// <summary>
+        /// <paramref name="hitLocalXZ"/> is world units along the ship axes. The proxy root is
+        /// scaled, so divide to land on the same world point as the collider contact.
+        /// </summary>
+        void PlaceOnHull(Transform vfx, float localY, Vector2 hitLocalXZ)
+        {
+            float scale = transform.lossyScale.x;
+            if (scale < 0.0001f)
+                scale = 1f;
+            vfx.localPosition = new Vector3(hitLocalXZ.x / scale, localY, hitLocalXZ.y / scale);
+            vfx.localRotation = Quaternion.identity;
         }
 
         void ReleaseAll()

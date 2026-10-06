@@ -321,6 +321,34 @@ namespace TitanOrbit.Game
         static readonly int ShaderIdTiling = Shader.PropertyToID("_Tiling");
         static readonly int ShaderIdBumpScale = Shader.PropertyToID("_BumpScale");
         static readonly int ShaderIdDetailTiling = Shader.PropertyToID("_DetailTiling");
+        static readonly int ShaderIdColor = Shader.PropertyToID("_Color");
+        static readonly int ShaderIdBaseColor = Shader.PropertyToID("_BaseColor");
+
+        /// <summary>
+        /// One draw material per (source, team). PC URP has the SRP Batcher on, and the planet
+        /// shader keeps <c>_Color</c> in <c>UnityPerMaterial</c>, so a MaterialPropertyBlock tint
+        /// never reaches the rock. Five shared instances cover every asteroid of that team.
+        /// </summary>
+        static readonly Dictionary<AsteroidTintMaterialKey, Material> s_AsteroidTeamMaterials =
+            new Dictionary<AsteroidTintMaterialKey, Material>(8);
+
+        struct AsteroidTintMaterialKey : System.IEquatable<AsteroidTintMaterialKey>
+        {
+            public int SourceId;
+            public byte Team;
+
+            public bool Equals(AsteroidTintMaterialKey other) =>
+                SourceId == other.SourceId && Team == other.Team;
+
+            public override bool Equals(object obj) =>
+                obj is AsteroidTintMaterialKey other && Equals(other);
+
+            public override int GetHashCode() => (SourceId * 397) ^ Team;
+        }
+
+        /// <summary>[UNITY] Domain reload drops runtime team-material instances.</summary>
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetAsteroidTeamMaterials() => s_AsteroidTeamMaterials.Clear();
 
         public static bool TryCreateAsteroidVisual(
             GameObject asteroidPrefab,
@@ -375,7 +403,13 @@ namespace TitanOrbit.Game
         /// team color (0.7 blend) when the rock sits inside a territory triangle; restore when None.
         /// Caller resolves overlap (prefer local team) via
         /// <see cref="PlanetConnectionGraphLogic.ResolveAsteroidTintTeam"/> before calling.
-        /// Caches the original color on first call via <see cref="AsteroidTerritoryTintCache"/>.
+        /// Caches the original material on first call via <see cref="AsteroidTerritoryTintCache"/>.
+        /// <para>
+        /// The color is baked into a shared per-team material. PC URP keeps the SRP Batcher on, and
+        /// the planet shader stores <c>_Color</c> in <c>UnityPerMaterial</c>, so a property-block
+        /// write alone leaves every rock the neutral Barren color inside a team triangle.
+        /// The property block is still updated so WebGL (batcher off) matches the same color.
+        /// </para>
         /// </summary>
         /// <param name="root">Asteroid hybrid proxy root.</param>
         /// <param name="team">Display territory team, or <see cref="TeamId.None"/> to clear.</param>
@@ -392,23 +426,20 @@ namespace TitanOrbit.Game
             if (cache == null)
                 cache = root.AddComponent<AsteroidTerritoryTintCache>();
 
-            // --- Skip identical writes ---
-            if (cache.AppliedTeam == team && cache.HasOriginal)
-                return true;
-
             var sgt = root.GetComponentInChildren<SgtPlanet>(true);
             if (sgt == null || sgt.Material == null)
                 return false;
 
-            // --- Cache original SgtPlanet color once ---
-            if (!cache.HasOriginal)
+            // --- Cache the shared prefab material once (never a team clone) ---
+            if (!cache.HasOriginal || cache.OriginalMaterial == null)
             {
-                if (sgt.Material.HasProperty("_Color"))
-                    cache.OriginalColor = sgt.Material.GetColor("_Color");
-                else if (sgt.Material.HasProperty("_BaseColor"))
-                    cache.OriginalColor = sgt.Material.GetColor("_BaseColor");
-                else
-                    cache.OriginalColor = new Color(0.5f, 0.5f, 0.5f, 1f);
+                Material current = sgt.Material;
+                if (current != null && !IsAsteroidTeamTintMaterial(current))
+                    cache.OriginalMaterial = current;
+                if (cache.OriginalMaterial == null)
+                    return false;
+
+                cache.OriginalColor = ReadMaterialColor(cache.OriginalMaterial);
                 cache.HasOriginal = true;
             }
 
@@ -416,10 +447,78 @@ namespace TitanOrbit.Game
                 ? cache.OriginalColor
                 : Color.Lerp(cache.OriginalColor, team.ToColor(), 0.7f);
 
-            int id = Shader.PropertyToID("_Color");
-            sgt.Properties.SetColor(id, color);
+            Material draw = team == TeamId.None
+                ? cache.OriginalMaterial
+                : GetAsteroidTeamMaterial(cache.OriginalMaterial, team, color);
+            if (draw == null)
+                return false;
+
+            // --- Skip identical writes ---
+            if (cache.AppliedTeam == team && sgt.Material == draw)
+                return true;
+
+            if (sgt.Material != draw)
+                sgt.Material = draw;
+
+            // WebGL draws asteroids with the property block (SRP Batcher forced off).
+            sgt.Properties.SetColor(ShaderIdColor, color);
             cache.AppliedTeam = team;
             return true;
+        }
+
+        /// <summary>Neutral <c>_Color</c> / <c>_BaseColor</c> on the prefab material.</summary>
+        static Color ReadMaterialColor(Material material)
+        {
+            if (material == null)
+                return new Color(0.5f, 0.5f, 0.5f, 1f);
+            if (material.HasProperty(ShaderIdColor))
+                return material.GetColor(ShaderIdColor);
+            if (material.HasProperty(ShaderIdBaseColor))
+                return material.GetColor(ShaderIdBaseColor);
+            return new Color(0.5f, 0.5f, 0.5f, 1f);
+        }
+
+        /// <summary>True when <paramref name="material"/> is one of the shared team clones.</summary>
+        static bool IsAsteroidTeamTintMaterial(Material material)
+        {
+            if (material == null)
+                return false;
+            foreach (var pair in s_AsteroidTeamMaterials)
+            {
+                if (pair.Value == material)
+                    return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Shared team draw material cloned from <paramref name="source"/>. All rocks of one
+        /// team share it so we do not allocate a material per asteroid.
+        /// </summary>
+        static Material GetAsteroidTeamMaterial(Material source, TeamId team, Color color)
+        {
+            if (source == null || team == TeamId.None)
+                return source;
+
+            var key = new AsteroidTintMaterialKey
+            {
+                SourceId = source.GetInstanceID(),
+                Team = (byte)team,
+            };
+            if (s_AsteroidTeamMaterials.TryGetValue(key, out Material existing) && existing != null)
+                return existing;
+
+            var copy = new Material(source)
+            {
+                name = source.name + " " + team,
+            };
+            if (copy.HasProperty(ShaderIdColor))
+                copy.SetColor(ShaderIdColor, color);
+            if (copy.HasProperty(ShaderIdBaseColor))
+                copy.SetColor(ShaderIdBaseColor, color);
+            s_AsteroidTeamMaterials[key] = copy;
+            return copy;
         }
 
         /// <summary>Same Barren asteroid texture for every rock; vary UV scale, normals, and displacement per instance.</summary>
