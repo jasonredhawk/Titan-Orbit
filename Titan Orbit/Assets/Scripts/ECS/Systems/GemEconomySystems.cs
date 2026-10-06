@@ -293,6 +293,7 @@ namespace TitanOrbit.ECS
                     // on rocks the client already painted as team-owned.
                     byte territoryMask = PlanetConnectionGraphCache.ResolveAsteroidTerritoryMask(
                         a.TerritoryTeamsMask,
+                        a.TerritoryTeam,
                         asteroidTransform.ValueRO.Position,
                         mapW,
                         mapH);
@@ -1164,6 +1165,7 @@ namespace TitanOrbit.ECS
             public TeamId LastInteractTeam;
             public int LastInteractNetworkId;
             public byte TerritoryTeamsMask;
+            public TeamId TerritoryTeam;
             public float MiningYieldRemainder;
             public int LayoutSlot;
         }
@@ -1189,6 +1191,8 @@ namespace TitanOrbit.ECS
             bool canSpawnGems = gemPrefab != Entity.Null;
             var settings = GemExplosionSettingsCache.ResolveOrDefault();
             settings.ClampCounts();
+            var asteroidSettings = AsteroidSettingsCache.ResolveOrDefault();
+            asteroidSettings.ClampValues();
             float spawnTime = PlanetGemMoonOrbitClock.GetElapsedSecondsOrFallback(
                 state.EntityManager, SystemAPI.Time.ElapsedTime);
             // Respawn queue is server-only — World.Time is fine (not replicated to clients).
@@ -1236,6 +1240,7 @@ namespace TitanOrbit.ECS
                     LastInteractTeam = a.LastInteractTeam,
                     LastInteractNetworkId = a.LastInteractNetworkId,
                     TerritoryTeamsMask = a.TerritoryTeamsMask,
+                    TerritoryTeam = a.TerritoryTeam,
                     MiningYieldRemainder = a.MiningYieldRemainder,
                     LayoutSlot = AsteroidLayoutSlot.Read(em, entity),
                 });
@@ -1271,7 +1276,7 @@ namespace TitanOrbit.ECS
                 // Live PIT: stored TerritoryTeamsMask stays 0 until the 1s territory refresh,
                 // so team-tinted rocks used to dump only red leftovers.
                 byte territoryMask = PlanetConnectionGraphCache.ResolveAsteroidTerritoryMask(
-                    dead.TerritoryTeamsMask, pos, mapW, mapH);
+                    dead.TerritoryTeamsMask, dead.TerritoryTeam, pos, mapW, mapH);
                 if (dead.LastInteractTeam != TeamId.None &&
                     remaining > 0f)
                 {
@@ -1337,7 +1342,7 @@ namespace TitanOrbit.ECS
                     restoreHealth,
                     dead.Size,
                     now,
-                    settings.AsteroidRespawnDelaySeconds,
+                    asteroidSettings.RespawnDelaySeconds,
                     dead.LayoutSlot);
 
                 // --- Clients: destroy seed-hydrated local rock now ---

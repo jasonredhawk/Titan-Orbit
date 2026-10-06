@@ -549,28 +549,51 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Mining / destroy yellow extras: prefer live server PIT (same verts as the fill)
-        /// so a rock the player sees as team-owned is not skipped because the 1s
-        /// <c>AsteroidTerritorySystem</c> pass has not written <c>TerritoryTeamsMask</c> yet
-        /// (respawn starts at 0). Falls back to the stored mask when the graph is unpublished.
+        /// Mining / destroy yellow extras. Unions every ownership source so a rock the
+        /// player sees as team-colored still pays the bonus when one bake is late:
+        /// stored mask, stored primary team, live server PIT, and the client presentation
+        /// bake (empty on a dedicated server — no-op there).
+        /// A live mask used to replace the stored mask, so a stale non-zero bake could
+        /// drop the owning team and skip yellow gems.
         /// </summary>
         public static byte ResolveAsteroidTerritoryMask(
             byte storedMask,
             float3 worldPos,
             float mapW,
+            float mapH) =>
+            ResolveAsteroidTerritoryMask(storedMask, TeamId.None, worldPos, mapW, mapH);
+
+        /// <summary>
+        /// Same as <see cref="ResolveAsteroidTerritoryMask(byte, float3, float, float)"/>
+        /// and also ORs <paramref name="storedTeam"/> when the mask byte was never written.
+        /// </summary>
+        public static byte ResolveAsteroidTerritoryMask(
+            byte storedMask,
+            TeamId storedTeam,
+            float3 worldPos,
+            float mapW,
             float mapH)
         {
-            if (TryGetPublishedOwnershipAtPosition(
-                    PlanetConnectionGraphSide.Server,
-                    worldPos,
-                    mapW,
-                    mapH,
-                    out byte liveMask,
-                    out _) &&
-                liveMask != 0)
-                return liveMask;
+            byte mask = storedMask;
+            if (storedTeam != TeamId.None)
+                mask |= PlanetConnectionGraphLogic.TeamToMaskBit(storedTeam);
 
-            return storedMask;
+            mask |= ReadLiveTerritoryMask(PlanetConnectionGraphSide.Server, worldPos, mapW, mapH);
+            // Host paints rocks from the client bake. Dedicated servers never publish that side.
+            mask |= ReadLiveTerritoryMask(PlanetConnectionGraphSide.Client, worldPos, mapW, mapH);
+            return mask;
+        }
+
+        /// <summary>Live point-in-triangle mask, or 0 when that side has no published verts.</summary>
+        static byte ReadLiveTerritoryMask(
+            PlanetConnectionGraphSide side,
+            float3 worldPos,
+            float mapW,
+            float mapH)
+        {
+            if (!TryGetPublishedOwnershipAtPosition(side, worldPos, mapW, mapH, out byte liveMask, out _))
+                return 0;
+            return liveMask;
         }
 
         /// <summary>
@@ -672,10 +695,18 @@ namespace TitanOrbit.ECS
             if (!cacheComplete)
             {
                 int prevResolved = side.RuntimeCache.Count;
+                int prevNative = side.RuntimeNative.IsCreated ? side.RuntimeNative.Length : 0;
                 RebuildRuntimeCache(side, planets);
-                if (side.RuntimeCache.Count != prevResolved ||
-                    !side.RuntimeNative.IsCreated ||
-                    side.RuntimeNative.Length != side.RuntimeCache.Count)
+                // An empty planet snapshot used to sync a 0-length native over a good bake.
+                // AsteroidTerritorySystem then wrote mask 0 and yellow territory gems stopped.
+                bool keepLastBake =
+                    side.RuntimeCache.Count == 0 &&
+                    side.Triangles.Count > 0 &&
+                    prevNative > 0;
+                if (!keepLastBake &&
+                    (side.RuntimeCache.Count != prevResolved ||
+                     !side.RuntimeNative.IsCreated ||
+                     side.RuntimeNative.Length != side.RuntimeCache.Count))
                 {
                     side.SyncRuntimeNativeFromCache();
                 }

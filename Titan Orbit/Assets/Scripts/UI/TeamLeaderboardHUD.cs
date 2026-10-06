@@ -13,7 +13,8 @@ namespace TitanOrbit.UI
 {
     /// <summary>
     /// In-game team leaderboard in the top-right corner — same width as the minimap, height
-    /// stretched down until it meets the minimap below. Press TAB to cycle Team A…E panels.
+    /// stretched down until it meets the minimap below. Opens on the team this player joined.
+    /// Press TAB to cycle Team A…E panels; cycling does not snap back until the next join.
     /// <para>
     /// Shows a player list only: a gold Command Deck for earned commanders (living
     /// top killer / miner / troop mover), then the crew. Role icons, rank, profile
@@ -27,7 +28,8 @@ namespace TitanOrbit.UI
     /// <para>
     /// The header tabs are a planet-control bar: the full leaderboard width is every capturable
     /// planet (homes + neutrals). Each team's colored tab is that team's owned share; leftover
-    /// width is still-neutral worlds. Combined player score still uses the old NGO
+    /// width is still-neutral worlds. The title line shows that team's score — the sum of every
+    /// member's combined score. Combined player score still uses the old NGO
     /// <c>ScoreSystem</c> weights: kill=100, deposited gem=2, delivered person=5.
     /// Layout uses the minimap's own rect size (not renderer bounds) so moving blips cannot drift
     /// the panel while the ship flies.
@@ -90,6 +92,19 @@ namespace TitanOrbit.UI
         MinimapEcsEntitySync _entitySync;
 
         int _viewedTeamIndex = -1;
+
+        /// <summary>
+        /// Team we last auto-opened after a join. Stays <see cref="TeamId.None"/> until the
+        /// server assigns one, so an early refresh cannot lock the board on Team A.
+        /// </summary>
+        TeamId _followedLocalTeam = TeamId.None;
+
+        /// <summary>
+        /// <see cref="ClientTeamFlowState.PlaySessionGeneration"/> last seen. A new match
+        /// clears the follow latch so the next join opens that team again.
+        /// </summary>
+        int _seenPlaySession = -1;
+
         float _nextRefreshTime;
         Vector4 _lastLayoutSignature;
 
@@ -249,7 +264,7 @@ namespace TitanOrbit.UI
             if (_accentStripe != null)
                 _accentStripe.color = new Color(teamColor.r, teamColor.g, teamColor.b, 0.95f);
             if (_titleText != null)
-                _titleText.text = "Team A  <size=80%><color=#9EB6D8>4/10  [TAB]</color></size>";
+                _titleText.text = "Team A  <size=80%><color=#F2DB8C>SCORE 2170</color>  <color=#9EB6D8>4/10  [TAB]</color></size>";
 
             // Demo: 10 capturable worlds — A leads, some still neutral.
             int[] demoCounts = { 4, 2, 1, 0, 0 };
@@ -378,7 +393,8 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// Advances the viewed team within the match's active team count (2–5).
-        /// Empty teams stay empty — we do not snap back to the local team (that made TAB look broken).
+        /// Empty teams stay empty — TAB does not snap back to the local team.
+        /// A later join still opens that team via <see cref="FollowJoinedTeamIfNeeded"/>.
         /// </summary>
         void CycleViewedTeam()
         {
@@ -393,6 +409,84 @@ namespace TitanOrbit.UI
 
             _nextRefreshTime = 0f;
             RefreshRows();
+        }
+
+        /// <summary>
+        /// Opens the leaderboard on the team this player joined. Runs every refresh, but
+        /// only moves the selection when the joined team changes (or a new match starts).
+        /// TAB browsing in between is left alone.
+        /// </summary>
+        /// <param name="teamCount">Active teams this match (2–5).</param>
+        void FollowJoinedTeamIfNeeded(int teamCount)
+        {
+            // --- New match: forget the previous join so we do not reopen last match's tab ---
+            int generation = ClientTeamFlowState.PlaySessionGeneration;
+            if (generation != _seenPlaySession)
+            {
+                _seenPlaySession = generation;
+                _followedLocalTeam = TeamId.None;
+                _viewedTeamIndex = -1;
+            }
+
+            // Still on the team-pick screen, or the ack has not arrived yet.
+            if (!TryGetJoinedLocalTeam(out TeamId joined))
+                return;
+
+            // Same team as last latch — player may be TABing through other rosters.
+            if (joined == _followedLocalTeam)
+                return;
+
+            _followedLocalTeam = joined;
+            _viewedTeamIndex = TeamToIndex(joined, teamCount);
+        }
+
+        /// <summary>
+        /// Team this client has actually joined. The Join Team ack is first: it is written
+        /// when the server accepts the click, before the ship ghost's Team field replicates.
+        /// Reading the hull first used to see None (or a stale Team A) and lock the board there.
+        /// </summary>
+        /// <param name="team">Joined team when this returns true.</param>
+        /// <returns>False while the player is still choosing a team.</returns>
+        bool TryGetJoinedLocalTeam(out TeamId team)
+        {
+            team = TeamId.None;
+
+            // --- Join ack (server accepted this click or a rejoin) ---
+            // [TITAN-ORBIT] AssignedTeam is set in LatchTeamChoiceSuccess.
+            // LastRequestedTeam is not used — a rejected click must not move the board.
+            if (ClientTeamFlowState.AssignedTeam != TeamId.None)
+            {
+                team = ClientTeamFlowState.AssignedTeam;
+                return true;
+            }
+
+            // --- Live hull, when no ack was stored (ship already has a team) ---
+            if (EcsGameBridge.TryGetLocalShipState(out var ship)
+                && ship.Team != TeamId.None
+                && !ship.AwaitingTeamSelection)
+            {
+                team = ship.Team;
+                return true;
+            }
+
+            // --- Minimap blip, when ship gathers are skipped during join settle ---
+            IReadOnlyList<MinimapBlipAnchor> ships = _entitySync != null ? _entitySync.Ships : null;
+            if (ships == null)
+                return false;
+
+            for (int i = 0; i < ships.Count; i++)
+            {
+                MinimapBlipAnchor anchor = ships[i];
+                if (anchor == null || !anchor.IsLocalPlayer || anchor.AwaitingTeamSelection)
+                    continue;
+                if (anchor.Team == TeamId.None)
+                    continue;
+
+                team = anchor.Team;
+                return true;
+            }
+
+            return false;
         }
 
         /// <summary>Active teams this match (meta / TeamState).</summary>
@@ -421,6 +515,43 @@ namespace TitanOrbit.UI
         static int ComputeCombinedScore(int kills, int gemsDeposited, int peopleDelivered)
         {
             return ShipMatchScoreLogic.ComputeCombinedScore(kills, gemsDeposited, peopleDelivered);
+        }
+
+        /// <summary>
+        /// Sum of combined scores for the ships already filtered to the viewed team.
+        /// Dead hulls stay in the sum — they are still on the roster.
+        /// </summary>
+        static int SumAnchorScores(List<MinimapBlipAnchor> ships)
+        {
+            int total = 0;
+            for (int i = 0; i < ships.Count; i++)
+            {
+                MinimapBlipAnchor anchor = ships[i];
+                if (anchor == null)
+                    continue;
+                total += ComputeCombinedScore(
+                    Mathf.Max(0, anchor.Kills),
+                    Mathf.Max(0, anchor.GemsDeposited),
+                    Mathf.Max(0, anchor.PeopleDelivered));
+            }
+
+            return total;
+        }
+
+        /// <summary>
+        /// Title line: team name, team score (gold), worlds owned, and the TAB hint.
+        /// Score is the sum of every member on this team, not one player's row.
+        /// </summary>
+        void ApplyViewedTeamHeader(TeamId viewedTeam, int teamScore, int viewedOwned, int capturableTotal)
+        {
+            if (_titleText == null)
+                return;
+
+            // Gold score matches the row score color so the total reads as the same stat.
+            _titleText.text = viewedTeam.ToDisplayName()
+                + "  <size=80%><color=#F2DB8C>SCORE " + teamScore + "</color>"
+                + "  <color=#9EB6D8>" + viewedOwned + "/" + capturableTotal
+                + "  [TAB]</color></size>";
         }
 
         // =========================================================================
@@ -485,14 +616,10 @@ namespace TitanOrbit.UI
 
             int teamCount = GetActiveTeamCount();
 
-            // --- Default viewed team = local player's team (first time only) ---
+            // --- Open on the joined team; do not commit Team A before the pick lands ---
+            FollowJoinedTeamIfNeeded(teamCount);
             if (_viewedTeamIndex < 0)
-            {
-                TeamId localTeam = TeamId.TeamA;
-                if (EcsGameBridge.TryGetLocalShipState(out var localShip) && localShip.Team != TeamId.None)
-                    localTeam = localShip.Team;
-                _viewedTeamIndex = TeamToIndex(localTeam, teamCount);
-            }
+                _viewedTeamIndex = 0;
 
             _viewedTeamIndex = Mathf.Clamp(_viewedTeamIndex, 0, teamCount - 1);
             TeamId viewedTeam = IndexToTeam(_viewedTeamIndex);
@@ -512,8 +639,6 @@ namespace TitanOrbit.UI
             int viewedOwned = _viewedTeamIndex >= 0 && _viewedTeamIndex < _planetCountsByTeam.Length
                 ? _planetCountsByTeam[_viewedTeamIndex]
                 : 0;
-            _titleText.text = viewedTeam.ToDisplayName()
-                + "  <size=80%><color=#9EB6D8>" + viewedOwned + "/" + capturableTotal + "  [TAB]</color></size>";
 
             // --- Collect ships from presentation cache ---
             // [TITAN-ORBIT] Anchors are filled by MinimapEcsEntitySync under join-safe rules.
@@ -531,6 +656,11 @@ namespace TitanOrbit.UI
                     _teamShips.Add(a);
                 }
             }
+
+            // Team score is every member's combined score (kills, gems, people), including
+            // an empty roster (0). Painted before the empty-list return so the header stays.
+            int teamScore = SumAnchorScores(_teamShips);
+            ApplyViewedTeamHeader(viewedTeam, teamScore, viewedOwned, capturableTotal);
 
             if (_teamShips.Count == 0)
             {

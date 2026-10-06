@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Text;
 using TitanOrbit.Core;
+using TitanOrbit.Diagnostics;
 using TitanOrbit.Data;
 using TitanOrbit.ECS;
 using TMPro;
@@ -465,6 +466,7 @@ namespace TitanOrbit.Game
         /// </summary>
         void LateUpdate()
         {
+            using var _memName = WebGlAllocBuckets.Measure(WebGlAllocBuckets.Nameplates);
             if (!_ready || _labelRoot == null || !_cachedVisible)
                 return;
 

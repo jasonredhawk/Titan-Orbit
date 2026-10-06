@@ -2528,8 +2528,9 @@ namespace TitanOrbit.Game
         // --- Team / match queries ---
 
         /// <summary>
-        /// One Join Team panel's live numbers: roster, home economy, and owned planet count.
-        /// Filled by <see cref="TryGetJoinTeamSlotStats"/> for <see cref="JoinTeamPanelStatsBinder"/>.
+        /// One Join Team panel's live numbers: roster, worlds, gem banks, crew, and team score.
+        /// Filled by <see cref="FillJoinTeamSlotStats"/> for <see cref="JoinTeamPanelStatsBinder"/>.
+        /// Client UI only — these fields are a snapshot of ghosts, not a second sim.
         /// </summary>
         public struct JoinTeamSlotStats
         {
@@ -2539,17 +2540,51 @@ namespace TitanOrbit.Game
             /// <summary>Per-team cap from bootstrap (typically 20).</summary>
             public int MaxPlayers;
 
-            /// <summary>Home planet level (0 if home not found yet).</summary>
+            /// <summary>Home planet level (0 if that home ghost has not been read yet).</summary>
             public int HomeLevel;
 
-            /// <summary>Home planet gem reservoir.</summary>
+            /// <summary>
+            /// Home planet gem bar (<see cref="PlanetState.CurrentGems"/>). Kept so callers can
+            /// still show the spawn world alone; the panel sums <see cref="TeamGems"/> instead.
+            /// </summary>
             public float HomeGems;
 
             /// <summary>Home planet gem capacity at <see cref="HomeLevel"/>.</summary>
             public float HomeMaxGems;
 
-            /// <summary>Planets owned by this team (home + captured).</summary>
+            /// <summary>Worlds this team owns right now (home + captured). Neutrals are not included.</summary>
             public int PlanetCount;
+
+            /// <summary>
+            /// Worlds that can be owned this match (homes + neutrals). Same number on every slot
+            /// so each card can show "4/18" instead of a bare owned count.
+            /// </summary>
+            public int CapturableWorldCount;
+
+            /// <summary>
+            /// Sum of <see cref="PlanetState.CurrentGems"/> on worlds this team owns.
+            /// This is the live gem bars on the map, not lifetime deposits (those are inside
+            /// <see cref="TeamScore"/>).
+            /// </summary>
+            public float TeamGems;
+
+            /// <summary>Sum of gem-bar caps for the same owned worlds.</summary>
+            public float TeamMaxGems;
+
+            /// <summary>Sum of <see cref="PlanetState.Population"/> on worlds this team owns.</summary>
+            public int TeamPopulation;
+
+            /// <summary>
+            /// Sum of every member's combined score (kills×100 + deposited gems×2 + people×5).
+            /// Dead hulls still count. Meaningful only when <see cref="TeamScoreKnown"/> is true.
+            /// </summary>
+            public int TeamScore;
+
+            /// <summary>
+            /// True after this refresh actually read ship ghosts. False while the join-settle
+            /// ship-query gate is closed — the card should show a dash, not a fake zero.
+            /// </summary>
+            public bool TeamScoreKnown;
 
             /// <summary>Multi-line player list for the panel, or "No players".</summary>
             public string PlayersLabel;
@@ -2581,6 +2616,12 @@ namespace TitanOrbit.Game
         /// <summary>Per-slot ship counts for the current Join Team ship pass.</summary>
         static readonly int[] s_JoinTeamShipCounts = new int[5];
 
+        /// <summary>
+        /// Per-slot combined scores for the current Join Team ship pass.
+        /// Same weights as the in-game leaderboard (<see cref="TeamCommanderRules.CombinedScore"/>).
+        /// </summary>
+        static readonly int[] s_JoinTeamScores = new int[5];
+
         /// <summary>Team roster singleton — prefers ServerWorld on host, else ClientWorld.</summary>
         public static TeamStateSingleton GetTeamState()
         {
@@ -2603,8 +2644,8 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Fills Join Team panel stats for active slots A… (one planet-cache pass + one ship pass).
-        /// Planet reads use the per-frame planet cache (proxy / registry under TransformQuarantine —
-        /// never a full client map-body gather). Ship listing skips while
+        /// Planet reads use the per-frame planet cache (registry while a ghost-spawn backlog is
+        /// open — never an extra map-body gather). Ship listing skips while
         /// <see cref="ClientJoinSettleCache.ShouldSkipShipEntityQueries"/> is true.
         /// </summary>
         /// <param name="into">Length ≥ active team count; index 0 = TeamA.</param>
@@ -2637,18 +2678,32 @@ namespace TitanOrbit.Game
                 };
             }
 
-            // --- Home / planets from quarantine-safe planet cache ---
-            // [TITAN-ORBIT] EnsurePlanetStateCacheForFrame walks PlanetClientEntityRegistry under
-            // TransformQuarantine — safe on Windows Join Team (Settling OFF, quarantine ON).
+            // --- Worlds, gem bars, and crew from the planet cache ---
+            // [TITAN-ORBIT] One pass over every replicated world. Ownership uses the capture
+            // RPC override on dedicated clients so a planet ghost that is still rate-limited
+            // does not keep the card on the old owner. Local Host reads the server world,
+            // which is already authoritative — do not apply the client override there.
             EnsurePlanetStateCacheForFrame();
+            bool applyClientOwnershipOverride = !IsLocalHost();
+            int seenWorlds = 0;
             foreach (var pair in s_PlanetStateByIdCache)
             {
                 PlanetState planet = pair.Value;
-                int index = (int)planet.Ownership - 1; // TeamA → 0
+                if (planet.PlanetId == 0)
+                    continue;
+
+                seenWorlds++;
+                TeamId owner = ResolveJoinTeamPlanetOwner(planet, applyClientOwnershipOverride);
+                int index = (int)owner - 1; // TeamA → 0. None (−1) stays in the unowned remainder.
                 if (index < 0 || index >= slots)
                     continue;
 
+                // --- This team's live slice of the map ---
                 into[index].PlanetCount++;
+                into[index].TeamGems += math.max(0f, planet.CurrentGems);
+                into[index].TeamMaxGems += PlanetEconomyMath.GetMaxGemsForLevel(planet.PlanetLevel);
+                into[index].TeamPopulation += math.max(0, planet.Population);
+
                 if (!planet.IsHomePlanet)
                     continue;
 
@@ -2658,7 +2713,12 @@ namespace TitanOrbit.Game
                 into[index].HomeMaxGems = PlanetEconomyMath.GetMaxGemsForLevel(planet.PlanetLevel);
             }
 
-            // --- One ship pass for all slots (names + roster fallback) ---
+            // Same denominator on every card: "4/18 WORLDS".
+            int capturable = ResolveCapturableWorldCount(seenWorlds);
+            for (int i = 0; i < slots; i++)
+                into[i].CapturableWorldCount = capturable;
+
+            // --- One ship pass for all slots (names, roster fallback, team score) ---
             TryEnrichAllJoinTeamStatsFromShips(into, slots);
 
             for (int i = 0; i < slots; i++)
@@ -2678,6 +2738,38 @@ namespace TitanOrbit.Game
             }
         }
 
+        /// <summary>
+        /// Who owns this world for the Join Team card.
+        /// Dedicated clients prefer <see cref="PlanetConnectionGraphCache.ResolveClientOwnership"/>
+        /// so a capture RPC paints the card before the rate-limited planet ghost catches up.
+        /// </summary>
+        static TeamId ResolveJoinTeamPlanetOwner(in PlanetState planet, bool applyClientOwnershipOverride)
+        {
+            if (!applyClientOwnershipOverride || planet.PlanetId == 0)
+                return planet.Ownership;
+
+            return PlanetConnectionGraphCache.ResolveClientOwnership(planet.PlanetId, planet.Ownership);
+        }
+
+        /// <summary>
+        /// How many worlds can be owned this match. Prefers the live ghost count we just walked,
+        /// then the session recipe (homes + neutrals) so the "4/18" denominator stays full
+        /// before every planet ghost has arrived.
+        /// </summary>
+        static int ResolveCapturableWorldCount(int seenWorlds)
+        {
+            int metaTotal = 0;
+            if (MapSessionMetaCache.LivePlanetCount > 0)
+                metaTotal = MapSessionMetaCache.LivePlanetCount;
+            else if (MapSessionMetaCache.TeamCount > 0 || MapSessionMetaCache.NeutralPlanetCount > 0)
+            {
+                metaTotal = math.max(0, MapSessionMetaCache.TeamCount)
+                            + math.max(0, MapSessionMetaCache.NeutralPlanetCount);
+            }
+
+            return math.max(seenWorlds, metaTotal);
+        }
+
         /// <summary>Reads TeamACount…TeamECount from the roster singleton.</summary>
         static int GetTeamRosterCountFromSingleton(in TeamStateSingleton teamState, TeamId team)
         {
@@ -2693,9 +2785,10 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// One ship query for all Join Team slots: builds name lists and bumps PlayerCount when
-        /// live ships outnumber <see cref="TeamStateSingleton"/>. Skips during Settling /
-        /// GhostSpawnBacklog / TeamChoice hold.
+        /// One ship query for all Join Team slots: builds name lists, bumps PlayerCount when
+        /// live ships outnumber <see cref="TeamStateSingleton"/>, and sums team score.
+        /// Skips during Settling / GhostSpawnBacklog / TeamChoice hold — a ship
+        /// <c>ToComponentDataArray</c> in that window is the Join Team Crash!!!.
         /// </summary>
         static void TryEnrichAllJoinTeamStatsFromShips(JoinTeamSlotStats[] into, int slots)
         {
@@ -2716,11 +2809,18 @@ namespace TitanOrbit.Game
             using var query = em.CreateEntityQuery(
                 ComponentType.ReadOnly<ShipTag>(),
                 ComponentType.ReadOnly<ShipState>(),
+                ComponentType.ReadOnly<ShipMatchStats>(),
                 ComponentType.ReadOnly<GhostOwner>());
             if (query.IsEmptyIgnoreFilter)
+            {
+                // No hulls in the match yet — score really is zero, not "still syncing".
+                for (int i = 0; i < slots; i++)
+                    into[i].TeamScoreKnown = true;
                 return;
+            }
 
             using var ships = query.ToComponentDataArray<ShipState>(Allocator.Temp);
+            using var matchStats = query.ToComponentDataArray<ShipMatchStats>(Allocator.Temp);
             using var owners = query.ToComponentDataArray<GhostOwner>(Allocator.Temp);
 
             // --- Name lookup once per refresh ---
@@ -2733,13 +2833,24 @@ namespace TitanOrbit.Game
             {
                 s_JoinTeamLabelBuilders[i].Clear();
                 s_JoinTeamShipCounts[i] = 0;
+                s_JoinTeamScores[i] = 0;
             }
 
             for (int i = 0; i < ships.Length; i++)
             {
+                // Still choosing a team — not on a roster and not in the score.
+                if (ships[i].AwaitingTeamSelection)
+                    continue;
+
                 int index = (int)ships[i].Team - 1;
                 if (index < 0 || index >= slots)
                     continue;
+
+                // Dead hulls stay in the sum — same rule as the in-game leaderboard.
+                s_JoinTeamScores[index] += TeamCommanderRules.CombinedScore(
+                    math.max(0, matchStats[i].Kills),
+                    math.max(0, matchStats[i].GemsDeposited),
+                    math.max(0, matchStats[i].PeopleDelivered));
 
                 string label = ResolveJoinTeamPlayerLabel(owners[i].NetworkId);
                 if (string.IsNullOrEmpty(label))
@@ -2753,6 +2864,8 @@ namespace TitanOrbit.Game
 
             for (int i = 0; i < slots; i++)
             {
+                into[i].TeamScore = s_JoinTeamScores[i];
+                into[i].TeamScoreKnown = true;
                 if (s_JoinTeamShipCounts[i] > into[i].PlayerCount)
                     into[i].PlayerCount = s_JoinTeamShipCounts[i];
                 if (s_JoinTeamShipCounts[i] > 0)

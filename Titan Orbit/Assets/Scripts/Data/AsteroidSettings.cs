@@ -24,6 +24,8 @@ namespace TitanOrbit.Data
     /// <see cref="BounceRestitution"/> is the wall coefficient for ship↔asteroid rebound
     /// (rocks stay put; incoming speed reflects along the contact normal).
     /// <see cref="CollisionMassPerSize"/> is kept on the asset but does not drive rebound.
+    /// <see cref="RespawnDelaySeconds"/> is how long a destroyed rock stays gone before the
+    /// server spawns a fresh hull at the same pose (default 30).
     /// Cosmetic tumble uses <see cref="MinSpinSpeed"/>–<see cref="MaxSpinSpeed"/>
     /// (<see cref="Game.AsteroidSpinVisualProxy"/>) — presentation only, not sim physics.
     /// Death fireballs use Fire/V1: <see cref="deathExplosionVfxNeutral"/> plus team-colored
@@ -135,6 +137,15 @@ namespace TitanOrbit.Data
         [Range(0f, 1f)]
         public float BounceRestitution = 0.55f;
 
+        [Header("Respawn")]
+        [Tooltip(
+            "Seconds after a rock is destroyed before a fresh asteroid spawns at the same pose. " +
+            "Default 30 matches the original respawn manager. Minimum 1. " +
+            "A value below 1 (including 0 on old assets that lack this field) falls back to 30. " +
+            "The grow-in telegraph still lives on GemExplosionSettings.")]
+        [Min(1f)]
+        public float RespawnDelaySeconds = 30f;
+
         [Header("Visual spin (presentation)")]
         [Tooltip(
             "Lower bound for cosmetic tumble rate in degrees per second. " +
@@ -208,6 +219,10 @@ namespace TitanOrbit.Data
                 GrindPulseIntervalSeconds = 0.25f;
             CollisionMassPerSize = Mathf.Max(0.01f, CollisionMassPerSize);
             BounceRestitution = Mathf.Clamp01(BounceRestitution);
+            // Old AsteroidSettings.asset files lack this field → Unity deserializes 0.
+            // Keep the historical 30s wait instead of snapping missing data to the 1s floor.
+            if (RespawnDelaySeconds < 1f)
+                RespawnDelaySeconds = 30f;
             MinSpinSpeed = Mathf.Max(0f, MinSpinSpeed);
             MaxSpinSpeed = Mathf.Max(MinSpinSpeed, MaxSpinSpeed);
             if (deathExplosionScaleMultiplier < 0.05f)

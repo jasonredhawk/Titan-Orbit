@@ -6,6 +6,7 @@ using TitanOrbit.Data;
 using TitanOrbit.ECS;
 using TitanOrbit.Entities;
 using TitanOrbit.Generation;
+using TitanOrbit.Diagnostics;
 using TitanOrbit.NetCode;
 using TitanOrbit.Shared;
 using TitanOrbit.Simulation;
@@ -261,6 +262,7 @@ namespace TitanOrbit.Game
         /// </summary>
         void LateUpdate()
         {
+            using var _memBul = WebGlAllocBuckets.Measure(WebGlAllocBuckets.Bullets);
             if (_lastTickFrame == Time.frameCount)
                 return;
             _lastTickFrame = Time.frameCount;

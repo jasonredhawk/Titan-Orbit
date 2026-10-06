@@ -7,6 +7,7 @@ using TitanOrbit.Data;
 using TitanOrbit.ECS;
 using TitanOrbit.Entities;
 using TitanOrbit.Generation;
+using TitanOrbit.Diagnostics;
 using TitanOrbit.NetCode;
 using TitanOrbit.Shared;
 using TitanOrbit.Simulation;
@@ -1075,6 +1076,7 @@ namespace TitanOrbit.Game
         /// </summary>
         void OnBeforeRenderSync()
         {
+            using var _memVizR = WebGlAllocBuckets.Measure(WebGlAllocBuckets.VisualizerRender);
             TryBecomeActiveIfPreferred();
             if (Active != this)
                 return;
@@ -1084,6 +1086,7 @@ namespace TitanOrbit.Game
         /// <summary>Fallback when onBeforeRender does not fire (some batch/headless paths).</summary>
         void LateUpdate()
         {
+            using var _memViz = WebGlAllocBuckets.Measure(WebGlAllocBuckets.Visualizer);
             TryBecomeActiveIfPreferred();
             if (Active != this)
                 return;

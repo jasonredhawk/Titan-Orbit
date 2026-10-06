@@ -1456,7 +1456,7 @@ namespace TitanOrbit.Game
                 EnsureUniformTeamPanelWidths();
                 ApplyActiveTeamVisibility(activeTeamsForUi);
                 SetTeamButtonsInteractable(true, activeTeamsForUi);
-                // --- Live panel stats (roster / home gems / planets) ---
+                // --- Live panel stats (worlds, gem bars, crew, team score) ---
                 // [TITAN-ORBIT] Scene placeholders stay at 0 until this binder runs each frame.
                 JoinTeamPanelStatsBinder.Refresh(_teamPanels, activeTeamsForUi);
             }

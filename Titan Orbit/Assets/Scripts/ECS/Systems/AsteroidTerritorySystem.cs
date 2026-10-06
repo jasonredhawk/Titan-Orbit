@@ -101,6 +101,11 @@ namespace TitanOrbit.ECS
                 moonElapsed,
                 Allocator.Temp);
 
+            // Triangles exist but this tick's vertex bake was empty. Writing mask 0 here
+            // cleared team ownership and stopped yellow bonus gems until the next good bake.
+            if (runtime.Length == 0 && PlanetConnectionGraphCache.ServerTriangles.Count > 0)
+                return;
+
             // --- Point-in-triangle ownership per asteroid ---
             foreach (var (asteroid, transform) in SystemAPI
                          .Query<RefRW<AsteroidState>, RefRO<LocalTransform>>()

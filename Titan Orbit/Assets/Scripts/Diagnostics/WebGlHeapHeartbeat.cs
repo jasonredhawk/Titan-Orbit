@@ -12,8 +12,6 @@ namespace TitanOrbit.Diagnostics
     /// </summary>
     static class WebGlHeapHeartbeat
     {
-        const float IntervalSeconds = 5f;
-
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         static void Install()
         {
@@ -28,20 +26,35 @@ namespace TitanOrbit.Diagnostics
 
         sealed class Runner : MonoBehaviour
         {
-            float _next;
+            float _nextSec;
             bool _hasPrev;
+            bool _hasSec;
+            int _secFill;
+            long _secBaseAlloc;
+            readonly long[] _sec = new long[5];
+            readonly long[] _alloc = new long[WebGlAllocBuckets.Count];
+            readonly long[] _mono = new long[WebGlAllocBuckets.Count];
             long _prevAllocated;
             long _prevReserved;
             long _prevMonoUsed;
-            int _prevStoreRefreshes;
             int _prevStoreLabels;
 
             void Update()
             {
-                if (Time.unscaledTime < _next)
+                WebGlAllocBuckets.NoteFrame();
+                if (Time.unscaledTime < _nextSec)
                     return;
 
-                _next = Time.unscaledTime + IntervalSeconds;
+                _nextSec = Time.unscaledTime + 1f;
+                long secAllocated = Profiler.GetTotalAllocatedMemoryLong();
+                _sec[_secFill] = _hasSec ? (secAllocated - _secBaseAlloc) / 1024L : 0L;
+                _secBaseAlloc = secAllocated;
+                _hasSec = true;
+                _secFill++;
+                if (_secFill < 5)
+                    return;
+
+                _secFill = 0;
                 long allocated = Profiler.GetTotalAllocatedMemoryLong();
                 long reserved = Profiler.GetTotalReservedMemoryLong();
                 long monoUsed = Profiler.GetMonoUsedSizeLong();
@@ -51,20 +64,19 @@ namespace TitanOrbit.Diagnostics
                 long dMonoUsed = _hasPrev ? monoUsed - _prevMonoUsed : 0L;
                 int storeRefreshes = MaterialCloneProbe.StoreRefreshes;
                 int storeLabels = MaterialCloneProbe.StoreLabelSets;
-                int dStoreRefreshes = _hasPrev ? storeRefreshes - _prevStoreRefreshes : 0;
                 int dStoreLabels = _hasPrev ? storeLabels - _prevStoreLabels : 0;
                 _prevAllocated = allocated;
                 _prevReserved = reserved;
                 _prevMonoUsed = monoUsed;
-                _prevStoreRefreshes = storeRefreshes;
                 _prevStoreLabels = storeLabels;
                 _hasPrev = true;
+                WebGlAllocBuckets.CopyAndReset(_alloc, _mono, out int frames);
 
                 // #region agent log
                 long nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
                 string json =
-                    "{\"sessionId\":\"caa453\",\"runId\":\"post-query\",\"hypothesisId\":\"H8\"," +
-                    "\"location\":\"WebGlHeapHeartbeat.cs:Update\",\"message\":\"cheap\"," +
+                    "{\"sessionId\":\"caa453\",\"runId\":\"post-slice\",\"hypothesisId\":\"H9\"," +
+                    "\"location\":\"WebGlHeapHeartbeat.cs:Update\",\"message\":\"slice\"," +
                     "\"timestamp\":" + nowMs +
                     ",\"data\":{\"allocatedMB\":" + (allocated / 1048576L) +
                     ",\"reservedMB\":" + (reserved / 1048576L) +
@@ -74,9 +86,29 @@ namespace TitanOrbit.Diagnostics
                     ",\"dReservedKB\":" + (dReserved / 1024L) +
                     ",\"dMonoUsedKB\":" + (dMonoUsed / 1024L) +
                     ",\"gc0\":" + GC.CollectionCount(0) +
+                    ",\"frames\":" + frames +
+                    ",\"s0\":" + _sec[0] +
+                    ",\"s1\":" + _sec[1] +
+                    ",\"s2\":" + _sec[2] +
+                    ",\"s3\":" + _sec[3] +
+                    ",\"s4\":" + _sec[4] +
+                    ",\"viz\":" + (_alloc[0] / 1024L) +
+                    ",\"vizR\":" + (_alloc[1] / 1024L) +
+                    ",\"bul\":" + (_alloc[2] / 1024L) +
+                    ",\"map\":" + (_alloc[3] / 1024L) +
+                    ",\"name\":" + (_alloc[4] / 1024L) +
+                    ",\"spd\":" + (_alloc[5] / 1024L) +
+                    ",\"tr\":" + (_alloc[6] / 1024L) +
+                    ",\"pl\":" + (_alloc[7] / 1024L) +
+                    ",\"vizM\":" + (_mono[0] / 1024L) +
+                    ",\"vizRM\":" + (_mono[1] / 1024L) +
+                    ",\"bulM\":" + (_mono[2] / 1024L) +
+                    ",\"mapM\":" + (_mono[3] / 1024L) +
+                    ",\"nameM\":" + (_mono[4] / 1024L) +
+                    ",\"spdM\":" + (_mono[5] / 1024L) +
+                    ",\"trM\":" + (_mono[6] / 1024L) +
+                    ",\"plM\":" + (_mono[7] / 1024L) +
                     ",\"storeRefreshes\":" + storeRefreshes +
-                    ",\"dStoreRefreshes\":" + dStoreRefreshes +
-                    ",\"storeLabelSets\":" + storeLabels +
                     ",\"dStoreLabels\":" + dStoreLabels +
                     "}}";
                 Debug.Log("[MemCheap] " + json);

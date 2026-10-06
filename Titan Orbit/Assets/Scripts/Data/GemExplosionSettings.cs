@@ -3,13 +3,14 @@ using UnityEngine;
 namespace TitanOrbit.Data
 {
     /// <summary>
-    /// [UNITY] Designer-tunable asteroid gem burst, asteroid respawn delay, and gem lifetime.
+    /// [UNITY] Designer-tunable asteroid gem burst and gem lifetime.
+    /// Asteroid respawn delay lives on <see cref="AsteroidSettings.RespawnDelaySeconds"/>.
     /// Sole asset: <c>Assets/Resources/GemExplosionSettings.asset</c> (Create via Assets → Create →
     /// Titan Orbit → Gem Explosion Settings, or TitanOrbit → Create Gem Explosion Settings Asset).
     /// Loaded at play by <see cref="Game.GemExplosionSettingsLoader"/> via <c>Resources.Load</c>
     /// so Editor and player builds share one file — no Data/ duplicate.
     /// Defaults match the mature NGO-era feel (speed ~2.2, drag 0.5, tumble ±1.5,
-    /// asteroid respawn 30s, gem lifetime 20s with 3s shrink).
+    /// gem lifetime 20s with 3s shrink). Asteroid respawn wait is on AsteroidSettings.
     /// </summary>
     [CreateAssetMenu(
         fileName = "GemExplosionSettings",
@@ -73,11 +74,7 @@ namespace TitanOrbit.Data
         [Min(0f)]
         public float MiningNudgeSpeedMax = 0.9f;
 
-        [Header("Asteroid respawn (original AsteroidRespawnManager)")]
-        [Tooltip("Seconds after destroy before a fresh asteroid spawns at the same pose (original 30).")]
-        [Min(1f)]
-        public float AsteroidRespawnDelaySeconds = 30f;
-
+        [Header("Asteroid respawn grow-in")]
         [Tooltip(
             "Seconds the respawned rock grows from a pebble to full size. The server also sends " +
             "the respawn RPC this far before Instantiates so the mesh is on screen before the " +
@@ -114,7 +111,6 @@ namespace TitanOrbit.Data
             MaxGemUnitValue = Mathf.Max(1f, MaxGemUnitValue);
             if (SpeedRandomMax < SpeedRandomMin)
                 SpeedRandomMax = SpeedRandomMin;
-            AsteroidRespawnDelaySeconds = Mathf.Max(1f, AsteroidRespawnDelaySeconds);
             // Old GemExplosionSettings.asset files lack this field → Unity deserializes 0
             // and would skip the grow / telegraph (invisible shove, then pop).
             if (AsteroidRespawnGrowInSeconds < 0.05f)

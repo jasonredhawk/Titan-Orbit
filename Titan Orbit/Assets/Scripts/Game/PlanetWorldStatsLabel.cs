@@ -1,4 +1,5 @@
 using TitanOrbit.Core;
+using TitanOrbit.Diagnostics;
 using TitanOrbit.Data;
 using TitanOrbit.ECS;
 using TitanOrbit.Simulation;
@@ -966,6 +967,7 @@ namespace TitanOrbit.Game
         /// </summary>
         void LateUpdate()
         {
+            using var _memPl = WebGlAllocBuckets.Measure(WebGlAllocBuckets.Planets);
             // --- Per-frame refresh ---
             if (planetId == 0)
                 return;

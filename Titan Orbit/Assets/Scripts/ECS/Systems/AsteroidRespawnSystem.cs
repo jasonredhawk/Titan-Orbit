@@ -272,7 +272,7 @@ namespace TitanOrbit.ECS
         /// <param name="maxHealth">MaxHealth to restore (not current Health, which is often 0).</param>
         /// <param name="size">Designer Size to restore (bounce mass identity).</param>
         /// <param name="nowElapsed">Current server ElapsedTime.</param>
-        /// <param name="delaySeconds">Seconds until spawn (settings default 30).</param>
+        /// <param name="delaySeconds">Seconds until spawn (<see cref="AsteroidSettings.RespawnDelaySeconds"/>).</param>
         /// <param name="layoutSlot">Blueprint slot to restore. −1 if the dead rock had none.</param>
         public static void ScheduleRespawn(
             DynamicBuffer<PendingAsteroidRespawnElement> buffer,

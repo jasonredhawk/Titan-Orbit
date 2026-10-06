@@ -2284,11 +2284,16 @@ namespace TitanOrbit.UI
             bool localDead = HUDController.LocalPlayerDeathHidesHud || playerAnchor.IsDead;
             bool eliminated = EcsGameBridge.TryGetLocalShipState(out var localShip)
                 && PlayerEliminatedScreenController.IsLocalPlayerEliminated(localShip);
+            // Empty planet cache means "not ready" (gem Instantiates / join settle), not
+            // "this team owns nothing." Treating that as no worlds closed the picker
+            // mid-click and the next press landed on a hidden map.
+            int knownPlanets = EcsGameBridge.GetCachedPlanetCount();
+            bool ownsPlanet = knownPlanets <= 0 || EcsGameBridge.TeamOwnsAnyPlanet(playerAnchor.Team);
             bool canPickWorld = localDead
                 && !eliminated
                 && DeathScreenController.CanPickRespawnPlanet
                 && playerAnchor.Team != TeamId.None
-                && EcsGameBridge.TeamOwnsAnyPlanet(playerAnchor.Team);
+                && ownsPlanet;
 
             if (canPickWorld)
             {
@@ -2358,6 +2363,15 @@ namespace TitanOrbit.UI
             
             if (clicked)
             {
+                // Death picker does not use the circle gate. Planet discs and their orbit
+                // rings (and rim arrows) can sit on or past that edge; the hit test below
+                // is what decides whether this click chose a world.
+                if (_respawnSelectLocked)
+                {
+                    TryHandleRespawnPlanetClick(clickPos);
+                    return;
+                }
+
                 Debug.Log($"Click detected! Checking minimap bounds...");
                 
                 // Check if click is over minimap using direct bounds checking
@@ -2462,13 +2476,6 @@ namespace TitanOrbit.UI
                             }
                         }
 
-                        // Death picker: click a friendly planet to request respawn there.
-                        if (_respawnSelectLocked)
-                        {
-                            TryHandleRespawnPlanetClick(clickPos);
-                            return;
-                        }
-
                         // Comms dock: click plants a world ping for the next send.
                         // A planet disc locks that world's name onto the Here chip.
                         // [TITAN-ORBIT] Custom hit-test ignores the jam Image veil, so
@@ -2513,11 +2520,11 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Death-picker click: hit-test the nearest friendly planet blip and send
-        /// <see cref="ShipRespawnRpcClient.TryRequestRespawnAtPlanet"/> after the 10s beat.
-        /// Clicks before the timer or on enemy/neutral worlds are ignored.
+        /// Death-picker click: hit-test the nearest friendly planet (disc, orbit ring, or
+        /// rim arrow) and send <see cref="ShipRespawnRpcClient.TryRequestRespawnAtPlanet"/>
+        /// after the 10s beat. Clicks before the timer or on enemy/neutral worlds are ignored.
         /// </summary>
-        /// <param name="clickPos">Screen-space mouse / touch position.</param>
+        /// <param name="clickPos">Screen-space mouse / touch position from the Input System.</param>
         void TryHandleRespawnPlanetClick(Vector2 clickPos)
         {
             if (!DeathScreenController.CanPickRespawnPlanet)
@@ -2535,15 +2542,77 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Finds the closest friendly planet blip under the click. Uses screen distance to
-        /// the blip centre (overlay canvas positions are already pixels).
+        /// Camera passed to <see cref="RectTransformUtility.WorldToScreenPoint"/>.
+        /// Overlay canvases must pass null — a camera would project the HUD into the wrong space.
+        /// </summary>
+        UnityEngine.Camera ResolveUiEventCamera()
+        {
+            Canvas canvas = GetComponentInParent<Canvas>();
+            if (canvas == null || canvas.renderMode == RenderMode.ScreenSpaceOverlay)
+                return null;
+            return canvas.worldCamera != null ? canvas.worldCamera : UnityEngine.Camera.main;
+        }
+
+        /// <summary>
+        /// Screen-pixel distance from <paramref name="clickPos"/> to the blip pivot.
+        /// [UNITY] CanvasScaler scales the HUD (reference 1920×1080). <c>RectTransform.position</c>
+        /// on an overlay canvas is already screen pixels; <c>sizeDelta</c> is not. Callers must
+        /// multiply local sizes by <c>lossyScale</c> before comparing to this distance.
+        /// </summary>
+        bool TryScreenDistanceToBlip(RectTransform rt, Vector2 clickPos, UnityEngine.Camera uiCamera, out float dist)
+        {
+            dist = float.MaxValue;
+            if (rt == null)
+                return false;
+
+            Vector2 blipScreen = RectTransformUtility.WorldToScreenPoint(uiCamera, rt.position);
+            dist = Vector2.Distance(clickPos, blipScreen);
+            return true;
+        }
+
+        /// <summary>
+        /// Click radius in screen pixels for a planet blip. Covers the coloured disc and the
+        /// orbit ring around it — that ring is the marker players actually aim at, and it is
+        /// wider than the fill. Also grows with the canvas scale so a 1440p or 4K window
+        /// does not shrink the target relative to the graphic.
+        /// </summary>
+        /// <param name="blipRt">Planet blip root under the minimap mask.</param>
+        float PlanetBlipHitRadiusScreen(RectTransform blipRt)
+        {
+            float scale = blipRt.lossyScale.x;
+            if (scale < 0.01f)
+                scale = 1f;
+
+            // Disc diameter is the root sizeDelta. Half of that, in screen pixels, is the fill.
+            float discRadius = blipRt.sizeDelta.x * 0.5f * scale;
+            float ringRadius = discRadius;
+            Transform ringTf = blipRt.Find("OrbitRing");
+            if (ringTf is RectTransform ringRt)
+            {
+                float ringScale = ringRt.lossyScale.x;
+                if (ringScale < 0.01f)
+                    ringScale = scale;
+                ringRadius = ringRt.sizeDelta.x * 0.5f * ringScale;
+            }
+
+            // Extra pixels past the ring stroke so a click on the line itself still counts.
+            float pad = 10f * scale;
+            float minRadius = MinimapPlanetHoverTip.MinHitSize * scale;
+            return Mathf.Max(minRadius, Mathf.Max(discRadius, ringRadius) + pad);
+        }
+
+        /// <summary>
+        /// Finds the closest friendly planet under the click: on-map disc/ring, or the rim
+        /// arrow used when that world is outside the current radar radius.
         /// </summary>
         bool TryFindFriendlyPlanetBlipAtScreen(Vector2 clickPos, TeamId team, out int planetId)
         {
             planetId = 0;
             float best = float.MaxValue;
-            ConsiderPlanetList(cachedPlanets, clickPos, team, ref best, ref planetId);
-            ConsiderPlanetList(cachedHomePlanets, clickPos, team, ref best, ref planetId);
+            UnityEngine.Camera uiCamera = ResolveUiEventCamera();
+            ConsiderPlanetList(cachedPlanets, clickPos, team, uiCamera, ref best, ref planetId);
+            ConsiderPlanetList(cachedHomePlanets, clickPos, team, uiCamera, ref best, ref planetId);
+            ConsiderFriendlyEdgeMarkers(clickPos, team, uiCamera, ref best, ref planetId);
             return planetId > 0;
         }
 
@@ -2555,8 +2624,9 @@ namespace TitanOrbit.UI
         {
             planet = null;
             float best = float.MaxValue;
-            ConsiderAnyPlanetList(cachedPlanets, clickPos, ref best, ref planet);
-            ConsiderAnyPlanetList(cachedHomePlanets, clickPos, ref best, ref planet);
+            UnityEngine.Camera uiCamera = ResolveUiEventCamera();
+            ConsiderAnyPlanetList(cachedPlanets, clickPos, uiCamera, ref best, ref planet);
+            ConsiderAnyPlanetList(cachedHomePlanets, clickPos, uiCamera, ref best, ref planet);
             return planet != null && planet.PlanetId > 0;
         }
 
@@ -2564,6 +2634,7 @@ namespace TitanOrbit.UI
         void ConsiderAnyPlanetList(
             MinimapBlipAnchor[] list,
             Vector2 clickPos,
+            UnityEngine.Camera uiCamera,
             ref float best,
             ref MinimapBlipAnchor planet)
         {
@@ -2577,10 +2648,10 @@ namespace TitanOrbit.UI
                     continue;
                 if (!blips.TryGetValue(p.transform, out RectTransform rt) || rt == null || !rt.gameObject.activeInHierarchy)
                     continue;
+                if (!TryScreenDistanceToBlip(rt, clickPos, uiCamera, out float dist))
+                    continue;
 
-                Vector2 blipScreen = rt.position;
-                float dist = Vector2.Distance(clickPos, blipScreen);
-                float hitR = Mathf.Max(MinimapPlanetHoverTip.MinHitSize, rt.sizeDelta.x * 0.55f + 10f);
+                float hitR = PlanetBlipHitRadiusScreen(rt);
                 if (dist > hitR || dist >= best)
                     continue;
 
@@ -2594,6 +2665,7 @@ namespace TitanOrbit.UI
             MinimapBlipAnchor[] list,
             Vector2 clickPos,
             TeamId team,
+            UnityEngine.Camera uiCamera,
             ref float best,
             ref int planetId)
         {
@@ -2607,16 +2679,52 @@ namespace TitanOrbit.UI
                     continue;
                 if (!blips.TryGetValue(p.transform, out RectTransform rt) || rt == null || !rt.gameObject.activeInHierarchy)
                     continue;
+                if (!TryScreenDistanceToBlip(rt, clickPos, uiCamera, out float dist))
+                    continue;
 
-                // Overlay canvas: RectTransform.position is the screen pixel of the blip centre.
-                Vector2 blipScreen = rt.position;
-                float dist = Vector2.Distance(clickPos, blipScreen);
-                float hitR = Mathf.Max(MinimapPlanetHoverTip.MinHitSize, rt.sizeDelta.x * 0.55f + 10f);
+                // Ring + disc in screen pixels. A click on the orbit line used to miss
+                // because the old radius only covered about half the fill, in canvas units.
+                float hitR = PlanetBlipHitRadiusScreen(rt);
                 if (dist > hitR || dist >= best)
                     continue;
 
                 best = dist;
                 planetId = p.PlanetId;
+            }
+        }
+
+        /// <summary>
+        /// Friendly worlds drawn as rim arrows (blip hidden because they sit outside the
+        /// radar radius). Those arrows are the only thing to click; the old path ignored them.
+        /// </summary>
+        void ConsiderFriendlyEdgeMarkers(
+            Vector2 clickPos,
+            TeamId team,
+            UnityEngine.Camera uiCamera,
+            ref float best,
+            ref int planetId)
+        {
+            foreach (var kv in edgeMarkers)
+            {
+                RectTransform rt = kv.Value;
+                if (kv.Key == null || rt == null || !rt.gameObject.activeInHierarchy)
+                    continue;
+
+                var anchor = kv.Key.GetComponent<MinimapBlipAnchor>();
+                if (anchor == null || anchor.PlanetId <= 0 || anchor.Team != team)
+                    continue;
+                if (!TryScreenDistanceToBlip(rt, clickPos, uiCamera, out float dist))
+                    continue;
+
+                float scale = rt.lossyScale.x;
+                if (scale < 0.01f)
+                    scale = 1f;
+                float hitR = Mathf.Max(rt.sizeDelta.x, rt.sizeDelta.y) * 0.5f * scale + 8f * scale;
+                if (dist > hitR || dist >= best)
+                    continue;
+
+                best = dist;
+                planetId = anchor.PlanetId;
             }
         }
 

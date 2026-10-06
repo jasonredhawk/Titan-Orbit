@@ -210,7 +210,8 @@ namespace TitanOrbit.ECS
 
     /// <summary>
     /// [TITAN-ORBIT] One scheduled asteroid respawn — same position/scale/gems/HP as the destroyed rock.
-    /// Original NGO <c>AsteroidRespawnManager.PendingRespawn</c> (default delay 30s).
+    /// Original NGO <c>AsteroidRespawnManager.PendingRespawn</c>.
+    /// Wait is <see cref="TitanOrbit.Data.AsteroidSettings.RespawnDelaySeconds"/> (default 30s).
     /// </summary>
     public struct PendingAsteroidRespawnElement : IBufferElementData
     {

@@ -1,6 +1,7 @@
 using System;
 using System.Globalization;
 using TitanOrbit.Core;
+using TitanOrbit.Diagnostics;
 using TitanOrbit.Data;
 using TitanOrbit.ECS;
 using TitanOrbit.Game;
@@ -1522,6 +1523,7 @@ namespace TitanOrbit.UI
         /// </summary>
         void LateUpdate()
         {
+            using var _memSpd = WebGlAllocBuckets.Measure(WebGlAllocBuckets.Speedometer);
             // --- Master toggle (GameManager → HUD → Show Speedometer) ---
             // [TITAN-ORBIT] Off means no background work: hide once, then pure return.
             if (!IsFeatureEnabled())

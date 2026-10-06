@@ -4,6 +4,7 @@ using TitanOrbit.Core;
 using TitanOrbit.ECS;
 using TitanOrbit.Entities;
 using TitanOrbit.Generation;
+using TitanOrbit.Diagnostics;
 using TitanOrbit.NetCode;
 using TitanOrbit.Simulation;
 using Unity.Entities;
@@ -289,6 +290,7 @@ namespace TitanOrbit.Game
         /// </summary>
         void LateUpdate()
         {
+            using var _memTr = WebGlAllocBuckets.Measure(WebGlAllocBuckets.Transport);
             if (_lastTickFrame == Time.frameCount)
                 return;
             _lastTickFrame = Time.frameCount;
