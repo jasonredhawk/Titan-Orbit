@@ -229,7 +229,7 @@ namespace TitanOrbit.Game
             EnsureChrome();
 
             bool owned = TitanOrbitEntitlements.IsOrbitUnlockedOwned;
-            bool unityAccount = UnityGameServicesBootstrap.HasUnityPlayerAccountLinked();
+            bool unityAccount = UnityGameServicesBootstrap.HasDurablePlayerAccount();
             var iap = Object.FindFirstObjectByType<TitanOrbitIapManager>();
             string productId = iap != null
                 ? iap.OrbitUnlockedProductId
@@ -277,7 +277,7 @@ namespace TitanOrbit.Game
 
             if (!owned && !unityAccount)
             {
-                _status.text = "Sign in with Unity to buy Orbit Unlocked. The purchase stays on that account.";
+                _status.text = "Sign in to buy Orbit Unlocked. The purchase stays on that account.";
                 return;
             }
 
@@ -320,12 +320,18 @@ namespace TitanOrbit.Game
                 return;
             }
 
-            if (!UnityGameServicesBootstrap.HasUnityPlayerAccountLinked())
+            if (!UnityGameServicesBootstrap.HasDurablePlayerAccount())
             {
-                // Same click turn as the button so WebGL can open the Unity login page.
+#if UNITY_WEBGL && !UNITY_EDITOR
+                UsernamePasswordSignInScreen.Open(transform.parent);
+                if (_status != null)
+                    _status.text = "Enter a username and password. This stays in the game.";
+#else
+                // Same click turn as the button so the Editor can open the Unity login page.
                 _ = UnityGameServicesBootstrap.SignInOrLinkUnityPlayerAccountUsingBrowserAsync();
                 if (_status != null)
                     _status.text = "Opening Unity sign-in…";
+#endif
                 return;
             }
 
@@ -354,10 +360,13 @@ namespace TitanOrbit.Game
         /// <summary>Apple restore on iOS; receipt re-read on other platforms.</summary>
         void OnRestoreClicked()
         {
-            if (!UnityGameServicesBootstrap.HasUnityPlayerAccountLinked())
+            if (!UnityGameServicesBootstrap.HasDurablePlayerAccount())
             {
                 if (_status != null)
-                    _status.text = "Sign in with Unity before restoring Orbit Unlocked.";
+                    _status.text = "Sign in before restoring Orbit Unlocked.";
+#if UNITY_WEBGL && !UNITY_EDITOR
+                UsernamePasswordSignInScreen.Open(transform.parent);
+#endif
                 return;
             }
 

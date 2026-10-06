@@ -720,9 +720,11 @@ namespace TitanOrbit.ECS
                         var sourcePlanetOnly = planetStateById[t.SourcePlanetId];
                         var sourceTransformOnly = planetTransformById[t.SourcePlanetId];
                         float sourceSizeOnly = math.max(0.5f, sourceTransformOnly.Scale);
+                        int sourceMax = EffectiveMaxPopulation(
+                            ref state, planetById[t.SourcePlanetId], sourceSizeOnly, sourcePlanetOnly.PlanetLevel);
                         sourcePlanetOnly.Population = math.min(
                             sourcePlanetOnly.Population + (int)t.Amount,
-                            PlanetPopulationMath.GetMaxPopulation(sourceSizeOnly, sourcePlanetOnly.PlanetLevel));
+                            sourceMax);
                         planetStateById[t.SourcePlanetId] = sourcePlanetOnly;
                         ecb.SetComponent(planetById[t.SourcePlanetId], sourcePlanetOnly);
                         ClearInboundPeopleInTransit(ref state, t.TargetShipNetworkId, t.Amount, shipByNetworkId);
@@ -746,7 +748,10 @@ namespace TitanOrbit.ECS
                                 myPos, t.SpawnPosition, sourceTransform.Position, sourcePlanetSize, elapsed, mapW, mapH))
                         {
                             var sourcePlanet = planetStateById[t.SourcePlanetId];
-                            ReturnLoadToPlanet(ref state, ref sourcePlanet, shipEntity, t.Amount, sourcePlanetSize, t.SeatId);
+                            int sourceMax = EffectiveMaxPopulation(
+                                ref state, planetById[t.SourcePlanetId], sourcePlanetSize, sourcePlanet.PlanetLevel);
+                            ReturnLoadToPlanet(
+                                ref state, ref sourcePlanet, shipEntity, t.Amount, sourceMax, t.SeatId);
                             planetStateById[t.SourcePlanetId] = sourcePlanet;
                             ecb.SetComponent(planetById[t.SourcePlanetId], sourcePlanet);
                             PeopleTransportNetNotify.EndAndDestroy(
@@ -868,7 +873,10 @@ namespace TitanOrbit.ECS
                     {
                         // Ship already debited at dispatch — only apply planet-side outcome here.
                         var planetEntity = planetById[t.TargetPlanetId];
-                        var unloadOutcome = DeliverUnload(ref planetState, t.Amount, team, planetTransform, planetSize);
+                        int planetMax = EffectiveMaxPopulation(
+                            ref state, planetEntity, planetSize, planetState.PlanetLevel);
+                        var unloadOutcome = DeliverUnload(
+                            ref planetState, t.Amount, team, planetMax);
 
                         // --- Per-planet siege ledger (hostile drain + the capturing unload) ---
                         // [TITAN-ORBIT] Top contributor = most troops delivered by the capturing team.
@@ -1169,18 +1177,30 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
+        /// Hold limit including triangle LINK bonus. Base-only caps were clamping a
+        /// full linked world back down to CAP and throwing away the extra crew.
+        /// </summary>
+        static int EffectiveMaxPopulation(ref SystemState state, Entity planetEntity, float planetSize, int planetLevel)
+        {
+            float bonus = 0f;
+            if (state.EntityManager.HasComponent<PlanetGrowthState>(planetEntity))
+                bonus = state.EntityManager.GetComponentData<PlanetGrowthState>(planetEntity).ConnectionBonusFraction;
+            return PlanetPopulationMath.GetEffectiveMaxPopulation(planetSize, planetLevel, bonus);
+        }
+
+        /// <summary>
         /// Returns inbound crew to the planet when the ship left the orbit ring (or became ineligible).
         /// Client VFX retargets the same sphere home and shows +N on surface consume.
+        /// <paramref name="maxPop"/> is the effective cap (base CAP plus LINK).
         /// </summary>
         static void ReturnLoadToPlanet(
             ref SystemState state,
             ref PlanetState planet,
             Entity shipEntity,
             float amount,
-            float planetSize,
+            int maxPop,
             byte seatId)
         {
-            int maxPop = PlanetPopulationMath.GetMaxPopulation(planetSize, planet.PlanetLevel);
             planet.Population = math.min(planet.Population + (int)amount, maxPop);
             PeopleTransportEscortLogic.RemoveSeat(state.EntityManager, shipEntity, seatId);
             ClearPeopleInTransitOnShip(ref state, shipEntity, amount);
@@ -1249,10 +1269,10 @@ namespace TitanOrbit.ECS
             ClearPeopleInTransitOnShip(ref state, shipEntity, amount);
         }
 
-        static PeopleUnloadOutcome DeliverUnload(ref PlanetState planet, float amount, TeamId team, LocalTransform planetTransform, float planetSize)
+        static PeopleUnloadOutcome DeliverUnload(ref PlanetState planet, float amount, TeamId team, int maxPop)
         {
             // --- DeliverUnload ---
-            int maxPop = PlanetPopulationMath.GetMaxPopulation(planetSize, planet.PlanetLevel);
+            // maxPop is the effective cap (CAP + LINK), not the base size/level cap.
             int moved = (int)amount;
 
             if (planet.Ownership != TeamId.None && planet.Ownership == team)

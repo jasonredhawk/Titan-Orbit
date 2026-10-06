@@ -191,8 +191,8 @@ namespace TitanOrbit.ECS
 
     /// <summary>
     /// Client: the dedicated server finished closing the won match. The congrats card
-    /// waits on <see cref="MatchCloseGate.ServerCloseCompleted"/> before it disconnects
-    /// and lets the main menu appear.
+    /// waits on <see cref="MatchCloseGate.ServerCloseCompleted"/> before it disconnects.
+    /// A short timeout still leaves if this RPC never arrives.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
@@ -303,16 +303,17 @@ namespace TitanOrbit.ECS
 
     /// <summary>
     /// Tells every still-connected client that this won match is closed and the next
-    /// game is the one to join. Sent once, after the dedicated close handoff finishes.
+    /// game is the one to join. Sent when the lobby closes, before the next process spawns.
     /// </summary>
     public static class MatchCloseNetNotify
     {
         /// <summary>Queues <see cref="MatchCloseCompletedRpc"/> for every server connection.</summary>
-        public static void BroadcastCompleted()
+        /// <returns>False when this process has no server world to send from.</returns>
+        public static bool BroadcastCompleted()
         {
             var server = Unity.NetCode.ClientServerBootstrap.ServerWorld;
             if (server == null || !server.IsCreated)
-                return;
+                return false;
 
             var em = server.EntityManager;
             Entity rpcEntity = em.CreateEntity();
@@ -321,6 +322,7 @@ namespace TitanOrbit.ECS
             {
                 TargetConnection = Entity.Null,
             });
+            return true;
         }
     }
 }

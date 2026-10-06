@@ -652,16 +652,31 @@ namespace TitanOrbit.Game
             // --- RemainingHealth from server HitRpc only ---
             // [TITAN-ORBIT] Logs proved ghost Health can stay at ~16 while server already killed
             // (healthAfter=0). Never compute remaining as ghost − damage on the HitRpc path.
+            float shownDamage = damage;
             float? remainingHealth = null;
             if (authoritativeRemainingHealth.HasValue)
             {
                 remainingHealth = Mathf.Max(0f, authoritativeRemainingHealth.Value);
+
+                // Killing blow: the bullet can exceed the rock. PollAsteroids (Update)
+                // already showed the HP actually removed and zeroed the baseline.
+                // A later HitRpc must not add the full sniper damage on top.
+                if (remainingHealth.Value <= 0.01f &&
+                    presenter._asteroidHealth.TryGetValue(asteroidEntity, out float trackedBefore))
+                {
+                    if (trackedBefore <= 0.01f)
+                        return false;
+                    shownDamage = Mathf.Min(damage, trackedBefore);
+                }
 
                 // Align PollAsteroids baseline so a late ghost snapshot does not double-popup.
                 presenter._asteroidHealth[asteroidEntity] = remainingHealth.Value;
                 presenter._asteroidOptimisticUntil[asteroidEntity] =
                     Time.unscaledTime + AsteroidOptimisticHoldSeconds;
             }
+
+            if (shownDamage <= 0.01f)
+                return false;
 
             // [TITAN-ORBIT] Same overlap rule as world tint: prefer shooter/viewer team when in mask.
             byte mask = state.TerritoryTeamsMask;
@@ -679,7 +694,7 @@ namespace TitanOrbit.Game
                 new AsteroidFloatingFeedback
                 {
                     Team = tintTeam,
-                    Damage = damage,
+                    Damage = shownDamage,
                     RemainingHealth = remainingHealth,
                 },
                 impactWorldPosition);
@@ -1052,9 +1067,14 @@ namespace TitanOrbit.Game
 
                 _asteroidHealth[entity] = tracked;
 
-                // Only show when replicated Health dropped below our prior tracked baseline.
-                // HitRpc path already showed floats and left lastHealth <= ghost Health.
-                if (damage <= 0.01f || state.IsDestroyed)
+                // Show the HP actually removed. A one-shot kill (sniper damage > rock HP)
+                // sets IsDestroyed before BulletVfxDriver can park a HitRpc float — the
+                // visualizer tears the proxy down in LateUpdate, and that path used to
+                // drop the number. This Update still has the proxy. `damage` is the
+                // tracked HP that disappeared, not the bullet's overkill.
+                // Chip hits that HitRpc already counted leave lastHealth <= Health, so
+                // damage stays ~0 and this does not double them on the next frame.
+                if (damage <= 0.01f)
                     continue;
 
                 byte mask = state.TerritoryTeamsMask;

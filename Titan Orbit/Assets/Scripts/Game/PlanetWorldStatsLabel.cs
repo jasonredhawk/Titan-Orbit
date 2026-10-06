@@ -1061,8 +1061,25 @@ namespace TitanOrbit.Game
             if (EcsGameBridge.TryGetPlanetPoseByPlanetId(planetId, out _, out float ecsScale, out _))
                 planetScale = ecsScale;
 
-            // --- Capacity: base from size/level, bonus from client connection triangles ---
+            // --- Capacity: base from size/level, bonus from connection triangles ---
+            // Local host reads the server world, which already snapped crew. Dedicated
+            // clients keep the link-crew RPC until the rate-limited planet ghost matches,
+            // so a neighbor's CREW does not stay on the old cap after a nearby capture.
             float bonusFraction = PlanetConnectionGraphCache.GetStackedConnectionBonusFraction(planetId);
+            int crew = state.Population;
+            if (EcsGameBridge.IsLocalHost())
+            {
+                // Server world already has the snapped crew. Peek the same bonus the
+                // server just wrote so CAP + LINK adds up to that crew.
+                if (PlanetConnectionGraphCache.TryPeekLinkCrew(planetId, out _, out float serverBonus))
+                    bonusFraction = serverBonus;
+            }
+            else
+            {
+                PlanetConnectionGraphCache.ResolveDisplayedLinkCrew(
+                    planetId, crew, bonusFraction, out crew, out bonusFraction);
+            }
+
             PlanetPopulationMath.GetMaxPopulationBreakdown(
                 planetScale,
                 state.PlanetLevel,
@@ -1090,7 +1107,7 @@ namespace TitanOrbit.Game
             // [TITAN-ORBIT] Title only depends on planet id / home / optional family override —
             // not live population. Skip the catalog lookup when nothing name-related changed.
             if (_hasCachedPaint &&
-                _cachedPopulation == state.Population &&
+                _cachedPopulation == crew &&
                 _cachedBaseMax == baseMax &&
                 _cachedBonusAmount == bonusAmount &&
                 _cachedTeam == state.Ownership &&
@@ -1112,7 +1129,7 @@ namespace TitanOrbit.Game
             bool hasBulletType = hasTitle && !string.IsNullOrEmpty(bulletType);
 
             _hasCachedPaint = true;
-            _cachedPopulation = state.Population;
+            _cachedPopulation = crew;
             _cachedBaseMax = baseMax;
             _cachedBonusAmount = bonusAmount;
             _cachedTeam = state.Ownership;
@@ -1159,7 +1176,7 @@ namespace TitanOrbit.Game
             _populationRow.CaptionText.text = WorldBodyLabelTheme.CrewCaption;
             _populationRow.CaptionText.color = WorldBodyLabelTheme.CaptionIce;
 
-            _populationRow.CurrentText.text = state.Population.ToString();
+            _populationRow.CurrentText.text = crew.ToString();
             _populationRow.CurrentText.color = teamColor;
 
             _populationRow.MaxText.richText = true;

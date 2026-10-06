@@ -2842,6 +2842,11 @@ namespace TitanOrbit.UI
             float bonus = p.PlanetId > 0
                 ? PlanetConnectionGraphCache.GetStackedConnectionBonusFraction(p.PlanetId)
                 : 0f;
+            // Same fraction the server used when it retargeted crew. Peek does not
+            // drop the latch — sync already resolved the blip's crew number.
+            if (p.PlanetId > 0 &&
+                PlanetConnectionGraphCache.TryPeekLinkCrew(p.PlanetId, out _, out float serverBonus))
+                bonus = serverBonus;
             int maxPop = PlanetPopulationMath.GetEffectiveMaxPopulation(size, p.PlanetLevel, bonus);
             if (maxPop <= 0)
                 return 0f;

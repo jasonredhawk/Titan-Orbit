@@ -2702,7 +2702,14 @@ namespace TitanOrbit.Game
                 into[index].PlanetCount++;
                 into[index].TeamGems += math.max(0f, planet.CurrentGems);
                 into[index].TeamMaxGems += PlanetEconomyMath.GetMaxGemsForLevel(planet.PlanetLevel);
-                into[index].TeamPopulation += math.max(0, planet.Population);
+                int crew = planet.Population;
+                if (!IsLocalHost())
+                {
+                    PlanetConnectionGraphCache.ResolveDisplayedLinkCrew(
+                        planet.PlanetId, crew, 0f, out crew, out _);
+                }
+
+                into[index].TeamPopulation += math.max(0, crew);
 
                 if (!planet.IsHomePlanet)
                     continue;

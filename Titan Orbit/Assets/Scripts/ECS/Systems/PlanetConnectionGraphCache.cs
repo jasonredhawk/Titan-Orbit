@@ -114,6 +114,23 @@ namespace TitanOrbit.ECS
         /// <summary>True when the client graph must rebuild this tick (capture RPC / host mirror).</summary>
         static bool s_ClientRebuildRequested;
 
+        /// <summary>
+        /// Server crew + link bonus for planets whose triangle share just changed.
+        /// Held until the planet ghost's population matches, so a rate-limited snapshot
+        /// cannot paint the old full crew back over CAP + LINK.
+        /// </summary>
+        static readonly Dictionary<int, LinkCrewOverride> s_LinkCrewOverrides =
+            new Dictionary<int, LinkCrewOverride>(16);
+
+        /// <summary>One world's authoritative crew total after a link rebuild.</summary>
+        struct LinkCrewOverride
+        {
+            public int Population;
+            public float BonusFraction;
+            /// <summary>Ghost crew at the moment the RPC was applied. Still on this value means the snapshot has not caught up.</summary>
+            public int BaselineGhostPopulation;
+        }
+
         /// <summary>One optimistic ownership patch until the Instantiated ghost matches.</summary>
         struct OwnershipOverride
         {
@@ -264,6 +281,76 @@ namespace TitanOrbit.ECS
             population = 0;
             planetLevel = 1;
             return false;
+        }
+
+        /// <summary>
+        /// Latches the server crew total and link bonus for <paramref name="planetId"/>.
+        /// <paramref name="baselineGhostPopulation"/> is the crew the ghost still showed
+        /// when this arrived — while the ghost stays there, labels keep the new total.
+        /// </summary>
+        public static void SetLinkCrewOverride(
+            int planetId,
+            int population,
+            float bonusFraction,
+            int baselineGhostPopulation)
+        {
+            if (planetId == 0)
+                return;
+
+            s_LinkCrewOverrides[planetId] = new LinkCrewOverride
+            {
+                Population = population < 0 ? 0 : population,
+                BonusFraction = math.max(0f, bonusFraction),
+                BaselineGhostPopulation = baselineGhostPopulation < 0 ? 0 : baselineGhostPopulation,
+            };
+        }
+
+        /// <summary>
+        /// Server crew and link bonus latched for this planet, without dropping the latch.
+        /// Local host labels read this so LINK stays on the same fraction the server used
+        /// to retarget crew, even when the client graph still has a different triangle set.
+        /// </summary>
+        public static bool TryPeekLinkCrew(int planetId, out int population, out float bonusFraction)
+        {
+            if (planetId != 0 && s_LinkCrewOverrides.TryGetValue(planetId, out var ov))
+            {
+                population = ov.Population;
+                bonusFraction = ov.BonusFraction;
+                return true;
+            }
+
+            population = 0;
+            bonusFraction = 0f;
+            return false;
+        }
+
+        /// <summary>
+        /// Crew and LINK the player should read. Uses the server latch while the planet
+        /// ghost is still on the pre-change number. Drops the latch once the ghost matches
+        /// the new total, or once a newer ghost value arrives (someone loaded troops).
+        /// </summary>
+        public static void ResolveDisplayedLinkCrew(
+            int planetId,
+            int ghostPopulation,
+            float clientGraphBonus,
+            out int population,
+            out float bonusFraction)
+        {
+            population = ghostPopulation < 0 ? 0 : ghostPopulation;
+            bonusFraction = math.max(0f, clientGraphBonus);
+            if (planetId == 0 || !s_LinkCrewOverrides.TryGetValue(planetId, out var ov))
+                return;
+
+            bool ghostCaughtUp = population == ov.Population;
+            bool ghostMovedOn = population != ov.BaselineGhostPopulation && population != ov.Population;
+            if (ghostCaughtUp || ghostMovedOn)
+            {
+                s_LinkCrewOverrides.Remove(planetId);
+                return;
+            }
+
+            population = ov.Population;
+            bonusFraction = ov.BonusFraction;
         }
 
         /// <summary>
@@ -451,6 +538,7 @@ namespace TitanOrbit.ECS
             s_StickyTerritoryMult = 1f;
             s_StickyTerritoryUntilMoonElapsed = -1.0;
             s_ClientOwnershipOverrides.Clear();
+            s_LinkCrewOverrides.Clear();
             s_ClientRebuildRequested = false;
             ClientPublishRevision++;
             ServerPublishRevision++;

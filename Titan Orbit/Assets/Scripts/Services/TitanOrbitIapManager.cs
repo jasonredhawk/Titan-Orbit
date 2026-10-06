@@ -77,7 +77,7 @@ namespace TitanOrbit.Services
         void OnAuthStateChanged()
         {
             // --- Rebind receipt ---
-            if (!UnityGameServicesBootstrap.HasUnityPlayerAccountLinked())
+            if (!UnityGameServicesBootstrap.HasDurablePlayerAccount())
                 return;
             ReconcileNonConsumableEntitlements();
         }
@@ -216,9 +216,9 @@ namespace TitanOrbit.Services
         public void InitiatePurchase(string productId)
         {
             // --- InitiatePurchase ---
-            if (!UnityGameServicesBootstrap.HasUnityPlayerAccountLinked())
+            if (!UnityGameServicesBootstrap.HasDurablePlayerAccount())
             {
-                Debug.LogWarning("[TitanOrbitIapManager] InitiatePurchase ignored (Unity account required).");
+                Debug.LogWarning("[TitanOrbitIapManager] InitiatePurchase ignored (signed-in account required).");
                 return;
             }
 

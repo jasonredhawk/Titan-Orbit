@@ -453,7 +453,7 @@ namespace TitanOrbit.UI
                     var planet = em.GetComponentData<PlanetState>(entity);
                     anchor.Team = planet.Ownership;
                     anchor.PlanetLevel = planet.PlanetLevel;
-                    anchor.Population = planet.Population;
+                    anchor.Population = ResolvePlanetCrew(planet);
                     anchor.PlanetId = planet.PlanetId;
                     anchor.IsHomePlanet = planet.IsHomePlanet;
                     anchor.ShipFamilyConfigIndex = planet.ShipFamilyConfigIndex;
@@ -691,6 +691,20 @@ namespace TitanOrbit.UI
             ApplyPlanetAnchor(em, entity, state, lt, alive, elapsed);
         }
 
+        /// <summary>
+        /// Crew painted on the blip. After a capture, neighboring worlds keep the server
+        /// link total until the planet ghost snapshot catches up.
+        /// </summary>
+        static int ResolvePlanetCrew(in PlanetState planet)
+        {
+            float bonus = planet.PlanetId > 0
+                ? PlanetConnectionGraphCache.GetStackedConnectionBonusFraction(planet.PlanetId)
+                : 0f;
+            PlanetConnectionGraphCache.ResolveDisplayedLinkCrew(
+                planet.PlanetId, planet.Population, bonus, out int crew, out _);
+            return crew;
+        }
+
         /// <summary>Applies PlanetState + LocalTransform onto a minimap planet/home blip + gem moon.</summary>
         void ApplyPlanetAnchor(
             EntityManager em,
@@ -706,7 +720,7 @@ namespace TitanOrbit.UI
             var anchor = GetOrCreateAnchor(entity, kind);
             anchor.Team = state.Ownership;
             anchor.PlanetLevel = state.PlanetLevel;
-            anchor.Population = state.Population;
+            anchor.Population = ResolvePlanetCrew(state);
             anchor.PlanetId = state.PlanetId;
             // Home + family index — world labels and the minimap hover tip resolve the name from these.
             anchor.IsHomePlanet = state.IsHomePlanet;

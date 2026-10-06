@@ -264,10 +264,44 @@ namespace TitanOrbit.Services
             if (info.Identities == null || info.Identities.Count == 0)
                 return false;
             // IdProviderKeys.Unity is "unity" (see Unity Authentication package).
+            return PlayerInfoHasIdentity(info, "unity");
+        }
+
+        /// <summary>
+        /// True when this signed-in player has an external identity (Unity, username/password, Google, Facebook).
+        /// A guest session is signed in and has no identities. Purchases and Sign out use this.
+        /// </summary>
+        public static bool HasDurablePlayerAccount()
+        {
+            // --- HasDurablePlayerAccount ---
+            if (HasUnityPlayerAccountLinked())
+                return true;
+            if (UnityServices.State != ServicesInitializationState.Initialized || !AuthenticationService.Instance.IsSignedIn)
+                return false;
+            var info = AuthenticationService.Instance.PlayerInfo;
+            if (info?.Identities == null)
+                return false;
+            for (int i = 0; i < info.Identities.Count; i++)
+            {
+                var id = info.Identities[i];
+                if (id == null || string.IsNullOrEmpty(id.TypeId))
+                    continue;
+                if (string.Equals(id.TypeId, "anonymous", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                return true;
+            }
+
+            return false;
+        }
+
+        static bool PlayerInfoHasIdentity(PlayerInfo info, string typeId)
+        {
+            if (info?.Identities == null || string.IsNullOrEmpty(typeId))
+                return false;
             return info.Identities.Any(id =>
                 id != null &&
                 !string.IsNullOrEmpty(id.TypeId) &&
-                string.Equals(id.TypeId, "unity", StringComparison.Ordinal));
+                string.Equals(id.TypeId, typeId, StringComparison.Ordinal));
         }
 
         /// <summary>
@@ -283,7 +317,7 @@ namespace TitanOrbit.Services
         public static bool IsUnityAccountActiveForUi()
         {
             // --- IsUnityAccountActiveForUi ---
-            if (HasUnityPlayerAccountLinked())
+            if (HasDurablePlayerAccount())
                 return true;
 
             if (PlayerPrefs.GetInt(UnityAccountLinkedPrefsKey, 0) == 0)
@@ -325,14 +359,14 @@ namespace TitanOrbit.Services
         /// <summary>Sync remember-me from live PlayerInfo after session restore / GetPlayerInfo.</summary>
         static void SyncRememberFlagFromPlayerInfo()
         {
-            if (HasUnityPlayerAccountLinked())
+            if (HasDurablePlayerAccount())
             {
                 RememberUnityAccountLinked();
                 return;
             }
 
-            // PlayerInfo loaded and has no Unity identity → clear a stale remember-me from a prior
-            // browser session that never successfully cached a Unity-linked Auth player.
+            // PlayerInfo loaded and has no external identity → clear a stale remember-me from a prior
+            // browser session that never successfully cached a linked Auth player.
             var info = AuthenticationService.Instance.PlayerInfo;
             if (info != null && PlayerPrefs.GetInt(UnityAccountLinkedPrefsKey, 0) != 0)
             {
@@ -404,6 +438,131 @@ namespace TitanOrbit.Services
                 Debug.LogWarning("[UnityGameServicesBootstrap] Completing Unity auth failed: " + ex.Message);
                 return false;
             }
+        }
+
+        /// <summary>
+        /// Username and password stay inside the game. WebGL uses this instead of player-login.unity.com.
+        /// Create account links the current guest when one exists. Sign in replaces the guest with that player.
+        /// </summary>
+        public static async Task<(bool ok, string message)> SignInOrCreateUsernamePasswordAsync(
+            string username,
+            string password,
+            bool createAccount)
+        {
+            // --- SignInOrCreateUsernamePasswordAsync ---
+            string userError = ValidateUsername(username);
+            if (userError != null)
+                return (false, userError);
+            string passwordError = ValidatePassword(password);
+            if (passwordError != null)
+                return (false, passwordError);
+
+            username = username.Trim();
+            await InitializeUnityServicesAsync();
+            var auth = AuthenticationService.Instance;
+
+            try
+            {
+                if (createAccount)
+                {
+                    if (!auth.IsSignedIn)
+                        await EnsureGuestSessionForOnlineAsync();
+                    if (auth.IsSignedIn)
+                        await auth.AddUsernamePasswordAsync(username, password);
+                    else
+                        await auth.SignUpWithUsernamePasswordAsync(username, password);
+                }
+                else
+                {
+                    // An existing username belongs to its own player. Drop the guest session first.
+                    if (auth.IsSignedIn)
+                        auth.SignOut(clearCredentials: true);
+                    await auth.SignInWithUsernamePasswordAsync(username, password);
+                }
+            }
+            catch (AuthenticationException ex)
+            {
+                Debug.LogWarning("[UnityGameServicesBootstrap] Username/password: " + ex.ErrorCode + " " + ex.Message);
+                if (!auth.IsSignedIn)
+                    await EnsureGuestSessionForOnlineAsync();
+                return (false, DescribeUsernamePasswordFailure(ex, createAccount));
+            }
+            catch (RequestFailedException ex)
+            {
+                Debug.LogWarning("[UnityGameServicesBootstrap] Username/password request: " + ex.Message);
+                if (!auth.IsSignedIn)
+                    await EnsureGuestSessionForOnlineAsync();
+                return (false, DescribeUsernamePasswordFailure(ex, createAccount));
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning("[UnityGameServicesBootstrap] Username/password: " + ex.Message);
+                if (!auth.IsSignedIn)
+                    await EnsureGuestSessionForOnlineAsync();
+                return (false, "Sign-in failed. Try again.");
+            }
+
+            await TryFetchPlayerInfoForUiAsync(allowReplacePlayerInfo: true);
+            RememberUnityAccountLinked();
+            TitanOrbitEntitlements.LoadSessionForCurrentPlayer();
+            AuthStateChanged?.Invoke();
+            return (true, null);
+        }
+
+        static string ValidateUsername(string username)
+        {
+            if (string.IsNullOrWhiteSpace(username))
+                return "Enter a username.";
+            username = username.Trim();
+            if (username.Length < 3 || username.Length > 20)
+                return "Username must be 3–20 characters.";
+            for (int i = 0; i < username.Length; i++)
+            {
+                char c = username[i];
+                bool ok = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') ||
+                          c == '.' || c == '-' || c == '@' || c == '_';
+                if (!ok)
+                    return "Username can use letters, numbers, and . - @ _";
+            }
+
+            return null;
+        }
+
+        static string ValidatePassword(string password)
+        {
+            if (string.IsNullOrEmpty(password) || password.Length < 8 || password.Length > 30)
+                return "Password must be 8–30 characters.";
+            bool lower = false, upper = false, digit = false, symbol = false;
+            for (int i = 0; i < password.Length; i++)
+            {
+                char c = password[i];
+                if (c >= 'a' && c <= 'z') lower = true;
+                else if (c >= 'A' && c <= 'Z') upper = true;
+                else if (c >= '0' && c <= '9') digit = true;
+                else symbol = true;
+            }
+
+            if (!lower || !upper || !digit || !symbol)
+                return "Password needs an uppercase letter, a lowercase letter, a number, and a symbol.";
+            return null;
+        }
+
+        static string DescribeUsernamePasswordFailure(Exception ex, bool createAccount)
+        {
+            string msg = ex?.Message ?? "";
+            if (msg.IndexOf("already", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                msg.IndexOf("exists", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                msg.IndexOf("taken", StringComparison.OrdinalIgnoreCase) >= 0)
+                return "That username is already taken. Use Sign in.";
+            if (!createAccount &&
+                (msg.IndexOf("credential", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                 msg.IndexOf("password", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                 msg.IndexOf("not found", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                 msg.IndexOf("invalid", StringComparison.OrdinalIgnoreCase) >= 0))
+                return "That username or password does not match.";
+            return createAccount
+                ? "Could not create that account. Try a different username."
+                : "That username or password does not match.";
         }
 
         /// <summary>

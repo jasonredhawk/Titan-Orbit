@@ -36,7 +36,7 @@ namespace TitanOrbit.Services
         public static void RefreshForCurrentPlayerAsync()
         {
             // --- Pull from Cloud Save ---
-            if (!UnityGameServicesBootstrap.HasUnityPlayerAccountLinked())
+            if (!UnityGameServicesBootstrap.HasDurablePlayerAccount())
                 return;
             string playerId = UnityGameServicesBootstrap.PlayerId;
             if (string.IsNullOrEmpty(playerId) || _refreshInFlight)

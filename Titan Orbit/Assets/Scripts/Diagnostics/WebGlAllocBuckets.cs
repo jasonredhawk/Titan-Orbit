@@ -23,9 +23,84 @@ namespace TitanOrbit.Diagnostics
         public static readonly long[] Mono = new long[Count];
         public static int Frames;
 
+        /// <summary>Native growth from the end of LateUpdate through the end of the frame (render / PostLateUpdate).</summary>
+        public static long PostAlloc;
+
+        /// <summary>Native growth from end of frame until the next MonoBehaviour.Update (early player loop, ECS, physics).</summary>
+        public static long EarlyAlloc;
+
+        /// <summary>Native growth across MonoBehaviour.Update.</summary>
+        public static long UpdateAlloc;
+
+        /// <summary>Native growth from the end of Update through the end of LateUpdate (includes presentation).</summary>
+        public static long LateAlloc;
+
+        /// <summary>How many times end-of-frame was observed. Zero means the render split did not run.</summary>
+        public static int EndOfFrameMarks;
+
+        static long _phaseMark;
+        static int _phase;
+
         public static void NoteFrame()
         {
             Frames++;
+        }
+
+        public static void MarkEarly()
+        {
+            long now = Profiler.GetTotalAllocatedMemoryLong();
+            if (_phase == 2)
+            {
+                long d = now - _phaseMark;
+                if (d > 0L)
+                    EarlyAlloc += d;
+            }
+
+            _phaseMark = now;
+            _phase = 1;
+        }
+
+        public static void MarkUpdateEnd()
+        {
+            long now = Profiler.GetTotalAllocatedMemoryLong();
+            if (_phase == 1)
+            {
+                long d = now - _phaseMark;
+                if (d > 0L)
+                    UpdateAlloc += d;
+            }
+
+            _phaseMark = now;
+            _phase = 3;
+        }
+
+        public static void MarkLate()
+        {
+            long now = Profiler.GetTotalAllocatedMemoryLong();
+            if (_phase == 3)
+            {
+                long d = now - _phaseMark;
+                if (d > 0L)
+                    LateAlloc += d;
+            }
+
+            _phaseMark = now;
+            _phase = 4;
+        }
+
+        public static void MarkEndOfFrame()
+        {
+            EndOfFrameMarks++;
+            long now = Profiler.GetTotalAllocatedMemoryLong();
+            if (_phase == 4)
+            {
+                long d = now - _phaseMark;
+                if (d > 0L)
+                    PostAlloc += d;
+            }
+
+            _phaseMark = now;
+            _phase = 2;
         }
 
         public static Scope Measure(int slot)
@@ -33,10 +108,28 @@ namespace TitanOrbit.Diagnostics
             return new Scope(slot);
         }
 
-        public static void CopyAndReset(long[] allocOut, long[] monoOut, out int frames)
+        public static void CopyAndReset(
+            long[] allocOut,
+            long[] monoOut,
+            out int frames,
+            out long post,
+            out long early,
+            out long update,
+            out long late,
+            out int endOfFrameMarks)
         {
             frames = Frames;
             Frames = 0;
+            post = PostAlloc;
+            early = EarlyAlloc;
+            update = UpdateAlloc;
+            late = LateAlloc;
+            endOfFrameMarks = EndOfFrameMarks;
+            PostAlloc = 0L;
+            EarlyAlloc = 0L;
+            UpdateAlloc = 0L;
+            LateAlloc = 0L;
+            EndOfFrameMarks = 0;
             for (int i = 0; i < Count; i++)
             {
                 allocOut[i] = Alloc[i];

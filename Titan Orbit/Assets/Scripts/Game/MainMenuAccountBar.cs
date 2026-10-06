@@ -113,7 +113,13 @@ namespace TitanOrbit.Game
             bool unityLinked = UnityGameServicesBootstrap.IsUnityAccountActiveForUi();
 
             if (actionButtonLabel != null)
+            {
+#if UNITY_WEBGL && !UNITY_EDITOR
+                actionButtonLabel.text = unityLinked ? "Sign out" : "Sign in";
+#else
                 actionButtonLabel.text = unityLinked ? "Sign out" : "Sign in with Unity";
+#endif
+            }
 
             if (actionButton != null)
                 actionButton.interactable = !_busy;
@@ -156,6 +162,15 @@ namespace TitanOrbit.Game
             }
 
             // --- Sign in / link path ---
+#if UNITY_WEBGL && !UNITY_EDITOR
+            // Username and password stay on this page. player-login.unity.com rejects the site URL.
+            var canvas = GetComponentInParent<Canvas>();
+            if (canvas != null)
+                UsernamePasswordSignInScreen.Open(canvas.transform);
+            else
+                Debug.LogWarning("[MainMenuAccountBar] Sign in form needs a Canvas parent.");
+            return;
+#endif
             _busy = true;
             RefreshUi();
             if (actionButtonLabel != null)

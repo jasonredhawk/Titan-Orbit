@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.IO;
 using UnityEngine;
 using UnityEngine.Profiling;
@@ -21,7 +22,56 @@ namespace TitanOrbit.Diagnostics
             var go = new GameObject(nameof(WebGlHeapHeartbeat));
             UnityEngine.Object.DontDestroyOnLoad(go);
             go.hideFlags = HideFlags.HideAndDontSave;
+            go.AddComponent<PhaseEarly>();
+            go.AddComponent<PhaseUpdateEnd>();
+            go.AddComponent<PhaseLate>();
+            go.AddComponent<PhaseEndOfFrame>();
             go.AddComponent<Runner>();
+        }
+
+        [DefaultExecutionOrder(-32000)]
+        sealed class PhaseEarly : MonoBehaviour
+        {
+            void Update()
+            {
+                WebGlAllocBuckets.MarkEarly();
+            }
+        }
+
+        [DefaultExecutionOrder(32000)]
+        sealed class PhaseUpdateEnd : MonoBehaviour
+        {
+            void Update()
+            {
+                WebGlAllocBuckets.MarkUpdateEnd();
+            }
+        }
+
+        [DefaultExecutionOrder(32000)]
+        sealed class PhaseLate : MonoBehaviour
+        {
+            void LateUpdate()
+            {
+                WebGlAllocBuckets.MarkLate();
+            }
+        }
+
+        sealed class PhaseEndOfFrame : MonoBehaviour
+        {
+            void OnEnable()
+            {
+                StartCoroutine(Run());
+            }
+
+            IEnumerator Run()
+            {
+                var wait = new WaitForEndOfFrame();
+                while (isActiveAndEnabled)
+                {
+                    yield return wait;
+                    WebGlAllocBuckets.MarkEndOfFrame();
+                }
+            }
         }
 
         sealed class Runner : MonoBehaviour
@@ -70,12 +120,13 @@ namespace TitanOrbit.Diagnostics
                 _prevMonoUsed = monoUsed;
                 _prevStoreLabels = storeLabels;
                 _hasPrev = true;
-                WebGlAllocBuckets.CopyAndReset(_alloc, _mono, out int frames);
+                WebGlAllocBuckets.CopyAndReset(
+                    _alloc, _mono, out int frames, out long post, out long early, out long updatePhase, out long latePhase, out int endOfFrameMarks);
 
                 // #region agent log
                 long nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
                 string json =
-                    "{\"sessionId\":\"caa453\",\"runId\":\"post-slice\",\"hypothesisId\":\"H9\"," +
+                    "{\"sessionId\":\"caa453\",\"runId\":\"post-split\",\"hypothesisId\":\"H17\"," +
                     "\"location\":\"WebGlHeapHeartbeat.cs:Update\",\"message\":\"slice\"," +
                     "\"timestamp\":" + nowMs +
                     ",\"data\":{\"allocatedMB\":" + (allocated / 1048576L) +
@@ -87,11 +138,16 @@ namespace TitanOrbit.Diagnostics
                     ",\"dMonoUsedKB\":" + (dMonoUsed / 1024L) +
                     ",\"gc0\":" + GC.CollectionCount(0) +
                     ",\"frames\":" + frames +
+                    ",\"eof\":" + endOfFrameMarks +
                     ",\"s0\":" + _sec[0] +
                     ",\"s1\":" + _sec[1] +
                     ",\"s2\":" + _sec[2] +
                     ",\"s3\":" + _sec[3] +
                     ",\"s4\":" + _sec[4] +
+                    ",\"post\":" + (post / 1024L) +
+                    ",\"early\":" + (early / 1024L) +
+                    ",\"upd\":" + (updatePhase / 1024L) +
+                    ",\"late\":" + (latePhase / 1024L) +
                     ",\"viz\":" + (_alloc[0] / 1024L) +
                     ",\"vizR\":" + (_alloc[1] / 1024L) +
                     ",\"bul\":" + (_alloc[2] / 1024L) +

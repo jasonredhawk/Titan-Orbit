@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
 using TitanOrbit.Core;
@@ -44,6 +45,13 @@ namespace TitanOrbit.Game
         /// The menu button still works; we just hold the roster until the copy is safe.
         /// </summary>
         const float SnapshotBlockedSeconds = 4f;
+
+        /// <summary>
+        /// How long a dedicated client waits for <see cref="MatchCloseCompletedRpc"/>
+        /// before leaving anyway. The lobby close starts when the match is won, so this
+        /// only covers that signal — not spawning the next server process.
+        /// </summary>
+        const float DedicatedCloseWaitSeconds = 12f;
 
         /// <summary>Void glass fill — same family as the eliminated overlay.</summary>
         static readonly Color VoidFill = new Color(0.012f, 0.016f, 0.028f, 0.97f);
@@ -698,10 +706,10 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Menu button. Stays on this card until the server has finished closing the match,
-        /// then disconnects. The main menu is allowed only after that.
+        /// Menu button. Dedicated clients wait briefly for the server's close signal,
+        /// then disconnect. The main menu is allowed only after that.
         /// </summary>
-        async void OnReturnToMenuClicked()
+        void OnReturnToMenuClicked()
         {
             if (_leaving)
                 return;
@@ -719,55 +727,67 @@ namespace TitanOrbit.Game
                 _boardStatus.text = "CLOSING MATCH";
             }
 
+            StartCoroutine(LeaveAfterMatchClose());
+        }
+
+        /// <summary>
+        /// Waits for the dedicated close signal on the player loop, then disconnects.
+        /// A coroutine is required here: <c>Task.Delay</c> never resumes on WebGL, so the
+        /// old async wait left the button on CLOSING MATCH forever.
+        /// </summary>
+        IEnumerator LeaveAfterMatchClose()
+        {
             var session = TitanOrbitSessionManager.Instance;
             if (session == null)
             {
                 FinishCloseLeave(restoreCard: true);
-                return;
+                yield break;
             }
 
-            try
+            yield return WaitForDedicatedMatchClose();
+
+            var leave = session.ReturnToMainMenuAsync();
+            while (leave != null && !leave.IsCompleted)
+                yield return null;
+
+            if (leave != null && leave.IsFaulted)
             {
-                await WaitForDedicatedMatchCloseAsync();
-                await session.ReturnToMainMenuAsync();
-                if (_flow != null)
-                    _flow.NotifyReturningToMainMenu();
-                Hide();
-                FinishCloseLeave(restoreCard: false);
-            }
-            catch (System.Exception ex)
-            {
-                Debug.LogError("[MatchEnd] Leave failed: " + ex.Message);
+                Debug.LogError("[MatchEnd] Leave failed: " + leave.Exception.GetBaseException().Message);
                 FinishCloseLeave(restoreCard: true);
+                yield break;
             }
+
+            if (_flow != null)
+                _flow.NotifyReturningToMainMenu();
+            Hide();
+            FinishCloseLeave(restoreCard: false);
         }
 
         /// <summary>
         /// Dedicated clients stay on the card until the server reports the finished game
-        /// is closed. A dropped connection counts as closed. Local play skips this —
-        /// disposing the server world happens inside the leave call that follows.
+        /// is closed, or <see cref="DedicatedCloseWaitSeconds"/> passes. A dropped
+        /// connection counts as closed. Local play skips this — disposing the server
+        /// world happens inside the leave call that follows.
         /// </summary>
-        async System.Threading.Tasks.Task WaitForDedicatedMatchCloseAsync()
+        IEnumerator WaitForDedicatedMatchClose()
         {
             if (!TitanOrbitSessionManager.IsDedicatedOnlineClient)
-                return;
+                yield break;
             if (MatchCloseGate.ServerCloseCompleted)
-                return;
+                yield break;
 
-            // Server handoff polls a successor for up to five 120s attempts.
-            const float timeoutSeconds = 660f;
             float start = Time.unscaledTime;
             while (!MatchCloseGate.ServerCloseCompleted)
             {
                 if (!EcsGameBridge.HasClientNetworkId())
-                    return;
-                if (Time.unscaledTime - start >= timeoutSeconds)
+                    yield break;
+                if (Time.unscaledTime - start >= DedicatedCloseWaitSeconds)
                 {
                     Debug.LogWarning("[MatchEnd] Match close did not confirm before timeout — showing the main menu.");
-                    return;
+                    yield break;
                 }
 
-                await System.Threading.Tasks.Task.Delay(200);
+                yield return null;
             }
         }
 

@@ -50,6 +50,7 @@ namespace TitanOrbit.ECS
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     [UpdateAfter(typeof(PeopleTransportSimulationSystem))]
+    [UpdateAfter(typeof(PlanetConnectionGraphSystem))]
     public partial struct PlanetPopulationGrowthSystem : ISystem
     {
         public void OnUpdate(ref SystemState state)

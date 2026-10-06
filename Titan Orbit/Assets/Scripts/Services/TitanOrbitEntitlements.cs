@@ -120,7 +120,7 @@ namespace TitanOrbit.Services
         public static void LoadSessionForCurrentPlayer()
         {
             // --- Load account entitlement ---
-            if (!UnityGameServicesBootstrap.HasUnityPlayerAccountLinked())
+            if (!UnityGameServicesBootstrap.HasDurablePlayerAccount())
             {
 #if UNITY_EDITOR
                 ApplySessionOwned(PlayerPrefs.GetInt(EditorOverridePrefsKey, 0) != 0);
@@ -206,7 +206,7 @@ namespace TitanOrbit.Services
             if (!hasReceipt || string.IsNullOrEmpty(productId))
                 return;
             // Store receipts attach to the signed-in Unity player, not a guest session.
-            if (!UnityGameServicesBootstrap.HasUnityPlayerAccountLinked())
+            if (!UnityGameServicesBootstrap.HasDurablePlayerAccount())
                 return;
             if (ProductGrantsOrbitUnlocked(productId))
                 SetOrbitUnlockedOwned(true);
@@ -242,7 +242,7 @@ namespace TitanOrbit.Services
         {
             // --- Persist entitlement ---
             string playerId = null;
-            bool unityAccount = UnityGameServicesBootstrap.HasUnityPlayerAccountLinked();
+            bool unityAccount = UnityGameServicesBootstrap.HasDurablePlayerAccount();
             if (unityAccount)
                 playerId = UnityGameServicesBootstrap.PlayerId;
 
@@ -255,7 +255,7 @@ namespace TitanOrbit.Services
                 return;
 #else
                 Debug.LogWarning(
-                    "[TitanOrbitEntitlements] Orbit Unlocked requires a signed-in Unity account.");
+                    "[TitanOrbitEntitlements] Orbit Unlocked requires a signed-in account.");
                 return;
 #endif
             }
@@ -294,7 +294,7 @@ namespace TitanOrbit.Services
                 return;
             if (!string.Equals(playerId, UnityGameServicesBootstrap.PlayerId, StringComparison.Ordinal))
                 return;
-            if (!UnityGameServicesBootstrap.HasUnityPlayerAccountLinked())
+            if (!UnityGameServicesBootstrap.HasDurablePlayerAccount())
                 return;
 
             if (PlayerPrefs.GetInt(PlayerKey(playerId), 0) == 0)

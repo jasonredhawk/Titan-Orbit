@@ -758,6 +758,25 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
+    /// [NETCODE] Server → all clients: a world's link bonus changed.
+    /// Capturing one planet retargets crew on every corner of the new triangles.
+    /// Those neighbors are not in <see cref="PlanetOwnershipChangedRpc"/>, and the
+    /// planet ghost is rate-limited, so CREW would stay on the old cap while LINK
+    /// already showed the new total. Wire layout must match Linux headless.
+    /// </summary>
+    public struct PlanetLinkCrewRpc : IRpcCommand
+    {
+        /// <summary>Stable <see cref="PlanetState.PlanetId"/>.</summary>
+        public int PlanetId;
+
+        /// <summary>Crew after the link change (the new cap when the world was already full).</summary>
+        public int Population;
+
+        /// <summary>Stacked triangle bonus fraction written to <c>PlanetGrowthState</c>.</summary>
+        public float BonusFraction;
+    }
+
+    /// <summary>
     /// [NETCODE] Server → all clients: an asteroid was destroyed (bullet / mine / ram).
     /// Asteroids are not ghost-relevant under seed-hydrate — clients must destroy their local
     /// body immediately. HitRpc alone is not enough (mining/ram have no HitRpc; surface hits

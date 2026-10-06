@@ -307,6 +307,12 @@ namespace TitanOrbit.NetCode
 
             _matchIsLatest = false;
 
+            // The congrats card waits on this RPC. Send it as soon as the lobby is closed.
+            // Successor spawn can take minutes; players must not sit on CLOSING MATCH for that.
+            SignalMatchClosedToClients();
+            for (int flush = 0; flush < 8; flush++)
+                yield return null;
+
             bool successorReady = false;
             for (int attempt = 1; attempt <= MaxSpawnAttemptsPerHandoff && !successorReady; attempt++)
             {
@@ -340,8 +346,9 @@ namespace TitanOrbit.NetCode
             _handoffInProgress = false;
             _handoffCoroutine = null;
 
-            // Players still on the congrats card wait for this before the main menu.
-            MatchCloseNetNotify.BroadcastCompleted();
+            // Second send: a client who missed the first reliable RPC (sent before this
+            // connection was ready to receive) can still leave without the timeout.
+            SignalMatchClosedToClients();
 
             int players = TitanOrbitSessionManager.Instance != null
                 ? TitanOrbitSessionManager.Instance.GetServerConnectedPlayerCount()
@@ -352,6 +359,23 @@ namespace TitanOrbit.NetCode
 
             if (players == 0)
                 ExitFinishedMatchProcess(successorReady);
+        }
+
+        /// <summary>
+        /// Tells clients still on the congrats card that this game is closed and they can
+        /// return to the menu. Safe to call more than once.
+        /// </summary>
+        static void SignalMatchClosedToClients()
+        {
+            if (!MatchCloseNetNotify.BroadcastCompleted())
+            {
+                DedicatedServerFileLog.Append("match", "Match-close signal skipped — ServerWorld missing");
+                Debug.LogWarning("[TitanOrbitDedicatedServerHost] Could not tell clients the match is closed — no ServerWorld.");
+                return;
+            }
+
+            DedicatedServerFileLog.Append("match", "Match-close signal sent to clients still on the end screen");
+            Debug.Log("[TitanOrbitDedicatedServerHost] Told end-screen clients this match is closed.");
         }
 
         /// <summary>

@@ -18,12 +18,14 @@ namespace TitanOrbit.ECS
     /// <b>server</b> side of <see cref="PlanetConnectionGraphCache"/> (never the client lists —
     /// host would race and wipe TerritoryTeam / flicker triangles).
     /// Applies stacked corner pop/growth bonuses onto <see cref="PlanetGrowthState"/> from
-    /// <b>triangles only</b> (lone edges are visual-only).
+    /// <b>triangles only</b> (lone edges are visual-only). A capture repacks every corner,
+    /// and a world that was already full moves its crew to the new CAP + LINK total.
     /// World: ServerSimulation.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     [UpdateAfter(typeof(PeopleTransportSimulationSystem))]
+    [UpdateBefore(typeof(PlanetPopulationGrowthSystem))]
     public partial struct PlanetConnectionGraphSystem : ISystem
     {
         /// <summary>[TITAN-ORBIT] Soft fallback when only ghost-level fields drift without an ownership RPC.</summary>
@@ -92,19 +94,27 @@ namespace TitanOrbit.ECS
                 return;
             }
 
-            // --- Seed sticky previous edges from the ECS buffer ---
+            // --- Sticky edges, except on capture / level change ---
+            // A timed refresh keeps first-created lines so borders do not flicker.
+            // Ownership or level dirty repacks from scratch. Sticky blockers were
+            // leaving some corners on the previous triangle set, so their link
+            // crew total never moved when a nearby planet was captured.
             var edgeBuf = SystemAPI.GetSingletonBuffer<PlanetConnectionEdgeElement>();
-            var previous = new NativeList<PlanetConnectionGraphLogic.Edge>(edgeBuf.Length, Allocator.Temp);
-            for (int i = 0; i < edgeBuf.Length; i++)
+            var previous = new NativeList<PlanetConnectionGraphLogic.Edge>(
+                dirty ? 0 : math.max(1, edgeBuf.Length), Allocator.Temp);
+            if (!dirty)
             {
-                var e = edgeBuf[i];
-                previous.Add(new PlanetConnectionGraphLogic.Edge
+                for (int i = 0; i < edgeBuf.Length; i++)
                 {
-                    PlanetIdA = e.PlanetIdA,
-                    PlanetIdB = e.PlanetIdB,
-                    Team = e.Team,
-                    CreationSequence = e.CreationSequence,
-                });
+                    var e = edgeBuf[i];
+                    previous.Add(new PlanetConnectionGraphLogic.Edge
+                    {
+                        PlanetIdA = e.PlanetIdA,
+                        PlanetIdB = e.PlanetIdB,
+                        Team = e.Team,
+                        CreationSequence = e.CreationSequence,
+                    });
+                }
             }
 
             // --- Rebuild topology (sticky + non-crossing + clique triangles) ---
@@ -164,34 +174,73 @@ namespace TitanOrbit.ECS
             PlanetConnectionGraphCache.PublishServer(
                 edges, triangles, homeLevels, nextSequence, planetInputs.AsArray());
 
-            // --- Reset then stack corner pop/growth bonuses (triangles only) ---
-            foreach (var growth in SystemAPI.Query<RefRW<PlanetGrowthState>>().WithAll<PlanetTag>())
-                growth.ValueRW.ConnectionBonusFraction = 0f;
-
-            if (triangles.Length > 0)
+            // --- Every planet, from the triangles just built ---
+            // One pass. A zero-then-fill used to leave corners that were not the
+            // captured world on the previous bonus, so crew stayed at the old cap
+            // while the label already showed CAP + the new LINK.
+            var crewNotes = new NativeList<LinkCrewNote>(8, Allocator.Temp);
+            foreach (var (planetState, growthState, transform) in SystemAPI
+                         .Query<RefRW<PlanetState>, RefRW<PlanetGrowthState>, RefRO<LocalTransform>>()
+                         .WithAll<PlanetTag>())
             {
-                foreach (var (planet, growth) in SystemAPI
-                             .Query<RefRO<PlanetState>, RefRW<PlanetGrowthState>>()
-                             .WithAll<PlanetTag>())
-                {
-                    float bonus = 0f;
-                    int id = planet.ValueRO.PlanetId;
-                    for (int i = 0; i < triangles.Length; i++)
-                    {
-                        var t = triangles[i];
-                        if (t.PlanetIdA != id && t.PlanetIdB != id && t.PlanetIdC != id)
-                            continue;
-                        bonus += PlanetConnectionGraphLogic.GetCornerBonusStrength(t.AverageLevel);
-                    }
+                ref var planet = ref planetState.ValueRW;
+                ref var growth = ref growthState.ValueRW;
+                float newBonus = SumCornerBonus(planet.PlanetId, triangles);
+                float oldBonus = growth.ConnectionBonusFraction;
+                if (math.abs(newBonus - oldBonus) <= 0.0001f)
+                    continue;
 
-                    growth.ValueRW.ConnectionBonusFraction = bonus;
+                float planetSize = math.max(0.5f, transform.ValueRO.Scale);
+                int oldMax = PlanetPopulationMath.GetEffectiveMaxPopulation(
+                    planetSize, planet.PlanetLevel, oldBonus);
+                int newMax = PlanetPopulationMath.GetEffectiveMaxPopulation(
+                    planetSize, planet.PlanetLevel, newBonus);
+                int oldPop = planet.Population;
+
+                growth.ConnectionBonusFraction = newBonus;
+
+                // Full world: crew is the cap. A link change retargets that total
+                // immediately (162 CAP + 122 LINK → 284), including corners that
+                // were not the planet just captured. A drained world keeps its
+                // people and grows toward the new cap.
+                if (oldPop >= oldMax || oldPop > newMax)
+                {
+                    planet.Population = newMax;
+                    growth.FractionalPopulation = newMax;
+                }
+                else if (growth.FractionalPopulation > newMax)
+                    growth.FractionalPopulation = newMax;
+
+                // Only neighbors whose crew number actually moved need an RPC.
+                // A world that was not full keeps its people; its LINK line comes
+                // from the same repacked graph the client rebuilds locally.
+                if (planet.PlanetId != 0 && planet.Population != oldPop)
+                {
+                    crewNotes.Add(new LinkCrewNote
+                    {
+                        PlanetId = planet.PlanetId,
+                        Population = planet.Population,
+                        BonusFraction = newBonus,
+                    });
                 }
             }
 
+            // Commit the fingerprint before any RPC entity create — structural
+            // changes invalidate the singleton ref held at the top of this update.
             graphState.ValueRW.LastRebuildElapsed = now;
             graphState.ValueRW.OwnershipFingerprint = fingerprint;
             graphState.ValueRW.RebuildInProgress = false;
             graphState.ValueRW.NextEdgeSequence = nextSequence;
+
+            var em = state.EntityManager;
+            for (int i = 0; i < crewNotes.Length; i++)
+            {
+                var note = crewNotes[i];
+                PlanetLinkCrewNetNotify.Broadcast(
+                    em, note.PlanetId, note.Population, note.BonusFraction);
+            }
+
+            crewNotes.Dispose();
 
             previous.Dispose();
             edges.Dispose();
@@ -263,14 +312,50 @@ namespace TitanOrbit.ECS
                 IsHomePlanet = planet.IsHomePlanet,
             };
         }
+
+        /// <summary>
+        /// Stacked triangle corner bonus for one planet — same sum the world label uses.
+        /// Zero when this planet is not a corner of any filled triangle.
+        /// </summary>
+        static float SumCornerBonus(
+            int planetId,
+            in NativeList<PlanetConnectionGraphLogic.Triangle> triangles)
+        {
+            float bonus = 0f;
+            if (planetId == 0 || !triangles.IsCreated)
+                return bonus;
+
+            for (int i = 0; i < triangles.Length; i++)
+            {
+                var t = triangles[i];
+                if (t.PlanetIdA != planetId && t.PlanetIdB != planetId && t.PlanetIdC != planetId)
+                    continue;
+                bonus += PlanetConnectionGraphLogic.GetCornerBonusStrength(t.AverageLevel);
+            }
+
+            return bonus;
+        }
+    }
+
+    /// <summary>
+    /// One planet whose link bonus changed this rebuild. Queued so the RPC create
+    /// happens after the planet query (entity creates invalidate query refs).
+    /// </summary>
+    struct LinkCrewNote
+    {
+        public int PlanetId;
+        public int Population;
+        public float BonusFraction;
     }
 
         /// <summary>
-        /// Client: rebuilds the same sticky non-crossing topology from Instantiated planet snapshots
+        /// Client: rebuilds the non-crossing topology from Instantiated planet snapshots
         /// and publishes to <see cref="PlanetConnectionGraphCache"/> for predicted territory speed +
-        /// Shapes drawing (triangles and lone edges). Never uses planet archetype gathers under
-        /// TransformQuarantine. Ownership flips arrive via <see cref="PlanetOwnershipChangedRpc"/> so
-        /// lines/minimap do not wait on rate-limited planet ghosts. World: ClientSimulation.
+        /// Shapes drawing (triangles and lone edges). Capture and level changes repack from
+        /// scratch — same as the server — so every corner's LINK matches the crew cap.
+        /// Never uses planet archetype gathers under TransformQuarantine. Ownership flips arrive
+        /// via <see cref="PlanetOwnershipChangedRpc"/> so lines/minimap do not wait on rate-limited
+        /// planet ghosts. World: ClientSimulation.
         /// </summary>
         [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation)]
         [UpdateInGroup(typeof(SimulationSystemGroup))]
@@ -362,15 +447,11 @@ namespace TitanOrbit.ECS
                 return;
             }
 
-            // --- Seed sticky previous edges from the client cache ---
-            var cachedEdges = PlanetConnectionGraphCache.CurrentEdges;
-            var previous = new NativeList<PlanetConnectionGraphLogic.Edge>(
-                cachedEdges != null ? cachedEdges.Count : 0, Allocator.Temp);
-            if (cachedEdges != null)
-            {
-                for (int i = 0; i < cachedEdges.Count; i++)
-                    previous.Add(cachedEdges[i]);
-            }
+            // --- Repack from scratch on capture / level change ---
+            // The server does the same when the ownership fingerprint is dirty.
+            // Seeding this client's sticky edges kept a different blocker set, so
+            // the LINK line could show a new total the server crew cap never used.
+            var previous = new NativeList<PlanetConnectionGraphLogic.Edge>(0, Allocator.Temp);
 
             var edges = new NativeList<PlanetConnectionGraphLogic.Edge>(64, Allocator.Temp);
             var triangles = new NativeList<PlanetConnectionGraphLogic.Triangle>(32, Allocator.Temp);
@@ -439,6 +520,122 @@ namespace TitanOrbit.ECS
 
             order.Dispose();
             return h;
+        }
+    }
+
+    /// <summary>
+    /// Server → clients: a planet's link bonus changed, so its crew total may have
+    /// jumped to the new cap. Planet ghosts are rate-limited, and only the captured
+    /// world gets an ownership RPC — neighboring corners were staying on the old crew.
+    /// </summary>
+    public static class PlanetLinkCrewNetNotify
+    {
+        static readonly System.Collections.Generic.List<Entity> s_RegistryScratch =
+            new System.Collections.Generic.List<Entity>(64);
+
+        /// <summary>
+        /// Mirrors onto the host client world and queues <see cref="PlanetLinkCrewRpc"/>
+        /// for every connection. Call after the planet query, not inside it.
+        /// </summary>
+        public static void Broadcast(EntityManager serverEm, int planetId, int population, float bonusFraction)
+        {
+            if (planetId == 0)
+                return;
+
+            int pop = population < 0 ? 0 : population;
+            float bonus = math.max(0f, bonusFraction);
+
+            if (ClientServerBootstrap.ClientWorld != null && ClientServerBootstrap.ClientWorld.IsCreated)
+            {
+                ApplyToClientWorld(
+                    ClientServerBootstrap.ClientWorld.EntityManager,
+                    planetId,
+                    pop,
+                    bonus);
+            }
+
+            Entity rpcEntity = serverEm.CreateEntity();
+            serverEm.AddComponentData(rpcEntity, new PlanetLinkCrewRpc
+            {
+                PlanetId = planetId,
+                Population = pop,
+                BonusFraction = bonus,
+            });
+            serverEm.AddComponentData(rpcEntity, new SendRpcCommandRequest { TargetConnection = Entity.Null });
+        }
+
+        /// <summary>
+        /// Latches crew + link bonus for labels. Does not write <see cref="PlanetState.Population"/>
+        /// — that write would look like the ghost had already caught up, and the next
+        /// rate-limited snapshot would paint the old total back.
+        /// </summary>
+        public static void ApplyToClientWorld(EntityManager em, int planetId, int population, float bonusFraction)
+        {
+            if (planetId == 0)
+                return;
+
+            int pop = population < 0 ? 0 : population;
+            float bonus = math.max(0f, bonusFraction);
+            int ghostPop = pop;
+            PlanetClientEntityRegistry.CopyLive(s_RegistryScratch);
+            for (int i = 0; i < s_RegistryScratch.Count; i++)
+            {
+                Entity entity = s_RegistryScratch[i];
+                if (entity == Entity.Null ||
+                    !em.Exists(entity) ||
+                    !em.HasComponent<PlanetState>(entity))
+                    continue;
+
+                var state = em.GetComponentData<PlanetState>(entity);
+                if (state.PlanetId != planetId)
+                    continue;
+
+                ghostPop = state.Population;
+                break;
+            }
+
+            PlanetConnectionGraphCache.SetLinkCrewOverride(planetId, pop, bonus, ghostPop);
+        }
+    }
+
+    /// <summary>
+    /// Client: applies <see cref="PlanetLinkCrewRpc"/> so neighboring worlds update
+    /// crew and LINK without waiting on the planet ghost. World: ClientSimulation.
+    /// </summary>
+    [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation)]
+    [UpdateInGroup(typeof(SimulationSystemGroup))]
+    [UpdateBefore(typeof(PlanetConnectionGraphClientSystem))]
+    public partial struct PlanetLinkCrewRpcClientSystem : ISystem
+    {
+        /// <summary>Requires the incoming RPC queue.</summary>
+        public void OnCreate(ref SystemState state)
+        {
+            state.RequireForUpdate<ReceiveRpcCommandRequest>();
+        }
+
+        /// <summary>Applies each link-crew RPC, then destroys it so it cannot replay.</summary>
+        public void OnUpdate(ref SystemState state)
+        {
+            var ecb = new EntityCommandBuffer(Unity.Collections.Allocator.Temp);
+            var em = state.EntityManager;
+
+            foreach (var (rpc, rpcEntity) in SystemAPI
+                         .Query<RefRO<PlanetLinkCrewRpc>>()
+                         .WithAll<ReceiveRpcCommandRequest>()
+                         .WithEntityAccess())
+            {
+                var cmd = rpc.ValueRO;
+                if (cmd.PlanetId != 0)
+                {
+                    PlanetLinkCrewNetNotify.ApplyToClientWorld(
+                        em, cmd.PlanetId, cmd.Population, cmd.BonusFraction);
+                }
+
+                ecb.DestroyEntity(rpcEntity);
+            }
+
+            ecb.Playback(em);
+            ecb.Dispose();
         }
     }
 }
