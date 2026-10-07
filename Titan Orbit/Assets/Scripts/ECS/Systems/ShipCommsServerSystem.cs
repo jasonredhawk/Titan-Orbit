@@ -142,8 +142,9 @@ namespace TitanOrbit.ECS
                 Deliver(ecb, em, networkId, speakerTeam, sentence, channel);
 
                 // Circled AI hulls (You / Us) follow a task verb even on Team or All.
+                // Those words never expand to the whole squad when the circle is empty.
                 // A seated commander, or the only players before anyone earns a seat,
-                // can also retask every bot without circling them.
+                // can still retask every bot with a task verb that does not say You or Us.
                 BotShipOrderLogic.TryApply(
                     em, catalog, speakerTeam, networkId, speakerPos, sentence, (float)now, mayOrderAll);
             }

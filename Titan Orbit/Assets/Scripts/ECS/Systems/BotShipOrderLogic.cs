@@ -31,7 +31,8 @@ namespace TitanOrbit.ECS
         /// Writes the speaker's team order when the sentence contains a task verb.
         /// A sentence with no task verb leaves the current order in place.
         /// Follow and Escort only stick when the subject hull is on the speaker's team.
-        /// A bot <c>You</c> retasks that one hull.
+        /// <c>You</c> and <c>Us</c> retask only the bots the speaker actually circled.
+        /// If those words locked nobody, the sentence does not become a team-wide order.
         /// </summary>
         public static void TryApply(
             EntityManager em,
@@ -74,6 +75,7 @@ namespace TitanOrbit.ECS
             order = default;
             BotTaskKind task = BotTaskKind.None;
             bool hasYou = false;
+            bool namesYouOrUs = false;
             int count = math.clamp((int)sentence.Count, 0, 5);
             for (int i = 0; i < count; i++)
             {
@@ -81,6 +83,8 @@ namespace TitanOrbit.ECS
                     continue;
                 if (Eq(label, "You"))
                     hasYou = true;
+                if (Eq(label, "You") || Eq(label, "Us"))
+                    namesYouOrUs = true;
                 if (task != BotTaskKind.None)
                     continue;
                 task = TaskForLabel(label);
@@ -109,6 +113,12 @@ namespace TitanOrbit.ECS
             byte limitAudience = 0;
             if (botCount > 0)
                 limitAudience = 1;
+            else if (namesYouOrUs)
+            {
+                // [TITAN-ORBIT] You / Us with no circled bot is an empty address,
+                // not "everyone". Far hulls that never got a ring must not retask.
+                return false;
+            }
             else if (mayOrderAll && (!circledSomeone || sentence.Everyone != 0))
                 limitAudience = 0;
             else

@@ -337,13 +337,6 @@ namespace TitanOrbit.ECS
                 return;
             }
 
-            if (TryNearestEnemy(ships, pos, ship.Team, networkId, EngageRange, mapW, mapH, out ShipSnap enemy))
-            {
-                SetAttack(ref brain, enemy);
-                NoteTask(ref brain, ship.CurrentPeople, now);
-                return;
-            }
-
             bool nearFull = ship.GemCapacity > 1f && ship.CurrentGems >= ship.GemCapacity * DepositFill;
             if (nearFull && TryNearestFriendly(planets, pos, ship.Team, mapW, mapH, out PlanetSnap depositMoon))
             {
@@ -378,6 +371,14 @@ namespace TitanOrbit.ECS
             if (TryNearestRock(rocks, pos, networkId, mapW, mapH, out RockSnap rock))
             {
                 SetMine(ref brain, rock);
+                NoteTask(ref brain, ship.CurrentPeople, now);
+                return;
+            }
+
+            // Combat is last. A nearby enemy does not pull a ship off mining, hauling, or deposit.
+            if (TryNearestEnemy(ships, pos, ship.Team, networkId, EngageRange, mapW, mapH, out ShipSnap enemy))
+            {
+                SetAttack(ref brain, enemy);
                 NoteTask(ref brain, ship.CurrentPeople, now);
                 return;
             }
