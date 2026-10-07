@@ -112,6 +112,82 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
+        /// Spawns an AI hull from the same ghost prefab as a player ship.
+        /// Does not attach a connection or <see cref="CommandTarget"/> — the server brain
+        /// writes <see cref="ShipInput"/> itself.
+        /// </summary>
+        public static bool TrySpawnBot(
+            EntityManager em,
+            int networkId,
+            TeamId team,
+            double orbitElapsed,
+            out Entity ship,
+            out float3 spawnPos)
+        {
+            ship = Entity.Null;
+            spawnPos = float3.zero;
+            if (!BotShipIds.IsBot(networkId) || team == TeamId.None)
+                return false;
+
+            using var prefabQuery = em.CreateEntityQuery(ComponentType.ReadOnly<GamePrefabs>());
+            if (prefabQuery.CalculateEntityCount() != 1)
+                return false;
+
+            GamePrefabs prefabs = prefabQuery.GetSingleton<GamePrefabs>();
+            if (prefabs.Ship == Entity.Null)
+                return false;
+
+            Entity shipPrefab = ResolveGhostCollectionShipPrefab(em, prefabs.Ship, out bool usedCollection);
+            if (shipPrefab == Entity.Null || !em.Exists(shipPrefab))
+                return false;
+
+            if (!ShipHomeSpawnLogic.TryFindHomeSpawnPosition(em, team, orbitElapsed, out spawnPos))
+                return false;
+
+            ship = em.Instantiate(shipPrefab);
+            em.SetComponentData(ship, new ShipState
+            {
+                Health = 100f,
+                MaxHealth = 100f,
+                Team = team,
+                ShipLevel = 1,
+                ShipFamilyConfigIndex = PlanetShipFamilyAssignment.HomeFamilyConfigIndex,
+                HullBulletBankIndex = PlanetShipFamilyAssignment.DefaultBulletBankIndex,
+                GemCapacity = 50f,
+                CurrentEnergy = 50f,
+                MaxEnergy = 50f,
+                PeopleCapacity = 10,
+                AwaitingTeamSelection = false,
+            });
+            em.SetComponentData(ship, LocalTransform.FromPosition(spawnPos));
+
+            if (em.HasComponent<GhostOwner>(ship))
+                em.SetComponentData(ship, new GhostOwner { NetworkId = networkId });
+            else
+                em.AddComponentData(ship, new GhostOwner { NetworkId = networkId });
+
+            if (!em.HasComponent<ShipAttributeUpgradeState>(ship))
+                em.AddComponentData(ship, new ShipAttributeUpgradeState());
+
+            if (!em.HasComponent<BotShipTag>(ship))
+                em.AddComponentData(ship, new BotShipTag());
+            if (!em.HasComponent<BotShipBrain>(ship))
+                em.AddComponentData(ship, new BotShipBrain());
+
+            TitanOrbitGhostSendGrace.ArmShipSpawnGrace();
+            TitanOrbitServerShipGhostVerifySystem.Enqueue(ship, networkId);
+
+            int ghostId = 0;
+            if (em.HasComponent<GhostInstance>(ship))
+                ghostId = em.GetComponentData<GhostInstance>(ship).ghostId;
+
+            Debug.Log(
+                $"[BotShipSpawn] Spawned AI ship networkId={networkId} team={team} at {spawnPos} " +
+                $"(collectionPrefab={usedCollection}, ghostId={ghostId}).");
+            return true;
+        }
+
+        /// <summary>
         /// Finds the GhostCollection entry for the ship prefab so SpawnGhostJob can assign a ghost id.
         /// Prefers entity match, then <see cref="GhostType"/> match, else first <see cref="ShipTag"/>.
         /// </summary>

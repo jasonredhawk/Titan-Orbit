@@ -56,6 +56,8 @@ namespace TitanOrbit.ECS
             var em = state.EntityManager;
             var ecb = new EntityCommandBuffer(Allocator.Temp);
             double now = SystemAPI.Time.ElapsedTime;
+            // Before the RPC query so creating the singleton is not a structural change mid-iterate.
+            BotShipOrderLogic.EnsureSingleton(em);
 
             // --- Drain client → server commands ---
             // [NETCODE] ReceiveRpcCommandRequest pairs the RPC with the sending connection.
@@ -106,10 +108,17 @@ namespace TitanOrbit.ECS
                 // rebuilt first each sim tick so the client cannot spoof a seat.
                 ShipCommsChannel channel = TeamCommanderRules.Sanitize(sentence.TeamOnly);
                 bool usesCommanderWords = SequenceUsesCommanderKeyword(catalog, sentence);
-                bool isCommander = SystemAPI.TryGetSingleton<ShipCommandRoleSnapshot>(out var roles)
-                    && roles.HoldsCommandSeat(speakerTeam, networkId);
+                bool haveRoles = SystemAPI.TryGetSingleton<ShipCommandRoleSnapshot>(out var roles);
+                bool isCommander = haveRoles && roles.HoldsCommandSeat(speakerTeam, networkId);
+                // A fresh match has no earned seat. Until someone leads kills, gems, or
+                // troops, a teammate's task sentence can still retask the bots.
+                bool mayOrderAll = isCommander || !haveRoles || !roles.TeamHasCommandSeat(speakerTeam);
                 if (usesCommanderWords && !isCommander)
+                {
+                    BotShipOrderLogic.TryApply(
+                        em, catalog, speakerTeam, networkId, speakerPos, sentence, (float)now, mayOrderAll: false);
                     continue;
+                }
                 channel = TeamCommanderRules.ResolveDeliveryChannel(
                     channel, isCommander, usesCommanderWords);
 
@@ -131,6 +140,12 @@ namespace TitanOrbit.ECS
                 }
 
                 Deliver(ecb, em, networkId, speakerTeam, sentence, channel);
+
+                // Circled AI hulls (You / Us) follow a task verb even on Team or All.
+                // A seated commander, or the only players before anyone earns a seat,
+                // can also retask every bot without circling them.
+                BotShipOrderLogic.TryApply(
+                    em, catalog, speakerTeam, networkId, speakerPos, sentence, (float)now, mayOrderAll);
             }
 
             ecb.Playback(em);

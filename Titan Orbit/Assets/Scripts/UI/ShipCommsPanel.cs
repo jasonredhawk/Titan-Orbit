@@ -803,9 +803,11 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Locks the closest-in-range ship when the player clicks "You".
-        /// [TITAN-ORBIT] No hull in range (or only the local ship) leaves You empty.
-        /// Send must not rewrite that as Me — "You Asteroid" then draws the rock only.
+        /// Locks the closest on-screen ship when the player clicks "You".
+        /// [TITAN-ORBIT] No hull in the local view (or only the local ship) leaves
+        /// You empty. A ship past the camera edge is not "You" even if it is the
+        /// nearest body inside the select radius. Send must not rewrite an empty
+        /// You as Me — "You Asteroid" then draws the rock only.
         /// </summary>
         void TryLockYouOnClick(byte index)
         {
@@ -828,10 +830,11 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Rings the speaker plus nearby friendlies when the player clicks "Us".
-        /// [TITAN-ORBIT] Us always includes this hull. Other seats are teammates
-        /// inside <see cref="ShipCommsCalloutGraphics.YouSelectRange"/> of Me —
-        /// not the play-plane aim used by You.
+        /// Rings the speaker plus friendlies on the local camera when the player
+        /// clicks "Us". [TITAN-ORBIT] Us always includes this hull. Other seats
+        /// are teammates inside <see cref="ShipCommsCalloutGraphics.YouSelectRange"/>
+        /// whose hulls are on screen — not far ships, and not the play-plane aim
+        /// used by You.
         /// </summary>
         void TryLockUsOnClick(byte index)
         {

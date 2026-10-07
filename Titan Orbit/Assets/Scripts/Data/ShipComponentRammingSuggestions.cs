@@ -295,6 +295,81 @@ namespace TitanOrbit.Data
                 * SelfToAsteroidDamageRatio);
 
         /// <summary>
+        /// Factors behind one full-cruise ram. The Fire Power card and the speedometer
+        /// RAM tip both print this so the chip (for example 12) is not read as the hit.
+        /// Asteroid damage is the first-contact floater at that cruise. Holding the rock
+        /// after that adds grind pulses on top.
+        /// </summary>
+        public struct RamCruiseImpactPreview
+        {
+            /// <summary>Family ramming power × global × bullet-bank multiplier. Grind /s at 1× mass.</summary>
+            public float Rating;
+            /// <summary>Gems + people + hull, the same totalMass the server multiplies in.</summary>
+            public float TotalMass;
+            /// <summary>This hull's ComponentSize, or <see cref="MassReference"/> when size is unset.</summary>
+            public float HullReference;
+            /// <summary>True when ComponentSize was missing and <see cref="MassReference"/> stood in.</summary>
+            public bool UsedMassReferenceFallback;
+            /// <summary><c>totalMass / hull</c>. Empty hulls sit near 1. Cargo raises it.</summary>
+            public float MassFactor;
+            /// <summary>Chip × mass factor. Sustained HP/s while grinding, before the speed burst.</summary>
+            public float GrindDps;
+            /// <summary>After-tax cruise used as the closing-speed cap (world u/s).</summary>
+            public float CruiseSpeed;
+            /// <summary>Closing speed that doubles grind into a ram. From ramming settings.</summary>
+            public float SpeedForDouble;
+            /// <summary><c>1 + cruise / SpeedForDouble</c>.</summary>
+            public float SpeedMultiplier;
+            /// <summary>First-contact damage to the asteroid at full cruise.</summary>
+            public float AsteroidDamage;
+            /// <summary>Hull chip on that same hit, before the rock-HP cap.</summary>
+            public float SelfDamage;
+        }
+
+        /// <summary>
+        /// Splits a full-cruise ram into the factors the HUD prints.
+        /// Damage numbers come from <see cref="ComputeImpactDamage"/> so the card cannot
+        /// drift from <c>ShipRammingCollisionDamageSystem</c>.
+        /// </summary>
+        /// <param name="ramDamageRating">Chip after global and bank multipliers.</param>
+        /// <param name="totalMass">Mobility totalMass (gems + people + ComponentSize).</param>
+        /// <param name="cruiseSpeed">Closing speed to preview, usually after-tax cruise.</param>
+        /// <param name="hullMassReference">This hull's ComponentSize. ≤ 0 uses <see cref="MassReference"/>.</param>
+        public static RamCruiseImpactPreview BuildCruiseImpactPreview(
+            float ramDamageRating,
+            float totalMass,
+            float cruiseSpeed,
+            float hullMassReference = 0f)
+        {
+            // --- Same divisors the damage helpers use ---
+            // [TITAN-ORBIT] An unset hull must not pretend the ship is empty at size 0.
+            // ComputeMassFactor already substitutes MassReference; we surface that so the card can say so.
+            bool fallback = hullMassReference <= 0.01f;
+            float hull = fallback ? MassReference : hullMassReference;
+            float rating = Mathf.Max(0f, ramDamageRating);
+            float cruise = Mathf.Max(0f, cruiseSpeed);
+            float massFactor = ComputeMassFactor(totalMass, hull);
+            float grind = ComputeGrindDps(rating, totalMass, hull);
+            float speedForDouble = RamClosingSpeedForDouble;
+            float speedMul = ComputeRamSpeedMultiplier(cruise);
+
+            return new RamCruiseImpactPreview
+            {
+                Rating = rating,
+                TotalMass = Mathf.Max(0f, totalMass),
+                HullReference = hull,
+                UsedMassReferenceFallback = fallback,
+                MassFactor = massFactor,
+                GrindDps = grind,
+                CruiseSpeed = cruise,
+                SpeedForDouble = speedForDouble,
+                SpeedMultiplier = speedMul,
+                AsteroidDamage = ComputeImpactDamage(rating, totalMass, cruise, hull),
+                SelfDamage = ComputeImpactSelfDamage(rating, totalMass, cruise, hull),
+            };
+        }
+
+        /// <summary>
         /// Hull chip a regular ship takes from a rock: the ram or grind self formula,
         /// capped by the asteroid's current Health. A small rock cannot deal a full
         /// cruise ram back into the hull. MEGA plow uses its own remaining-HP slider.

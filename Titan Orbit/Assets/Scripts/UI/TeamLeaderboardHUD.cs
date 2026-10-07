@@ -712,7 +712,7 @@ namespace TitanOrbit.UI
             for (int i = 0; i < _sorted.Count; i++)
             {
                 RowData r = _sorted[i];
-                if (r.IsDead || r.OwnerNetworkId <= 0)
+                if (r.IsDead || r.OwnerNetworkId <= 0 || BotShipIds.IsBot(r.OwnerNetworkId))
                     continue;
 
                 if (TeamCommandRoleRules.IsBetterTop(r.Kills, r.OwnerNetworkId, bestKills, bestKillerId))

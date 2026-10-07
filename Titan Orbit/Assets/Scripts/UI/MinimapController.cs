@@ -26,7 +26,9 @@ namespace TitanOrbit.UI
     /// circles mark a team's top killer (blue) / gem miner (red) / transporter (yellow).
     /// Also planets, home planets, gem moons, and asteroids. Each team has its own color.
     /// Planet blips also draw a thin orbit ring at the gem-moon / ship orbit radius
-    /// (<see cref="PlanetOrbitMath.GetOrbitRingCenterRadiusLocal"/>). Ring RGB always matches
+    /// (<see cref="PlanetOrbitMath.GetOrbitRingCenterRadiusLocal"/>). The ring stays on the
+    /// radar while any part of it still crosses the circle, even when the planet disc
+    /// itself has not entered yet — the circular mask clips the rest. Ring RGB always matches
     /// the world orbit fill (idle white, or locked-in ship teams cycling ~1s each).
     /// The planet disc itself stays empty (dark interior, team-colored rim) at zero troops
     /// and fills from the bottom with team color as population rises toward the cap.
@@ -256,6 +258,12 @@ namespace TitanOrbit.UI
 
         // Edge markers for planets outside visible area
         private Dictionary<Transform, RectTransform> edgeMarkers = new Dictionary<Transform, RectTransform>();
+        /// <summary>
+        /// Planets whose center is outside the radar circle but whose moon-orbit ring still
+        /// crosses it. <see cref="UpdateBlipPositions"/> keeps these blips alive so the arc
+        /// can draw under the circular mask. Cleared and rebuilt each blip tick.
+        /// </summary>
+        readonly HashSet<Transform> _orbitRingCrossesRadar = new HashSet<Transform>();
         private Dictionary<Transform, Image> edgeMarkerImages = new Dictionary<Transform, Image>();
         private Dictionary<Transform, bool> edgeMarkerIsHomePlanet = new Dictionary<Transform, bool>();
 
@@ -3077,6 +3085,9 @@ namespace TitanOrbit.UI
             if (deadAsteroidGhosts.Count == 0 || (Time.frameCount & 3) == 0)
                 RemoveDeadAsteroidGhostsOverlappingLiveAsteroids();
             
+            // Rebuild which off-center planets still owe a visible orbit arc this tick.
+            _orbitRingCrossesRadar.Clear();
+
             foreach (var p in cachedPlanets)
             {
                 if (p == null)
@@ -3084,50 +3095,8 @@ namespace TitanOrbit.UI
                     skippedNullPlanets++;
                     continue;
                 }
-                
-                Vector3 worldPos = p.transform.position;
-                GetToroidalDelta(playerPos, worldPos, out float dx, out float dz);
-                
-                float dist = Mathf.Sqrt(dx * dx + dz * dz);
-                bool isOutsideVisibleArea = dist > minimapRadius;
-                
-                if (isOutsideVisibleArea)
-                {
-                    // Hide the blip and show edge marker instead
-                    if (blips.ContainsKey(p.transform))
-                    {
-                        blips[p.transform].gameObject.SetActive(false);
-                    }
-                    UpdateEdgeMarker(p.transform, dx, dz, dist, false, p.Team);
-                }
-                else
-                {
-                    // Show the blip and hide edge marker
-                    if (edgeMarkers.ContainsKey(p.transform))
-                    {
-                        edgeMarkers[p.transform].gameObject.SetActive(false);
-                    }
-                    
-                    // Use team color if captured, otherwise grey
-                    Color planetBlipColor = p.Team == TeamId.None 
-                        ? planetColor 
-                        : GetTeamColor(p.Team);
-                    // Get actual planet size from transform scale (fallback to BodySize property)
-                    float actualPlanetSize = (p.transform.localScale.x + p.transform.localScale.y + p.transform.localScale.z) / 3f;
-                    if (actualPlanetSize < 0.1f) actualPlanetSize = p.BodySize;
-                    // Use same scale factor for all entities - directly proportional to world size
-                    float planetBlipSize = actualPlanetSize * worldToMinimapScale * sizeScaleFactor;
-                    if (blips.ContainsKey(p.transform))
-                    {
-                        blips[p.transform].gameObject.SetActive(true);
-                        UpdatePlanetBlip(blips[p.transform], p, planetBlipColor, planetBlipSize, worldToMinimapScale);
-                        ApplyRespawnSelectPlanetTint(blips[p.transform], p);
-                    }
-                    else
-                    {
-                        EnsureBlip(p.transform, () => CreatePlanetBlip(p, planetBlipColor, planetBlipSize, worldToMinimapScale));
-                    }
-                }
+
+                UpdateCachedPlanetBlip(p, playerPos, worldToMinimapScale, isHome: false, planetColor);
             }
 
             foreach (var hp in cachedHomePlanets)
@@ -3137,47 +3106,8 @@ namespace TitanOrbit.UI
                     skippedNullHomePlanets++;
                     continue;
                 }
-                Vector3 worldPos = hp.transform.position;
-                GetToroidalDelta(playerPos, worldPos, out float dx, out float dz);
-                
-                float dist = Mathf.Sqrt(dx * dx + dz * dz);
-                bool isOutsideVisibleArea = dist > minimapRadius;
-                
-                if (isOutsideVisibleArea)
-                {
-                    // Hide the blip and show edge marker instead
-                    if (blips.ContainsKey(hp.transform))
-                    {
-                        blips[hp.transform].gameObject.SetActive(false);
-                    }
-                    UpdateEdgeMarker(hp.transform, dx, dz, dist, true, hp.Team);
-                }
-                else
-                {
-                    // Show the blip and hide edge marker
-                    if (edgeMarkers.ContainsKey(hp.transform))
-                    {
-                        edgeMarkers[hp.transform].gameObject.SetActive(false);
-                    }
-                    
-                    // Use team color for home planets; same blip treatment as planets (rings + population text)
-                    Color homeBlipColor = hp.Team == TeamId.None 
-                        ? homePlanetColor 
-                        : GetTeamColor(hp.Team);
-                    float actualHomeSize = (hp.transform.localScale.x + hp.transform.localScale.y + hp.transform.localScale.z) / 3f;
-                    if (actualHomeSize < 0.1f) actualHomeSize = hp.BodySize;
-                    float homeBlipSize = actualHomeSize * worldToMinimapScale * sizeScaleFactor;
-                    if (blips.ContainsKey(hp.transform))
-                    {
-                        blips[hp.transform].gameObject.SetActive(true);
-                        UpdatePlanetBlip(blips[hp.transform], hp, homeBlipColor, homeBlipSize, worldToMinimapScale);
-                        ApplyRespawnSelectPlanetTint(blips[hp.transform], hp);
-                    }
-                    else
-                    {
-                        EnsureBlip(hp.transform, () => CreatePlanetBlip(hp, homeBlipColor, homeBlipSize, worldToMinimapScale));
-                    }
-                }
+
+                UpdateCachedPlanetBlip(hp, playerPos, worldToMinimapScale, isHome: true, homePlanetColor);
             }
 
             UpdateGemMoonBlips(playerPos, worldToMinimapScale);
@@ -3191,6 +3121,59 @@ namespace TitanOrbit.UI
             UpdateDeadAsteroidGhosts(playerPos);
         }
 
+        /// <summary>
+        /// Shows a planet or home-world blip while its moon-orbit ring still crosses the radar,
+        /// and swaps in a rim arrow only after that ring has left the circle.
+        /// </summary>
+        void UpdateCachedPlanetBlip(
+            MinimapBlipAnchor planet,
+            Vector3 playerPos,
+            float worldToMinimapScale,
+            bool isHome,
+            Color neutralColor)
+        {
+            Vector3 worldPos = planet.transform.position;
+            GetToroidalDelta(playerPos, worldPos, out float dx, out float dz);
+            float dist = Mathf.Sqrt(dx * dx + dz * dz);
+
+            // Ring reach is the gameplay outer lip, which sits just outside the thin
+            // minimap stroke — so the arc is already on-screen before the planet disc enters.
+            float ringOuter = GetPlanetOrbitRingOuterRadiusWorld(planet);
+            bool ringOnMap = dist <= minimapRadius + ringOuter;
+
+            if (!ringOnMap)
+            {
+                if (blips.TryGetValue(planet.transform, out var hidden) && hidden != null)
+                    hidden.gameObject.SetActive(false);
+                // Arrow is largest the moment the ring leaves, then shrinks with distance.
+                UpdateEdgeMarker(planet.transform, dx, dz, dist, isHome, planet.Team, minimapRadius + ringOuter);
+                return;
+            }
+
+            if (dist > minimapRadius)
+                _orbitRingCrossesRadar.Add(planet.transform);
+
+            if (edgeMarkers.TryGetValue(planet.transform, out var marker) && marker != null)
+                marker.gameObject.SetActive(false);
+
+            Color planetBlipColor = planet.Team == TeamId.None
+                ? neutralColor
+                : GetTeamColor(planet.Team);
+            float actualPlanetSize = (planet.transform.localScale.x + planet.transform.localScale.y + planet.transform.localScale.z) / 3f;
+            if (actualPlanetSize < 0.1f) actualPlanetSize = planet.BodySize;
+            float planetBlipSize = actualPlanetSize * worldToMinimapScale * sizeScaleFactor;
+            if (blips.TryGetValue(planet.transform, out var blipRt) && blipRt != null)
+            {
+                blipRt.gameObject.SetActive(true);
+                UpdatePlanetBlip(blipRt, planet, planetBlipColor, planetBlipSize, worldToMinimapScale);
+                ApplyRespawnSelectPlanetTint(blipRt, planet);
+            }
+            else
+            {
+                EnsureBlip(planet.transform, () => CreatePlanetBlip(planet, planetBlipColor, planetBlipSize, worldToMinimapScale));
+            }
+        }
+
         private void UpdateBlipPositions(Vector3 playerPos, float worldToMinimapScale)
         {
             foreach (var kv in blips)
@@ -3202,7 +3185,10 @@ namespace TitanOrbit.UI
                 GetToroidalDelta(playerPos, worldPos, out float dx, out float dz);
 
                 float dist = Mathf.Sqrt(dx * dx + dz * dz);
-                if (dist > minimapRadius)
+                // Ships, moons, and asteroids cull at the circle. Planets stay positioned
+                // past that edge while their orbit ring still overlaps, so the mask can
+                // show the arc before the disc itself arrives.
+                if (dist > minimapRadius && !_orbitRingCrossesRadar.Contains(kv.Key))
                 {
                     if (kv.Value.gameObject.activeSelf)
                         kv.Value.gameObject.SetActive(false);
@@ -3943,6 +3929,22 @@ namespace TitanOrbit.UI
             float centerlineScale = ringTexHalf / ringTexMid;
             float diameter = 2f * centerWorld * Mathf.Max(0.0001f, worldToMinimapScale) * centerlineScale;
             return Mathf.Max(4f, diameter);
+        }
+
+        /// <summary>
+        /// World-space outer lip of the moon-orbit ring. The minimap keeps the planet blip
+        /// alive until the player is farther than the radar radius plus this reach, so the
+        /// arc is visible before the planet disc enters the circle.
+        /// </summary>
+        float GetPlanetOrbitRingOuterRadiusWorld(MinimapBlipAnchor planet)
+        {
+            PlanetOrbitMath.GetRingRadiiWorld(
+                Mathf.Max(0.01f, ResolvePlanetWorldSize(planet)),
+                1,
+                out _,
+                out float outerWorld,
+                out _);
+            return outerWorld;
         }
 
         /// <summary>
@@ -4784,7 +4786,17 @@ namespace TitanOrbit.UI
         /// <param name="distance">Toroidal distance used for arrow size falloff.</param>
         /// <param name="isHomePlanet">True for home-world arrows (gold / team tint).</param>
         /// <param name="team">Owning team for tint; None uses the neutral planet colour.</param>
-        private void UpdateEdgeMarker(Transform planetTransform, float dx, float dz, float distance, bool isHomePlanet, TeamId team)
+        /// <param name="falloffInnerRadius">Distance where the arrow is largest. Defaults to the radar radius.
+        /// Planet markers pass radar radius plus orbit-ring reach so the arrow starts full size
+        /// when the ring leaves the circle, not already shrunk.</param>
+        private void UpdateEdgeMarker(
+            Transform planetTransform,
+            float dx,
+            float dz,
+            float distance,
+            bool isHomePlanet,
+            TeamId team,
+            float falloffInnerRadius = -1f)
         {
             if (edgeMarkerContainer == null) return;
             
@@ -4801,9 +4813,12 @@ namespace TitanOrbit.UI
                 ? (team == TeamId.None ? homePlanetColor : GetTeamColor(team))
                 : (team == TeamId.None ? planetColor : GetTeamColor(team));
             
-            // Calculate marker size based on distance (closer = bigger, farther = smaller)
-            // Distance ranges from minimapRadius to maxPlanetDistance
-            float normalizedDistance = Mathf.Clamp01((distance - minimapRadius) / (maxPlanetDistance - minimapRadius));
+            // Closer to the visible edge = bigger, farther = smaller.
+            // Orbit rings delay the arrow until the arc has left the circle, so falloff
+            // starts at that farther lip instead of the planet-center radar radius.
+            float inner = falloffInnerRadius > 0f ? falloffInnerRadius : minimapRadius;
+            float span = Mathf.Max(0.01f, maxPlanetDistance - inner);
+            float normalizedDistance = Mathf.Clamp01((distance - inner) / span);
             float markerSize = Mathf.Lerp(edgeMarkerMaxSize, edgeMarkerMinSize, normalizedDistance);
             
             // Create or update edge marker

@@ -622,7 +622,7 @@ namespace TitanOrbit.Game
                         ShowArrivePeoplePopup(in f);
                 }
 
-                PlayPeopleArriveSound(in f, loadReturnedToPlanet);
+                PlayPeopleArriveSound(in f, loadReturnedToPlanet, pose.Position);
                 DestroyFlightAt(index, showArrivePopup: false);
                 return;
             }
@@ -910,21 +910,25 @@ namespace TitanOrbit.Game
         /// </summary>
         /// <param name="flight">Flight that just delivered — Amount and IsLoad drive pitch.</param>
         /// <param name="returnedToPlanet">True when leftover load people refunded the planet.</param>
-        static void PlayPeopleArriveSound(in Flight flight, bool returnedToPlanet)
+        static void PlayPeopleArriveSound(in Flight flight, bool returnedToPlanet, float3 worldPosition)
         {
             // --- Arrive transfer SFX ---
             // [HYBRID] Presentation-only — server never plays audio in headless builds.
             // [TITAN-ORBIT] GetOrFind matches gem deposit: Windows player Awake order can leave
             // AudioManager.Instance null for a frame even when the component is in the scene.
+            float hear = GameplaySfxProximity.VolumeAt((Vector3)worldPosition);
+            if (hear <= 0.001f)
+                return;
+
             var audio = AudioManager.GetOrFind();
             if (audio == null)
                 return;
 
             bool landedOnPlanet = returnedToPlanet || (flight.IsLoad == 0 && !flight.Returning);
             if (landedOnPlanet)
-                audio.PlayPeopleUnloadSound(flight.Amount);
+                audio.PlayPeopleUnloadSound(flight.Amount, hear);
             else
-                audio.PlayPeopleLoadSound(flight.Amount);
+                audio.PlayPeopleLoadSound(flight.Amount, hear);
         }
 
         /// <summary>

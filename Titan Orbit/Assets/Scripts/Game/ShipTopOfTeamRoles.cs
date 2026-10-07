@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using TitanOrbit.Core;
+using TitanOrbit.ECS;
 
 namespace TitanOrbit.Game
 {
@@ -76,6 +77,9 @@ namespace TitanOrbit.Game
             {
                 Candidate ship = candidates[i];
                 if (ship.IsDead || ship.Team == TeamId.None || ship.OwnerNetworkId <= 0)
+                    continue;
+                // Same exclusion as ShipCommandRoleRefreshSystem — bots do not earn command seats.
+                if (BotShipIds.IsBot(ship.OwnerNetworkId))
                     continue;
 
                 if (!topsByTeam.TryGetValue(ship.Team, out var tops))

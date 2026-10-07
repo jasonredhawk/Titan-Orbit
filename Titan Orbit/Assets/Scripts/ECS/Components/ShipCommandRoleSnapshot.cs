@@ -57,6 +57,10 @@ namespace TitanOrbit.ECS
                 IsMiner(team, networkId),
                 IsTransporter(team, networkId));
 
+        /// <summary>True when this team has any living killer, miner, or troop title.</summary>
+        public bool TeamHasCommandSeat(TeamId team) =>
+            GetKiller(team) != 0 || GetMiner(team) != 0 || GetTransporter(team) != 0;
+
         /// <summary>Winner NetworkId for kills, or 0.</summary>
         public int GetKiller(TeamId team) => Read(team, KillerA, KillerB, KillerC, KillerD, KillerE);
 

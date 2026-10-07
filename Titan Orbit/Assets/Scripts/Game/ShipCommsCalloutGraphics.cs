@@ -17,9 +17,10 @@ namespace TitanOrbit.Game
         /// is Me → asteroid and asteroid → moon). A lone world noun implies Me,
         /// unless the sentence named You and nobody was locked — then the
         /// source stays empty and only the world ring draws ("You Asteroid" is a
-        /// rock circle). Us is the speaker plus friendlies inside
-        /// <see cref="YouSelectRange"/> of that hull, so "Us Asteroid" is we →
-        /// rock even when nobody else is nearby. Escort is every teammate with
+        /// rock circle). Us is the speaker plus friendlies whose hulls are on
+        /// the local camera (and inside <see cref="YouSelectRange"/>), so
+        /// "Us Asteroid" is we → rock even when nobody else is on screen.
+        /// Escort is every teammate with
         /// troops aboard inside that range of the mouse aim. Team-owned nouns default to the speaker's
         /// team unless Attack / Enemy / a color word says otherwise. Verbs tint
         /// the following segment.
@@ -172,6 +173,11 @@ namespace TitanOrbit.Game
                         teammatesOnly, enemiesOnly, s_IdScratch, 1);
                     locked = n > 0 ? s_IdScratch[0] : 0;
                 }
+
+                // Click-lock can go stale if that hull leaves the view before release.
+                // You only names a ship the speaker can see.
+                if (words.HasYou && locked > 0 && !IsLockedHullOnLocalScreen(locked))
+                    locked = 0;
 
                 if (locked == callout.NetworkId)
                     locked = 0;
@@ -363,8 +369,8 @@ namespace TitanOrbit.Game
         /// Locks Us network ids at send and writes XZ fallbacks if a hull later despawns.
         /// Draw follows live proxies — it does not stay on these seats.
         /// <para>
-        /// [TITAN-ORBIT] Us is the speaker plus teammates inside
-        /// <see cref="YouSelectRange"/> of that hull. Escort is every teammate
+        /// [TITAN-ORBIT] Us is the speaker plus teammates on the local camera
+        /// and inside <see cref="YouSelectRange"/> of that hull. Escort is every teammate
         /// that has troops aboard and sits inside that same range of the
         /// play-plane mouse aim. Empty Escort stays empty (same as empty You).
         /// Us is empty only when the speaker hull itself cannot be found.
@@ -422,9 +428,9 @@ namespace TitanOrbit.Game
             }
             else if (words.HasUs)
             {
-                // --- Speaker plus friendlies around that hull ---
+                // --- Speaker plus on-screen friendlies around that hull ---
                 // [TITAN-ORBIT] Us means "we". The speaker is always a target.
-                // Nearby teammates fill Us0–Us3 so remotes can follow those hulls.
+                // Teammates on the local view fill Us0–Us3 so remotes can follow those hulls.
                 // Origin is the speaker pose written above; aim is only a last-ditch
                 // fallback when we have no Me XZ at all.
                 n = CollectUsTargets(
@@ -472,7 +478,11 @@ namespace TitanOrbit.Game
             }
         }
 
-        /// <summary>Closest other ship to <paramref name="aim"/> within <see cref="YouSelectRange"/>. Never the speaker.</summary>
+        /// <summary>
+        /// Closest other ship to <paramref name="aim"/> that is on the local camera
+        /// and inside <see cref="YouSelectRange"/>. Never the speaker. Off-screen
+        /// hulls are skipped even when they are the nearest body in that radius.
+        /// </summary>
         public static bool TryResolveYou(Vector3 aim, int excludeNetworkId, out int networkId)
         {
             return TryResolveYou(aim, excludeNetworkId, TeamId.None, false, false, out networkId);
@@ -483,8 +493,9 @@ namespace TitanOrbit.Game
             out int networkId)
         {
             networkId = 0;
-            int n = ShipWeaponProxyRegistry.CollectClosestHulls(
-                aim, YouSelectRange, excludeNetworkId, speakerTeam, teammatesOnly, enemiesOnly, s_IdScratch, 1);
+            int n = CollectClosest(
+                aim, YouSelectRange, excludeNetworkId, speakerTeam, teammatesOnly, enemiesOnly, s_IdScratch, 1,
+                onLocalScreenOnly: true);
             if (n <= 0)
                 return false;
             networkId = s_IdScratch[0];
@@ -840,9 +851,9 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Compose-time rings for "Us": this hull plus friendlies inside
-        /// <see cref="YouSelectRange"/>. Gathered live so a teammate who flies
-        /// into the circle while S is held still lights up before send.
+        /// Compose-time rings for "Us": this hull plus friendlies on the local
+        /// camera inside <see cref="YouSelectRange"/>. Gathered live so a teammate
+        /// who flies into view while S is held still lights up before send.
         /// </summary>
         public static void DrawPendingUs(float alpha)
         {
@@ -1941,17 +1952,29 @@ namespace TitanOrbit.Game
         static int CollectClosest(
             Vector3 aim, float range, int exclude, TeamId team,
             bool teammatesOnly, bool enemiesOnly, int[] dst, int max,
-            bool troopCarriersOnly = false)
+            bool troopCarriersOnly = false,
+            bool onLocalScreenOnly = false)
         {
             return ShipWeaponProxyRegistry.CollectClosestHulls(
                 aim, range, exclude, team, teammatesOnly, enemiesOnly, dst, max,
-                troopCarriersOnly);
+                troopCarriersOnly, onLocalScreenOnly);
         }
 
         /// <summary>
-        /// Fills speaker first, then nearest teammates inside
-        /// <see cref="YouSelectRange"/> of that hull. Compose preview and send
-        /// snapshot share this so the rings the player saw match the sent path.
+        /// True when the locked hull proxy is inside the local gameplay view.
+        /// Missing proxy counts as off screen so a stale id cannot ride the send.
+        /// </summary>
+        static bool IsLockedHullOnLocalScreen(int networkId)
+        {
+            return TryHullPos(networkId, out Vector3 pos)
+                && ShipWeaponProxyRegistry.IsHullCenterOnLocalScreen(pos);
+        }
+
+        /// <summary>
+        /// Fills speaker first, then nearest teammates that are on the local
+        /// camera and inside <see cref="YouSelectRange"/> of that hull.
+        /// Compose preview and send snapshot share this so the rings the player
+        /// saw match the sent path. Off-screen teammates are not named.
         /// </summary>
         /// <param name="speakerId">Local / callout NetworkId. Always written first when positive.</param>
         /// <param name="speakerTeam">Presentation team used to keep Us on friendlies.</param>
@@ -1980,9 +2003,10 @@ namespace TitanOrbit.Game
             if (speakerId > 0 && written < cap)
                 dst[written++] = speakerId;
 
-            // --- Nearby friendlies ---
+            // --- On-screen friendlies ---
             // Origin is the speaker. Aim is only used when we have no pose
             // (despawned proxy, or a send that ran before the visualizer spawned).
+            // Hulls outside the local camera are skipped — Us is who you can see.
             Vector3 origin = speakerPos;
             if (origin.x == 0f && origin.z == 0f && !TryHullPos(speakerId, out origin))
                 origin = aimFallback;
@@ -1993,7 +2017,8 @@ namespace TitanOrbit.Game
 
             int n = CollectClosest(
                 origin, YouSelectRange, speakerId, speakerTeam,
-                teammatesOnly: true, enemiesOnly: false, s_IdScratch, othersCap);
+                teammatesOnly: true, enemiesOnly: false, s_IdScratch, othersCap,
+                onLocalScreenOnly: true);
             for (int i = 0; i < n && written < cap; i++)
             {
                 int id = s_IdScratch[i];

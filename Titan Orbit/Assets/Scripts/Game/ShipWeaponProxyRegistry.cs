@@ -125,8 +125,30 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// True when a hull center is in front of the local gameplay camera and inside
+        /// the view (small pad so a ship clipped by the bezel still counts).
+        /// Comms "You" / "Us" use this so a far hull on the other side of the map
+        /// cannot be named just because it is within a world-unit radius.
+        /// A missing camera fails closed — nothing is treated as on screen.
+        /// </summary>
+        public static bool IsHullCenterOnLocalScreen(Vector3 worldPos)
+        {
+            Camera cam = Camera.main;
+            if (cam == null)
+                return false;
+
+            // Viewport: 0–1 is the picture. z > 0 means in front of the lens.
+            Vector3 vp = cam.WorldToViewportPoint(worldPos);
+            const float pad = 0.04f;
+            return vp.z > 0f
+                && vp.x >= -pad && vp.x <= 1f + pad
+                && vp.y >= -pad && vp.y <= 1f + pad;
+        }
+
+        /// <summary>
         /// Closest hulls to <paramref name="aim"/> within <paramref name="maxRange"/>,
         /// nearest first. Optional same-team / other-team / troop-carrier filter.
+        /// <paramref name="onLocalScreenOnly"/> drops hulls the local camera cannot see.
         /// One-shot comms resolve. Map size from <see cref="ToroidalMap"/>.
         /// </summary>
         public static int CollectClosestHulls(
@@ -138,7 +160,8 @@ namespace TitanOrbit.Game
             bool enemiesOnly,
             int[] ids,
             int max,
-            bool troopCarriersOnly = false)
+            bool troopCarriersOnly = false,
+            bool onLocalScreenOnly = false)
         {
             if (ids == null || max <= 0)
                 return 0;
@@ -161,7 +184,11 @@ namespace TitanOrbit.Game
                 if (troopCarriersOnly && ReadPresentationPeople(kv.Value) <= 0)
                     continue;
 
-                float d = ToroidalMap.ToroidalDistance(aim, kv.Value.position);
+                Vector3 pos = kv.Value.position;
+                if (onLocalScreenOnly && !IsHullCenterOnLocalScreen(pos))
+                    continue;
+
+                float d = ToroidalMap.ToroidalDistance(aim, pos);
                 if (d > capRange)
                     continue;
 

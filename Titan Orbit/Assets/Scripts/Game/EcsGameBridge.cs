@@ -2961,6 +2961,10 @@ namespace TitanOrbit.Game
             if (networkId <= 0)
                 return "Player";
 
+            // Synthetic bot ids are not in the player-name roster.
+            if (BotShipIds.IsBot(networkId))
+                return GameNames.GetNameForAI((ulong)networkId);
+
             if (PlayerNameRosterCache.TryGet(networkId, out string name))
                 return name;
 

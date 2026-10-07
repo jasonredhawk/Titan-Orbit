@@ -1314,7 +1314,8 @@ namespace TitanOrbit.Game
             AudioManager.GetOrFind()?.PlayWeaponShootSound(
                 BulletVisualFactory.GetFirePowerSoundPitch(
                     pianoLive, req.FirePowerBase, req.FirePowerPerExtra),
-                BulletVisualFactory.GetFirePowerShootVolume(req.Damage));
+                BulletVisualFactory.GetFirePowerShootVolume(req.Damage)
+                    * GameplaySfxProximity.VolumeAt(spawnDisplay));
 
             // --- Pooled tracer shell (destroy-probe: spawnMs ~14 ms was Instantiates here) ---
             GameObject projectilePrefab = null;
@@ -1348,7 +1349,8 @@ namespace TitanOrbit.Game
             VfxUrpCompat.PrepareVfxInstance(go);
             BulletVisualFactory.SetAudioPitchInHierarchy(
                 go, BulletVisualFactory.GetFirePowerSoundPitch(
-                    pianoLive, req.FirePowerBase, req.FirePowerPerExtra));
+                    pianoLive, req.FirePowerBase, req.FirePowerPerExtra),
+                spawnDisplay);
 
             ClientBulletStretchVisual stretch = go.GetComponent<ClientBulletStretchVisual>();
             if (_bank != null

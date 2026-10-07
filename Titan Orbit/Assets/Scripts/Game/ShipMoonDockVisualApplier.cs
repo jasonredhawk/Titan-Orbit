@@ -473,6 +473,15 @@ namespace TitanOrbit.Game
         /// </param>
         void SetDockCameraFollow(Vector3 target, bool softCatchUp)
         {
+            // [NETCODE] Every OwnerPredicted hull runs this cinematic. Only the registered
+            // local applier may publish the gameplay camera anchor — a remote enter/exit
+            // used to steal follow for the landing (~1s) or takeoff (~1s) lerp.
+            if (s_localInstance != this)
+            {
+                _dockCameraFollowValid = false;
+                return;
+            }
+
             if (!_dockCameraFollowValid || !softCatchUp)
             {
                 _dockCameraFollowPosition = target;
@@ -502,11 +511,40 @@ namespace TitanOrbit.Game
 
         void UpdateLocalInstanceRegistration(EntityManager em)
         {
-            if (em.HasComponent<LocalPlayerShipTag>(_shipEntity) ||
-                em.HasComponent<GhostOwnerIsLocal>(_shipEntity))
+            if (IsLocalOwnerProxy(em))
                 s_localInstance = this;
             else if (s_localInstance == this)
                 s_localInstance = null;
+        }
+
+        /// <summary>
+        /// True only for this machine's hull. Remotes must not register as the camera follow.
+        /// </summary>
+        /// <param name="em">Visualization-world EntityManager for <see cref="_shipEntity"/>.</param>
+        bool IsLocalOwnerProxy(EntityManager em)
+        {
+            if (_shipEntity == Entity.Null || !em.Exists(_shipEntity))
+                return false;
+
+            // [NETCODE] GhostOwnerIsLocal is enableable and exists on every OwnerPredicted ship.
+            // HasComponent is true on remotes too — only IsComponentEnabled marks this machine's hull.
+            if (em.HasComponent<GhostOwnerIsLocal>(_shipEntity) &&
+                em.IsComponentEnabled<GhostOwnerIsLocal>(_shipEntity))
+                return true;
+
+            if (!em.HasComponent<LocalPlayerShipTag>(_shipEntity))
+                return false;
+
+            // [TITAN-ORBIT] Stale tag on a remote must not publish that hull as the camera anchor.
+            if (em.HasComponent<GhostOwner>(_shipEntity))
+            {
+                int ownerId = em.GetComponentData<GhostOwner>(_shipEntity).NetworkId;
+                int localId = EcsGameBridge.GetLocalNetworkId();
+                if (localId > 0 && ownerId != localId)
+                    return false;
+            }
+
+            return true;
         }
 
         static int ResolveTakeoffPlanetId(in ShipMoonDockState moonDock)
