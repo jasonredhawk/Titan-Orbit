@@ -519,6 +519,12 @@ namespace TitanOrbit.UI
         /// <summary>True while comms has this map docked as a smaller full-map ping pad.</summary>
         public bool IsCommsDocked => _commsDocked;
 
+        /// <summary>
+        /// True when this client needs every ship's position: expanded map, death respawn picker,
+        /// or the comms dock. The corner radar does not.
+        /// </summary>
+        public bool WantsAllShipPositions => isExpanded || _commsDocked || _respawnSelectLocked;
+
         /// <summary>Full-map projection (M-expand or comms dock).</summary>
         bool IsFullMapView => isExpanded || _commsDocked;
 
@@ -1901,7 +1907,10 @@ namespace TitanOrbit.UI
         private void OnDisable()
         {
             if (Instance == this)
+            {
                 Instance = null;
+                ViewInterestTuning.ClientWantsAllShipPositions = false;
+            }
             HUDController.SetMinimapExpandedObscuresHud(false);
             RestoreNonMinimapUi();
         }
@@ -2200,6 +2209,10 @@ namespace TitanOrbit.UI
 
         private void Update()
         {
+            // [TITAN-ORBIT] The camera reporter lives in the Game assembly and cannot see this
+            // component. One bool write tells the server whether to send all-ship positions.
+            ViewInterestTuning.ClientWantsAllShipPositions = WantsAllShipPositions;
+
             // --- Per-frame refresh ---
             // Update display size if minimap size changed
             if (minimapRect != null)
@@ -3044,6 +3057,16 @@ namespace TitanOrbit.UI
                     continue;
                 }
                 if (ship == playerAnchor || ship.IsDead) continue;
+
+                // Off-screen roster dots exist for the scoreboard. The corner map does not draw
+                // them, and the expanded map waits until a position packet has arrived.
+                if (ship.IsRosterOnly && (!WantsAllShipPositions || !ship.HasMapPosition))
+                {
+                    if (blips.ContainsKey(ship.transform))
+                        blips[ship.transform].gameObject.SetActive(false);
+                    RemoveShipEdgeMarker(ship.transform);
+                    continue;
+                }
 
                 // Calculate distance to check if ship is within visible area
                 Vector3 worldPos = ship.transform.position;

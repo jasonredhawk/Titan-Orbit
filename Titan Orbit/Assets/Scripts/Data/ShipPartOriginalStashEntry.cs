@@ -25,5 +25,17 @@ namespace TitanOrbit.Data
 
         /// <summary>Sibling index at stash time so L/R order stays stable.</summary>
         public int SiblingIndex;
+
+        /// <summary>
+        /// Index among same-named hardpoints (two <c>AstroEagle_Wing_2</c> children are 0 and 1).
+        /// The second side is a different position or a 180° flip, not a different name.
+        /// </summary>
+        public int Occurrence;
+
+        /// <summary>
+        /// True when this copy was taken at Bind, before attribute grow. A later stash of an
+        /// already swapped mesh keeps the geometry but must not be used as the hardpoint pose.
+        /// </summary>
+        public bool PoseIsAuthored;
     }
 }

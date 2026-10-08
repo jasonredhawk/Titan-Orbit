@@ -1911,7 +1911,7 @@ namespace TitanOrbit.NetCode
                 string hostProtocol = lobby.Data.TryGetValue(TitanOrbitLobbyService.LobbyRelayProtocolKey, out var proto)
                     ? TitanOrbitRelayUtility.SanitizeRelayProtocolForRelaySdk(proto.Value)
                     : TitanOrbitRelayUtility.ClientConnectionTypeForPlatform();
-                // Platform-valid client endpoint on the same allocation (wss on WebGL, dtls otherwise).
+                // Same allocation as the dedicated host. WebGL and the Editor dial its wss endpoint.
                 string clientProtocol = TitanOrbitRelayUtility.ClientConnectionTypeForPlatform();
 
                 Debug.Log("[TitanOrbitSessionManager] Joining Relay lobby=" + lobby.Id + " code=" + joinCode +
@@ -1947,8 +1947,31 @@ namespace TitanOrbit.NetCode
                 // connects before NetworkStreamReceiveSystem polls the WebSocket.
                 TitanOrbitWebGlRelayConnect.Request();
 #else
-                ResetClientDriverIfNeeded();
-                ConnectRelayClient(clientWorld);
+                // A leftover IPC connection from the Editor's local ServerWorld makes
+                // ResetDriverStore refuse, and Connect then dials Relay on the wrong driver.
+                int released = ForceReleaseClientConnectionEntities(clientWorld.EntityManager);
+                if (released > 0)
+                    Debug.Log("[TitanOrbitSessionManager] Released " + released +
+                              " stale connection(s) before the Editor Relay driver rebuild.");
+                if (!ResetClientDriverIfNeeded())
+                {
+                    Debug.LogError("[TitanOrbitSessionManager] Editor Relay driver was not rebuilt.");
+                    LastStatusMessage = "Could not open the online connection. Stop Play, then Join game again.";
+                    return false;
+                }
+
+                Entity connection = ConnectRelayClient(clientWorld);
+                if (connection == Entity.Null)
+                {
+                    Debug.LogError("[TitanOrbitSessionManager] Editor Relay connect was skipped.");
+                    LastStatusMessage = "Online connect did not start. Tap Refresh, then join again.";
+                    return false;
+                }
+
+                TitanOrbitRelayState.TryGetClientRelay(out var dial);
+                Debug.Log("[TitanOrbitSessionManager] Editor Relay connect issued endpoint=" + dial.Endpoint +
+                          " wss=" + dial.IsWebSocket + " secure=" + dial.IsSecure +
+                          " connection=" + connection.Index);
 #endif
                 for (int i = 0; i < 30; i++)
                 {

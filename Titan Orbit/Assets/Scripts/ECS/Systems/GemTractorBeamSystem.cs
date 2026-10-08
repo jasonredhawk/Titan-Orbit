@@ -464,6 +464,10 @@ namespace TitanOrbit.ECS
             if (spawnId == 0)
                 return;
 
+            float3 pos = float3.zero;
+            if (EntityManager.HasComponent<LocalTransform>(gemEntity))
+                pos = EntityManager.GetComponentData<LocalTransform>(gemEntity).Position;
+
             GemNetNotify.SendTractorLock(ref rpcEcb, new GemTractorLockRpc
             {
                 SpawnId = spawnId,
@@ -472,7 +476,7 @@ namespace TitanOrbit.ECS
                 TractorLockTick = motion.TractorLockTick,
                 TractorExtendDuration = motion.TractorExtendDuration,
                 Phase = motion.Phase,
-            });
+            }, pos);
         }
 
         /// <summary>

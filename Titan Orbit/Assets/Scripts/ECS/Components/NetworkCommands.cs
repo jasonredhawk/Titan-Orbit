@@ -1238,4 +1238,270 @@ namespace TitanOrbit.ECS
 
     /// <summary>Server connection tag: live-gem catch-up RPCs dumped once.</summary>
     public struct GemCatchUpSent : IComponentData { }
+
+    /// <summary>
+    /// [NETCODE] Client → server: the ground rectangle the gameplay camera can see, plus whether
+    /// the full minimap is open. The server stores this on the connection and does not recompute
+    /// cameras. Sent when the view moves, not every tick. Layout changes need a headless rebuild.
+    /// </summary>
+    public struct ViewInterestCommand : IRpcCommand
+    {
+        /// <summary>Look-at point on the XZ ground plane (world units).</summary>
+        public float3 Center;
+
+        /// <summary>Half the visible ground width (world units).</summary>
+        public float HalfWidth;
+
+        /// <summary>Half the visible ground height (world units).</summary>
+        public float HalfHeight;
+
+        /// <summary>1 when the expanded map, death picker, or comms dock is open.</summary>
+        public byte FullMap;
+    }
+
+    /// <summary>
+    /// [NETCODE] Server → one client: up to 8 ship positions for the expanded minimap.
+    /// No rotation, weapons, health, or troop counts. Several packets share one
+    /// <see cref="Generation"/> when more than 8 ships exist.
+    /// </summary>
+    public struct ShipBlipSnapshotRpc : IRpcCommand
+    {
+        /// <summary>Flush id. Packets from an older flush are ignored.</summary>
+        public byte Generation;
+
+        /// <summary>Index of this packet inside the flush (0-based).</summary>
+        public byte PacketIndex;
+
+        /// <summary>How many packets belong to this flush.</summary>
+        public byte PacketCount;
+
+        /// <summary>Live slots in this packet (0–8).</summary>
+        public byte Count;
+
+        /// <summary>Ship network id, slot 0.</summary>
+        public int N0;
+        /// <summary>World X, slot 0.</summary>
+        public float X0;
+        /// <summary>World Z, slot 0.</summary>
+        public float Z0;
+        /// <summary>Team byte, slot 0.</summary>
+        public byte Team0;
+        /// <summary>Ship level, slot 0.</summary>
+        public byte Level0;
+        /// <summary>Mega / dead / awaiting-team bits, slot 0.</summary>
+        public byte Flags0;
+
+        /// <summary>Ship network id, slot 1.</summary>
+        public int N1;
+        /// <summary>World X, slot 1.</summary>
+        public float X1;
+        /// <summary>World Z, slot 1.</summary>
+        public float Z1;
+        /// <summary>Team byte, slot 1.</summary>
+        public byte Team1;
+        /// <summary>Ship level, slot 1.</summary>
+        public byte Level1;
+        /// <summary>Mega / dead / awaiting-team bits, slot 1.</summary>
+        public byte Flags1;
+
+        /// <summary>Ship network id, slot 2.</summary>
+        public int N2;
+        /// <summary>World X, slot 2.</summary>
+        public float X2;
+        /// <summary>World Z, slot 2.</summary>
+        public float Z2;
+        /// <summary>Team byte, slot 2.</summary>
+        public byte Team2;
+        /// <summary>Ship level, slot 2.</summary>
+        public byte Level2;
+        /// <summary>Mega / dead / awaiting-team bits, slot 2.</summary>
+        public byte Flags2;
+
+        /// <summary>Ship network id, slot 3.</summary>
+        public int N3;
+        /// <summary>World X, slot 3.</summary>
+        public float X3;
+        /// <summary>World Z, slot 3.</summary>
+        public float Z3;
+        /// <summary>Team byte, slot 3.</summary>
+        public byte Team3;
+        /// <summary>Ship level, slot 3.</summary>
+        public byte Level3;
+        /// <summary>Mega / dead / awaiting-team bits, slot 3.</summary>
+        public byte Flags3;
+
+        /// <summary>Ship network id, slot 4.</summary>
+        public int N4;
+        /// <summary>World X, slot 4.</summary>
+        public float X4;
+        /// <summary>World Z, slot 4.</summary>
+        public float Z4;
+        /// <summary>Team byte, slot 4.</summary>
+        public byte Team4;
+        /// <summary>Ship level, slot 4.</summary>
+        public byte Level4;
+        /// <summary>Mega / dead / awaiting-team bits, slot 4.</summary>
+        public byte Flags4;
+
+        /// <summary>Ship network id, slot 5.</summary>
+        public int N5;
+        /// <summary>World X, slot 5.</summary>
+        public float X5;
+        /// <summary>World Z, slot 5.</summary>
+        public float Z5;
+        /// <summary>Team byte, slot 5.</summary>
+        public byte Team5;
+        /// <summary>Ship level, slot 5.</summary>
+        public byte Level5;
+        /// <summary>Mega / dead / awaiting-team bits, slot 5.</summary>
+        public byte Flags5;
+
+        /// <summary>Ship network id, slot 6.</summary>
+        public int N6;
+        /// <summary>World X, slot 6.</summary>
+        public float X6;
+        /// <summary>World Z, slot 6.</summary>
+        public float Z6;
+        /// <summary>Team byte, slot 6.</summary>
+        public byte Team6;
+        /// <summary>Ship level, slot 6.</summary>
+        public byte Level6;
+        /// <summary>Mega / dead / awaiting-team bits, slot 6.</summary>
+        public byte Flags6;
+
+        /// <summary>Ship network id, slot 7.</summary>
+        public int N7;
+        /// <summary>World X, slot 7.</summary>
+        public float X7;
+        /// <summary>World Z, slot 7.</summary>
+        public float Z7;
+        /// <summary>Team byte, slot 7.</summary>
+        public byte Team7;
+        /// <summary>Ship level, slot 7.</summary>
+        public byte Level7;
+        /// <summary>Mega / dead / awaiting-team bits, slot 7.</summary>
+        public byte Flags7;
+    }
+
+    /// <summary>
+    /// [NETCODE] Server → one client: up to 4 scoreboard rows. No positions.
+    /// Keeps the leaderboard and top-of-team dots when the ship ghost is off-screen.
+    /// </summary>
+    public struct ShipRosterSnapshotRpc : IRpcCommand
+    {
+        /// <summary>Flush id. Packets from an older flush are ignored.</summary>
+        public byte Generation;
+
+        /// <summary>Index of this packet inside the flush (0-based).</summary>
+        public byte PacketIndex;
+
+        /// <summary>How many packets belong to this flush.</summary>
+        public byte PacketCount;
+
+        /// <summary>Live slots in this packet (0–4).</summary>
+        public byte Count;
+
+        /// <summary>Ship network id, slot 0.</summary>
+        public int N0;
+        /// <summary>Team byte, slot 0.</summary>
+        public byte Team0;
+        /// <summary>Ship level, slot 0.</summary>
+        public byte Level0;
+        /// <summary>Mega / dead / awaiting-team bits, slot 0.</summary>
+        public byte Flags0;
+        /// <summary>Match kills, slot 0.</summary>
+        public int Kills0;
+        /// <summary>Gems deposited, slot 0.</summary>
+        public int Gems0;
+        /// <summary>People delivered, slot 0.</summary>
+        public int People0;
+
+        /// <summary>Ship network id, slot 1.</summary>
+        public int N1;
+        /// <summary>Team byte, slot 1.</summary>
+        public byte Team1;
+        /// <summary>Ship level, slot 1.</summary>
+        public byte Level1;
+        /// <summary>Mega / dead / awaiting-team bits, slot 1.</summary>
+        public byte Flags1;
+        /// <summary>Match kills, slot 1.</summary>
+        public int Kills1;
+        /// <summary>Gems deposited, slot 1.</summary>
+        public int Gems1;
+        /// <summary>People delivered, slot 1.</summary>
+        public int People1;
+
+        /// <summary>Ship network id, slot 2.</summary>
+        public int N2;
+        /// <summary>Team byte, slot 2.</summary>
+        public byte Team2;
+        /// <summary>Ship level, slot 2.</summary>
+        public byte Level2;
+        /// <summary>Mega / dead / awaiting-team bits, slot 2.</summary>
+        public byte Flags2;
+        /// <summary>Match kills, slot 2.</summary>
+        public int Kills2;
+        /// <summary>Gems deposited, slot 2.</summary>
+        public int Gems2;
+        /// <summary>People delivered, slot 2.</summary>
+        public int People2;
+
+        /// <summary>Ship network id, slot 3.</summary>
+        public int N3;
+        /// <summary>Team byte, slot 3.</summary>
+        public byte Team3;
+        /// <summary>Ship level, slot 3.</summary>
+        public byte Level3;
+        /// <summary>Mega / dead / awaiting-team bits, slot 3.</summary>
+        public byte Flags3;
+        /// <summary>Match kills, slot 3.</summary>
+        public int Kills3;
+        /// <summary>Gems deposited, slot 3.</summary>
+        public int Gems3;
+        /// <summary>People delivered, slot 3.</summary>
+        public int People3;
+    }
+
+    /// <summary>
+    /// [NETCODE] Server → one client: a mine whose owner ship is off-screen but the mine
+    /// itself is inside the camera view. <see cref="Visible"/> 0 removes it without an explosion.
+    /// </summary>
+    public struct MineVisibleRpc : IRpcCommand
+    {
+        /// <summary>1 = show or refresh, 0 = silent hide.</summary>
+        public byte Visible;
+
+        /// <summary>Same id as <see cref="DeployedMineElement.Sequence"/>.</summary>
+        public uint Sequence;
+
+        /// <summary>Owner ship network id.</summary>
+        public int OwnerNetworkId;
+
+        /// <summary>Logical world position (Y unused).</summary>
+        public float3 Position;
+
+        /// <summary>Owner team byte.</summary>
+        public byte OwnerTeam;
+
+        /// <summary>Store purchase level.</summary>
+        public int ItemLevel;
+
+        /// <summary>Fuse end time on the server clock.</summary>
+        public double ExpireTime;
+
+        /// <summary>Place time on the server clock.</summary>
+        public double PlaceTime;
+
+        /// <summary>Fuse HP at place.</summary>
+        public int MaxHealth;
+
+        /// <summary>Center damage.</summary>
+        public float Damage;
+
+        /// <summary>Bomb mesh scale.</summary>
+        public float VisualScale;
+
+        /// <summary>Burst VFX scale.</summary>
+        public float ExplosionVfxScale;
+    }
 }

@@ -28,12 +28,34 @@ namespace TitanOrbit.ECS
     /// </summary>
     public static class ShipComponentVisualSwapLogic
     {
+        /// <summary>
+        /// Same names as <c>ShipBankVisualApplier</c>. That pivot is created after Bind
+        /// stashes originals, so a ParentPath of "" is the hull root at stash time and
+        /// the prefab container (under BankPivot) once the proxy is banking.
+        /// </summary>
+        const string BankPivotName = "BankPivot";
+        const string PrefabContainerName = "Prefab";
+
         static readonly List<ShipFamilyPartMatch.Slot> HostSlots = new List<ShipFamilyPartMatch.Slot>(32);
         static readonly List<ShipFamilyPartMatch.Slot> MatchSlots = new List<ShipFamilyPartMatch.Slot>(8);
         static readonly List<Transform> RestoreScratch = new List<Transform>(8);
         static readonly List<Transform> StashEntryScratch = new List<Transform>(32);
         static readonly HashSet<string> KeepRemappedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         static readonly HashSet<string> LiveSlotNames = new HashSet<string>(StringComparer.Ordinal);
+        static readonly Dictionary<string, int> NameOrdinalScratch = new Dictionary<string, int>(32);
+        static readonly Dictionary<int, int> OccurrenceByInstanceId = new Dictionary<int, int>(32);
+        static readonly Dictionary<string, AuthoredSlotPose> PrefabPoseCache = new Dictionary<string, AuthoredSlotPose>(64);
+        static readonly HashSet<string> PrefabPoseScanned = new HashSet<string>(StringComparer.Ordinal);
+
+        static ShipFamilyDefinition s_PoseHostFamily;
+        static int s_PoseShipLevel = 1;
+
+        struct AuthoredSlotPose
+        {
+            public Vector3 Position;
+            public Quaternion Rotation;
+            public Vector3 Scale;
+        }
 
         /// <summary>
         /// Reads the ghosted equipment buffer + bullet bank and remaps <paramref name="root"/>.
@@ -140,6 +162,9 @@ namespace TitanOrbit.ECS
             if (root == null)
                 return false;
 
+            s_PoseHostFamily = hostFamily;
+            s_PoseShipLevel = Mathf.Max(1, shipLevel);
+
             bool changed = false;
 
             // --- Which non-weapon hardpoints extras still cover ---
@@ -213,6 +238,18 @@ namespace TitanOrbit.ECS
                 return;
 
             CollectHostSlots(root, hostFamilyPrefix, HostSlots);
+            // Stamp before any stash instantiate. Two hardpoints share a name
+            // (left / right weapon, or a wing and its 180° flip). Counting after
+            // the first copy lands in the stash would bump the second side.
+            for (int i = 0; i < HostSlots.Count; i++)
+            {
+                Transform slot = HostSlots[i].Transform;
+                if (slot == null || slot.GetComponent<ShipPartVisualSource>() != null)
+                    continue;
+                int occurrence = ResolveOccurrence(root, slot);
+                StampAuthoredFromLive(slot, occurrence);
+            }
+
             for (int i = 0; i < HostSlots.Count; i++)
             {
                 Transform slot = HostSlots[i].Transform;
@@ -220,7 +257,8 @@ namespace TitanOrbit.ECS
                     continue;
                 if (slot.GetComponent<ShipPartVisualSource>() != null)
                     continue;
-                StashOriginalIfNeeded(root, slot, originalStash);
+                int occurrence = ResolveOccurrence(root, slot);
+                StashOriginalIfNeeded(root, slot, originalStash, occurrence);
             }
         }
 
@@ -526,6 +564,8 @@ namespace TitanOrbit.ECS
                     slots.RemoveAt(i);
             }
 
+            CacheOccurrences(root, slots);
+
             bool changed = false;
             for (int i = 0; i < slots.Count; i++)
             {
@@ -533,13 +573,30 @@ namespace TitanOrbit.ECS
                 if (hostSlot == null)
                     continue;
 
+                int occurrence = CachedOccurrence(hostSlot);
                 if (originalStash != null)
-                    StashOriginalIfNeeded(root, hostSlot, originalStash);
+                    StashOriginalIfNeeded(root, hostSlot, originalStash, occurrence);
+
+                // Same child name on both sides. The first stash entry is only the
+                // left (or unflipped) pose — applying it to every match stacks both
+                // wings and both guns on one side.
+                ShipPartOriginalStashEntry authoredEntry = originalStash != null
+                    ? FindStashEntry(originalStash, hostSlot.name, occurrence)
+                    : null;
+                Transform parent = ResolveSlotParent(
+                    root, hostSlot, authoredEntry != null ? authoredEntry.ParentPath : null);
 
                 GameObject clone = ShipFamilyPartVisualCache.InstantiateAtHostSlot(
                     template, hostSlot, stripColliders);
                 if (clone == null)
                     continue;
+
+                PlaceCloneOnHostParent(clone.transform, parent, null);
+                if (TryResolveAuthoredPose(hostSlot, occurrence, authoredEntry, out AuthoredSlotPose pose))
+                {
+                    ApplyAuthoredPose(clone.transform, pose, keepSourceScaleMagnitude: true);
+                    StampPose(clone, occurrence, pose);
+                }
 
                 DestroyNow(hostSlot.gameObject);
                 StampVisualSource(clone, sourceFamily);
@@ -683,6 +740,8 @@ namespace TitanOrbit.ECS
                 RestoreScratch.Add(slot);
             }
 
+            CacheOccurrences(root, RestoreScratch);
+
             bool changed = false;
             for (int i = 0; i < RestoreScratch.Count; i++)
             {
@@ -727,23 +786,27 @@ namespace TitanOrbit.ECS
                 return false;
 
             string hostName = liveSlot.name;
-            Transform liveParent = liveSlot.parent != null ? liveSlot.parent : root;
-            Vector3 pos = liveSlot.localPosition;
-            Quaternion rot = liveSlot.localRotation;
+            int occurrence = CachedOccurrence(liveSlot);
+            if (occurrence == 0 && !OccurrenceByInstanceId.ContainsKey(liveSlot.GetInstanceID()))
+                occurrence = ResolveOccurrence(root, liveSlot);
 
             GameObject restored = null;
-            ShipPartOriginalStashEntry stashEntry = FindStashEntry(originalStash, hostName);
+            ShipPartOriginalStashEntry exactEntry = FindStashEntry(originalStash, hostName, occurrence);
+            ShipPartOriginalStashEntry meshEntry = exactEntry ?? FindStashMesh(originalStash, hostName);
+            ShipPartOriginalStashEntry stashEntry = exactEntry;
+            // Live parent wins when it is already under BankPivot/Prefab. A stash
+            // ParentPath of "" still resolves to the proxy root, which is outside
+            // the pivot — that part then sits beside the hull and does not bank.
+            Transform parent = ResolveSlotParent(
+                root, liveSlot, stashEntry != null ? stashEntry.ParentPath : null);
 
             // --- Preferred: authored clone taken at Bind (correct chassis tier) ---
-            if (stashEntry != null)
+            // meshEntry may be the other side's copy when this occurrence was never
+            // stashed. Pose is applied afterwards so the right-hand hardpoint is not
+            // left on the left-hand offset.
+            if (meshEntry != null)
             {
-                Transform stashParent = ResolveRelative(root, stashEntry.ParentPath);
-                if (stashParent == null
-                    || IsUnderStash(stashParent)
-                    || stashParent == liveSlot)
-                    stashParent = liveParent;
-
-                restored = Object.Instantiate(stashEntry.gameObject, stashParent, false);
+                restored = Object.Instantiate(meshEntry.gameObject, parent, false);
                 var leftover = restored.GetComponent<ShipPartOriginalStashEntry>();
                 if (leftover != null)
                     DestroyNow(leftover);
@@ -751,10 +814,11 @@ namespace TitanOrbit.ECS
                 StripJetVfxInstances(restored);
                 restored.name = hostName;
                 restored.SetActive(true);
-                restored.transform.localPosition = pos;
-                restored.transform.localRotation = rot;
-                restored.transform.SetSiblingIndex(
-                    Mathf.Clamp(stashEntry.SiblingIndex, 0, stashParent.childCount - 1));
+                if (parent != null)
+                {
+                    restored.transform.SetSiblingIndex(
+                        Mathf.Clamp(meshEntry.SiblingIndex, 0, parent.childCount - 1));
+                }
             }
             else if (hostFamily != null)
             {
@@ -776,6 +840,7 @@ namespace TitanOrbit.ECS
                         StripVisualSource(restored);
                         StripJetVfxInstances(restored);
                         ApplyHostTeamMaterials(hostFamily, restored, team);
+                        PlaceCloneOnHostParent(restored.transform, parent, null);
                     }
                 }
             }
@@ -785,7 +850,18 @@ namespace TitanOrbit.ECS
 
             // A bad parent path can nest the original under the mesh we are about to delete.
             if (restored.transform.IsChildOf(liveSlot))
-                restored.transform.SetParent(liveParent, false);
+            {
+                Transform safeParent = parent != null && parent != liveSlot && !parent.IsChildOf(liveSlot)
+                    ? parent
+                    : ResolveVisualContentRoot(root);
+                restored.transform.SetParent(safeParent, false);
+            }
+
+            if (TryResolveAuthoredPose(liveSlot, occurrence, exactEntry, out AuthoredSlotPose pose))
+            {
+                ApplyAuthoredPose(restored.transform, pose, keepSourceScaleMagnitude: false);
+                StampPose(restored, occurrence, pose);
+            }
 
             // Destroy the purchased clone only after the original is in the hierarchy.
             DestroyNow(liveSlot.gameObject);
@@ -796,7 +872,7 @@ namespace TitanOrbit.ECS
         /// Clones the live host slot under the hidden stash once. Later remaps skip so
         /// the copy stays the designed mesh, not a purchased one.
         /// </summary>
-        static void StashOriginalIfNeeded(Transform root, Transform hostSlot, Transform stash)
+        static void StashOriginalIfNeeded(Transform root, Transform hostSlot, Transform stash, int occurrence)
         {
             if (stash == null || hostSlot == null)
                 return;
@@ -807,7 +883,7 @@ namespace TitanOrbit.ECS
             // put the bought part back).
             if (IsUnderRemappedAncestor(hostSlot))
                 return;
-            if (FindStashEntry(stash, hostSlot.name) != null)
+            if (FindStashEntry(stash, hostSlot.name, occurrence) != null)
                 return;
 
             GameObject copy = Object.Instantiate(hostSlot.gameObject, stash, false);
@@ -821,26 +897,64 @@ namespace TitanOrbit.ECS
             entry.HostSlotName = hostSlot.name;
             entry.ParentPath = GetRelativePath(hostSlot.parent, root);
             entry.SiblingIndex = hostSlot.GetSiblingIndex();
+            entry.Occurrence = occurrence;
+
+            var stamped = hostSlot.GetComponent<ShipPartSlotPose>();
+            if (stamped != null && stamped.Stamped)
+            {
+                copy.transform.localPosition = stamped.AuthoredLocalPosition;
+                copy.transform.localRotation = stamped.AuthoredLocalRotation;
+                copy.transform.localScale = stamped.AuthoredLocalScale;
+                entry.PoseIsAuthored = true;
+                StampPose(copy, occurrence, PoseFromComponent(stamped));
+            }
         }
 
-        /// <summary>Stash clone whose name or <see cref="ShipPartOriginalStashEntry.HostSlotName"/> matches.</summary>
-        static ShipPartOriginalStashEntry FindStashEntry(Transform stash, string hostName)
+        /// <summary>
+        /// Stash clone for this hardpoint name and side index. A lone legacy entry
+        /// (occurrence 0, no authored flag) is only the first side.
+        /// </summary>
+        static ShipPartOriginalStashEntry FindStashEntry(Transform stash, string hostName, int occurrence)
         {
             if (stash == null || string.IsNullOrEmpty(hostName))
                 return null;
+
             var entries = stash.GetComponentsInChildren<ShipPartOriginalStashEntry>(true);
             for (int i = 0; i < entries.Length; i++)
             {
                 ShipPartOriginalStashEntry entry = entries[i];
-                if (entry == null)
+                if (!StashNameMatches(entry, hostName))
                     continue;
-                if (string.Equals(entry.gameObject.name, hostName, StringComparison.Ordinal))
-                    return entry;
-                if (string.Equals(entry.HostSlotName, hostName, StringComparison.Ordinal))
+                if (entry.Occurrence == occurrence)
                     return entry;
             }
 
             return null;
+        }
+
+        /// <summary>Any stashed mesh with this name, used when the other side was never copied.</summary>
+        static ShipPartOriginalStashEntry FindStashMesh(Transform stash, string hostName)
+        {
+            if (stash == null || string.IsNullOrEmpty(hostName))
+                return null;
+
+            var entries = stash.GetComponentsInChildren<ShipPartOriginalStashEntry>(true);
+            for (int i = 0; i < entries.Length; i++)
+            {
+                if (StashNameMatches(entries[i], hostName))
+                    return entries[i];
+            }
+
+            return null;
+        }
+
+        static bool StashNameMatches(ShipPartOriginalStashEntry entry, string hostName)
+        {
+            if (entry == null || string.IsNullOrEmpty(hostName))
+                return false;
+            if (string.Equals(entry.gameObject.name, hostName, StringComparison.Ordinal))
+                return true;
+            return string.Equals(entry.HostSlotName, hostName, StringComparison.Ordinal);
         }
 
         /// <summary>True when <paramref name="maybeAncestor"/> is <paramref name="descendant"/> or sits above it.</summary>
@@ -933,6 +1047,360 @@ namespace TitanOrbit.ECS
             return false;
         }
 
+        /// <summary>
+        /// Hull mesh root: <c>BankPivot/Prefab</c> after <c>ShipBankVisualApplier</c> runs,
+        /// otherwise the proxy root (Bind, before the pivot exists, and collider bakes).
+        /// </summary>
+        static Transform ResolveVisualContentRoot(Transform proxyRoot)
+        {
+            if (proxyRoot == null)
+                return null;
+
+            Transform bank = proxyRoot.Find(BankPivotName);
+            if (bank == null)
+                return proxyRoot;
+
+            Transform prefab = bank.Find(PrefabContainerName);
+            return prefab != null ? prefab : bank;
+        }
+
+        /// <summary>
+        /// Parent for a swapped or restored part. The live parent is correct while it
+        /// sits under the banking container. After a bad restore the live parent is the
+        /// proxy root (no roll). Replay the Bind-time path under <c>Prefab</c> in that case.
+        /// </summary>
+        static Transform ResolveSlotParent(Transform proxyRoot, Transform liveSlot, string parentPath)
+        {
+            Transform content = ResolveVisualContentRoot(proxyRoot);
+            Transform liveParent = liveSlot != null ? liveSlot.parent : null;
+            if (IsUsableSlotParent(liveParent, content, proxyRoot, liveSlot))
+                return liveParent;
+
+            Transform fromPath = ResolveParentPath(proxyRoot, content, parentPath, liveSlot);
+            if (fromPath != null)
+                return fromPath;
+
+            if (liveParent != null
+                && liveParent != liveSlot
+                && liveParent != proxyRoot
+                && !IsUnderStash(liveParent))
+                return liveParent;
+
+            return content != null ? content : proxyRoot;
+        }
+
+        /// <summary>
+        /// Moves <paramref name="clone"/> onto <paramref name="parent"/> and, when
+        /// <paramref name="authored"/> is set, writes the Bind-time local pose so
+        /// attribute scale multiplies the designed offset once.
+        /// </summary>
+        static void PlaceCloneOnHostParent(
+            Transform clone,
+            Transform parent,
+            ShipPartOriginalStashEntry authored)
+        {
+            if (clone == null)
+                return;
+
+            if (parent != null && clone.parent != parent && !IsUnderStash(parent) && parent != clone)
+                clone.SetParent(parent, false);
+
+            if (authored == null)
+                return;
+
+            clone.localPosition = authored.transform.localPosition;
+            clone.localRotation = authored.transform.localRotation;
+            Transform p = clone.parent;
+            if (p != null)
+                clone.SetSiblingIndex(Mathf.Clamp(authored.SiblingIndex, 0, p.childCount - 1));
+        }
+
+        static bool IsUsableSlotParent(
+            Transform parent,
+            Transform content,
+            Transform proxyRoot,
+            Transform liveSlot)
+        {
+            if (parent == null || parent == liveSlot || IsUnderStash(parent))
+                return false;
+
+            // Proxy root is outside BankPivot. Parts parented there do not roll.
+            if (content != null && content != proxyRoot && parent == proxyRoot)
+                return false;
+
+            if (content == null || content == proxyRoot)
+                return parent == proxyRoot || parent.IsChildOf(proxyRoot);
+
+            return parent == content || parent.IsChildOf(content);
+        }
+
+        static Transform ResolveParentPath(
+            Transform proxyRoot,
+            Transform content,
+            string parentPath,
+            Transform liveSlot)
+        {
+            if (proxyRoot == null)
+                return null;
+
+            if (string.IsNullOrEmpty(parentPath))
+                return content != null ? content : proxyRoot;
+
+            // Stash written after the pivot exists: "BankPivot/Prefab/Wing".
+            Transform direct = proxyRoot.Find(parentPath);
+            if (IsUsableResolvedParent(direct, liveSlot))
+                return direct;
+
+            // Stash written at Bind, before the pivot: "Wing" or a nested hardpoint.
+            if (content != null && content != proxyRoot)
+            {
+                Transform underContent = content.Find(parentPath);
+                if (IsUsableResolvedParent(underContent, liveSlot))
+                    return underContent;
+            }
+
+            return null;
+        }
+
+        static bool IsUsableResolvedParent(Transform parent, Transform liveSlot)
+        {
+            return parent != null && parent != liveSlot && !IsUnderStash(parent);
+        }
+
+        static void CacheOccurrences(Transform root, List<ShipFamilyPartMatch.Slot> slots)
+        {
+            OccurrenceByInstanceId.Clear();
+            if (slots == null)
+                return;
+
+            for (int i = 0; i < slots.Count; i++)
+            {
+                Transform t = slots[i].Transform;
+                if (t == null)
+                    continue;
+                OccurrenceByInstanceId[t.GetInstanceID()] = ResolveOccurrence(root, t);
+            }
+        }
+
+        static void CacheOccurrences(Transform root, List<Transform> slots)
+        {
+            OccurrenceByInstanceId.Clear();
+            if (slots == null)
+                return;
+
+            for (int i = 0; i < slots.Count; i++)
+            {
+                Transform t = slots[i];
+                if (t == null)
+                    continue;
+                OccurrenceByInstanceId[t.GetInstanceID()] = ResolveOccurrence(root, t);
+            }
+        }
+
+        static int CachedOccurrence(Transform slot)
+        {
+            if (slot != null && OccurrenceByInstanceId.TryGetValue(slot.GetInstanceID(), out int occurrence))
+                return occurrence;
+            return 0;
+        }
+
+        /// <summary>
+        /// Side index for a repeated hardpoint name. Stamped at Bind when possible.
+        /// Otherwise the count of earlier same-named transforms, ignoring the stash.
+        /// </summary>
+        static int ResolveOccurrence(Transform root, Transform slot)
+        {
+            if (slot == null)
+                return 0;
+
+            var stamped = slot.GetComponent<ShipPartSlotPose>();
+            if (stamped != null && stamped.Stamped)
+                return stamped.Occurrence;
+
+            if (root == null)
+                return 0;
+
+            int count = 0;
+            var all = root.GetComponentsInChildren<Transform>(true);
+            for (int i = 0; i < all.Length; i++)
+            {
+                Transform t = all[i];
+                if (t == slot)
+                    return count;
+                if (t == null || t == root || IsUnderStash(t))
+                    continue;
+                if (string.Equals(t.name, slot.name, StringComparison.Ordinal))
+                    count++;
+            }
+
+            return count;
+        }
+
+        static void StampAuthoredFromLive(Transform slot, int occurrence)
+        {
+            if (slot == null)
+                return;
+
+            var existing = slot.GetComponent<ShipPartSlotPose>();
+            if (existing != null && existing.Stamped)
+                return;
+
+            StampPose(slot.gameObject, occurrence, new AuthoredSlotPose
+            {
+                Position = slot.localPosition,
+                Rotation = slot.localRotation,
+                Scale = slot.localScale,
+            });
+        }
+
+        static void StampPose(GameObject go, int occurrence, AuthoredSlotPose pose)
+        {
+            if (go == null)
+                return;
+
+            var marker = go.GetComponent<ShipPartSlotPose>();
+            if (marker == null)
+                marker = go.AddComponent<ShipPartSlotPose>();
+            marker.Occurrence = occurrence;
+            marker.AuthoredLocalPosition = pose.Position;
+            marker.AuthoredLocalRotation = pose.Rotation;
+            marker.AuthoredLocalScale = pose.Scale;
+            marker.Stamped = true;
+        }
+
+        static AuthoredSlotPose PoseFromComponent(ShipPartSlotPose marker)
+        {
+            return new AuthoredSlotPose
+            {
+                Position = marker.AuthoredLocalPosition,
+                Rotation = marker.AuthoredLocalRotation,
+                Scale = marker.AuthoredLocalScale,
+            };
+        }
+
+        static bool TryResolveAuthoredPose(
+            Transform liveSlot,
+            int occurrence,
+            ShipPartOriginalStashEntry stashEntry,
+            out AuthoredSlotPose pose)
+        {
+            if (liveSlot != null)
+            {
+                var stamped = liveSlot.GetComponent<ShipPartSlotPose>();
+                if (stamped != null && stamped.Stamped)
+                {
+                    pose = PoseFromComponent(stamped);
+                    return true;
+                }
+            }
+
+            if (stashEntry != null && stashEntry.PoseIsAuthored)
+            {
+                pose = new AuthoredSlotPose
+                {
+                    Position = stashEntry.transform.localPosition,
+                    Rotation = stashEntry.transform.localRotation,
+                    Scale = stashEntry.transform.localScale,
+                };
+                return true;
+            }
+
+            // Unmodified host hardpoint already carries this side's offset.
+            // Rewriting it from the prefab would also move covering-collider bakes.
+            if (liveSlot != null && liveSlot.GetComponent<ShipPartVisualSource>() == null)
+            {
+                pose = default;
+                return false;
+            }
+
+            string slotName = liveSlot != null
+                ? liveSlot.name
+                : stashEntry != null ? stashEntry.HostSlotName : null;
+            return TryGetPrefabPose(slotName, occurrence, out pose);
+        }
+
+        static void ApplyAuthoredPose(Transform clone, AuthoredSlotPose pose, bool keepSourceScaleMagnitude)
+        {
+            if (clone == null)
+                return;
+
+            clone.localPosition = pose.Position;
+            clone.localRotation = pose.Rotation;
+            clone.localScale = keepSourceScaleMagnitude
+                ? ScaleWithHostMirror(clone.localScale, pose.Scale)
+                : pose.Scale;
+        }
+
+        /// <summary>
+        /// Purchased mesh keeps its authored size. A host hardpoint that is mirrored
+        /// with a negative axis keeps that sign so the opposite side stays opposite.
+        /// </summary>
+        static Vector3 ScaleWithHostMirror(Vector3 sourceScale, Vector3 hostScale)
+        {
+            return new Vector3(
+                MirrorAxis(sourceScale.x, hostScale.x),
+                MirrorAxis(sourceScale.y, hostScale.y),
+                MirrorAxis(sourceScale.z, hostScale.z));
+        }
+
+        static float MirrorAxis(float source, float host)
+        {
+            float sign = host < 0f ? -1f : 1f;
+            return Mathf.Abs(source) * sign;
+        }
+
+        static bool TryGetPrefabPose(string slotName, int occurrence, out AuthoredSlotPose pose)
+        {
+            pose = default;
+            if (s_PoseHostFamily == null || string.IsNullOrEmpty(slotName))
+                return false;
+
+            EnsurePrefabPoses(s_PoseHostFamily, s_PoseShipLevel);
+            string key = PrefabPoseKey(s_PoseHostFamily.familyId, s_PoseShipLevel, slotName, occurrence);
+            return PrefabPoseCache.TryGetValue(key, out pose);
+        }
+
+        static void EnsurePrefabPoses(ShipFamilyDefinition family, int shipLevel)
+        {
+            if (family == null || string.IsNullOrWhiteSpace(family.familyId))
+                return;
+
+            int level = Mathf.Max(1, shipLevel);
+            string scanKey = family.familyId.Trim() + "|" + level.ToString();
+            if (!PrefabPoseScanned.Add(scanKey))
+                return;
+
+            if (!family.TryGetVisualPrefabForLevel(level, out GameObject prefab) || prefab == null)
+                return;
+
+            GameObject hull = Object.Instantiate(prefab);
+            hull.SetActive(false);
+            var all = hull.GetComponentsInChildren<Transform>(true);
+            NameOrdinalScratch.Clear();
+            for (int i = 0; i < all.Length; i++)
+            {
+                Transform t = all[i];
+                if (t == null || t == hull.transform)
+                    continue;
+
+                NameOrdinalScratch.TryGetValue(t.name, out int ordinal);
+                NameOrdinalScratch[t.name] = ordinal + 1;
+                PrefabPoseCache[PrefabPoseKey(family.familyId, level, t.name, ordinal)] = new AuthoredSlotPose
+                {
+                    Position = t.localPosition,
+                    Rotation = t.localRotation,
+                    Scale = t.localScale,
+                };
+            }
+
+            DestroyNow(hull);
+        }
+
+        static string PrefabPoseKey(string familyId, int shipLevel, string slotName, int occurrence)
+        {
+            return familyId.Trim() + "|" + shipLevel.ToString() + "|" + slotName + "|" + occurrence.ToString();
+        }
+
         static string GetRelativePath(Transform target, Transform root)
         {
             if (target == null || root == null || target == root)
@@ -950,13 +1418,6 @@ namespace TitanOrbit.ECS
                 return string.Empty;
             parts.Reverse();
             return string.Join("/", parts);
-        }
-
-        static Transform ResolveRelative(Transform root, string path)
-        {
-            if (root == null || string.IsNullOrEmpty(path))
-                return root;
-            return root.Find(path);
         }
 
         /// <summary>Paints the swapped clone with the host family's team palette.</summary>
@@ -1079,12 +1540,13 @@ namespace TitanOrbit.ECS
                 string hostName = string.IsNullOrEmpty(entry.HostSlotName)
                     ? entry.gameObject.name
                     : entry.HostSlotName;
-                if (string.IsNullOrEmpty(hostName) || LiveSlotNames.Contains(hostName))
+                if (string.IsNullOrEmpty(hostName)
+                    || LiveSlotNames.Contains(OccurrenceKey(hostName, entry.Occurrence)))
                     continue;
 
-                Transform parent = ResolveRelative(root, entry.ParentPath);
+                Transform parent = ResolveSlotParent(root, null, entry.ParentPath);
                 if (parent == null || IsUnderStash(parent))
-                    parent = root;
+                    parent = ResolveVisualContentRoot(root);
 
                 // Still under a purchased assembly — that stash copy includes this
                 // part and comes back when the gear is discarded. Dropping it now
@@ -1106,7 +1568,7 @@ namespace TitanOrbit.ECS
                 restored.transform.SetSiblingIndex(
                     Mathf.Clamp(entry.SiblingIndex, 0, parent.childCount - 1));
                 ApplyHostTeamMaterials(hostFamily, restored, team);
-                LiveSlotNames.Add(hostName);
+                LiveSlotNames.Add(OccurrenceKey(hostName, entry.Occurrence));
                 RememberHierarchyNames(restored.transform);
                 changed = true;
             }
@@ -1131,8 +1593,23 @@ namespace TitanOrbit.ECS
         static void CaptureLiveSlotNames(Transform root)
         {
             LiveSlotNames.Clear();
-            RememberHierarchyNames(root);
-            LiveSlotNames.Remove(root.name);
+            NameOrdinalScratch.Clear();
+            if (root == null)
+                return;
+
+            var all = root.GetComponentsInChildren<Transform>(true);
+            for (int i = 0; i < all.Length; i++)
+            {
+                Transform t = all[i];
+                if (t == null || t == root || IsUnderStash(t))
+                    continue;
+
+                NameOrdinalScratch.TryGetValue(t.name, out int ordinal);
+                NameOrdinalScratch[t.name] = ordinal + 1;
+                var pose = t.GetComponent<ShipPartSlotPose>();
+                int occurrence = pose != null && pose.Stamped ? pose.Occurrence : ordinal;
+                LiveSlotNames.Add(OccurrenceKey(t.name, occurrence));
+            }
         }
 
         static void RememberHierarchyNames(Transform t)
@@ -1145,9 +1622,16 @@ namespace TitanOrbit.ECS
                 Transform child = t.GetChild(i);
                 if (child == null || child.name == ShipFamilyPartMatch.OriginalStashName)
                     continue;
-                LiveSlotNames.Add(child.name);
+                var pose = child.GetComponent<ShipPartSlotPose>();
+                int occurrence = pose != null && pose.Stamped ? pose.Occurrence : 0;
+                LiveSlotNames.Add(OccurrenceKey(child.name, occurrence));
                 RememberHierarchyNames(child);
             }
+        }
+
+        static string OccurrenceKey(string name, int occurrence)
+        {
+            return name + "#" + occurrence.ToString();
         }
 
         static void DestroyNow(Object obj)

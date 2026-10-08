@@ -2454,6 +2454,7 @@ namespace TitanOrbit.Game
             if (!JoinWorldReadyCache.MoonsReady)
                 return "Loading moons";
 
+            // ShipsReady stays true: off-screen AI hulls are not in the join snapshot.
             if (!JoinWorldReadyCache.ShipsReady)
             {
                 if (JoinWorldReadyCache.ExpectedShips > 0)

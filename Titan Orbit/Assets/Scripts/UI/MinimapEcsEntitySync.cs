@@ -61,8 +61,16 @@ namespace TitanOrbit.UI
         /// <summary>Reuse for pruning dead blips (was <c>new List</c> every rebuild).</summary>
         readonly List<Entity> _pruneScratch = new List<Entity>(64);
 
-        /// <summary>Reuse for pruning gem-moon helpers whose planet despawned.</summary>
         readonly List<int> _pruneMoonScratch = new List<int>(16);
+
+        /// <summary>Off-screen ships keyed by network id. Not backed by a ghost entity.</summary>
+        readonly Dictionary<int, MinimapBlipAnchor> _interestByNetId = new Dictionary<int, MinimapBlipAnchor>(32);
+
+        /// <summary>Network ids that already have a live ghost anchor this frame.</summary>
+        readonly HashSet<int> _liveOwnerScratch = new HashSet<int>();
+
+        /// <summary>Interest anchors to drop after a flush (ship gone, or a live ghost took over).</summary>
+        readonly List<int> _interestPruneScratch = new List<int>(32);
 
         Transform _root;
         MinimapBlipAnchor _localPlayer;
@@ -114,6 +122,7 @@ namespace TitanOrbit.UI
             {
                 _seenPlaySessionGeneration = ClientTeamFlowState.PlaySessionGeneration;
                 ClearAllAnchors();
+                ShipInterestClientCache.Clear();
             }
 
             // --- Join settle / ship Instantiates gate ---
@@ -163,6 +172,8 @@ namespace TitanOrbit.UI
                 // Position-only: iterates known anchors with Exists/GetComponentData — no gather.
                 UpdateAnchorPositions(world.EntityManager);
             }
+
+            ApplyInterestAnchors();
         }
 
         /// <summary>
@@ -502,6 +513,13 @@ namespace TitanOrbit.UI
             }
 
             _gemMoonsByPlanetId.Clear();
+            foreach (var interest in _interestByNetId.Values)
+            {
+                if (interest != null)
+                    Destroy(interest.gameObject);
+            }
+
+            _interestByNetId.Clear();
             _localPlayer = null;
             _localPlayerEntity = Entity.Null;
             RebuildLists();
@@ -864,6 +882,217 @@ namespace TitanOrbit.UI
             if (anchor != null)
                 Destroy(anchor.gameObject);
             _anchors.Remove(entity);
+        }
+
+        /// <summary>
+        /// Keeps a hidden anchor for every roster or blip ship that has no live ghost.
+        /// Live ghosts stay the minimap source while they are on screen. Roster-only anchors
+        /// feed the leaderboard, and the expanded map once a position arrives.
+        /// </summary>
+        void ApplyInterestAnchors()
+        {
+            if (_root == null)
+                return;
+
+            // --- Who already has a ghost anchor ---
+            _liveOwnerScratch.Clear();
+            for (int i = 0; i < _ships.Count; i++)
+            {
+                MinimapBlipAnchor ship = _ships[i];
+                if (ship == null || ship.IsRosterOnly || ship.OwnerNetworkId == 0)
+                    continue;
+                _liveOwnerScratch.Add(ship.OwnerNetworkId);
+            }
+
+            for (int i = _ships.Count - 1; i >= 0; i--)
+            {
+                if (_ships[i] != null && _ships[i].IsRosterOnly)
+                    _ships.RemoveAt(i);
+            }
+
+            // --- Roster rows (scores, even with no position yet) ---
+            int rosterCount = ShipInterestClientCache.RosterCount;
+            for (int i = 0; i < rosterCount; i++)
+            {
+                ShipWireRoster row = ShipInterestClientCache.Roster[i];
+                if (row.NetworkId == 0)
+                    continue;
+                if (_liveOwnerScratch.Contains(row.NetworkId))
+                {
+                    RemoveInterest(row.NetworkId);
+                    continue;
+                }
+
+                MinimapBlipAnchor anchor = GetOrCreateInterest(row.NetworkId);
+                ApplyRoster(anchor, row);
+                if (ShipInterestClientCache.TryGetBlip(row.NetworkId, out ShipWireBlip blip))
+                    PlaceInterest(anchor, blip);
+                _ships.Add(anchor);
+            }
+
+            // --- Position rows that arrived before the roster ---
+            int blipCount = ShipInterestClientCache.BlipCount;
+            for (int i = 0; i < blipCount; i++)
+            {
+                ShipWireBlip blip = ShipInterestClientCache.Blips[i];
+                if (blip.NetworkId == 0 || _liveOwnerScratch.Contains(blip.NetworkId))
+                {
+                    RemoveInterest(blip.NetworkId);
+                    continue;
+                }
+
+                if (_interestByNetId.ContainsKey(blip.NetworkId))
+                {
+                    PlaceInterest(_interestByNetId[blip.NetworkId], blip);
+                    continue;
+                }
+
+                MinimapBlipAnchor anchor = GetOrCreateInterest(blip.NetworkId);
+                ApplyBlipIdentity(anchor, blip);
+                PlaceInterest(anchor, blip);
+                _ships.Add(anchor);
+            }
+
+            // --- Drop ships that left both feeds ---
+            _interestPruneScratch.Clear();
+            foreach (var kv in _interestByNetId)
+            {
+                if (_liveOwnerScratch.Contains(kv.Key)
+                    || ShipInterestClientCache.TryGetRoster(kv.Key, out _)
+                    || ShipInterestClientCache.TryGetBlip(kv.Key, out _))
+                    continue;
+                _interestPruneScratch.Add(kv.Key);
+            }
+
+            for (int i = 0; i < _interestPruneScratch.Count; i++)
+                RemoveInterest(_interestPruneScratch[i]);
+        }
+
+        /// <summary>Creates the hidden anchor used when the ship ghost is not on this client.</summary>
+        MinimapBlipAnchor GetOrCreateInterest(int networkId)
+        {
+            if (_interestByNetId.TryGetValue(networkId, out var existing) && existing != null)
+                return existing;
+
+            var go = new GameObject($"MinimapInterest_{networkId}");
+            go.hideFlags = HideFlags.HideAndDontSave;
+            go.transform.SetParent(_root, false);
+            var anchor = go.AddComponent<MinimapBlipAnchor>();
+            anchor.Kind = MinimapBlipKind.Ship;
+            anchor.IsRosterOnly = true;
+            anchor.OwnerNetworkId = networkId;
+            anchor.SourceEntity = Entity.Null;
+            _interestByNetId[networkId] = anchor;
+            return anchor;
+        }
+
+        /// <summary>Copies scoreboard fields. Troop fill stays empty — that stream is view-culled.</summary>
+        static void ApplyRoster(MinimapBlipAnchor anchor, in ShipWireRoster row)
+        {
+            anchor.IsRosterOnly = true;
+            anchor.OwnerNetworkId = row.NetworkId;
+            anchor.Team = (TeamId)row.Team;
+            anchor.ShipLevel = row.Level;
+            anchor.IsMega = (row.Flags & ViewInterestTuning.FlagMega) != 0;
+            anchor.IsDead = (row.Flags & ViewInterestTuning.FlagDead) != 0;
+            anchor.AwaitingTeamSelection = (row.Flags & ViewInterestTuning.FlagAwaiting) != 0;
+            anchor.Kills = row.Kills;
+            anchor.GemsDeposited = row.GemsDeposited;
+            anchor.PeopleDelivered = row.PeopleDelivered;
+            anchor.CurrentPeople = 0;
+            anchor.PeopleCapacity = 0;
+        }
+
+        /// <summary>Identity from a position packet when the roster has not arrived yet.</summary>
+        static void ApplyBlipIdentity(MinimapBlipAnchor anchor, in ShipWireBlip blip)
+        {
+            anchor.IsRosterOnly = true;
+            anchor.OwnerNetworkId = blip.NetworkId;
+            anchor.Team = (TeamId)blip.Team;
+            anchor.ShipLevel = blip.Level;
+            anchor.IsMega = (blip.Flags & ViewInterestTuning.FlagMega) != 0;
+            anchor.IsDead = (blip.Flags & ViewInterestTuning.FlagDead) != 0;
+            anchor.AwaitingTeamSelection = (blip.Flags & ViewInterestTuning.FlagAwaiting) != 0;
+            anchor.CurrentPeople = 0;
+            anchor.PeopleCapacity = 0;
+        }
+
+        /// <summary>
+        /// Slides a full-map ship mark toward the latest position sample.
+        /// Samples arrive a few times a second, so writing them straight onto the transform
+        /// made the X pop. The slide follows the toroidal shortest path. A jump farther than
+        /// a ship can fly between samples (respawn, first report) snaps instead.
+        /// Map size comes from the rolled size already latched in <see cref="_lastMapWidth"/>.
+        /// </summary>
+        void PlaceInterest(MinimapBlipAnchor anchor, in ShipWireBlip blip)
+        {
+            if (anchor == null)
+                return;
+
+            // Farther than this between samples is a teleport, not flight.
+            const float SnapDistance = 48f;
+            var next = new Vector3(blip.X, 0f, blip.Z);
+            bool haveMap = ToroidalMapEcs.IsValidMapSize(_lastMapWidth, _lastMapHeight);
+
+            if (!anchor.HasMapPosition)
+            {
+                anchor.transform.position = next;
+                anchor.MapLerpFrom = next;
+                anchor.MapLerpTo = next;
+                anchor.MapLerpStartTime = Time.unscaledTime;
+                anchor.HasMapPosition = true;
+                return;
+            }
+
+            bool newSample = (anchor.MapLerpTo - next).sqrMagnitude > 0.0025f;
+            if (newSample)
+            {
+                float3 from = new float3(anchor.transform.position.x, 0f, anchor.transform.position.z);
+                float3 to = new float3(next.x, 0f, next.z);
+                float3 offset = haveMap
+                    ? ToroidalMapEcs.ShortestOffsetXZ(from, to, _lastMapWidth, _lastMapHeight)
+                    : to - from;
+                if (math.lengthsq(offset) > SnapDistance * SnapDistance)
+                {
+                    anchor.transform.position = next;
+                    anchor.MapLerpFrom = next;
+                    anchor.MapLerpTo = next;
+                    anchor.MapLerpStartTime = Time.unscaledTime;
+                    return;
+                }
+
+                anchor.MapLerpFrom = anchor.transform.position;
+                anchor.MapLerpTo = next;
+                anchor.MapLerpStartTime = Time.unscaledTime;
+            }
+
+            float duration = ViewInterestTuning.BlipInterval;
+            float u = duration > 0f
+                ? Mathf.Clamp01((Time.unscaledTime - anchor.MapLerpStartTime) / duration)
+                : 1f;
+            if (!newSample && u >= 1f)
+                return;
+
+            float3 start = new float3(anchor.MapLerpFrom.x, 0f, anchor.MapLerpFrom.z);
+            float3 end = new float3(anchor.MapLerpTo.x, 0f, anchor.MapLerpTo.z);
+            float3 delta = haveMap
+                ? ToroidalMapEcs.ShortestOffsetXZ(start, end, _lastMapWidth, _lastMapHeight)
+                : end - start;
+            float3 pos = start + delta * u;
+            if (haveMap)
+                pos = ToroidalMapEcs.Wrap(pos, _lastMapWidth, _lastMapHeight);
+            anchor.transform.position = new Vector3(pos.x, 0f, pos.z);
+        }
+
+        /// <summary>Destroys one off-screen anchor and forgets its network id.</summary>
+        void RemoveInterest(int networkId)
+        {
+            if (!_interestByNetId.TryGetValue(networkId, out var anchor))
+                return;
+
+            if (anchor != null)
+                Destroy(anchor.gameObject);
+            _interestByNetId.Remove(networkId);
         }
 
         void RebuildLists()

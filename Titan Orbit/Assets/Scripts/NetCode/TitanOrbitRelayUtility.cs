@@ -1,8 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.Net;
+using System.Net.Sockets;
 using Unity.Networking.Transport;
 using Unity.Networking.Transport.Relay;
 using Unity.Services.Relay.Models;
+using UnityEngine;
 
 namespace TitanOrbit.NetCode
 {
@@ -101,11 +104,14 @@ namespace TitanOrbit.NetCode
         {
             string protocol = SanitizeRelayProtocolForRelaySdk(connectionType);
 #if UNITY_EDITOR && UNITY_WEBGL
-            return CreateRelayServerData(allocation.ServerEndpoints, allocation.AllocationIdBytes,
+            // AllocationUtils.ToRelayServerData rejects dtls while the WebGL build target is active,
+            // including in the Editor. This builder accepts the protocol the Editor actually dials.
+            RelayServerData data = CreateRelayServerData(allocation.ServerEndpoints, allocation.AllocationIdBytes,
                 allocation.ConnectionData, allocation.ConnectionData, allocation.Key, protocol);
 #else
-            return allocation.ToRelayServerData(protocol);
+            RelayServerData data = allocation.ToRelayServerData(protocol);
 #endif
+            return PinEditorRelayEndpointToIpv4(data, allocation.ServerEndpoints, protocol);
         }
 
         /// <summary>[NETCODE] Converts client join allocation to UTP RelayServerData.</summary>
@@ -113,11 +119,12 @@ namespace TitanOrbit.NetCode
         {
             string protocol = SanitizeRelayProtocolForRelaySdk(connectionType);
 #if UNITY_EDITOR && UNITY_WEBGL
-            return CreateRelayServerData(allocation.ServerEndpoints, allocation.AllocationIdBytes,
+            RelayServerData data = CreateRelayServerData(allocation.ServerEndpoints, allocation.AllocationIdBytes,
                 allocation.ConnectionData, allocation.HostConnectionData, allocation.Key, protocol);
 #else
-            return allocation.ToRelayServerData(protocol);
+            RelayServerData data = allocation.ToRelayServerData(protocol);
 #endif
+            return PinEditorRelayEndpointToIpv4(data, allocation.ServerEndpoints, protocol);
         }
 
         /// <summary>
@@ -169,8 +176,9 @@ namespace TitanOrbit.NetCode
 
         /// <summary>
         /// True for the WebGL player, which can only open Relay over <c>wss</c>.
-        /// The Editor uses <c>dtls</c> even when the active build target is WebGL:
-        /// its WebSocket driver stays in <c>Connecting</c> and never receives a NetworkId.
+        /// The Editor is a separate case: it also dials <c>wss</c> (see
+        /// <see cref="ClientConnectionTypeForPlatform"/>) but this flag stays false so a
+        /// Linux dedicated host is not forced onto WebSocket.
         /// </summary>
         public static bool PlatformRequiresWebSocketRelay()
         {
@@ -181,17 +189,25 @@ namespace TitanOrbit.NetCode
 #endif
         }
 
-        /// <summary>Relay connection type for joining clients (not the host listen type).</summary>
+        /// <summary>
+        /// Relay connection type for joining clients (the host listen type is separate).
+        /// The published WebGL client and the Editor both use <c>wss</c> on the dedicated
+        /// allocation. Relay carries that onto the Linux host's <c>dtls</c> listen.
+        /// </summary>
         public static string ClientConnectionTypeForPlatform()
         {
+#if UNITY_EDITOR
+            return "wss";
+#else
             return PlatformRequiresWebSocketRelay() ? "wss" : "dtls";
+#endif
         }
 
         /// <summary>
         /// Relay connection type for the dedicated host allocation. GCE may pass <c>--relayProtocol=udp</c>;
         /// that is normalized to <c>dtls</c> for MPS 2.0 (same as legacy NGO dedicated bootstrap).
-        /// The WebGL player is coerced to <c>wss</c>. The Editor stays <c>dtls</c> so play mode
-        /// can join the same allocation the dedicated server listens on. Linux <c>UNITY_SERVER</c> stays dtls.
+        /// The WebGL player and the Editor join with <c>wss</c>. Linux <c>UNITY_SERVER</c> stays dtls.
+        /// Relay delivers both onto the same host allocation.
         /// </summary>
         public static string HostConnectionTypeForPlatform(string commandLineOverride = null)
         {
@@ -226,5 +242,81 @@ namespace TitanOrbit.NetCode
                 return HostConnectionTypeForPlatform(overrideType);
             return ClientConnectionTypeForPlatform();
         }
+
+        /// <summary>
+        /// Editor DNS often returns IPv6 first. Unity Transport then dials that address and the
+        /// Relay handshake stays on Connecting. The TLS name stays the Relay hostname (set when
+        /// <see cref="RelayServerData"/> was built). Only the socket address is pinned to IPv4.
+        /// </summary>
+        static RelayServerData PinEditorRelayEndpointToIpv4(
+            RelayServerData data,
+            List<RelayServerEndpoint> endpoints,
+            string connectionType)
+        {
+#if !UNITY_EDITOR
+            return data;
+#else
+            if (data.Endpoint.IsValid && data.Endpoint.Family == NetworkFamily.Ipv4)
+                return data;
+
+            string host = null;
+            ushort port = 0;
+            if (endpoints != null)
+            {
+                for (int i = 0; i < endpoints.Count; i++)
+                {
+                    if (!string.Equals(endpoints[i].ConnectionType, connectionType, StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    host = endpoints[i].Host;
+                    port = (ushort)endpoints[i].Port;
+                    break;
+                }
+            }
+
+            if (string.IsNullOrEmpty(host) || port == 0)
+                return data;
+
+            if (!TryResolveRelayIpv4(host, port, out NetworkEndpoint ipv4))
+            {
+                Debug.LogWarning("[TitanOrbitRelay] Editor could not resolve an IPv4 address for " + host +
+                                 ". The Relay handshake may stay on Connecting.");
+                return data;
+            }
+
+            Debug.Log("[TitanOrbitRelay] Editor Relay " + connectionType + " " + host + " -> " + ipv4 + ".");
+            data.Endpoint = ipv4;
+            return data;
+#endif
+        }
+
+#if UNITY_EDITOR
+        /// <summary>Resolves <paramref name="host"/> to an IPv4 <see cref="NetworkEndpoint"/>.</summary>
+        static bool TryResolveRelayIpv4(string host, ushort port, out NetworkEndpoint endpoint)
+        {
+            endpoint = default;
+            if (NetworkEndpoint.TryParse(host, port, out endpoint, NetworkFamily.Ipv4) && endpoint.IsValid)
+                return true;
+
+            try
+            {
+                IPAddress[] addresses = Dns.GetHostAddresses(host);
+                for (int i = 0; i < addresses.Length; i++)
+                {
+                    if (addresses[i].AddressFamily != AddressFamily.InterNetwork)
+                        continue;
+                    if (NetworkEndpoint.TryParse(addresses[i].ToString(), port, out endpoint, NetworkFamily.Ipv4) &&
+                        endpoint.IsValid)
+                        return true;
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning("[TitanOrbitRelay] IPv4 lookup failed for " + host + ": " + ex.Message);
+            }
+
+            endpoint = default;
+            return false;
+        }
+#endif
     }
 }

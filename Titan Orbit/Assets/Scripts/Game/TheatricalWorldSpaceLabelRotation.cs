@@ -101,12 +101,31 @@ namespace TitanOrbit.UI
         /// </summary>
         public static Quaternion BillboardRotationFacingCamera()
         {
+            return TryGetBillboard(out Quaternion rotation, out _)
+                ? rotation
+                : GameplayTopDownLocalRotation;
+        }
+
+        /// <summary>
+        /// Camera-facing billboard and the screen-up axis (<c>camera.up</c>).
+        /// Ship nameplates offset along <paramref name="screenUp"/> so the stack
+        /// sits above the hull while the orbit camera leaves the top-down view.
+        /// </summary>
+        /// <returns>False when there is no main camera; keep the gameplay pose.</returns>
+        public static bool TryGetBillboard(out Quaternion rotation, out Vector3 screenUp)
+        {
             var cam = UnityEngine.Camera.main;
             if (cam == null)
-                return GameplayTopDownLocalRotation;
+            {
+                rotation = GameplayTopDownLocalRotation;
+                screenUp = Vector3.forward;
+                return false;
+            }
 
             Transform t = cam.transform;
-            return Quaternion.LookRotation(-t.forward, -t.up);
+            screenUp = t.up;
+            rotation = Quaternion.LookRotation(-t.forward, -t.up);
+            return true;
         }
 
         /// <summary>

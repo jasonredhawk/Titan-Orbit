@@ -1,3 +1,4 @@
+using TitanOrbit.Generation;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
@@ -37,6 +38,13 @@ namespace TitanOrbit.ECS
             if (_pendingConnQuery.IsEmptyIgnoreFilter)
                 return;
 
+            if (!SystemAPI.TryGetSingleton<MapStateSingleton>(out var map) ||
+                !ToroidalMapEcs.IsValidMapSize(map.MapWidth, map.MapHeight))
+                return;
+
+            float mapW = map.MapWidth;
+            float mapH = map.MapHeight;
+            var em = state.EntityManager;
             var connections = _pendingConnQuery.ToEntityArray(Allocator.Temp);
             var states = _transportQuery.ToComponentDataArray<PeopleTransportState>(Allocator.Temp);
             var xf = _transportQuery.ToComponentDataArray<LocalTransform>(Allocator.Temp);
@@ -45,6 +53,10 @@ namespace TitanOrbit.ECS
             for (int c = 0; c < connections.Length; c++)
             {
                 Entity connection = connections[c];
+                if (!em.HasComponent<ConnectionViewInterest>(connection))
+                    continue;
+
+                ConnectionViewInterest view = em.GetComponentData<ConnectionViewInterest>(connection);
                 for (int t = 0; t < states.Length; t++)
                 {
                     var s = states[t];
@@ -52,6 +64,22 @@ namespace TitanOrbit.ECS
                         continue;
 
                     float3 pos = xf[t].Position;
+                    pos.y = 0f;
+                    float3 spawn = s.SpawnPosition;
+                    spawn.y = 0f;
+                    float3 vel = s.Velocity;
+                    vel.y = 0f;
+                    float reach = math.max(mapW, mapH) * 0.5f;
+                    float3 ahead = pos + math.normalizesafe(vel) * reach;
+                    bool visible = ViewInterestMath.PointInView(
+                            view.CenterX, view.CenterZ, view.HalfW, view.HalfH, pos, mapW, mapH, 4f)
+                        || ViewInterestMath.SegmentOverlapsView(
+                            view.CenterX, view.CenterZ, view.HalfW, view.HalfH, spawn, pos, mapW, mapH, 4f)
+                        || ViewInterestMath.SegmentOverlapsView(
+                            view.CenterX, view.CenterZ, view.HalfW, view.HalfH, pos, ahead, mapW, mapH, 4f);
+                    if (!visible)
+                        continue;
+
                     pos.y = s.SeatId + 1f;
                     float3 target = xf[t].Position + s.Velocity;
                     target.y = 0f;

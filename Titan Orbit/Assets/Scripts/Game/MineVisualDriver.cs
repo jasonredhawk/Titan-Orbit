@@ -199,13 +199,36 @@ namespace TitanOrbit.Game
                 }
             }
 
+            // Mines whose owner ship is off-screen arrive as a one-shot RPC, not a ghost buffer.
+            int viewMines = MineViewClientCache.Count;
+            for (int i = 0; i < viewMines; i++)
+            {
+                DeployedMineElement mine = MineViewClientCache.Rows[i].Mine;
+                ulong key = PackKey(mine.OwnerNetworkId, mine.Sequence, mine.PlaceTime);
+                _aliveKeys.Add(key);
+                SyncVisual(in mine, hasLocal ? localPos : mine.Position);
+            }
+
             // --- Despawn missing mines (play VFX if the RPC has not already) ---
             float nowRt = Time.realtimeSinceStartup;
             for (int i = _visuals.Count - 1; i >= 0; i--)
             {
                 var v = _visuals[i];
                 if (_aliveKeys.Contains(PackKey(v.OwnerNetworkId, v.Sequence, v.PlaceTime)))
+                {
+                    // Ghost still has it, so a view-hide must not delete the mesh later.
+                    MineViewClientCache.ConsumeQuiet(v.OwnerNetworkId, v.Sequence, v.PlaceTime);
                     continue;
+                }
+
+                if (MineViewClientCache.ConsumeQuiet(v.OwnerNetworkId, v.Sequence, v.PlaceTime))
+                {
+                    if (v.Instance != null)
+                        Destroy(v.Instance);
+                    _visuals.RemoveAt(i);
+                    continue;
+                }
+
                 if (nowRt - v.LastSeenRealtime < DespawnGraceSeconds)
                     continue;
 

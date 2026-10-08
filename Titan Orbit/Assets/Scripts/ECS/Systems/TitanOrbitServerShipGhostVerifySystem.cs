@@ -6,11 +6,14 @@ using UnityEngine;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Server diagnostic: after TeamChoice Instantiates, confirm <see cref="GhostInstance"/>.ghostId
-    /// becomes non-zero within a few ticks. Without a ghost id the hull never enters GhostSend —
-    /// clients stay at Instantiates=map-meta with no ship (debug 1af271).
+    /// Server diagnostic: after a hull Instantiates, confirm <see cref="GhostInstance"/>.ghostId
+    /// becomes non-zero within a few sim ticks. Without a ghost id GhostSend will not replicate it.
     /// <para>
-    /// World: ServerSimulation. Runs after GhostSend so SpawnGhostJob has had a chance to assign ids.
+    /// World: ServerSimulation, inside <see cref="GhostSimulationSystemGroup"/> (before GhostSend,
+    /// which is last in <see cref="SimulationSystemGroup"/>). An id written at the end of a tick
+    /// shows up on the next tick. Off-frames are skipped — GhostSend does not assign ids then.
+    /// Ticks before <see cref="GhostCollection.IsInGame"/> are skipped too: AI hulls spawn during
+    /// map build, and GhostSend refuses to assign ids until a connection is in game.
     /// </para>
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
@@ -55,6 +58,18 @@ namespace TitanOrbit.ECS
         protected override void OnUpdate()
         {
             if (s_Pending.Count == 0)
+                return;
+
+            // Host SimulationSystemGroup also runs on off-frames. GhostSend returns before
+            // it assigns ids on those frames (NumPredictedTicksExpected == 0).
+            if (!SystemAPI.TryGetSingleton<NetworkTime>(out var networkTime) ||
+                networkTime.NumPredictedTicksExpected <= 0)
+                return;
+
+            // Map build spawns AI hulls many ticks before GoInGame. GhostSend bails while
+            // GhostCollection.IsInGame is false, so those ticks are not a missing prefab.
+            if (!SystemAPI.TryGetSingleton<GhostCollection>(out var ghostCollection) ||
+                !ghostCollection.IsInGame)
                 return;
 
             var em = EntityManager;

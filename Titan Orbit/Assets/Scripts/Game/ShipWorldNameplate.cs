@@ -13,7 +13,8 @@ namespace TitanOrbit.Game
     /// <summary>
     /// World-space nameplate locked to world orientation so it does <b>not</b> spin when the hull yaws.
     /// Regular ships sit <b>screen-below</b> the hull (world −Z). Titan (MEGA) hulls lift the plate
-    /// in world +Y and shift it so the profile badge sits on the hull center:
+    /// in world +Y and shift it so the profile badge sits on the hull center. Theatrical orbit
+    /// billboards the same stack and parks its lower edge just above the hull along camera-up:
     /// <code>
     /// [Name] .............. [Lv N]
     /// [Score] ............. [#Rank]
@@ -134,7 +135,7 @@ namespace TitanOrbit.Game
         /// <summary>
         /// Bump when row spacing / fonts / clearance policy change so live proxies refresh layout.
         /// </summary>
-        const int LayoutVersion = 20;
+        const int LayoutVersion = 21;
 
         /// <summary>Max name characters before width-fit (wider plate allows longer names).</summary>
         const int MaxNameCharacters = 28;
@@ -239,6 +240,13 @@ namespace TitanOrbit.Game
 
         /// <summary>Which <see cref="LayoutVersion"/> was last applied to this instance.</summary>
         int _appliedLayoutVersion = -1;
+
+        /// <summary>
+        /// Label-local distance from the root (top edge) to the bottom of the stack.
+        /// World height is this times the label scale. Theatrical pose uses it so the
+        /// whole plate clears the hull, with the lower edge nearest the ship.
+        /// </summary>
+        float _stackExtentLocal;
 
         struct ThinBar
         {
@@ -517,6 +525,8 @@ namespace TitanOrbit.Game
         /// Regular ships: screen-below the hull footprint by half the widest world dimension.
         /// Titan hulls: lift above the geometric center by measured half-height, then shift the
         /// plate so the profile badge (not the top of the stack) sits on that center.
+        /// Theatrical orbit: the same stack billboards, and its lower edge sits just above
+        /// the hull along camera-up (the gameplay world −Z anchor is only "below" in top-down).
         /// Clearance is frozen until ability-upgrade growth changes the signature.
         /// </summary>
         void RefreshAnchorPose()
@@ -527,16 +537,32 @@ namespace TitanOrbit.Game
             RefreshCachedHullFootprintIfGrown();
 
             // [TITAN-ORBIT] World rotation — plate stays upright while the hull turns.
-            // Theatrical: face the orbiting camera; gameplay: flat −90. Always rewritten
-            // here so leaving theatrical cannot leave a leftover billboard rotation.
-            bool theatrical = TitanOrbit.UI.TheatricalWorldSpaceLabelRotation.IsTheatricalEngaged();
-            Quaternion rot = theatrical
-                ? TitanOrbit.UI.TheatricalWorldSpaceLabelRotation.BillboardRotationFacingCamera()
-                : Quaternion.Euler(-90f, 0f, 0f);
+            // Theatrical: face the orbiting camera and sit above the hull. Gameplay: flat −90.
+            // Always rewritten here so leaving theatrical restores the top-down pose.
             float scale = _studioPreview ? StudioLabelWorldScale : LabelWorldScale;
             _labelRoot.localScale = new Vector3(scale, -scale, scale);
-            _labelRoot.rotation = rot;
 
+            if (!_studioPreview
+                && TitanOrbit.UI.TheatricalWorldSpaceLabelRotation.IsTheatricalEngaged()
+                && TitanOrbit.UI.TheatricalWorldSpaceLabelRotation.TryGetBillboard(
+                    out Quaternion theatricalRot, out Vector3 screenUp))
+            {
+                Vector3 centerWorld = transform.TransformPoint(_cachedLocalCenter);
+                float horizontal = Mathf.Sqrt(screenUp.x * screenUp.x + screenUp.z * screenUp.z);
+                float hullAlongUp = Mathf.Max(0.12f, _cachedHalfWidestWorld) * horizontal
+                    + Mathf.Max(0.12f, _cachedHalfHeightWorld) * Mathf.Abs(screenUp.y);
+                // Root is the top of the stack; rows hang toward screen-down. Lift by the
+                // full stack so the lower edge, not the name, clears the silhouette.
+                float stackWorld = ResolveStackExtentLocal() * scale;
+                Vector3 abovePos = centerWorld + screenUp * (hullAlongUp + PaddingAboveHull + stackWorld);
+                _labelRoot.SetPositionAndRotation(abovePos, theatricalRot);
+                return;
+            }
+
+            // Scale is already applied. Badge anchoring reads the live rotation, so write
+            // the flat pose before measuring the MEGA medallion offset.
+            Quaternion rot = Quaternion.Euler(-90f, 0f, 0f);
+            _labelRoot.rotation = rot;
             Vector3 worldPos;
             if (_isMega)
             {
@@ -568,6 +594,25 @@ namespace TitanOrbit.Game
             }
 
             _labelRoot.SetPositionAndRotation(worldPos, rot);
+        }
+
+        /// <summary>
+        /// Label-local stack height. Prefers the value recorded in <see cref="ApplyStackLayout"/>;
+        /// falls back to row constants before the first layout pass.
+        /// </summary>
+        float ResolveStackExtentLocal()
+        {
+            if (_stackExtentLocal > 0.5f)
+                return _stackExtentLocal;
+
+            return NameFontSize * 1.2f
+                + TextRowGap
+                + MetaFontSize * 1.2f
+                + RowGap
+                + BadgeHeight
+                + RowGap
+                + (BarHeight + RowGap) * 3f
+                + RoleSlotSize;
         }
 
         /// <summary>
@@ -947,7 +992,11 @@ namespace TitanOrbit.Game
             {
                 y -= RoleSlotSize * 0.5f;
                 roleRow.localPosition = new Vector3(0f, y, 0f);
+                y -= RoleSlotSize * 0.5f;
             }
+
+            // Root (y = 0) is the top edge. y is the bottom of the last row.
+            _stackExtentLocal = Mathf.Max(1f, -y);
         }
 
         void PlaceBar(ref ThinBar bar, ref float y)

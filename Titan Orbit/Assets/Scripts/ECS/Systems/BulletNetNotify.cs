@@ -62,9 +62,8 @@ namespace TitanOrbit.ECS
             if (ClientServerBootstrap.ClientWorld != null && ClientServerBootstrap.ClientWorld.IsCreated)
                 BulletVfxBridge.TryEnqueueSpawn(req);
 
-            // --- All remote clients (+ host client connection) ---
-            Entity rpcEntity = ecb.CreateEntity();
-            ecb.AddComponent(rpcEntity, new BulletSpawnRpc
+            // --- Viewers whose screen the flight can cross, plus the shooter ---
+            var rpc = new BulletSpawnRpc
             {
                 Sequence = bullet.Sequence,
                 SpawnPosition = spawnPos,
@@ -84,8 +83,27 @@ namespace TitanOrbit.ECS
                 Homing = bullet.Homing,
                 TurnSpeedDeg = bullet.TurnSpeedDeg,
                 AcquireRange = bullet.AcquireRange,
-            });
-            ecb.AddComponent(rpcEntity, new SendRpcCommandRequest { TargetConnection = Entity.Null });
+            };
+            ViewInterestFanout.EmitSegment(
+                ref ecb,
+                rpc,
+                spawnPos,
+                FlightEnd(bullet, spawnPos, velocity),
+                2f,
+                bullet.OwnerNetworkId);
+        }
+
+        /// <summary>End of the straight flight used for the view test. Homing shots use the same max range.</summary>
+        static float3 FlightEnd(in BulletElement bullet, float3 spawn, float3 velocity)
+        {
+            velocity.y = 0f;
+            float speed = math.length(velocity);
+            float dist = math.max(0f, bullet.MaxDistance);
+            if (bullet.Lifetime > 0f && speed > 0.01f)
+                dist = math.min(dist, speed * bullet.Lifetime);
+            if (speed <= 0.01f)
+                return spawn;
+            return spawn + velocity / speed * dist;
         }
 
         /// <summary>
@@ -164,10 +182,7 @@ namespace TitanOrbit.ECS
                 AsteroidLayoutSlot = asteroidHealthAfter >= 0f ? asteroidLayoutSlot : -1,
             };
             rpc.PackTroop(troopShipNetworkId, troopSeatId, troopHealthAfter, troopSequence);
-
-            Entity rpcEntity = ecb.CreateEntity();
-            ecb.AddComponent(rpcEntity, rpc);
-            ecb.AddComponent(rpcEntity, new SendRpcCommandRequest { TargetConnection = Entity.Null });
+            ViewInterestFanout.EmitPoint(ref ecb, rpc, hitPosition, 6f, bullet.OwnerNetworkId);
         }
 
         /// <summary>
@@ -229,10 +244,8 @@ namespace TitanOrbit.ECS
             if (ClientServerBootstrap.ClientWorld != null && ClientServerBootstrap.ClientWorld.IsCreated)
                 BulletVfxBridge.EnqueueHit(req);
 
-            // --- All clients (including the host connection) ---
-            // [NETCODE] TargetConnection Null = broadcast. Wire fields match BulletHitRpc exactly.
-            Entity rpcEntity = ecb.CreateEntity();
-            ecb.AddComponent(rpcEntity, new BulletHitRpc
+            // --- Viewers who can see the contact, plus the ramming ship ---
+            var rpc = new BulletHitRpc
             {
                 Sequence = 0,
                 HitPosition = hitPosition,
@@ -246,8 +259,8 @@ namespace TitanOrbit.ECS
                 PlanetaryDefenseHealthAfter = -1f,
                 AsteroidLayoutSlot = asteroidLayoutSlot,
                 OwnerNetworkId = ownerNetworkId,
-            });
-            ecb.AddComponent(rpcEntity, new SendRpcCommandRequest { TargetConnection = Entity.Null });
+            };
+            ViewInterestFanout.EmitPoint(ref ecb, rpc, hitPosition, 6f, ownerNetworkId);
         }
     }
 }
