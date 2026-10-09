@@ -19,7 +19,8 @@ namespace TitanOrbit.ECS
     /// </para>
     /// <para>
     /// Also credits <see cref="ShipMatchStats.Kills"/> to the last damager from
-    /// <see cref="ShipCombatAttribution"/> (bullet / ram) when the killer is a different team.
+    /// <see cref="ShipCombatAttribution"/> (bullet / ram) when the killer is a different team,
+    /// and moves half of the victim's match score onto that killer.
     /// </para>
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
@@ -152,7 +153,9 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Credits one kill to <see cref="ShipCombatAttribution.LastDamagerNetworkId"/> when the
-        /// damager is a real other ship on a different team.
+        /// damager is a real other ship on a different team. The killer gains half the victim's
+        /// current match score; the victim keeps the other half. Asteroid, suicide, and
+        /// same-team deaths do not move score.
         /// </summary>
         static void CreditKillToLastDamager(EntityManager em, Entity victim, TeamId victimTeam)
         {
@@ -178,7 +181,7 @@ namespace TitanOrbit.ECS
             if (victimTeam == TeamId.None || killerTeam == TeamId.None || killerTeam == victimTeam)
                 return;
 
-            ShipMatchStatsLogic.TryAddOnShip(em, killerShip, kills: 1, gemsDeposited: 0, peopleDelivered: 0);
+            ShipMatchStatsLogic.TryCreditEnemyKill(em, killerShip, victim);
         }
 
         /// <summary>

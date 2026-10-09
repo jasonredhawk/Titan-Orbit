@@ -48,6 +48,13 @@ namespace TitanOrbit.Game
             /// <summary>Match-long troops delivered.</summary>
             public int PeopleDelivered;
 
+            /// <summary>
+            /// Ghosted match score (gems, troops, and kill transfers). Used to rank a team.
+            /// Role badges still compare <see cref="Kills"/>, <see cref="GemsDeposited"/>, and
+            /// <see cref="PeopleDelivered"/>, not this total.
+            /// </summary>
+            public int Score;
+
             /// <summary>Dead ships never win a top-of-team role.</summary>
             public bool IsDead;
         }

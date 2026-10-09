@@ -48,6 +48,12 @@ namespace TitanOrbit.UI
         const float IdentityRailWidth = 268f;
         const float IdentityRailMinHeight = 40f;
 
+        /// <summary>Hover card width. Wide enough for a wrapped description.</summary>
+        const float SpokeTipWidth = 268f;
+
+        /// <summary>Floor so a missing description still looks like a card, not a sliver.</summary>
+        const float SpokeTipMinHeight = 88f;
+
         static readonly Color CaptionColor = new Color(0.62f, 0.78f, 0.95f, 0.95f);
         static readonly Color IdentityValue = new Color(0.42f, 0.54f, 0.62f, 0.55f);
         static readonly Color NeutralValue = new Color(0.62f, 0.78f, 0.95f, 1f);
@@ -446,9 +452,10 @@ namespace TitanOrbit.UI
             {
                 hover.Owner = this;
                 hover.FullTitle = row.FullLabel;
-                hover.ValueCopy = row.IsIdentity
-                    ? string.Empty
-                    : FamilyStatHudCopy.FormatSignedPercent(row);
+                // Percent plus the sentence that explains the spoke. Built here
+                // so pointer-enter only assigns text it already has.
+                hover.BodyCopy = FamilyStatHudCopy.FormatSpokeHoverBody(row);
+                hover.Accent = ShipFamilyBonusWheelGraphic.ColorForCategory(row.Category);
             }
         }
 
@@ -504,7 +511,8 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// Shared chrome for a spoke hover. Caption is the full name
-        /// (MOVE SPEED); body is the signed percent or 1.00×.
+        /// (MOVE SPEED). Body is the lineage percent plus a short description
+        /// of what that family multiplier changes.
         /// </summary>
         internal void ShowSpokeHover(SpokeHover spoke)
         {
@@ -515,10 +523,14 @@ namespace TitanOrbit.UI
             if (_spokeTip.Root == null)
                 return;
 
+            // --- Copy ---
             if (_spokeTip.CaptionLabel != null)
                 _spokeTip.CaptionLabel.text = spoke.FullTitle.ToUpperInvariant();
             if (_spokeTip.BodyLabel != null)
-                _spokeTip.BodyLabel.text = spoke.ValueCopy;
+                _spokeTip.BodyLabel.text = string.IsNullOrEmpty(spoke.BodyCopy) ? string.Empty : spoke.BodyCopy;
+
+            // Stripe follows the wheel category (move / combat / hull / energy / hold).
+            ShipStatTooltipChrome.ApplyAccent(in _spokeTip, spoke.Accent);
 
             var self = spoke.transform as RectTransform;
             var tip = _spokeTip.RootRect;
@@ -526,6 +538,20 @@ namespace TitanOrbit.UI
             if (self == null || tip == null || canvas == null)
                 return;
 
+            // Active before the measure. An inactive TMP rect can report 0 height
+            // and the description would draw past the card.
+            _spokeTip.Root.SetActive(true);
+
+            // --- Size to the description ---
+            // Width first so TMP wraps before we read preferredHeight.
+            tip.sizeDelta = new Vector2(SpokeTipWidth, tip.sizeDelta.y);
+            if (_spokeTip.BodyLabel != null)
+                _spokeTip.BodyLabel.ForceMeshUpdate(true);
+            float bodyH = _spokeTip.BodyLabel != null ? _spokeTip.BodyLabel.preferredHeight : 0f;
+            float tipH = Mathf.Max(SpokeTipMinHeight, bodyH + _spokeTip.ExtraHeightPadding);
+            tip.sizeDelta = new Vector2(SpokeTipWidth, tipH);
+
+            // --- Place just above the spoke title, then keep it on the canvas ---
             tip.SetParent(canvas.transform, false);
             Vector3[] corners = new Vector3[4];
             self.GetWorldCorners(corners);
@@ -533,9 +559,25 @@ namespace TitanOrbit.UI
             RectTransformUtility.ScreenPointToLocalPointInRectangle(
                 canvas.transform as RectTransform, screen, canvas.worldCamera, out Vector2 local);
             tip.pivot = new Vector2(0f, 0f);
-            tip.anchoredPosition = local + new Vector2(10f, 10f);
-            tip.sizeDelta = new Vector2(220f, 72f);
-            _spokeTip.Root.SetActive(true);
+            tip.anchoredPosition = ClampSpokeTip(canvas.transform as RectTransform, local + new Vector2(10f, 10f), tip.sizeDelta);
+        }
+
+        /// <summary>
+        /// Keeps the hover card inside the canvas. Pivot is bottom-left, so the
+        /// card grows up and to the right from <paramref name="bottomLeft"/>.
+        /// </summary>
+        static Vector2 ClampSpokeTip(RectTransform canvasRt, Vector2 bottomLeft, Vector2 size)
+        {
+            if (canvasRt == null)
+                return bottomLeft;
+
+            Rect area = canvasRt.rect;
+            const float margin = 8f;
+            float maxX = area.xMax - size.x - margin;
+            float maxY = area.yMax - size.y - margin;
+            bottomLeft.x = Mathf.Clamp(bottomLeft.x, area.xMin + margin, Mathf.Max(area.xMin + margin, maxX));
+            bottomLeft.y = Mathf.Clamp(bottomLeft.y, area.yMin + margin, Mathf.Max(area.yMin + margin, maxY));
+            return bottomLeft;
         }
 
         /// <summary>Hides the shared spoke hover card.</summary>
@@ -559,8 +601,8 @@ namespace TitanOrbit.UI
                 "FamilyBonusSpokeTip",
                 canvas.transform,
                 "MOVE SPEED",
-                220f,
-                72f,
+                SpokeTipWidth,
+                SpokeTipMinHeight,
                 1f);
             if (_spokeTip.Root != null)
                 _spokeTip.Root.SetActive(false);
@@ -709,7 +751,7 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// Pointer hover on one spoke title. Forwards to the list so one shared
-        /// chrome card can show MOVE SPEED instead of MOVE.
+        /// chrome card can show the full name plus what that bonus changes.
         /// </summary>
         public sealed class SpokeHover : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler
         {
@@ -719,8 +761,14 @@ namespace TitanOrbit.UI
             /// <summary>Full player-facing name (MOVE SPEED).</summary>
             public string FullTitle;
 
-            /// <summary>Signed percent or 1.00×.</summary>
-            public string ValueCopy;
+            /// <summary>
+            /// Rich-text body: coloured lineage percent, then the sentence that
+            /// explains what this spoke changes. Empty until the wheel paints.
+            /// </summary>
+            public string BodyCopy;
+
+            /// <summary>Category stripe colour (move, combat, hull, energy, hold).</summary>
+            public Color Accent;
 
             /// <summary>[UNITY] Pointer entered the short tag.</summary>
             public void OnPointerEnter(PointerEventData eventData)

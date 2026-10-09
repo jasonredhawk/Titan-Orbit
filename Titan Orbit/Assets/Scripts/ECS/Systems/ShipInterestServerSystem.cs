@@ -89,6 +89,7 @@ namespace TitanOrbit.ECS
                         Kills = stats.ValueRO.Kills,
                         GemsDeposited = stats.ValueRO.GemsDeposited,
                         PeopleDelivered = stats.ValueRO.PeopleDelivered,
+                        Score = stats.ValueRO.Score,
                     },
                 });
             }
@@ -136,6 +137,7 @@ namespace TitanOrbit.ECS
                 hash = hash * 31 + row.Kills;
                 hash = hash * 31 + row.GemsDeposited;
                 hash = hash * 31 + row.PeopleDelivered;
+                hash = hash * 31 + row.Score;
                 hash = hash * 31 + row.Flags;
                 hash = hash * 31 + row.Team;
                 hash = hash * 31 + row.Level;

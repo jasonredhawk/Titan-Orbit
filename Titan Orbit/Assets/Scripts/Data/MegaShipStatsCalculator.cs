@@ -145,8 +145,9 @@ namespace TitanOrbit.Data
         /// bar, so LOADOUT gear is <c>PerExtra × shipLevel</c> only. The catalog unique-parts
         /// already own Base. <see cref="EvaluateLoadoutExtra"/> is the shared evaluate.
         /// </para>
-        /// Weapon extras add damage / rate steps and take the faster travel stats (max, not sum)
-        /// so a long-range store gun does not get added onto every Titan barrel's speed.
+        /// Weapon extras do not add damage or cadence — they unlock a bullet type.
+        /// They still take the faster travel stats (max, not sum) so a long-range
+        /// store gun does not get added onto every Titan barrel's speed.
         /// Gem cap stays 0.
         /// </summary>
         /// <param name="hull">In/out catalog totals. Gem cap is forced to 0 after the merge.</param>
@@ -175,6 +176,16 @@ namespace TitanOrbit.Data
                     continue;
 
                 ShipComponentAbilityStats extra = EvaluateLoadoutExtra(raw, id, shipLevel);
+
+                // Purchased weapon: bullet-type unlock only. Energy and other
+                // non-damage fields still merge. Damage and cadence stay on the catalog guns.
+                if (ShipComponentAbilityStats.IsWeaponComponent(id))
+                {
+                    extra.firePower = 0f;
+                    extra.firePowerPerExtraLevel = 0f;
+                    extra.fireRate = 0f;
+                    extra.fireRatePerExtraLevel = 0f;
+                }
 
                 // Weapon travel is one hull value (fastest barrel), not a sum of every gun.
                 float keepSpeed = Mathf.Max(hull.bulletSpeed, extra.bulletSpeed);
@@ -212,40 +223,6 @@ namespace TitanOrbit.Data
                 in noAbilities,
                 isWeaponPool: weapon,
                 includeBase: false);
-        }
-
-        /// <summary>
-        /// Extra-Leveled sustained DPS from equipped store weapons only. Fire power is
-        /// PerExtra × shipLevel (no Base). Cadence uses the extra’s catalog fire-rate Base
-        /// when PerExtra rate is 0 so a LOADOUT gun still has a real shots/sec.
-        /// </summary>
-        /// <param name="extraComponentIds">Equipped store component ids.</param>
-        /// <param name="shipLevel">Titan chassis level used to Extra-Level extras.</param>
-        /// <returns>0 when there are no weapon extras.</returns>
-        public static float SumEquippedWeaponDps(
-            IReadOnlyList<string> extraComponentIds,
-            int shipLevel)
-        {
-            if (extraComponentIds == null || extraComponentIds.Count == 0)
-                return 0f;
-
-            float dps = 0f;
-            for (int i = 0; i < extraComponentIds.Count; i++)
-            {
-                string id = extraComponentIds[i];
-                if (string.IsNullOrWhiteSpace(id)
-                    || !ShipComponentAbilityStats.IsWeaponComponent(id))
-                    continue;
-                if (!ShipFamilyStatsCalculator.TryResolveComponentStats(null, id, out ShipComponentAbilityStats raw))
-                    continue;
-
-                ShipComponentAbilityStats extra = EvaluateLoadoutExtra(raw, id, shipLevel);
-                // PerExtra-only rate is often 0 — keep the catalog cadence so extra FP still scores DPS.
-                float rate = extra.fireRate > 0.01f ? extra.fireRate : raw.fireRate;
-                dps += ShipFamilyPowerScoreBreakdown.ComputeSustainedDps(extra.firePower, rate);
-            }
-
-            return dps;
         }
 
         /// <summary>True when a stored sum was never written (all zeros).</summary>

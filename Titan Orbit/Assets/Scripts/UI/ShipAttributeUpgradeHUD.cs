@@ -1698,11 +1698,15 @@ namespace TitanOrbit.UI
 
                     ApplyLocalCardStatModifiers(chassisId, ref effective);
 
-                    // --- All-gun DPS for the Fire Power chip ---
+                    // --- Chassis-gun DPS for the Fire Power chip ---
+                    // Store weapons sit after StoreExtraStartIndex. They unlock a
+                    // bullet type; ApplyLiveCombatMuls scales this number when selected.
                     float allGun = ShipWeaponDpsMath.SumAllGunDps(
-                        parts.Ids, parts.Stats, ship.ShipLevel, in abilityCounts);
+                        parts.Ids, parts.Stats, ship.ShipLevel, in abilityCounts,
+                        parts.StoreExtraStartIndex);
                     float allGunNext = ShipWeaponDpsMath.SumAllGunDpsAtNextFirePower(
-                        parts.Ids, parts.Stats, ship.ShipLevel, in abilityCounts);
+                        parts.Ids, parts.Stats, ship.ShipLevel, in abilityCounts,
+                        parts.StoreExtraStartIndex);
                     live.AllGunDps = ShipWeaponDpsMath.ApplyFamilyOffenseMuls(allGun, family);
                     live.AllGunDpsNextStep = ShipWeaponDpsMath.ApplyFamilyOffenseMuls(allGunNext, family);
                 }
@@ -1882,11 +1886,11 @@ namespace TitanOrbit.UI
                     megaIndex, extraIds, shipLevel, out megaStats))
                 return false;
 
-            // Per-gun catalog DPS + Extra-Leveled LOADOUT guns (not summed-rate × summed-FP).
+            // Catalog barrels only. A purchased weapon does not add DPS; the
+            // selected bullet type's modifiers scale this after the snapshot fills.
             var megaCat = MegaShipCatalog.Load();
             if (megaCat != null)
                 megaDps = megaCat.GetPowerBreakdown(megaIndex).GetDisplayDps();
-            megaDps += MegaShipStatsCalculator.SumEquippedWeaponDps(extraIds, shipLevel);
             return true;
         }
 

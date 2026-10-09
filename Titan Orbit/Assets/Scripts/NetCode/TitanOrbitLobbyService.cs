@@ -194,7 +194,78 @@ namespace TitanOrbit.NetCode
             if (latestOnly.Count > 0)
                 list = latestOnly;
 
-            return list;
+            return CollapseExtraEmptyGames(list);
+        }
+
+        /// <summary>
+        /// Join Game lists one open match. Extra empty lobbies are dropped. An empty lobby is
+        /// kept only when every other listing is full (that is the successor for a packed game).
+        /// </summary>
+        static List<LobbySummary> CollapseExtraEmptyGames(List<LobbySummary> list)
+        {
+            // --- CollapseExtraEmptyGames ---
+            if (list == null || list.Count <= 1)
+                return list;
+
+            var withPlayers = new List<LobbySummary>();
+            var empties = new List<LobbySummary>();
+            for (int i = 0; i < list.Count; i++)
+            {
+                LobbySummary lobby = list[i];
+                if (lobby == null)
+                    continue;
+                if (BrowsablePlayerCount(lobby) > 0)
+                    withPlayers.Add(lobby);
+                else
+                    empties.Add(lobby);
+            }
+
+            bool gameWithOpenSeats = false;
+            for (int i = 0; i < withPlayers.Count; i++)
+            {
+                if (BrowsablePlayerCount(withPlayers[i]) < BrowsableRosterCap(withPlayers[i]))
+                {
+                    gameWithOpenSeats = true;
+                    break;
+                }
+            }
+
+            if (gameWithOpenSeats)
+                empties.Clear();
+            else if (empties.Count > 1)
+            {
+                empties.Sort((a, b) =>
+                {
+                    int byAge = b.CreatedAtEpochSeconds.CompareTo(a.CreatedAtEpochSeconds);
+                    if (byAge != 0)
+                        return byAge;
+                    return string.CompareOrdinal(b.LobbyId, a.LobbyId);
+                });
+                var newestEmpty = empties[0];
+                empties.Clear();
+                empties.Add(newestEmpty);
+            }
+
+            if (empties.Count == 0)
+                return withPlayers;
+
+            withPlayers.AddRange(empties);
+            return withPlayers;
+        }
+
+        static int BrowsablePlayerCount(LobbySummary summary)
+        {
+            if (summary.ActivePlayers >= 0)
+                return summary.ActivePlayers;
+            return Mathf.Max(0, summary.CurrentPlayers);
+        }
+
+        static int BrowsableRosterCap(LobbySummary summary)
+        {
+            int cap = Mathf.Max(1, summary.MaxPlayers);
+            if (summary.MapTeamCount > 0 && summary.MapMaxPlayersPerTeam > 0)
+                cap = Mathf.Min(cap, summary.MapTeamCount * summary.MapMaxPlayersPerTeam);
+            return Mathf.Max(1, cap);
         }
 
         static bool TryAcceptBrowsableDedicatedLobby(LobbySummary l, out string rejectReason)

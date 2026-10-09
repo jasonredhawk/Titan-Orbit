@@ -20,7 +20,7 @@ namespace TitanOrbit.UI
     /// gear-slot buttons. Each button names the pack (ROCKET or MINE) and prints
     /// level, damage, and remaining shots. There is no separate ROCKETS / MINES
     /// header — the words live on the tiles so a mixed loadout reads as one list.
-    /// Up / Down (the key strip and the arrow keys) walk the combined list as one caret. Q activates
+    /// Up / Down walk the combined list as one caret. Q activates
     /// only the focused pack (fire rocket or place mine). Hidden on the main menu,
     /// Join Team, Orbit Menu, and while the local ship is dead.
     /// <para>
@@ -47,9 +47,6 @@ namespace TitanOrbit.UI
 
         /// <summary>Gap between stacked gear-slot buttons.</summary>
         const float TileGap = 4f;
-
-        /// <summary>Height of the UP / DOWN focus key strip under the packs.</summary>
-        const float FocusKeyHeight = 22f;
 
         /// <summary>Inset from the dark panel edge to the first tile.</summary>
         const float PanelPad = 8f;
@@ -92,9 +89,6 @@ namespace TitanOrbit.UI
         static readonly Color RowSelected = new Color(0.04f, 0.10f, 0.20f, 0.94f);
 
         static readonly Color CaretColor = new Color(0.45f, 0.95f, 1f, 1f);
-
-        /// <summary>Dark chip behind UP / DOWN, same family as the weapons B keycap.</summary>
-        static readonly Color KeycapFill = new Color(0.04f, 0.10f, 0.16f, 0.96f);
         static readonly Color LabelOutline = new Color(0.02f, 0.04f, 0.08f, 0.95f);
 
         /// <summary>
@@ -113,11 +107,17 @@ namespace TitanOrbit.UI
         /// </summary>
         int _paintedRocketCount;
 
-        /// <summary>Mine pack count from the last paint. The UP / DOWN buttons use it with the rocket count.</summary>
-        int _paintedMineCount;
+        /// <summary>Last ghost rocket-ready stamp. A change means a shot was accepted.</summary>
+        double _seenRocketReadyAt = double.NaN;
 
-        /// <summary>UP / DOWN key strip. Paint slides it under the last visible pack.</summary>
-        RectTransform _focusKeys;
+        /// <summary>Last ghost mine-ready stamp. A change means a mine was placed.</summary>
+        double _seenMineReadyAt = double.NaN;
+
+        /// <summary>Local reload deadline (unscaled seconds) when the ghost clock is a different epoch.</summary>
+        float _rocketReadyUnscaled = -1f;
+
+        /// <summary>Local mine reload deadline (unscaled seconds) when the ghost clock is a different epoch.</summary>
+        float _mineReadyUnscaled = -1f;
 
         readonly List<PackTile> _tiles = new List<PackTile>(MaxRows);
 
@@ -466,15 +466,20 @@ namespace TitanOrbit.UI
             double nextMine,
             int shipLevel)
         {
+            // Server stamps Next*Time with its own World.Time. A late-join client's
+            // World.Time starts at 0, so subtracting it showed the server's uptime
+            // (thousands of seconds) instead of the few seconds until the next shot.
             double now = 0d;
-            var world = EcsGameBridge.ClientWorld;
-            if (world != null && world.IsCreated)
-                now = world.Time.ElapsedTime;
+            if (!PlanetGemMoonOrbitClock.TryGetElapsedSeconds(out now, includeTickFraction: true))
+            {
+                var world = EcsGameBridge.ClientWorld;
+                if (world != null && world.IsCreated)
+                    now = world.Time.ElapsedTime;
+            }
 
             int rocketCount = slots != null ? slots.Count : 0;
             int mineCount = mineSlots != null ? mineSlots.Count : 0;
             _paintedRocketCount = rocketCount;
-            _paintedMineCount = mineCount;
 
             int rocketSelected = RocketSlotSelection.Clamp(rocketCount);
             int mineSelected = MineSlotSelection.Clamp(mineCount);
@@ -482,20 +487,24 @@ namespace TitanOrbit.UI
 
             // Shared cooldown per weapon type — every rocket tile uses the rocket timer,
             // every mine tile uses the mine timer.
-            float rocketRemain = nextFire > now ? (float)(nextFire - now) : 0f;
-            bool rocketReady = rocketRemain <= 0.05f;
             int rocketCdLevel = rocketCount > 0 && rocketSelected < rocketCount
                 ? slots[rocketSelected].level
                 : Mathf.Max(1, shipLevel);
             float rocketTotalCd = Mathf.Max(0.1f, RocketCatalog.Get(rocketCdLevel).fireCooldown);
+            float rocketRemain = ReloadRemain(
+                nextFire, now, rocketTotalCd,
+                ref _seenRocketReadyAt, ref _rocketReadyUnscaled);
+            bool rocketReady = rocketRemain <= 0.05f;
             float rocketFraction = rocketReady ? 1f : Mathf.Clamp01(rocketRemain / rocketTotalCd);
 
-            float mineRemain = nextMine > now ? (float)(nextMine - now) : 0f;
-            bool mineReady = mineRemain <= 0.05f;
             int mineCdLevel = mineCount > 0 && mineSelected < mineCount
                 ? mineSlots[mineSelected].level
                 : Mathf.Max(1, shipLevel);
             float mineTotalCd = Mathf.Max(0.1f, MineCatalog.Get(mineCdLevel).deployCooldown);
+            float mineRemain = ReloadRemain(
+                nextMine, now, mineTotalCd,
+                ref _seenMineReadyAt, ref _mineReadyUnscaled);
+            bool mineReady = mineRemain <= 0.05f;
             float mineFraction = mineReady ? 1f : Mathf.Clamp01(mineRemain / mineTotalCd);
 
             int row = 0;
@@ -536,10 +545,7 @@ namespace TitanOrbit.UI
                 HideTile(_tiles[i]);
 
             float tilesHeight = row <= 0 ? 0f : row * TileHeight + (row - 1) * TileGap;
-            PlaceFocusKeys(row, tilesHeight);
             float height = tilesHeight + PanelPad * 2f;
-            if (row > 0)
-                height += TileGap + FocusKeyHeight;
             if (_panel != null)
                 _panel.sizeDelta = new Vector2(PanelWidth, Mathf.Max(TileHeight + PanelPad * 2f, height));
         }
@@ -650,31 +656,35 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// UP button steps the caret toward the top of the list. DOWN steps toward the bottom.
-        /// Same wrap as the arrow keys.
+        /// Seconds until <paramref name="readyAt"/>. The ghost stamp is server time.
+        /// ServerTick seconds match that on a synced client. A remain longer than the
+        /// real reload is a late-join clock gap, not a wait — count the catalog reload
+        /// from the moment the stamp changes instead.
         /// </summary>
-        void OnFocusKeyClicked(int delta)
+        float ReloadRemain(
+            double readyAt,
+            double now,
+            float reloadSeconds,
+            ref double seenReadyAt,
+            ref float localReadyUnscaled)
         {
-            if (MoonOrbitClientState.IsOrbitMenuVisible)
-                return;
-            if (PlanetaryDefenseTurretClientState.IsControlling)
-                return;
+            bool firstSample = double.IsNaN(seenReadyAt);
+            bool stampChanged = !firstSample && System.Math.Abs(readyAt - seenReadyAt) > 0.001d && readyAt > 0d;
+            seenReadyAt = readyAt;
 
-            MoveCaret(delta, _paintedRocketCount, _paintedMineCount);
-        }
+            float ghost = readyAt > now ? (float)(readyAt - now) : 0f;
+            if (ghost > 0f && ghost <= reloadSeconds + 0.25f)
+            {
+                localReadyUnscaled = -1f;
+                return ghost;
+            }
 
-        /// <summary>Slides the UP / DOWN strip to sit one gap under the last visible pack.</summary>
-        void PlaceFocusKeys(int rowCount, float tilesHeight)
-        {
-            if (_focusKeys == null)
-                return;
+            if (stampChanged)
+                localReadyUnscaled = Time.unscaledTime + reloadSeconds;
 
-            bool show = rowCount > 0;
-            _focusKeys.gameObject.SetActive(show);
-            if (!show)
-                return;
-
-            _focusKeys.anchoredPosition = new Vector2(PanelPad, -PanelPad - tilesHeight - TileGap);
+            if (localReadyUnscaled < 0f)
+                return 0f;
+            return Mathf.Max(0f, localReadyUnscaled - Time.unscaledTime);
         }
 
         /// <summary>Builds dark-glass canvas and a pool of tappable gear-slot buttons.</summary>
@@ -712,60 +722,6 @@ namespace TitanOrbit.UI
 
             for (int i = 0; i < MaxRows; i++)
                 _tiles.Add(BuildTile(_panel, i));
-
-            _focusKeys = BuildFocusKeys(_panel);
-        }
-
-        /// <summary>
-        /// Two keycaps under the packs. UP and DOWN are the labels and the click targets,
-        /// so the highlight keys are visible without opening a tooltip.
-        /// </summary>
-        RectTransform BuildFocusKeys(RectTransform parent)
-        {
-            var rowGo = new GameObject("FocusKeys", typeof(RectTransform));
-            rowGo.transform.SetParent(parent, false);
-            var row = rowGo.GetComponent<RectTransform>();
-            row.anchorMin = new Vector2(0f, 1f);
-            row.anchorMax = new Vector2(0f, 1f);
-            row.pivot = new Vector2(0f, 1f);
-            row.anchoredPosition = new Vector2(PanelPad, -PanelPad - TileHeight - TileGap);
-            row.sizeDelta = new Vector2(TileWidth, FocusKeyHeight);
-
-            float keyWidth = (TileWidth - TileGap) * 0.5f;
-            BuildFocusKey(row, "UP", -1, 0f, keyWidth);
-            BuildFocusKey(row, "DOWN", 1, keyWidth + TileGap, keyWidth);
-            return row;
-        }
-
-        /// <summary>One dark keycap. Click steps the loadout caret by <paramref name="delta"/>.</summary>
-        void BuildFocusKey(RectTransform parent, string label, int delta, float x, float width)
-        {
-            int captured = delta;
-            var keyGo = new GameObject(label, typeof(RectTransform), typeof(Image), typeof(Button));
-            keyGo.transform.SetParent(parent, false);
-            var rt = keyGo.GetComponent<RectTransform>();
-            rt.anchorMin = new Vector2(0f, 0f);
-            rt.anchorMax = new Vector2(0f, 1f);
-            rt.pivot = new Vector2(0f, 0.5f);
-            rt.anchoredPosition = new Vector2(x, 0f);
-            rt.sizeDelta = new Vector2(width, 0f);
-
-            var img = keyGo.GetComponent<Image>();
-            img.color = KeycapFill;
-            var btn = keyGo.GetComponent<Button>();
-            btn.transition = Selectable.Transition.None;
-            var navigation = btn.navigation;
-            navigation.mode = Navigation.Mode.None;
-            btn.navigation = navigation;
-            btn.onClick.AddListener(() => OnFocusKeyClicked(captured));
-
-            var text = CreateLabel(rt, "Label", label, 11f, CaretColor, Vector2.zero, TextAlignmentOptions.Center);
-            var textRt = text.rectTransform;
-            textRt.anchorMin = Vector2.zero;
-            textRt.anchorMax = Vector2.one;
-            textRt.offsetMin = Vector2.zero;
-            textRt.offsetMax = Vector2.zero;
-            text.alignment = TextAlignmentOptions.Center;
         }
 
         /// <summary>

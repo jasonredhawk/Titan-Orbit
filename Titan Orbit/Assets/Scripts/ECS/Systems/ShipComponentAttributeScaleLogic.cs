@@ -483,9 +483,17 @@ namespace TitanOrbit.ECS
             float propulsionBloom = Mathf.Max(1f, territoryMovementMult)
                 * Mathf.Max(1f, overdriveThrusterMult);
 
+            // Store grow enlarges the gun mesh in place. Multiplying localPosition
+            // by that ratio slung every barrel off its hardpoint (same peel as
+            // thruster bloom on AstroEagle). Attribute grow still nudges the mount
+            // outward so a bigger hull keeps the muzzle on the silhouette.
+            float weaponPositionScale = weaponScale;
+            if (store.Weapon > 1.001f)
+                weaponPositionScale /= store.Weapon;
+
             ApplyGroup(cockpit, cockpitScale, cockpitScale);
             ApplyGroup(wing, wingScale, wingScale);
-            ApplyGroup(weapon, weaponScale, weaponScale);
+            ApplyGroup(weapon, weaponScale, weaponPositionScale);
             ApplyGroup(engine, engineScale * propulsionBloom, engineScale);
             ApplyGroup(thruster, thrusterScale * propulsionBloom, thrusterScale);
             ApplyGroup(tail, tailScale, tailScale);

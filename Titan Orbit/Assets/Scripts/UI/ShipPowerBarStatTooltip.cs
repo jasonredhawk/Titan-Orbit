@@ -102,7 +102,7 @@ namespace TitanOrbit.UI
             s_ActiveSlot = statIndex;
             s_ActiveOwner = owner;
 
-            // Gear slot 0 is DPS + ramming. Ship slot 0 is gun DPS. The percent must match the fill.
+            // Gear slot 0 is empty. Ship slot 0 is gun DPS. The percent must match the fill.
             bool componentPool = pool == ShipPowerBarComparisonPool.Components;
             float thisValue = componentPool
                 ? breakdown.GetComponentCompareStatValue(statIndex)

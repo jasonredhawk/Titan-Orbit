@@ -96,6 +96,14 @@ namespace TitanOrbit.ECS
         /// (purchase-planet family plus that planet's rolled gun).
         /// </summary>
         [GhostField] public FixedString64Bytes ComponentId;
+
+        /// <summary>
+        /// Purchased weapon's <c>BulletVfxBank</c> index plus one.
+        /// 0 means unset (older buys resolve from the live planet roll).
+        /// Stamped at purchase so client prediction and the server agree on the
+        /// B-key row even when that source planet is not in the client's ghost set.
+        /// </summary>
+        [GhostField] public byte StampedBulletBankPlusOne;
     }
 
     /// <summary>

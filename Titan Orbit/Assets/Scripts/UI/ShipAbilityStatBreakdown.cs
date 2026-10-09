@@ -142,7 +142,8 @@ namespace TitanOrbit.UI
                     unitSuffix = " DPS/s";
                     if (live.IsMega)
                     {
-                        // Catalog per-gun DPS, plus Extra-Leveled LOADOUT guns when AllGunDps was filled.
+                        // Catalog barrel DPS. Purchased weapons are not added; the
+                        // selected bullet type scales AllGunDps before this read.
                         var mega = MegaShipCatalog.Load();
                         value = mega != null
                             ? mega.GetPowerBreakdown(live.MegaCatalogIndex).GetDisplayDps()
@@ -1059,6 +1060,12 @@ namespace TitanOrbit.UI
                     if (gi < 0 || gi >= parts.Stats.Count)
                         continue;
 
+                    // Bought guns are bullet types, not extra Fire Power on the DPS chip.
+                    if (isWeapon
+                        && gi >= parts.StoreExtraStartIndex
+                        && field == StatField.FirePower)
+                        continue;
+
                     // Cache stats are already catalog × starting scale (same as the motor).
                     ShipComponentAbilityStats s = parts.Stats[gi];
                     float primary = ReadField(s, field);
@@ -1525,6 +1532,9 @@ namespace TitanOrbit.UI
             {
                 string id = parts.Ids[i];
                 if (string.IsNullOrWhiteSpace(id))
+                    continue;
+                if (field == StatField.FirePower
+                    && ShipComponentAbilityStats.IsWeaponComponent(id))
                     continue;
 
                 ShipComponentAbilityStats extra = MegaShipStatsCalculator.EvaluateLoadoutExtra(

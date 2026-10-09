@@ -60,13 +60,10 @@ namespace TitanOrbit.Core
             return isKiller || isMiner || isTransporter;
         }
 
-        /// <summary>Kill points — same weight as <c>ShipMatchScoreLogic</c> / the old NGO ScoreSystem.</summary>
-        public const int PointsPerKill = 100;
-
-        /// <summary>Deposited-gem points.</summary>
+        /// <summary>Deposited-gem points. Each whole gem deposited adds this much match score.</summary>
         public const int PointsPerGem = 2;
 
-        /// <summary>Delivered-troop points.</summary>
+        /// <summary>Delivered-troop points. Each person unloaded adds this much match score.</summary>
         public const int PointsPerPerson = 5;
 
         /// <summary>
@@ -77,14 +74,33 @@ namespace TitanOrbit.Core
         public static readonly UnityEngine.Color Gold = new UnityEngine.Color(0.95f, 0.78f, 0.32f, 1f);
 
         /// <summary>
-        /// Combined match score used to sort the leaderboard (not to grant command).
-        /// kill=100, deposited gem=2, delivered person=5.
+        /// Match-score points for a gem deposit. Whole gems only; fractional leftovers score 0.
         /// </summary>
-        public static int CombinedScore(int kills, int gemsDeposited, int peopleDelivered)
+        public static int ScoreForGems(int gemsDeposited)
         {
-            return kills * PointsPerKill
-                   + gemsDeposited * PointsPerGem
-                   + peopleDelivered * PointsPerPerson;
+            if (gemsDeposited <= 0)
+                return 0;
+            return gemsDeposited * PointsPerGem;
+        }
+
+        /// <summary>Match-score points for troops that reached a planet.</summary>
+        public static int ScoreForPeople(int peopleDelivered)
+        {
+            if (peopleDelivered <= 0)
+                return 0;
+            return peopleDelivered * PointsPerPerson;
+        }
+
+        /// <summary>
+        /// Half of a ship's current match score, rounded down.
+        /// The killer receives this many points and the victim is left with this many.
+        /// A score of 0 or 1 pays nothing and leaves the victim at 0.
+        /// </summary>
+        public static int HalfScore(int score)
+        {
+            if (score <= 0)
+                return 0;
+            return score / 2;
         }
 
         /// <summary>

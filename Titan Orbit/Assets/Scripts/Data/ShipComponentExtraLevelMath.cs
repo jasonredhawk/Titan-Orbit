@@ -357,7 +357,8 @@ namespace TitanOrbit.Data
         /// Non-weapon pools keep <b>only the primary Base</b>. Extras add PerExtra × levels.
         /// Turn ignores pool primaries: only <see cref="PickBestTurnBaseIndex"/> keeps a Base.
         /// Store gear is never that part — it adds Turn PerExtra × levels only.
-        /// Weapons keep each barrel’s Base (they fire on their own).
+        /// Chassis weapons keep each barrel’s Base (they fire on their own).
+        /// A moon-store weapon does not: it unlocks a bullet type and adds no damage or cadence.
         /// <para>
         /// [TITAN-ORBIT] Move Speed is engines only (primary Engine Move Base + each
         /// engine’s PerExtra × levels). Acceleration is thrusters only. A CosmicShark
@@ -470,6 +471,16 @@ namespace TitanOrbit.Data
                         evaluated.bulletSpeedPerExtraLevel = 0f;
                         evaluated.bulletRange = 0f;
                         evaluated.bulletRangePerExtraLevel = 0f;
+
+                        // A bought gun unlocks a bullet type. The chassis barrels keep
+                        // firing, so this row must not raise hull damage or cadence.
+                        if (gi >= storeExtraStartIndex)
+                        {
+                            evaluated.firePower = 0f;
+                            evaluated.firePowerPerExtraLevel = 0f;
+                            evaluated.fireRate = 0f;
+                            evaluated.fireRatePerExtraLevel = 0f;
+                        }
                     }
 
                     total.AddInPlace(evaluated);

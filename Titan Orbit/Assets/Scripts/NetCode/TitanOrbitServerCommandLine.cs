@@ -17,23 +17,26 @@ namespace TitanOrbit.NetCode
         /// <summary>
         /// Idle empty timeout: after the last player leaves (zero NetCode connections), wait this
         /// long before in-process match recreate. Occupied matches never use this clock.
+        /// One hour — an empty Join Game listing should not sit all day, and must not be
+        /// replaced so often that a second empty lobby overlaps the first.
         /// </summary>
-        public const int DefaultEmptyMatchRecreateSeconds = 30 * 60;
+        public const int DefaultEmptyMatchRecreateSeconds = 60 * 60;
 
         /// <summary>
-        /// Age rotation: when IsLatest and players are present (not full), spawn a successor as the
-        /// new IsLatest after this many seconds. The occupied lobby is demoted but stays open.
+        /// Optional debug age rotation. <c>0</c> (production default) never opens a second game
+        /// just because the match is old. A second process is spawned only when the roster is full.
+        /// Set <c>--ageThresholdSeconds</c> above 0 only for rotation tests.
         /// </summary>
-        public const int DefaultAgeThresholdSeconds = 30 * 60;
+        public const int DefaultAgeThresholdSeconds = 0;
 
         /// <summary>When our lobby is closed or heartbeat-stale and empty, recreate after this many seconds (faster than empty idle refresh).</summary>
         public const int DefaultStaleLobbyRecreateSeconds = 120;
 
         /// <summary>
-        /// After this many successful <b>30-minute idle</b> in-process recreates
+        /// After this many successful <b>1-hour idle</b> in-process recreates
         /// (<c>empty_match_recreate</c> only) in one process lifetime, exit so systemd/Edgegap
         /// starts a fresh binary. Does <b>not</b> count stale/self-heal/heartbeat recreates.
-        /// Default 6 ≈ 3 hours of continuous empty idle — Unity IL2CPP needs process recycle
+        /// Default 6 ≈ 6 hours of continuous empty idle — Unity IL2CPP needs process recycle
         /// for real memory reclaim (in-process lobby swap does not free the map ServerWorld).
         /// <c>0</c> disables count-based recycle.
         /// </summary>
@@ -114,7 +117,9 @@ namespace TitanOrbit.NetCode
             config.ServerListenAddress = GetArgString("serverListenAddress", "0.0.0.0");
             config.IsLatest = GetArgBool("isLatest", true);
             config.EmptyMatchRecreateSeconds = Mathf.Max(60, GetArgInt("emptyMatchRecreateSeconds", DefaultEmptyMatchRecreateSeconds));
-            config.AgeThresholdSeconds = Mathf.Max(60, GetArgInt("ageThresholdSeconds", DefaultAgeThresholdSeconds));
+            // [TITAN-ORBIT] 0 disables age rotation. Do not clamp to 60 — that used to open a
+            // second game every minute when the flag was passed as 0.
+            config.AgeThresholdSeconds = Math.Max(0, GetArgInt("ageThresholdSeconds", DefaultAgeThresholdSeconds));
             config.StaleLobbyRecreateSeconds = Mathf.Max(30, GetArgInt("staleLobbyRecreateSeconds", DefaultStaleLobbyRecreateSeconds));
             // [TITAN-ORBIT] 0 = unlimited in-process empty recreates (not recommended for 24/7 hosts).
             config.MaxInProcessEmptyRecreates = Mathf.Max(0, GetArgInt("maxInProcessEmptyRecreates", DefaultMaxInProcessEmptyRecreates));

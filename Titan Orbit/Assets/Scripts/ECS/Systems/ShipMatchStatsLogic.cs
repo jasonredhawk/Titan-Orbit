@@ -1,3 +1,4 @@
+using TitanOrbit.Core;
 using TitanOrbit.Data;
 using Unity.Entities;
 using Unity.Mathematics;
@@ -43,14 +44,62 @@ namespace TitanOrbit.ECS
                 return false;
 
             // --- Apply deltas ---
+            // Kill count only. Kill *points* come from TryCreditEnemyKill (half the victim's score).
             var stats = em.GetComponentData<ShipMatchStats>(shipEntity);
             if (kills != 0)
                 stats.Kills += kills;
             if (gemsDeposited != 0)
+            {
                 stats.GemsDeposited += gemsDeposited;
+                stats.Score += TeamCommanderRules.ScoreForGems(gemsDeposited);
+            }
+
             if (peopleDelivered != 0)
+            {
                 stats.PeopleDelivered += peopleDelivered;
+                stats.Score += TeamCommanderRules.ScoreForPeople(peopleDelivered);
+            }
+
             em.SetComponentData(shipEntity, stats);
+            return true;
+        }
+
+        /// <summary>
+        /// Credits one enemy kill. The killer's kill count goes up by one and they gain half
+        /// the victim's current <see cref="ShipMatchStats.Score"/>. The victim keeps that same
+        /// half. A ship with no score still counts as a kill and pays 0.
+        /// </summary>
+        /// <param name="em">Server EntityManager.</param>
+        /// <param name="killerShip">Enemy ship that receives the kill and the points.</param>
+        /// <param name="victimShip">Ship that just died. Its score is cut in half.</param>
+        /// <returns>True when the killer's stats were written.</returns>
+        public static bool TryCreditEnemyKill(EntityManager em, Entity killerShip, Entity victimShip)
+        {
+            if (killerShip == Entity.Null || !em.Exists(killerShip))
+                return false;
+            if (!em.HasComponent<ShipMatchStats>(killerShip))
+                return false;
+
+            int half = 0;
+            bool victimHasStats = victimShip != Entity.Null
+                && victimShip != killerShip
+                && em.Exists(victimShip)
+                && em.HasComponent<ShipMatchStats>(victimShip);
+            ShipMatchStats victimStats = default;
+            if (victimHasStats)
+            {
+                victimStats = em.GetComponentData<ShipMatchStats>(victimShip);
+                half = TeamCommanderRules.HalfScore(victimStats.Score);
+                victimStats.Score = half;
+            }
+
+            var killerStats = em.GetComponentData<ShipMatchStats>(killerShip);
+            killerStats.Kills += 1;
+            killerStats.Score += half;
+            em.SetComponentData(killerShip, killerStats);
+
+            if (victimHasStats)
+                em.SetComponentData(victimShip, victimStats);
             return true;
         }
 

@@ -28,8 +28,16 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// [TITAN-ORBIT] People successfully delivered via unload transports this match.
-        /// Live hold is <see cref="ShipState.CurrentPeople"/> — this is the cumulative score.
+        /// Live hold is <see cref="ShipState.CurrentPeople"/> — this is the cumulative count.
         /// </summary>
         [GhostField] public int PeopleDelivered;
+
+        /// <summary>
+        /// [TITAN-ORBIT] Authoritative match score. Each deposited gem adds 2, each delivered troop adds 5.
+        /// An enemy kill pays the killer half of this value and leaves the victim with that same half
+        /// (integer division; a leftover odd point is dropped). Counters above are not cut on death —
+        /// top killer / miner / transporter still use kill, gem, and troop counts.
+        /// </summary>
+        [GhostField] public int Score;
     }
 }

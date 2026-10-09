@@ -130,23 +130,21 @@ namespace TitanOrbit.Data
 
         /// <summary>
         /// Gear-card comparison value for one bar lane (0–9).
-        /// Slot 0 is sustained DPS plus ramming, so a ram spike still fills Offense
-        /// when it has no gun. Other lanes are the raw display fields (Health Cap,
-        /// Move Speed, …). Paired with
-        /// <see cref="ShipFamilyPowerBarNorm.GetComponentMaxPerStat"/> — the ceiling
-        /// and the fill must use this method or a ram would compare as zero DPS.
+        /// Slot 0 stays 0. A purchased weapon unlocks a bullet type and a ram
+        /// part raises ramming; neither is added ship DPS. Other lanes are the
+        /// raw display fields (Health Cap, Move Speed, …). Paired with
+        /// <see cref="ShipFamilyPowerBarNorm.GetComponentMaxPerStat"/>.
         /// </summary>
-        /// <param name="statIndex">0 = DPS + ramming … 9 = Troop Cap.</param>
+        /// <param name="statIndex">0 = unused DPS lane … 9 = Troop Cap.</param>
         public float GetComponentCompareStatValue(int statIndex)
         {
             // --- Direct fields, not the legacy half-category split ---
-            // [TITAN-ORBIT] A ram-only part has ramming and zeros everywhere else.
-            // DisplayTotal ignores ramming, so HasDisplayStats is false and the
-            // ship-bar fallback would smear that ram into Bullet Speed. Gear
-            // comparison reads the real lane instead.
+            // [TITAN-ORBIT] Slot 0 on a ship is the guns that are firing. On a
+            // gear card that same lane used to add this part's gun product and
+            // its ramming, so buying a weapon or a ram looked like +DPS.
             switch (statIndex)
             {
-                case 0: return GetDisplayDps() + Mathf.Max(0f, rammingPower);
+                case 0: return 0f;
                 case 1: return bulletSpeed;
                 case 2: return healthCap;
                 case 3: return healthRegen;

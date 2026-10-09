@@ -591,11 +591,29 @@ namespace TitanOrbit.ECS
                 if (clone == null)
                     continue;
 
-                PlaceCloneOnHostParent(clone.transform, parent, null);
-                if (TryResolveAuthoredPose(hostSlot, occurrence, authoredEntry, out AuthoredSlotPose pose))
+                Transform liveParent = hostSlot.parent;
+                bool sameParent = parent == null || parent == liveParent;
+                if (!sameParent)
                 {
-                    ApplyAuthoredPose(clone.transform, pose, keepSourceScaleMagnitude: true);
-                    StampPose(clone, occurrence, pose);
+                    // Keep the host barrel's world pose. Copying its local offset
+                    // onto BankPivot or the proxy root (outside the scaled hull)
+                    // slings the gun far off the hardpoint.
+                    clone.transform.SetParent(parent, true);
+                    StampPose(clone, occurrence, new AuthoredSlotPose
+                    {
+                        Position = clone.transform.localPosition,
+                        Rotation = clone.transform.localRotation,
+                        Scale = clone.transform.localScale,
+                    });
+                }
+                else
+                {
+                    PlaceCloneOnHostParent(clone.transform, parent, null);
+                    if (TryResolveAuthoredPose(hostSlot, occurrence, authoredEntry, out AuthoredSlotPose pose))
+                    {
+                        ApplyAuthoredPose(clone.transform, pose, keepSourceScaleMagnitude: true);
+                        StampPose(clone, occurrence, pose);
+                    }
                 }
 
                 DestroyNow(hostSlot.gameObject);
@@ -854,7 +872,7 @@ namespace TitanOrbit.ECS
                 Transform safeParent = parent != null && parent != liveSlot && !parent.IsChildOf(liveSlot)
                     ? parent
                     : ResolveVisualContentRoot(root);
-                restored.transform.SetParent(safeParent, false);
+                restored.transform.SetParent(safeParent, true);
             }
 
             if (TryResolveAuthoredPose(liveSlot, occurrence, exactEntry, out AuthoredSlotPose pose))

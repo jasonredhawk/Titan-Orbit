@@ -50,6 +50,12 @@ namespace TitanOrbit.ECS
 
         /// <summary>People delivered this match.</summary>
         public int PeopleDelivered;
+
+        /// <summary>
+        /// Ghosted match score. Sent on its own so a death that only cuts this value
+        /// (kill / gem / troop counts unchanged) still updates off-screen leaderboards.
+        /// </summary>
+        public int Score;
     }
 
     /// <summary>
@@ -97,19 +103,19 @@ namespace TitanOrbit.ECS
             {
                 case 0:
                     rpc.N0 = row.NetworkId; rpc.Team0 = row.Team; rpc.Level0 = row.Level; rpc.Flags0 = row.Flags;
-                    rpc.Kills0 = row.Kills; rpc.Gems0 = row.GemsDeposited; rpc.People0 = row.PeopleDelivered;
+                    rpc.Kills0 = row.Kills; rpc.Gems0 = row.GemsDeposited; rpc.People0 = row.PeopleDelivered; rpc.Score0 = row.Score;
                     break;
                 case 1:
                     rpc.N1 = row.NetworkId; rpc.Team1 = row.Team; rpc.Level1 = row.Level; rpc.Flags1 = row.Flags;
-                    rpc.Kills1 = row.Kills; rpc.Gems1 = row.GemsDeposited; rpc.People1 = row.PeopleDelivered;
+                    rpc.Kills1 = row.Kills; rpc.Gems1 = row.GemsDeposited; rpc.People1 = row.PeopleDelivered; rpc.Score1 = row.Score;
                     break;
                 case 2:
                     rpc.N2 = row.NetworkId; rpc.Team2 = row.Team; rpc.Level2 = row.Level; rpc.Flags2 = row.Flags;
-                    rpc.Kills2 = row.Kills; rpc.Gems2 = row.GemsDeposited; rpc.People2 = row.PeopleDelivered;
+                    rpc.Kills2 = row.Kills; rpc.Gems2 = row.GemsDeposited; rpc.People2 = row.PeopleDelivered; rpc.Score2 = row.Score;
                     break;
                 default:
                     rpc.N3 = row.NetworkId; rpc.Team3 = row.Team; rpc.Level3 = row.Level; rpc.Flags3 = row.Flags;
-                    rpc.Kills3 = row.Kills; rpc.Gems3 = row.GemsDeposited; rpc.People3 = row.PeopleDelivered;
+                    rpc.Kills3 = row.Kills; rpc.Gems3 = row.GemsDeposited; rpc.People3 = row.PeopleDelivered; rpc.Score3 = row.Score;
                     break;
             }
         }
@@ -120,13 +126,13 @@ namespace TitanOrbit.ECS
             switch (index)
             {
                 case 0:
-                    return new ShipWireRoster { NetworkId = rpc.N0, Team = rpc.Team0, Level = rpc.Level0, Flags = rpc.Flags0, Kills = rpc.Kills0, GemsDeposited = rpc.Gems0, PeopleDelivered = rpc.People0 };
+                    return new ShipWireRoster { NetworkId = rpc.N0, Team = rpc.Team0, Level = rpc.Level0, Flags = rpc.Flags0, Kills = rpc.Kills0, GemsDeposited = rpc.Gems0, PeopleDelivered = rpc.People0, Score = rpc.Score0 };
                 case 1:
-                    return new ShipWireRoster { NetworkId = rpc.N1, Team = rpc.Team1, Level = rpc.Level1, Flags = rpc.Flags1, Kills = rpc.Kills1, GemsDeposited = rpc.Gems1, PeopleDelivered = rpc.People1 };
+                    return new ShipWireRoster { NetworkId = rpc.N1, Team = rpc.Team1, Level = rpc.Level1, Flags = rpc.Flags1, Kills = rpc.Kills1, GemsDeposited = rpc.Gems1, PeopleDelivered = rpc.People1, Score = rpc.Score1 };
                 case 2:
-                    return new ShipWireRoster { NetworkId = rpc.N2, Team = rpc.Team2, Level = rpc.Level2, Flags = rpc.Flags2, Kills = rpc.Kills2, GemsDeposited = rpc.Gems2, PeopleDelivered = rpc.People2 };
+                    return new ShipWireRoster { NetworkId = rpc.N2, Team = rpc.Team2, Level = rpc.Level2, Flags = rpc.Flags2, Kills = rpc.Kills2, GemsDeposited = rpc.Gems2, PeopleDelivered = rpc.People2, Score = rpc.Score2 };
                 default:
-                    return new ShipWireRoster { NetworkId = rpc.N3, Team = rpc.Team3, Level = rpc.Level3, Flags = rpc.Flags3, Kills = rpc.Kills3, GemsDeposited = rpc.Gems3, PeopleDelivered = rpc.People3 };
+                    return new ShipWireRoster { NetworkId = rpc.N3, Team = rpc.Team3, Level = rpc.Level3, Flags = rpc.Flags3, Kills = rpc.Kills3, GemsDeposited = rpc.Gems3, PeopleDelivered = rpc.People3, Score = rpc.Score3 };
             }
         }
     }

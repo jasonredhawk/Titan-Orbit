@@ -6,11 +6,13 @@ namespace TitanOrbit.ECS
     /// <summary>
     /// [ECS/DOTS] Server-only last-damager bookkeeping for kill credit. Not ghost-serialized —
     /// the death camera reads the copy packed onto <see cref="ShipDeathVfxState"/>.
-    /// Server credits <see cref="ShipMatchStats.Kills"/> when
-    /// <see cref="ShipDeathRecordingSystem"/> sees a new death.
+    /// Server credits <see cref="ShipMatchStats.Kills"/> and transfers half of
+    /// <see cref="ShipMatchStats.Score"/> when <see cref="ShipDeathRecordingSystem"/>
+    /// sees a new enemy death.
     /// <para>
     /// [TITAN-ORBIT] Written by bullet and ramming damage paths. Cleared on respawn.
-    /// Match stats themselves are left intact across deaths.
+    /// Kill, gem, and troop counters stay across deaths. Match score is cut in half
+    /// only when an enemy ship takes the kill.
     /// Last impulse is packed into <see cref="ShipDeathVfxState"/> on death for the cosmetic breakup.
     /// </para>
     /// </summary>

@@ -72,10 +72,18 @@ namespace TitanOrbit.ECS
         public float EnergyCharge;
 
         /// <summary>
-        /// [TITAN-ORBIT] Level-1 firePower for this barrel (before attributes) — bullet VFX
-        /// growth baseline so a fat gun looks larger than a peashooter at the same ship level.
+        /// [TITAN-ORBIT] Unleveled catalog firePower for this barrel (mesh scale included).
+        /// Ship bullet size uses the hull’s peak DPS, not this barrel alone — this is the
+        /// level baseline in that sum.
         /// </summary>
         public float ReferenceFirePower;
+
+        /// <summary>
+        /// [TITAN-ORBIT] Unleveled catalog fire rate for this barrel. Paired with
+        /// <see cref="ReferenceFirePower"/> so tracer size follows peak DPS
+        /// (fire power × fire rate), including ship level. 0 = use <see cref="FireRate"/>.
+        /// </summary>
+        public float ReferenceFireRate;
 
         /// <summary>
         /// [TITAN-ORBIT] Catalog <c>firePowerPerExtraLevel</c> for this barrel.

@@ -124,6 +124,8 @@ namespace TitanOrbit.ECS.Authoring
                 });
                 AddComponent(entity, new ShipVitalsState());
                 AddComponent(entity, new ShipAttributeUpgradeState());
+                // [NETCODE] NextMountIndex is the only GhostField. Bake the component
+                // so the arsenal can see which square is charging on a short pool.
                 AddComponent(entity, new ShipWeaponState { LastFiredMountIndex = -1 });
                 // [NETCODE] Arsenal mute mask MUST bake — GhostFields do not replicate
                 // when ShipEnsureComponentsSystem adds this only at runtime.

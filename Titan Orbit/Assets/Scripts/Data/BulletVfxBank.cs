@@ -12,7 +12,7 @@ namespace TitanOrbit.Data
     /// One asset at <c>Resources/BulletVfxBank</c> so Editor and player builds share the same file
     /// (no Data + Resources duplicate to keep in sync).
     /// <para>
-    /// Categories come from Demo Prefabs folders (Laserbolt, Plasma, Rockets, Fireballs, …).
+    /// Categories come from Demo Prefabs folders (Darts, Plasma, Rockets, Fireballs, …).
     /// Players press <b>B</b> to cycle <c>ShipLoadoutState.RuntimeBulletIndex</c> through them.
     /// Each category maps to a <see cref="BulletBankProfile"/> and team-colored prefabs. Loaded by
     /// <see cref="Game.BulletVfxDriver"/>. Presentation only — hit detection stays server-side.
@@ -24,7 +24,7 @@ namespace TitanOrbit.Data
     /// <item><b>Upgrade Visual Scale Multiplier</b> (bank) — how much tier/attribute fire-power
     /// growth becomes size (0.5 = half-step: 3→8 fire → ~1.83× size, not 2.67×).</item>
     /// <item><b>Per-category</b> Global / Upgrade multipliers (default 1 = 100%) — relative to the
-    /// bank knobs, so one family (e.g. Fireballs) can be larger/smaller than Laserbolt.</item>
+    /// bank knobs, so one family (e.g. Fireballs) can be larger/smaller than Darts.</item>
     /// </list>
     /// Final size uses bank × category for both global and upgrade paths.
     /// </para>
@@ -45,7 +45,7 @@ namespace TitanOrbit.Data
         [Serializable]
         public class Category
         {
-            public string categoryName = "Laserbolt";
+            public string categoryName = "Darts";
 
             // --- Per-family scale (relative to bank-wide knobs; 1 = 100%) ---
             [Header("Visual scale (this category)")]
@@ -107,7 +107,7 @@ namespace TitanOrbit.Data
 
         /// <summary>
         /// Finds a category index by designer <see cref="Category.categoryName"/> (case-insensitive).
-        /// Used by drones: Fighter → "Bullets", Mining → "Laserbolt".
+        /// Used by drones: Fighter → "Bullets", Mining → "Darts".
         /// </summary>
         /// <param name="categoryName">Row name from the bank Inspector.</param>
         /// <param name="index">Zero-based category index when found.</param>
@@ -209,7 +209,7 @@ namespace TitanOrbit.Data
 #endif
 
         /// <summary>
-        /// Display name for B-key cycle feedback (category row name, e.g. "Laserbolt", "Plasma").
+        /// Display name for B-key cycle feedback (category row name, e.g. "Darts", "Plasma").
         /// Returns empty string when the index is out of range.
         /// </summary>
         /// <param name="index">Zero-based category index from <c>ShipLoadoutState.RuntimeBulletIndex</c>.</param>

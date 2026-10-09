@@ -1415,6 +1415,8 @@ namespace TitanOrbit.ECS
         public int Gems0;
         /// <summary>People delivered, slot 0.</summary>
         public int People0;
+        /// <summary>Match score, slot 0.</summary>
+        public int Score0;
 
         /// <summary>Ship network id, slot 1.</summary>
         public int N1;
@@ -1430,6 +1432,8 @@ namespace TitanOrbit.ECS
         public int Gems1;
         /// <summary>People delivered, slot 1.</summary>
         public int People1;
+        /// <summary>Match score, slot 1.</summary>
+        public int Score1;
 
         /// <summary>Ship network id, slot 2.</summary>
         public int N2;
@@ -1445,6 +1449,8 @@ namespace TitanOrbit.ECS
         public int Gems2;
         /// <summary>People delivered, slot 2.</summary>
         public int People2;
+        /// <summary>Match score, slot 2.</summary>
+        public int Score2;
 
         /// <summary>Ship network id, slot 3.</summary>
         public int N3;
@@ -1460,6 +1466,8 @@ namespace TitanOrbit.ECS
         public int Gems3;
         /// <summary>People delivered, slot 3.</summary>
         public int People3;
+        /// <summary>Match score, slot 3.</summary>
+        public int Score3;
     }
 
     /// <summary>

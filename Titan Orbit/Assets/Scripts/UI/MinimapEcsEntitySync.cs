@@ -669,12 +669,14 @@ namespace TitanOrbit.UI
                 anchor.Kills = stats.Kills;
                 anchor.GemsDeposited = stats.GemsDeposited;
                 anchor.PeopleDelivered = stats.PeopleDelivered;
+                anchor.Score = stats.Score;
             }
             else
             {
                 anchor.Kills = 0;
                 anchor.GemsDeposited = 0;
                 anchor.PeopleDelivered = 0;
+                anchor.Score = 0;
             }
         }
 
@@ -999,6 +1001,7 @@ namespace TitanOrbit.UI
             anchor.Kills = row.Kills;
             anchor.GemsDeposited = row.GemsDeposited;
             anchor.PeopleDelivered = row.PeopleDelivered;
+            anchor.Score = row.Score;
             anchor.CurrentPeople = 0;
             anchor.PeopleCapacity = 0;
         }

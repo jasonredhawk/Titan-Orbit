@@ -9,8 +9,10 @@ namespace TitanOrbit.ECS
     /// <summary>
     /// Top-down constraint after Unity Physics, bounce, and canonical wrap. Hull impacts
     /// can impart pitch/roll; this re-locks yaw-only rotation, clamps <c>Position.y</c> to the play
-    /// plane, and zeros vertical velocity. Bounce linear XZ is preserved for
-    /// <see cref="ShipKinematicsSyncSystem"/>. Pipeline:
+    /// plane, and zeros vertical velocity. While thrust is held, planar speed is pulled back to
+    /// the motor cap (<see cref="ShipTerritoryBoostLatch.LastAppliedMaxSpeed"/>) so solver
+    /// separation cannot leave the speedometer above cruise / overdrive. Released-thrust bounce
+    /// still reaches <see cref="ShipKinematicsSyncSystem"/>. Pipeline:
     /// Drive → Physics → Bounce → Friction → Wrap → Planar (this) → KinematicsSync.
     /// </summary>
     // OrderLast: after default-slot PhysicsSystemGroup. Avoid UpdateAfter(PhysicsSystemGroup) —
@@ -28,27 +30,37 @@ namespace TitanOrbit.ECS
             if (state.World.IsClient() && ClientJoinSettleCache.ShouldSkipShipSimulation)
                 return;
 
+            var inputLookup = SystemAPI.GetComponentLookup<ShipInput>(true);
+            var latchLookup = SystemAPI.GetComponentLookup<ShipTerritoryBoostLatch>(true);
+            var moonLookup = SystemAPI.GetComponentLookup<ShipMoonDockState>(true);
+
             if (state.World.IsClient())
             {
-                foreach (var (transform, velocity, shipState) in SystemAPI
+                foreach (var (transform, velocity, shipState, entity) in SystemAPI
                              .Query<RefRW<LocalTransform>, RefRW<PhysicsVelocity>, RefRO<ShipState>>()
-                             .WithAll<ShipTag, Simulate, PredictedGhost>())
-                    ApplyPlanar(transform, velocity, shipState);
+                             .WithAll<ShipTag, Simulate, PredictedGhost>()
+                             .WithEntityAccess())
+                    ApplyPlanar(transform, velocity, shipState, entity, inputLookup, latchLookup, moonLookup);
             }
             else
             {
-                foreach (var (transform, velocity, shipState) in SystemAPI
+                foreach (var (transform, velocity, shipState, entity) in SystemAPI
                              .Query<RefRW<LocalTransform>, RefRW<PhysicsVelocity>, RefRO<ShipState>>()
-                             .WithAll<ShipTag, Simulate>())
-                    ApplyPlanar(transform, velocity, shipState);
+                             .WithAll<ShipTag, Simulate>()
+                             .WithEntityAccess())
+                    ApplyPlanar(transform, velocity, shipState, entity, inputLookup, latchLookup, moonLookup);
             }
         }
 
-        /// <summary>Yaw-only lock, Y = 0, planar linear / yaw angular.</summary>
+        /// <summary>Yaw-only lock, Y = 0, planar linear / yaw angular, thrust cruise cap.</summary>
         static void ApplyPlanar(
             RefRW<LocalTransform> transform,
             RefRW<PhysicsVelocity> velocity,
-            RefRO<ShipState> shipState)
+            RefRO<ShipState> shipState,
+            Entity entity,
+            ComponentLookup<ShipInput> inputLookup,
+            ComponentLookup<ShipTerritoryBoostLatch> latchLookup,
+            ComponentLookup<ShipMoonDockState> moonLookup)
         {
             if (shipState.ValueRO.IsDead || shipState.ValueRO.AwaitingTeamSelection)
                 return;
@@ -78,6 +90,26 @@ namespace TitanOrbit.ECS
 
             float3 linear = velocity.ValueRO.Linear;
             linear.y = 0f;
+
+            // --- Thrust cruise cap (after the solver) ---
+            // [TITAN-ORBIT] The motor already clamps thrust to MaxSpeed, then Unity Physics can
+            // still write a separation speed (up to MaxDynamicDepenetrationVelocity, 25). The
+            // next drive tick used to keep that magnitude, so a cruise of 3 climbed to 7–9 and
+            // stuck at the 3× safety ceiling. Holding thrust pulls the hull back to the same
+            // cap the speedometer tick shows. Takeoff / landed moon co-orbit own velocity
+            // themselves (latch cap is cleared). Releasing thrust still allows a ram bleed.
+            bool thrusting = inputLookup.HasComponent(entity) && inputLookup[entity].Thrust;
+            bool takeoffOrLanded = moonLookup.HasComponent(entity) &&
+                                   (moonLookup[entity].IsTakingOff || moonLookup[entity].IsFullyLanded);
+            if (thrusting &&
+                !takeoffOrLanded &&
+                latchLookup.HasComponent(entity))
+            {
+                float cap = latchLookup[entity].LastAppliedMaxSpeed;
+                if (cap > 0.1f)
+                    ShipPhysicsDriveLogic.ClampPlanarSpeed(ref linear, cap);
+            }
+
             float yawRate = velocity.ValueRO.Angular.y;
             velocity.ValueRW = new PhysicsVelocity
             {

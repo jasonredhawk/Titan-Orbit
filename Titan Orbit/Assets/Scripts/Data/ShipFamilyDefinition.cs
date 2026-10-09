@@ -117,7 +117,7 @@ namespace TitanOrbit.Data
 
         [Header("Bullets")]
         [Tooltip(
-            "Fallback BulletVfxBank category when a planet did not stamp a gun (Laserbolt = 0). " +
+            "Fallback BulletVfxBank category when a planet did not stamp a gun (Darts = 0). " +
             "Live planets roll their own type at spawn so the same family can fire Fireballs one " +
             "match and Rift the next. Do not assign Rockets — that bank is reserved for store rocket packs.")]
         public int bulletPrefabIndex = 0;

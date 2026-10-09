@@ -1702,6 +1702,30 @@ namespace TitanOrbit.NetCode
         }
 
         /// <summary>
+        /// True when every joinable seat is taken. Uses teams × max-per-team once the map
+        /// has rolled; otherwise the dedicated <c>--maxPlayers</c> ceiling. A second game is
+        /// opened only in this state.
+        /// </summary>
+        /// <param name="connectedPlayers">Live NetCode connection count.</param>
+        public bool IsServerMatchRosterFull(int connectedPlayers)
+        {
+            // --- IsServerMatchRosterFull ---
+            int cap = _serverConfig != null ? _serverConfig.MaxPlayers : TitanOrbitServerCommandLine.DefaultMaxPlayers;
+            var server = ClientServerBootstrap.ServerWorld;
+            if (MapSessionMetaCache.TryReadFromServerWorld(server, out MapSessionMetaRpc meta) &&
+                meta.TeamCount > 0 &&
+                MapSessionMetaCache.TryReadMaxPlayersPerTeam(server, out int perTeam) &&
+                perTeam > 0)
+            {
+                int rosterCap = meta.TeamCount * perTeam;
+                if (rosterCap > 0)
+                    cap = Math.Min(cap, rosterCap);
+            }
+
+            return connectedPlayers >= Math.Max(1, cap);
+        }
+
+        /// <summary>
         /// Destroys every player ship ghost on the server world and zeroes team roster counts.
         /// Call when the match is empty or when an in-process lobby recreate publishes a "new game"
         /// on the same ServerWorld. Without this, NetCode reassigns NetworkId 1 to the next joiner

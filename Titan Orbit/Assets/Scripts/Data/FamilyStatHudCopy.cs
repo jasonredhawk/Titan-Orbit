@@ -15,9 +15,11 @@ namespace TitanOrbit.Data
     /// The upgrade-tree Fleet Bonuses wheel and the sidebar FAMILY BONUSES block
     /// both walk <see cref="CollectBonusRows"/> so every
     /// <see cref="ShipFamilySpecialBonuses"/> field can be listed, including 1×
-    /// baselines (shown as <c>1.00×</c>). Hull and Energy are separate groups so
-    /// defense and power are not mixed. Bullet-bank vs-target damage is a weapon
-    /// stat and is not part of this plate.
+    /// baselines (shown as <c>1.00×</c>). Hovering a spoke uses
+    /// <see cref="FormatSpokeHoverBody"/>: the lineage percent plus a one-line
+    /// description of what that multiplier changes. Hull and Energy are separate
+    /// groups so defense and power are not mixed. Bullet-bank vs-target damage
+    /// is a weapon stat and is not part of this plate.
     /// </para>
     /// </summary>
     public static class FamilyStatHudCopy
@@ -336,6 +338,90 @@ namespace TitanOrbit.Data
             return NeutralBaseText;
         }
 
+        /// <summary>
+        /// Hover body for one Fleet Bonuses spoke: coloured lineage value, then
+        /// a sentence on what that multiplier changes. The wheel stores this
+        /// string when it paints, then the hover card only assigns it.
+        /// </summary>
+        /// <param name="row">Spoke already collected by <see cref="CollectBonusRows"/>.</param>
+        /// <returns>TMP rich text. Description is omitted when the short tag is unknown.</returns>
+        public static string FormatSpokeHoverBody(in BonusRow row)
+        {
+            // Reused so a hover does not allocate a fresh builder each time.
+            s_HoverBody.Clear();
+
+            // --- Lineage value ---
+            // Stock 1× still prints a value so the card is not title-only.
+            // Drain already flipped SignedPercent: green +% means less energy spent.
+            string value = row.IsIdentity ? "STOCK " + NeutralBaseText : FormatSignedPercent(row);
+            s_HoverBody.Append("<color=#").Append(HexForRow(row)).Append("><b>")
+                .Append(value)
+                .Append("</b></color>");
+
+            // --- What the spoke changes ---
+            string description = GetSpokeDescription(row.ShortLabel);
+            if (!string.IsNullOrEmpty(description))
+            {
+                s_HoverBody.AppendLine();
+                s_HoverBody.AppendLine();
+                s_HoverBody.Append("<color=#D0D8E4>").Append(description).Append("</color>");
+            }
+
+            return s_HoverBody.ToString();
+        }
+
+        /// <summary>
+        /// One sentence for a Fleet Bonuses spoke. Keyed by the short tag from
+        /// <see cref="CollectBonusRows"/> (MOVE, RAM, CAM). Empty when unknown.
+        /// </summary>
+        /// <param name="shortLabel">Telemetry tag on the bonus row.</param>
+        public static string GetSpokeDescription(string shortLabel)
+        {
+            switch (shortLabel)
+            {
+                case "MOVE":
+                    return "Cruise speed for this family, after cargo mass. Engines and Extra Level still raise the hull's own cap.";
+                case "ACCEL":
+                    return "How quickly the ship reaches cruise speed.";
+                case "TURN":
+                    return "How fast the nose yaws, so you can aim and hold a tight orbit.";
+                case "OD%":
+                    return "Extra speed added on top of cruise while overdrive is held.";
+                case "DRAIN":
+                    return "Energy spent each second while overdrive is held. Green means this family burns less for the same burst.";
+                case "FP":
+                    return "Damage dealt by each shot. Fire rate is its own spoke.";
+                case "RATE":
+                    return "Shots fired per second. Damage per shot is its own spoke.";
+                case "BSPD":
+                    return "How fast shots travel. Faster rounds arrive sooner and are harder to dodge. Damage is unchanged.";
+                case "RANGE":
+                    return "How far shots travel before they expire.";
+                case "RAM":
+                    return "Damage dealt when the hull rams another ship or a rock.";
+                case "HP":
+                    return "Maximum hull hit points. The ship is destroyed when this reaches zero.";
+                case "H.REG":
+                    return "Hit points recovered each second while the hull is below its cap.";
+                case "EN":
+                    return "Energy the ship can store. Weapons spend this pool.";
+                case "E.REG":
+                    return "Energy recovered each second. Higher regen keeps guns firing after the first burst.";
+                case "GEMS":
+                    return "How many gems this hull can carry.";
+                case "TROOPS":
+                    return "How many people this hull can carry for colony and transport runs.";
+                case "TRACT":
+                    return "How far the tractor beam can reach to pull gems and people.";
+                case "T.PWR":
+                    return "How strongly the tractor beam reels a target in.";
+                case "CAM":
+                    return "Gameplay camera height. Above stock zooms out; below stock zooms in. Ship stats do not change.";
+                default:
+                    return string.Empty;
+            }
+        }
+
         /// <summary>TMP hex for a cell value (boost / penalty / zoom / baseline).</summary>
         public static string HexForRow(in BonusRow row)
         {
@@ -351,6 +437,9 @@ namespace TitanOrbit.Data
         }
 
         static readonly List<BonusRow> s_ScratchRows = new List<BonusRow>(20);
+
+        /// <summary>Scratch builder for spoke hover cards. Pointer-enter only.</summary>
+        static readonly StringBuilder s_HoverBody = new StringBuilder(256);
 
         static void TryAdd(
             List<BonusRow> dest,

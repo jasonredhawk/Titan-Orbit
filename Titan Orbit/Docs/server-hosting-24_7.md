@@ -11,17 +11,17 @@ Match rotation is handled inside the server process. Lifecycle rules:
 |-----------|----------------|
 | **Players connected** | Match keeps running and stays `IsOpen=1`. Idle teardown does **not** run. |
 | **Last player leaves** (0 connections) | Empty-idle countdown **starts/resets from that moment**. Orphan ships wiped; map stays until timeout. |
-| **Empty for 30 minutes** (`emptyMatchRecreateSeconds`) | In-process recreate: new Relay + lobby, wipe ships, same process (only when **0 players**). |
+| **Empty for 1 hour** (`emptyMatchRecreateSeconds`, default 3600) | In-process recreate: new Relay + lobby, wipe ships, same process (only when **0 players**). |
 | **Empty process recycle** (RSS / struggling / idle count) | Spawn new IsLatest sibling **first**, wait until browseable, then close old + exit **0**. systemd must be `Restart=on-failure` so a second Unity is not started. Handoff failure → demote-keep-open + exit 1 (cold restart with brief overlap). |
 | **In-process idle recreate** | Create new lobby **before** closing old (no zero-lobby window). |
 | **RSS over budget** (`rssRecycleMb`, default **3500**) while empty | Triggers empty recycle handoff above. |
 | **Sustained STRUGGLING** (`strugglingSamplesBeforeRecycle`, default **3** ≈ 30s) while empty | Triggers empty recycle handoff above. |
 | **Main thread hung** (`mainThreadHangQuitSeconds`, default **300**; paused during recreate) | Background watchdog hard-exits code 1 so systemd restarts. |
 | **Memory telemetry** (`memoryLogIntervalSeconds`, default **60**) | `memory` lines in `TitanOrbitDedicatedServer.log`: rssMb, entity counts, emptyRecreates, rssDeltaMb. |
-| **Age ~30 minutes** while occupied + IsLatest + not full (`ageThresholdSeconds`) | Spawn a successor process as the new `IsLatest`. **Demote** this lobby (`IsLatest=0`) but **keep `IsOpen=1`** so conquest maps stay on Join Game. |
-| **Lobby full** (max players) | Close listing (`IsOpen=0`) and spawn successor capacity. |
+| **Match age** (`ageThresholdSeconds`, default **0**) | Does **not** open a second game. Set above 0 only for rotation tests. |
+| **Roster full** (teams × max per team, else `--maxPlayers`) | Close listing (`IsOpen=0`) and spawn successor capacity. Not while seats remain. |
 
-That means you only need to start ONE server instance 24/7; it will spawn additional match processes automatically when age/full rotation needs a fresh “latest” slot — without killing occupied maps.
+That means you only need to start ONE server instance. It keeps that match until the roster is full, then spawns the next one. An empty match is replaced in-process after one hour. It does not open a second lobby just because the first one is old.
 
 ## Build artifacts
 
@@ -64,7 +64,7 @@ WantedBy=multi-user.target
 Notes:
 - Dedicated auto-boot is gated by `--titanOrbitDedicated=1` (and batchmode/nographics for editor-less runs).
 - The process can spawn additional match server processes using the same executable path it is running from.
-- Override idle/age with `--emptyMatchRecreateSeconds=` and `--ageThresholdSeconds=` (defaults: 1800 each).
+- Override idle with `--emptyMatchRecreateSeconds=` (default 3600). `--ageThresholdSeconds=0` (default) does not open a second game; set it above 0 only for rotation tests.
 - Process recycle: `--maxInProcessEmptyRecreates=6`, `--rssRecycleMb=3500`, `--strugglingSamplesBeforeRecycle=3`, `--memoryLogIntervalSeconds=60` (0 disables each). Hang quit: `--mainThreadHangQuitSeconds=300`.
 - systemd: **`Restart=on-failure`** (not `always`). Successful empty handoff exits **0** with a live sibling; exit **1** still restarts after crashes.
 - Grep handoff / gaps: `grep -E 'Recycle handoff|published NEW lobby first|memory' TitanOrbitDedicatedServer.log`
@@ -74,13 +74,13 @@ Notes:
 
 1. Server logs:
    - `[TitanOrbitSessionManager] Dedicated server live...`
-   - `[TitanOrbitDedicatedServerHost] Age rotation...` / `Handoff complete... demoted_keep_open` / `closed`
+   - `[TitanOrbitDedicatedServerHost] Full rotation...` / `Handoff complete... closed` (age rotation only if `--ageThresholdSeconds` is set)
    - `[TitanOrbitDedicatedServerHost] Last player left — empty-idle countdown started`
    - `empty_match_recreate` only when the match was empty for the idle window
 2. UGS lobbies:
-   - At most one lobby should be `IsLatest=1` for the free “new game” flow.
-   - Occupied non-full matches after age rotation stay `IsOpen=1` with `IsLatest=0`.
-   - `IsOpen` flips to `0` when full or after empty idle recreate of the old lobby.
+   - One open game while it still has seats. A second lobby appears only after that roster is full.
+   - Two empty lobbies must not stay listed together. The older empty process closes its lobby and exits.
+   - `IsOpen` flips to `0` when the roster is full or after the 1-hour empty recreate of the old lobby.
 3. Relay connections:
    - If WebGL fails to connect, check CSP headers (Cloudflare `_headers`) and verify `wss`/`dtls` end-to-end.
 

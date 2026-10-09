@@ -150,7 +150,7 @@ namespace TitanOrbit.Data
 
         /// <summary>
         /// Unique-component / type-table bank field meaning "use the named default for this
-        /// weapon type" (Bullets / FireballsV2 / Rockets / Laser).
+        /// weapon type" (Bullets / FireballsV2 / Rockets / Photon Bolts).
         /// </summary>
         public const int InheritTypeTableBankIndex = -1;
 
@@ -170,8 +170,8 @@ namespace TitanOrbit.Data
         /// </summary>
         public const string DefaultWeaponMissileBankName = "Rockets";
 
-        /// <summary>Named <see cref="BulletVfxBank"/> default for MEGA snipers.</summary>
-        public const string DefaultWeaponSniperBankName = "Laser";
+        /// <summary>Named <see cref="BulletVfxBank"/> default for MEGA snipers (Photon Bolts, not a Titan beam).</summary>
+        public const string DefaultWeaponSniperBankName = "Photon Bolts";
 
         /// <summary>Default tracer / VFX scale when a type-table bank scale is unset (0).</summary>
         public const float DefaultWeaponBankScale = 1f;

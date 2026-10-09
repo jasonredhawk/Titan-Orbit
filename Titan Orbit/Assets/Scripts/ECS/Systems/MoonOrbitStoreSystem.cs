@@ -1403,6 +1403,17 @@ namespace TitanOrbit.ECS
                 return false;
             }
 
+            byte stampedBank = 0;
+            if (!string.IsNullOrWhiteSpace(componentId))
+            {
+                // [TITAN-ORBIT] Ghost the gun this purchase adds to B-key. Resolving it
+                // later from a planet query disagreed between client and server, so the
+                // toggle predicted for a moment and the snapshot put the hull gun back.
+                int bank = BulletBankOwnership.ResolveBankForPurchasedComponent(
+                    em, shipEntity, componentId);
+                stampedBank = BulletBankOwnership.ToStampedBulletBankPlusOne(bank);
+            }
+
             buffer.Add(new EquippedEquipmentElement
             {
                 ItemType = (int)StoreItemType.ShipComponent,
@@ -1411,6 +1422,7 @@ namespace TitanOrbit.ECS
                 // can show "Lv 3" for a part bought on a level-3 moon.
                 ItemLevel = math.max(1, purchaseLevel),
                 ComponentId = componentId,
+                StampedBulletBankPlusOne = stampedBank,
             });
             return true;
         }

@@ -285,7 +285,7 @@ namespace TitanOrbit.UI
         /// Regular hulls use the L1–L6 ceiling. Titans use the Titan catalog.
         /// Gear passes <see cref="ShipPowerBarComparisonPool.Components"/> so each
         /// lane is this part divided by the best part in any family.
-        /// Slot 0 on a ship is sustained DPS. On gear it is DPS plus ramming.
+        /// Slot 0 on a ship is sustained DPS. On gear that lane stays empty.
         /// Called when a tree node or gear tile paints its colourful stats bar.
         /// </summary>
         /// <param name="megaPool">True when <paramref name="globalMaxes"/> came from the Titan catalog (RANK 1 must match).</param>
@@ -321,7 +321,7 @@ namespace TitanOrbit.UI
 
             for (int i = 0; i < ShipAbilityCategoryColors.PowerBreakdownStatCount; i++)
             {
-                // Gear slot 0 includes ramming. Ship slot 0 is gun DPS only.
+                // Gear slot 0 is empty. Ship slot 0 is the guns that are firing.
                 float val = componentPool
                     ? breakdown.GetComponentCompareStatValue(i)
                     : breakdown.GetDisplayStatValue(i);

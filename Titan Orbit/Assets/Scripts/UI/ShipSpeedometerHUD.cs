@@ -83,14 +83,21 @@ namespace TitanOrbit.UI
         /// <summary>Compact top-center gamer meter scale (bars only, no panel chrome).</summary>
         const float HudLayoutScale = 1f;
 
-        /// <summary>Legible compact meter width (ticks + live value fit).</summary>
-        const float SlimPanelWidth = 220f;
-        /// <summary>Two thin bars + tick rows under each — small but readable.</summary>
-        const float SlimPanelHeight = 36f;
-        /// <summary>Left gutter for SPD/ACC micro-tags.</summary>
-        const float TagGutter = 18f;
-        /// <summary>Right gutter for the live speed readout.</summary>
-        const float ValueGutter = 30f;
+        /// <summary>
+        /// Meter width in canvas pixels. Sized so the tick numbers and the live speed
+        /// readout sit beside the bars without crowding the top of the map.
+        /// </summary>
+        const float SlimPanelWidth = 258f;
+        /// <summary>
+        /// Meter height. Two bars (speed on top, accel below) plus a tick row under each.
+        /// A modest step up from the earlier 36px strip so the tracks stay readable
+        /// without becoming a large cockpit panel.
+        /// </summary>
+        const float SlimPanelHeight = 44f;
+        /// <summary>Left gutter for the SPD / ACC micro-tags (wide enough for the larger caption).</summary>
+        const float TagGutter = 22f;
+        /// <summary>Right gutter for the live speed readout (wide enough for a two-digit value).</summary>
+        const float ValueGutter = 36f;
 
         /// <summary>
         /// Cached LocalPlayerShipTag query — CreateEntityQuery every LateUpdate was ~3ms
@@ -517,7 +524,7 @@ namespace TitanOrbit.UI
             liveRt.anchoredPosition = new Vector2(-pad, 0f);
             speedLiveLabel = liveGo.AddComponent<TextMeshProUGUI>();
             speedLiveLabel.text = "—";
-            speedLiveLabel.fontSize = 8f;
+            speedLiveLabel.fontSize = 9.5f;
             speedLiveLabel.fontStyle = FontStyles.Bold;
             speedLiveLabel.alignment = TextAlignmentOptions.MidlineRight;
             speedLiveLabel.color = fillColor;
@@ -533,7 +540,7 @@ namespace TitanOrbit.UI
             speedTickRect.anchorMax = new Vector2(1f, speedTickT);
             speedTickRect.offsetMin = new Vector2(pad + TagGutter, 0f);
             speedTickRect.offsetMax = new Vector2(-(pad + ValueGutter), 0f);
-            speedTickLabels = CreateInterestTickRow(speedTickStrip.transform, 7f, out speedCruiseTickRt);
+            speedTickLabels = CreateInterestTickRow(speedTickStrip.transform, 8.5f, out speedCruiseTickRt);
 
             GameObject accelRoot = new GameObject("AccelBar");
             accelRoot.transform.SetParent(rootPanel.transform, false);
@@ -594,7 +601,7 @@ namespace TitanOrbit.UI
             accelTickRect.anchorMax = new Vector2(1f, accelTickT);
             accelTickRect.offsetMin = new Vector2(pad + TagGutter, 0f);
             accelTickRect.offsetMax = new Vector2(-(pad + ValueGutter), 0f);
-            accelTickLabels = CreateTickLabelRow(accelTickStrip.transform, 3, 6.5f);
+            accelTickLabels = CreateTickLabelRow(accelTickStrip.transform, 3, 7.5f);
 
             speedLabel = null;
             lastTickMaxSpeed = -1f;
@@ -622,7 +629,7 @@ namespace TitanOrbit.UI
 
             TextMeshProUGUI tmp = go.AddComponent<TextMeshProUGUI>();
             tmp.text = label;
-            tmp.fontSize = 6.5f;
+            tmp.fontSize = 7.5f;
             tmp.fontStyle = FontStyles.Bold;
             tmp.alignment = TextAlignmentOptions.MidlineLeft;
             tmp.color = new Color(accent.r, accent.g, accent.b, 0.7f);

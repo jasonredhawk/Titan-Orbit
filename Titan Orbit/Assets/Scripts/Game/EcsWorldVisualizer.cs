@@ -287,9 +287,7 @@ namespace TitanOrbit.Game
             public GameObject Go;
             public int NetworkId;
             public ShipState Ship;
-            public int Kills;
-            public int GemsDeposited;
-            public int PeopleDelivered;
+            public int Score;
             /// <summary>
             /// True when the ship is fully moon-docked — nameplate stays hidden for that state.
             /// </summary>
@@ -2516,20 +2514,15 @@ namespace TitanOrbit.Game
                 // teams' winners in the shared ShipTopOfTeamRoles snapshot (minimap + remotes).
                 EnsureShipNameplate(proxyGo, networkId);
                 EcsGameBridge.RefreshPlayerDisplayNameCache();
-                int kills = 0, gemsDeposited = 0, peopleDelivered = 0;
+                int score = 0;
                 if (em.HasComponent<ShipMatchStats>(shipEntity))
-                {
-                    var stats = em.GetComponentData<ShipMatchStats>(shipEntity);
-                    kills = stats.Kills;
-                    gemsDeposited = stats.GemsDeposited;
-                    peopleDelivered = stats.PeopleDelivered;
-                }
+                    score = em.GetComponentData<ShipMatchStats>(shipEntity).Score;
 
                 // [TITAN-ORBIT] Same fully-landed / turret-stow gates as the batched nameplate path.
                 bool landedOnMoon = IsShipFullyLandedOnMoon(em, shipEntity);
                 bool stowedInTurret = IsShipHullStowed(em, shipEntity);
                 ApplyShipNameplatePresentation(
-                    proxyGo, networkId, ship, kills, gemsDeposited, peopleDelivered,
+                    proxyGo, networkId, ship, score,
                     landedOnMoon, stowedInTurret, IsMegaNameplateHull(em, shipEntity));
             }
         }
@@ -2985,9 +2978,7 @@ namespace TitanOrbit.Game
             GameObject proxyGo,
             int networkId,
             in ShipState ship,
-            int kills,
-            int gemsDeposited,
-            int peopleDelivered,
+            int score,
             bool isLandedOnMoon,
             bool isStowedInTurret,
             bool isMega)
@@ -3001,7 +2992,6 @@ namespace TitanOrbit.Game
                 return;
 
             string displayName = EcsGameBridge.GetCachedPlayerDisplayName(networkId);
-            int score = ShipMatchScoreLogic.ComputeCombinedScore(kills, gemsDeposited, peopleDelivered);
             if (!_nameplateRankByNetworkId.TryGetValue(networkId, out int rank))
                 rank = 1;
 
@@ -3047,9 +3037,7 @@ namespace TitanOrbit.Game
                     pending.Go,
                     pending.NetworkId,
                     pending.Ship,
-                    pending.Kills,
-                    pending.GemsDeposited,
-                    pending.PeopleDelivered,
+                    pending.Score,
                     pending.IsLandedOnMoon,
                     pending.IsStowedInTurret,
                     pending.IsMega);
@@ -3079,12 +3067,14 @@ namespace TitanOrbit.Game
             int kills = 0;
             int gemsDeposited = 0;
             int peopleDelivered = 0;
+            int score = 0;
             if (em.HasComponent<ShipMatchStats>(entity))
             {
                 var stats = em.GetComponentData<ShipMatchStats>(entity);
                 kills = stats.Kills;
                 gemsDeposited = stats.GemsDeposited;
                 peopleDelivered = stats.PeopleDelivered;
+                score = stats.Score;
             }
 
             // [NETCODE] ShipMoonDockState is ghosted — same component the orbit menu / dock VFX read.
@@ -3101,6 +3091,7 @@ namespace TitanOrbit.Game
                 Kills = kills,
                 GemsDeposited = gemsDeposited,
                 PeopleDelivered = peopleDelivered,
+                Score = score,
                 IsDead = ship.IsDead,
             });
 
@@ -3109,9 +3100,7 @@ namespace TitanOrbit.Game
                 Go = proxyGo,
                 NetworkId = networkId,
                 Ship = ship,
-                Kills = kills,
-                GemsDeposited = gemsDeposited,
-                PeopleDelivered = peopleDelivered,
+                Score = score,
                 IsLandedOnMoon = landedOnMoon,
                 IsStowedInTurret = stowedInTurret,
                 IsMega = isMega,

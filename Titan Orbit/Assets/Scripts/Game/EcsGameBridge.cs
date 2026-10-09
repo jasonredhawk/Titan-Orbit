@@ -2576,7 +2576,7 @@ namespace TitanOrbit.Game
             public int TeamPopulation;
 
             /// <summary>
-            /// Sum of every member's combined score (kills×100 + deposited gems×2 + people×5).
+            /// Sum of every member's match score (gems×2 + troops×5, plus half a victim's score on each kill).
             /// Dead hulls still count. Meaningful only when <see cref="TeamScoreKnown"/> is true.
             /// </summary>
             public int TeamScore;
@@ -2619,7 +2619,7 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Per-slot combined scores for the current Join Team ship pass.
-        /// Same weights as the in-game leaderboard (<see cref="TeamCommanderRules.CombinedScore"/>).
+        /// Ghosted <see cref="ShipMatchStats.Score"/>, same total the in-game leaderboard shows.
         /// </summary>
         static readonly int[] s_JoinTeamScores = new int[5];
 
@@ -2855,10 +2855,7 @@ namespace TitanOrbit.Game
                     continue;
 
                 // Dead hulls stay in the sum — same rule as the in-game leaderboard.
-                s_JoinTeamScores[index] += TeamCommanderRules.CombinedScore(
-                    math.max(0, matchStats[i].Kills),
-                    math.max(0, matchStats[i].GemsDeposited),
-                    math.max(0, matchStats[i].PeopleDelivered));
+                s_JoinTeamScores[index] += math.max(0, matchStats[i].Score);
 
                 string label = ResolveJoinTeamPlayerLabel(owners[i].NetworkId);
                 if (string.IsNullOrEmpty(label))

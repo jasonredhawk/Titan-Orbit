@@ -85,6 +85,10 @@ namespace TitanOrbit.UI
         private RectTransform minimapRect;
         private RectTransform edgeMarkerContainer; // Container for edge markers (outside mask)
         private Image borderImage; // Reference to the border image
+        /// <summary>Rim stroke on top of the disc, in pixels.</summary>
+        const float RingWidthPx = 10f;
+        /// <summary>Extra pixels past the disc so the stroke stays solid on the rim.</summary>
+        const float RingEdgeCoverPx = 2f;
         private CanvasGroup canvasGroup; // Used to hide minimap until team chosen (keeps Update running so we can show again)
         private Button expandButton;
         private TextMeshProUGUI expandButtonLabel;
@@ -1222,6 +1226,33 @@ namespace TitanOrbit.UI
                     seamUI.transform.SetParent(connectionsParent, false);
                 seamUI.transform.SetAsLastSibling();
             }
+
+            ApplyMinimapDrawOrder();
+        }
+
+        /// <summary>
+        /// Later siblings paint on top. Planets, lines, and asteroids stay under the rim
+        /// ring. Off-screen planet arrows stay above the ring. Buttons and labels stay above both.
+        /// </summary>
+        void ApplyMinimapDrawOrder()
+        {
+            if (minimapContent != null)
+                minimapContent.SetAsFirstSibling();
+
+            Transform borderTransform = borderImage != null ? borderImage.transform : null;
+            if (borderTransform != null)
+            {
+                int afterContent = minimapContent != null ? minimapContent.GetSiblingIndex() + 1 : 0;
+                borderTransform.SetSiblingIndex(afterContent);
+            }
+
+            if (edgeMarkerContainer != null)
+            {
+                int afterRing = borderTransform != null
+                    ? borderTransform.GetSiblingIndex() + 1
+                    : (minimapContent != null ? minimapContent.GetSiblingIndex() + 1 : 0);
+                edgeMarkerContainer.SetSiblingIndex(afterRing);
+            }
         }
         
         
@@ -2062,57 +2093,73 @@ namespace TitanOrbit.UI
                 borderImage = borderTransform.GetComponent<Image>();
                 if (borderImage != null)
                 {
-                    // Get the actual border size (accounting for the offset)
+                    // A flush ring fades on its last pixels, so blips flash in a bright
+                    // sliver just outside the stroke. Overhang the disc so that fringe
+                    // sits outside the background instead of on it.
                     RectTransform borderRect = borderTransform.GetComponent<RectTransform>();
-                    float borderSize = displaySize; // Border spans the full minimap area
-                    
-                    // Create a circular border sprite (ring shape)
-                    borderImage.sprite = CreateCircularBorderSprite((int)borderSize);
+                    if (borderRect != null)
+                    {
+                        borderRect.anchorMin = Vector2.zero;
+                        borderRect.anchorMax = Vector2.one;
+                        borderRect.pivot = new Vector2(0.5f, 0.5f);
+                        borderRect.anchoredPosition = Vector2.zero;
+                        borderRect.sizeDelta = new Vector2(RingEdgeCoverPx * 2f, RingEdgeCoverPx * 2f);
+                    }
+
+                    // Scene tint is 80% and would wash the stroke back out.
+                    borderImage.color = Color.white;
+                    borderImage.useSpriteMesh = false;
                     borderImage.type = Image.Type.Simple;
+
+                    int discTex = Mathf.Max(8, Mathf.RoundToInt(displaySize));
+                    int textureSize = discTex + Mathf.RoundToInt(RingEdgeCoverPx) * 2;
+                    borderImage.sprite = CreateCircularBorderSprite(textureSize, discTex);
                 }
             }
         }
         
-        private Sprite CreateCircularBorderSprite(int size)
+        private Sprite CreateCircularBorderSprite(int textureSize, int discTex)
         {
-            int textureSize = size;
             Texture2D texture = new Texture2D(textureSize, textureSize, TextureFormat.RGBA32, false);
             texture.filterMode = FilterMode.Bilinear;
+            texture.wrapMode = TextureWrapMode.Clamp;
             
             Color[] pixels = new Color[textureSize * textureSize];
-            float centerX = textureSize / 2f;
-            float centerY = textureSize / 2f;
-            float outerRadius = textureSize / 2f;
-            float borderWidth = 5f; // Border thickness (matches the offset in GameSetup)
-            float innerRadius = outerRadius - borderWidth;
+            float center = textureSize * 0.5f;
+            float discRadius = discTex * 0.5f;
+            float cover = (textureSize - discTex) * 0.5f;
+            // Solid through the disc rim; the extra texels hang outside the background.
+            float outerRadius = discRadius + cover;
+            float innerRadius = discRadius - RingWidthPx;
             
-            // Border color - lighter grey for better visibility
-            Color borderColor = new Color(0.75f, 0.75f, 0.8f, 0.95f);
+            // Previous tint was about (0.15, 0.15, 0.24) at 76% opacity. Same dark color, less see-through.
+            Color borderColor = new Color(0.15f, 0.15f, 0.24f, 0.92f);
             
             for (int y = 0; y < textureSize; y++)
             {
                 for (int x = 0; x < textureSize; x++)
                 {
-                    float dx = x - centerX;
-                    float dy = y - centerY;
+                    float dx = (x + 0.5f) - center;
+                    float dy = (y + 0.5f) - center;
                     float dist = Mathf.Sqrt(dx * dx + dy * dy);
                     
-                    // Create a ring shape (circle with inner circle cut out)
                     if (dist <= outerRadius && dist >= innerRadius)
-                    {
                         pixels[y * textureSize + x] = borderColor;
-                    }
                     else
-                    {
                         pixels[y * textureSize + x] = Color.clear;
-                    }
                 }
             }
             
             texture.SetPixels(pixels);
             texture.Apply();
             
-            Sprite sprite = Sprite.Create(texture, new Rect(0, 0, textureSize, textureSize), new Vector2(0.5f, 0.5f), 100f);
+            Sprite sprite = Sprite.Create(
+                texture,
+                new Rect(0, 0, textureSize, textureSize),
+                new Vector2(0.5f, 0.5f),
+                100f,
+                0,
+                SpriteMeshType.FullRect);
             sprite.name = "MinimapBorder";
             return sprite;
         }
@@ -2126,8 +2173,8 @@ namespace TitanOrbit.UI
                 bgImage = gameObject.AddComponent<Image>();
             }
             
-            // Set the background to use a circular sprite
-            float backgroundAlpha = isExpanded ? expandedBackgroundAlpha : 0.4f;
+            // Collapsed disc matches the team leaderboard panel (black at 0.72). Expanded stays near-opaque.
+            float backgroundAlpha = isExpanded ? expandedBackgroundAlpha : 0.72f;
             bgImage.sprite = CreateCircularBackgroundSprite((int)displaySize, backgroundAlpha);
             bgImage.type = Image.Type.Simple;
             // Scene Image may ship with alpha 0.4; use white so sprite alpha is not multiplied down.
@@ -3774,6 +3821,7 @@ namespace TitanOrbit.UI
                     Kills = ship.Kills,
                     GemsDeposited = ship.GemsDeposited,
                     PeopleDelivered = ship.PeopleDelivered,
+                    Score = ship.Score,
                     IsDead = ship.IsDead,
                 });
             }

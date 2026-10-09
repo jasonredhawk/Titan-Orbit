@@ -1845,24 +1845,14 @@ namespace TitanOrbit.Game
     }
 
     /// <summary>
-    /// Combined match score + per-team rank for ship nameplates and scoreboards.
-    /// Weights match the old NGO ScoreSystem / <c>TeamLeaderboardHUD</c>:
-    /// kill=100, deposited gem=2, delivered person=5.
+    /// Per-team rank for ship nameplates and scoreboards.
+    /// Rank uses the ghosted match score: deposited gems, delivered troops, and half the
+    /// victim's score on each enemy kill. The victim keeps the other half.
     /// </summary>
     public static class ShipMatchScoreLogic
     {
-        public const int PointsPerKill = TeamCommanderRules.PointsPerKill;
-        public const int PointsPerGem = TeamCommanderRules.PointsPerGem;
-        public const int PointsPerPerson = TeamCommanderRules.PointsPerPerson;
-
         /// <summary>Last <see cref="ComputeTeamRanks"/> snapshot (owner NetworkId → 1-based rank).</summary>
         static readonly Dictionary<int, int> s_RankByNetworkId = new Dictionary<int, int>(32);
-
-        /// <summary>Combined score from ghosted match-long stats.</summary>
-        public static int ComputeCombinedScore(int kills, int gemsDeposited, int peopleDelivered)
-        {
-            return TeamCommanderRules.CombinedScore(kills, gemsDeposited, peopleDelivered);
-        }
 
         /// <summary>
         /// True when this 1-based team score rank is 1–3. Path-stroke thickness only —
@@ -1951,8 +1941,8 @@ namespace TitanOrbit.Game
 
         static int CompareScoreThenId(ShipTopOfTeamRoles.Candidate a, ShipTopOfTeamRoles.Candidate b)
         {
-            int scoreA = ComputeCombinedScore(a.Kills, a.GemsDeposited, a.PeopleDelivered);
-            int scoreB = ComputeCombinedScore(b.Kills, b.GemsDeposited, b.PeopleDelivered);
+            int scoreA = a.Score;
+            int scoreB = b.Score;
             int c = scoreB.CompareTo(scoreA);
             if (c != 0)
                 return c;

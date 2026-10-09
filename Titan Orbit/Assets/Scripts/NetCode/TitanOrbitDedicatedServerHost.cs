@@ -30,9 +30,12 @@ namespace TitanOrbit.NetCode
     ///   The next Join Game is that new match — never the finished map.
     /// - When the last player leaves, orphan ship ghosts are wiped immediately so a new joiner
     ///   cannot be offered a previous player's ship via NetworkId reuse.
-    /// - After N successful 30‑minute idle recreates only (default 6 ≈ 3h empty), exit so
+    /// - After N successful 1-hour idle recreates only (default 6 ≈ 6h empty), exit so
     ///   systemd/Edgegap starts a fresh binary. Stale/self-heal/heartbeat/match-request must
     ///   NOT exit — that made Join Game empty more often (2026-07-25 regression).
+    /// - Do not open a second game while this one still has room. A successor process starts
+    ///   only when every team slot is taken. Empty leftovers are closed so Join Game never
+    ///   lists two empty matches.
     /// - Empty process recycle: spawn a new IsLatest sibling FIRST, wait until its lobby is
     ///   browseable, then close this lobby and exit 0 (no Join Game gap; no duplicate Unity
     ///   under systemd Restart=on-failure). Hang / crash still exit 1 for restart.
@@ -426,6 +429,12 @@ namespace TitanOrbit.NetCode
             var wait = new WaitForSeconds(3f);
             while (true)
             {
+                if (_processExitRequested)
+                {
+                    yield return wait;
+                    continue;
+                }
+
                 bool pendingEmptyRecreate = false;
                 bool pendingStaleRecreate = false;
                 try
@@ -446,7 +455,8 @@ namespace TitanOrbit.NetCode
                             string lobbyId = _activeLobbyId;
                             TrackEmptyMatchTime(playerCount);
 
-                        bool isFull = playerCount >= _config.MaxPlayers;
+                        bool isFull = TitanOrbitSessionManager.Instance != null &&
+                                      TitanOrbitSessionManager.Instance.IsServerMatchRosterFull(playerCount);
                         long nowEpoch = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
                         long ageSeconds = nowEpoch - _createdAtEpochSeconds;
 
@@ -467,9 +477,11 @@ namespace TitanOrbit.NetCode
                                 pendingStaleRecreate = true;
                         }
 
-                        // [TITAN-ORBIT] Age rotation — spawn a fresh IsLatest successor for new joiners.
-                        // Occupied maps stay open (demoted only); see RunRotationHandoff.
-                        if (_matchIsLatest && !_spawnedFromAge && playerCount > 0 &&
+                        // [TITAN-ORBIT] Age rotation is off in production (AgeThresholdSeconds == 0).
+                        // Opening a second lobby at 30 minutes left two games in Join Game while
+                        // the first still had seats. A successor starts only when the roster is full.
+                        if (_config.AgeThresholdSeconds > 0 &&
+                            _matchIsLatest && !_spawnedFromAge && playerCount > 0 &&
                             ageSeconds >= _config.AgeThresholdSeconds && !isFull)
                         {
                             Debug.Log("[TitanOrbitDedicatedServerHost] Age rotation: starting handoff for " + lobbyId);
@@ -491,7 +503,7 @@ namespace TitanOrbit.NetCode
 
                 // In-process recreate — skip while a process handoff is in flight (Relay churn).
                 // [TITAN-ORBIT] Only when playerCount==0 (gated above). Process recycle counts ONLY
-                // empty_match_recreate (30‑min idle) — never stale/self-heal (those must repair
+                // empty_match_recreate (1-hour idle) — never stale/self-heal (those must repair
                 // without exiting, or Join Game goes empty more often).
                 if ((pendingEmptyRecreate || pendingStaleRecreate) && !_handoffInProgress &&
                     TitanOrbitSessionManager.Instance != null)
@@ -570,6 +582,8 @@ namespace TitanOrbit.NetCode
                 if (ourLobbyJoinable)
                 {
                     _localLobbyUnjoinableSinceUtc = null;
+                    if (playerCount == 0)
+                        await ReconcileDuplicateEmptyLobbiesAsync();
                     return;
                 }
 
@@ -597,6 +611,136 @@ namespace TitanOrbit.NetCode
             {
                 Debug.LogWarning("[TitanOrbitDedicatedServerHost] Self-heal error: " + e.Message);
             }
+        }
+
+        /// <summary>
+        /// One empty match in Join Game. If another open lobby still has seats, or a newer empty
+        /// lobby is already listed, this empty process closes its own lobby and exits.
+        /// The other process is left running so a cross-close cannot make it republish.
+        /// </summary>
+        async Task ReconcileDuplicateEmptyLobbiesAsync()
+        {
+            // --- ReconcileDuplicateEmptyLobbiesAsync ---
+            if (_processExitRequested || _handoffInProgress || string.IsNullOrWhiteSpace(_activeLobbyId))
+                return;
+            if (TitanOrbitSessionManager.Instance == null)
+                return;
+
+            List<TitanOrbitLobbyService.LobbySummary> lobbies =
+                await TitanOrbitLobbyService.QueryOpenLobbiesAsync(
+                    latestOnly: false,
+                    count: 20,
+                    emptyStabilizationAttempt: 0,
+                    maxEmptyStabilizationAttemptsOverride: 0);
+            if (lobbies == null || lobbies.Count == 0)
+                return;
+
+            TitanOrbitLobbyService.LobbySummary ours = null;
+            for (int i = 0; i < lobbies.Count; i++)
+            {
+                TitanOrbitLobbyService.LobbySummary candidate = lobbies[i];
+                if (candidate != null &&
+                    string.Equals(candidate.LobbyId, _activeLobbyId, StringComparison.Ordinal))
+                {
+                    ours = candidate;
+                    break;
+                }
+            }
+
+            // Query can lag behind our own publish. Do not exit until we can see ourselves.
+            if (ours == null || !IsFreshEmptyListing(ours))
+                return;
+
+            bool yieldToOther = false;
+            for (int i = 0; i < lobbies.Count; i++)
+            {
+                TitanOrbitLobbyService.LobbySummary other = lobbies[i];
+                if (other == null || string.Equals(other.LobbyId, _activeLobbyId, StringComparison.Ordinal))
+                    continue;
+                if (!other.IsDedicatedServer || !other.IsOpen || IsHeartbeatStale(other))
+                    continue;
+
+                int players = ListingPlayerCount(other);
+                if (players > 0)
+                {
+                    if (players < ListingRosterCap(other))
+                        yieldToOther = true;
+                    continue;
+                }
+
+                if (EmptyListingWins(other, ours))
+                    yieldToOther = true;
+            }
+
+            if (!yieldToOther)
+                return;
+
+            DedicatedServerFileLog.Append(
+                "rotation",
+                "Extra empty lobby yielding lobby=" + _activeLobbyId +
+                " — another game still has room or a newer empty listing exists");
+            Debug.Log("[TitanOrbitDedicatedServerHost] Closing extra empty lobby " + _activeLobbyId +
+                      " so Join Game keeps a single open match.");
+            _processExitRequested = true;
+            try
+            {
+                await TitanOrbitSessionManager.Instance.CloseLobbyForNewJoinersAsync(
+                    _activeLobbyId,
+                    "duplicate_empty_yield");
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning("[TitanOrbitDedicatedServerHost] Duplicate-empty close failed: " + e.Message);
+            }
+
+            Application.Quit(0);
+        }
+
+        /// <summary>True when this listing is a live dedicated lobby with nobody in the match.</summary>
+        static bool IsFreshEmptyListing(TitanOrbitLobbyService.LobbySummary summary)
+        {
+            return summary != null &&
+                   summary.IsDedicatedServer &&
+                   summary.IsOpen &&
+                   !IsHeartbeatStale(summary) &&
+                   ListingPlayerCount(summary) <= 0;
+        }
+
+        static bool IsHeartbeatStale(TitanOrbitLobbyService.LobbySummary summary)
+        {
+            if (summary == null || summary.ServerAliveAtEpochSeconds <= 0)
+                return true;
+            long age = DateTimeOffset.UtcNow.ToUnixTimeSeconds() - summary.ServerAliveAtEpochSeconds;
+            return age > TitanOrbitLobbyService.DedicatedLobbyStaleSeconds;
+        }
+
+        static int ListingPlayerCount(TitanOrbitLobbyService.LobbySummary summary)
+        {
+            if (summary.ActivePlayers >= 0)
+                return summary.ActivePlayers;
+            return Math.Max(0, summary.CurrentPlayers);
+        }
+
+        /// <summary>Joinable roster size: teams × per-team cap, otherwise the lobby max.</summary>
+        static int ListingRosterCap(TitanOrbitLobbyService.LobbySummary summary)
+        {
+            int cap = Math.Max(1, summary.MaxPlayers);
+            if (summary.MapTeamCount > 0 && summary.MapMaxPlayersPerTeam > 0)
+                cap = Math.Min(cap, summary.MapTeamCount * summary.MapMaxPlayersPerTeam);
+            return Math.Max(1, cap);
+        }
+
+        /// <summary>
+        /// Newer empty lobby wins. Equal timestamps keep a single winner by lobby id so two
+        /// processes cannot both decide to stay.
+        /// </summary>
+        static bool EmptyListingWins(
+            TitanOrbitLobbyService.LobbySummary challenger,
+            TitanOrbitLobbyService.LobbySummary incumbent)
+        {
+            if (challenger.CreatedAtEpochSeconds != incumbent.CreatedAtEpochSeconds)
+                return challenger.CreatedAtEpochSeconds > incumbent.CreatedAtEpochSeconds;
+            return string.CompareOrdinal(challenger.LobbyId, incumbent.LobbyId) > 0;
         }
 
         /// <summary>Starts a single handoff coroutine; keeps <c>_matchIsLatest</c> until successor is confirmed.</summary>
@@ -1331,7 +1475,7 @@ namespace TitanOrbit.NetCode
 
         /// <summary>
         /// True when this empty host has already done enough <c>empty_match_recreate</c> cycles
-        /// and should exit for a fresh binary. Only consulted on the 30‑minute idle path.
+        /// and should exit for a fresh binary. Only consulted on the 1-hour idle path.
         /// </summary>
         bool ShouldRecycleProcessInsteadOfInProcessEmptyRecreate()
         {

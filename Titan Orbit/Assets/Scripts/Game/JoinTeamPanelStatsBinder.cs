@@ -206,7 +206,7 @@ namespace TitanOrbit.Game
 
             // --- Stats: live map slice + team score ---
             // Worlds and gem bars are what is on the map right now. Score is the
-            // leaderboard total (kills, deposited gems, delivered people).
+            // leaderboard total (deposited gems, delivered troops, and kill transfers).
             if (texts.Stats != null)
                 PaintMapLine(slot, texts.Stats, in stats);
 

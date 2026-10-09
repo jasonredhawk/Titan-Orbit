@@ -39,6 +39,8 @@ namespace TitanOrbit.UI
         static readonly Color BodyColor = new Color(0.88f, 0.92f, 0.98f, 1f);
         static readonly Color RowIdle = new Color(1f, 1f, 1f, 0.03f);
         static readonly Color AccentColor = new Color(0.35f, 0.72f, 0.95f, 0.95f);
+        /// <summary>Same ready green as the B / CTRL / weapon key hints on the other left-column tiles.</summary>
+        static readonly Color ReadyColor = new Color(0.45f, 0.92f, 0.62f, 1f);
         /// <summary>Same dark key plate as the CTRL chip on brakes.</summary>
         static readonly Color KeycapFill = new Color(0.04f, 0.10f, 0.16f, 0.96f);
         static readonly Color LabelOutline = new Color(0.02f, 0.04f, 0.08f, 0.95f);
@@ -220,6 +222,7 @@ namespace TitanOrbit.UI
 
             // Same corner chip as SpaceBrakesHUD's CTRL hint. One letter, so the
             // plate is narrower, but it still sits in that top-right pocket.
+            // The letter itself is the shared ready green; the left rail stays ice blue.
             var chipGo = new GameObject("HintChip", typeof(RectTransform), typeof(Image));
             chipGo.transform.SetParent(tileRt, false);
             var chipRt = chipGo.GetComponent<RectTransform>();
@@ -232,7 +235,7 @@ namespace TitanOrbit.UI
             hintChip.color = KeycapFill;
             hintChip.raycastTarget = false;
 
-            var hint = CreateLabel(chipRt, "Hint", "C", 7.5f, AccentColor, TextAlignmentOptions.Center);
+            var hint = CreateLabel(chipRt, "Hint", "C", 7.5f, ReadyColor, TextAlignmentOptions.Center);
             var hintRt = hint.rectTransform;
             hintRt.anchorMin = Vector2.zero;
             hintRt.anchorMax = Vector2.one;

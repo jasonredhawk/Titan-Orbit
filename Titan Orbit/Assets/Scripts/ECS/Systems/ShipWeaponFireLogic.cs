@@ -8,16 +8,18 @@ namespace TitanOrbit.ECS
     /// <summary>
     /// Shared multi-mount fire planner for server bullets.
     /// <para>
-    /// [TITAN-ORBIT] The hull pool paints the arsenal strip left to right.
-    /// Square 0 takes one shot cost, leftover energy fills square 1, and so on.
-    /// Three guns at 25 with a pool of 30 show 25 + 5 + 0. Regen raises the
-    /// same bar: at 50 two squares are full and may fire together. A square
-    /// that is still filling does not give its leftover to a later cheaper gun.
+    /// [TITAN-ORBIT] Energy Hybrid. When the hull pool can pay every armed
+    /// projectile, the arsenal still fills left to right and every ready
+    /// barrel fires together. Three guns at 25 with a pool of 75 all fire.
+    /// When the pool is short, only the cursor square charges: that barrel
+    /// fires once, then the cursor steps to the next armed projectile and
+    /// wraps from the last square back to the first. A barrel still on its
+    /// fire-rate timer waits on that same square — the shot does not jump
+    /// back to the first gun.
     /// </para>
+    /// Cannon lasers burn on their own and are not steps in the rotation.
     /// After a paid shot the barrel waits <c>1 / fireRate</c> before it can
-    /// fire again. That delay does not empty the square — energy still sits
-    /// left to right — it only blocks that barrel. Lasers pay one interval of
-    /// beam DPS in the same strip walk.
+    /// fire again. That delay blocks the barrel; it does not move the cursor.
     /// </summary>
     public static class ShipWeaponFireLogic
     {
@@ -683,11 +685,192 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
+        /// Energy Hybrid decision shared by server fire and the arsenal HUD.
+        /// <see cref="PoolCoversProjectiles"/> is true when every armed projectile
+        /// clip fits in the pool — those barrels volley and the strip fills left
+        /// to right. Otherwise only <see cref="CursorMountIndex"/> may shoot, and
+        /// a hit steps the cursor to <see cref="NextMountAfterShot"/>.
+        /// Cannon lasers are not clips in this check and not steps in the rotation.
+        /// </summary>
+        public struct HybridEnergyGate
+        {
+            /// <summary>True when the pool can pay every armed projectile once.</summary>
+            public bool PoolCoversProjectiles;
+
+            /// <summary>False when every armed barrel is a cannon laser or muted.</summary>
+            public bool HasProjectile;
+
+            /// <summary>Projectile square that charges while the pool is short.</summary>
+            public int CursorMountIndex;
+
+            /// <summary>Next projectile after the cursor fires. Wraps to the first.</summary>
+            public int NextMountAfterShot;
+
+            /// <summary>First armed projectile. A full pool parks the cursor here.</summary>
+            public int FirstProjectileMount;
+        }
+
+        /// <summary>
+        /// Decides volley versus one-square drip from the same strip order the
+        /// arsenal paints. Callers that spawn shots and the HUD both use this so
+        /// the bright chip is the barrel that may shoot.
+        /// </summary>
+        public static HybridEnergyGate EvaluateHybridEnergy(
+            float energy,
+            DynamicBuffer<ShipWeaponMountElement> mounts,
+            in ShipWeaponArmState arm,
+            bool isMega,
+            float fallbackDamage,
+            float fallbackFireRate,
+            float abilityEnergy,
+            int queueMountIndex)
+        {
+            var gate = new HybridEnergyGate
+            {
+                PoolCoversProjectiles = true,
+                HasProjectile = false,
+                CursorMountIndex = queueMountIndex,
+                NextMountAfterShot = queueMountIndex,
+                FirstProjectileMount = queueMountIndex,
+            };
+
+            if (!mounts.IsCreated || mounts.Length <= 0)
+                return gate;
+
+            Span<int> order = stackalloc int[MaxShotsPerTick];
+            int orderCount = BuildArmedStripOrder(mounts, in arm, order, skipCannonLasers: true);
+            if (orderCount <= 0)
+                return gate;
+
+            gate.HasProjectile = true;
+            gate.FirstProjectileMount = order[0];
+            int slot = ResolveCycleSlot(
+                order, orderCount, queueMountIndex, mounts, skipCannonLasers: false);
+            if (slot < 0 || slot >= orderCount)
+                slot = 0;
+            gate.CursorMountIndex = order[slot];
+            int next = NextCycleSlot(
+                order, orderCount, slot, mounts, skipCannonLasers: false);
+            gate.NextMountAfterShot = order[next];
+
+            float remaining = math.max(0f, energy);
+            float abilityAdd = math.max(0f, abilityEnergy);
+            for (int n = 0; n < orderCount; n++)
+            {
+                float cost = GetShotCost(
+                    mounts[order[n]], isMega, fallbackDamage, fallbackFireRate, abilityAdd);
+                if (remaining + 0.001f < cost)
+                {
+                    gate.PoolCoversProjectiles = false;
+                    break;
+                }
+
+                remaining -= cost;
+            }
+
+            return gate;
+        }
+
+        /// <summary>
+        /// Plans this tick's projectile shots and writes each fired barrel's
+        /// ready delay. A full pool uses <see cref="TryPlanReadyShots"/> and
+        /// parks the cursor on the first projectile. A short pool fires only
+        /// the cursor square, subtracts that shot, and steps the cursor.
+        /// Hull energy is the recharge — there is no second charge clock.
+        /// </summary>
+        /// <param name="nextMountIndexAfter">
+        /// Cursor to store. Unchanged in meaning when the cursor is waiting on
+        /// cooldown or energy; advanced only after a short-pool shot.
+        /// </param>
+        public static bool TryPlanHybridShots(
+            ref float currentEnergy,
+            DynamicBuffer<ShipWeaponMountElement> mounts,
+            in ShipWeaponArmState arm,
+            bool isMega,
+            float fallbackDamage,
+            float fallbackFireRate,
+            float abilityEnergy,
+            int queueMountIndex,
+            MountShot[] shots,
+            out int shotCount,
+            out int nextMountIndexAfter)
+        {
+            shotCount = 0;
+            nextMountIndexAfter = queueMountIndex;
+            if (!mounts.IsCreated || mounts.Length <= 0 || shots == null || shots.Length <= 0)
+                return false;
+
+            HybridEnergyGate gate = EvaluateHybridEnergy(
+                currentEnergy, mounts, in arm, isMega,
+                fallbackDamage, fallbackFireRate, abilityEnergy, queueMountIndex);
+
+            if (gate.PoolCoversProjectiles)
+            {
+                if (gate.HasProjectile)
+                    nextMountIndexAfter = gate.FirstProjectileMount;
+                return TryPlanReadyShots(
+                    ref currentEnergy, mounts, in arm, isMega,
+                    fallbackDamage, fallbackFireRate, abilityEnergy,
+                    shots, out shotCount);
+            }
+
+            if (!gate.HasProjectile)
+                return false;
+
+            nextMountIndexAfter = gate.CursorMountIndex;
+            int i = gate.CursorMountIndex;
+            if (i < 0 || i >= mounts.Length)
+                return false;
+
+            ShipWeaponMountElement mount = mounts[i];
+            if (ShipWeaponKind.IsCannonLaser(mount))
+                return false;
+            // This barrel's own shot cadence. Wait here instead of firing the next gun.
+            if (mount.FireCooldown > 0.001f)
+                return false;
+
+            float damage;
+            float fireRate;
+            float cost;
+            if (isMega)
+            {
+                fireRate = math.max(0.15f, mount.FireRate > 0.01f ? mount.FireRate : fallbackFireRate);
+                cost = math.max(0.01f, mount.FirePower);
+                damage = mount.FirePower;
+            }
+            else
+            {
+                ResolveMountCombat(mount, fallbackDamage, fallbackFireRate,
+                    out damage, out fireRate, out cost, math.max(0f, abilityEnergy));
+            }
+
+            if (currentEnergy + 0.001f < cost)
+                return false;
+
+            float interval = 1f / math.max(0.1f, fireRate);
+            mount.FireCooldown = interval;
+            mounts[i] = mount;
+            currentEnergy = math.max(0f, currentEnergy - cost);
+            shots[0] = new MountShot
+            {
+                MountIndex = i,
+                Damage = damage,
+                EnergyCost = cost,
+                CooldownSeconds = interval,
+            };
+            shotCount = 1;
+            nextMountIndexAfter = gate.NextMountAfterShot;
+            return true;
+        }
+
+        /// <summary>
         /// Walks the arsenal strip left to right. Each square that the pool
         /// can fill is reserved; a reserved square fires only when its ready
         /// delay has finished. A partial square keeps the leftover crumbs and
         /// later squares stay empty. Cannon lasers are left for the MEGA walk
         /// so they sit between guns and missiles in the same bar.
+        /// Used when the pool can pay every armed projectile. A short pool
+        /// uses <see cref="TryPlanHybridShots"/> and does not pour from square 0.
         /// </summary>
         public static bool TryPlanReadyShots(
             ref float currentEnergy,

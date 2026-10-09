@@ -93,9 +93,10 @@ namespace TitanOrbit.ECS
                     string id = item.ComponentId.ToString();
                     if (!IsPurchasedWeaponComponent(id))
                         continue;
+
                     AddUniqueDamageBank(
                         s_Scratch,
-                        ResolvePurchasedWeaponBank(em, id, config, hullBank));
+                        ResolveEquippedWeaponBank(em, item, id, config, hullBank));
                 }
             }
 
@@ -285,6 +286,52 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
+        /// Bank to ghost onto a weapon extra at purchase. Both worlds then read
+        /// <see cref="EquippedEquipmentElement.StampedBulletBankPlusOne"/> instead of
+        /// walking planets that the client may not have replicated.
+        /// </summary>
+        public static int ResolveBankForPurchasedComponent(
+            EntityManager em,
+            Entity shipEntity,
+            string componentId)
+        {
+            var config = PlanetShipFamilyConfig.LoadDefault();
+            int hullBank = ResolveHullDefaultBank(em, shipEntity);
+            return ResolvePurchasedWeaponBank(em, componentId, config, hullBank);
+        }
+
+        /// <summary>Ghost stamp: bank index plus one. 0 is reserved for "not stamped".</summary>
+        public static byte ToStampedBulletBankPlusOne(int bankIndex)
+        {
+            int sanitized = PlanetShipFamilyAssignment.SanitizeSelectableDamageBank(bankIndex);
+            if (sanitized < 0)
+                sanitized = 0;
+            if (sanitized > 254)
+                sanitized = 254;
+            return (byte)(sanitized + 1);
+        }
+
+        /// <summary>
+        /// Purchased weapon row. The purchase stamp wins so client and server list
+        /// the same B-key bank. Older gear (stamp 0) still walks the source planet.
+        /// </summary>
+        static int ResolveEquippedWeaponBank(
+            EntityManager em,
+            in EquippedEquipmentElement item,
+            string componentId,
+            PlanetShipFamilyConfig config,
+            int hullBank)
+        {
+            if (item.StampedBulletBankPlusOne > 0)
+            {
+                return PlanetShipFamilyAssignment.SanitizeSelectableDamageBank(
+                    item.StampedBulletBankPlusOne - 1);
+            }
+
+            return ResolvePurchasedWeaponBank(em, componentId, config, hullBank);
+        }
+
+        /// <summary>
         /// Purchased inherit guns use the planet that rolled their source family,
         /// not the current hull stamp. Buying a Cosmic Shark gun at a Fireballs world
         /// while flying a Laserbolt home hull must add Fireballs to B-key.
@@ -307,9 +354,20 @@ namespace TitanOrbit.ECS
             return BulletBankProfileUtility.ResolveBankIndexForComponentEntry(entry, family, sourceBank);
         }
 
-        static int s_FamilyPlanetBankFrame = -1;
-        static World s_FamilyPlanetBankWorld;
-        static int[] s_FamilyPlanetBanks;
+        /// <summary>
+        /// One planet-bank map per world. A single shared array let client LateUpdate
+        /// overwrite the server's map in the same frame, so the server thought the
+        /// ship only owned the hull gun and rolled B back.
+        /// </summary>
+        struct FamilyPlanetBankCache
+        {
+            public World World;
+            public int Frame;
+            public int[] Banks;
+        }
+
+        static FamilyPlanetBankCache s_PlanetBanks0;
+        static FamilyPlanetBankCache s_PlanetBanks1;
 
         /// <summary>
         /// One planet walk per frame: family config index → that world's rolled gun.
@@ -322,13 +380,14 @@ namespace TitanOrbit.ECS
                 return PlanetShipFamilyAssignment.DefaultBulletBankIndex;
 
             EnsureFamilyPlanetBanks(em);
-            if (s_FamilyPlanetBanks != null
+            int[] banks = PlanetBankSlot(em.World).Banks;
+            if (banks != null
                 && familyIndex >= 0
-                && familyIndex < s_FamilyPlanetBanks.Length
-                && s_FamilyPlanetBanks[familyIndex] >= 0)
+                && familyIndex < banks.Length
+                && banks[familyIndex] >= 0)
             {
                 return PlanetShipFamilyAssignment.SanitizeSelectableDamageBank(
-                    s_FamilyPlanetBanks[familyIndex]);
+                    banks[familyIndex]);
             }
 
             return hullFallback >= 0
@@ -336,27 +395,35 @@ namespace TitanOrbit.ECS
                 : PlanetShipFamilyAssignment.DefaultBulletBankIndex;
         }
 
+        static ref FamilyPlanetBankCache PlanetBankSlot(World world)
+        {
+            if (s_PlanetBanks0.World == null || s_PlanetBanks0.World == world)
+                return ref s_PlanetBanks0;
+            return ref s_PlanetBanks1;
+        }
+
         static void EnsureFamilyPlanetBanks(EntityManager em)
         {
             World world = em.World;
             int frame = Time.frameCount;
-            if (s_FamilyPlanetBankFrame == frame
-                && s_FamilyPlanetBankWorld == world
-                && s_FamilyPlanetBanks != null)
+            ref FamilyPlanetBankCache slot = ref PlanetBankSlot(world);
+            if (slot.World == world
+                && slot.Frame == frame
+                && slot.Banks != null)
                 return;
 
             // Client Instantiates window: do not gather planets (and do not replace
-            // a good server snapshot with an empty client query).
+            // this world's last good map with an empty client query).
             if (world != null && world.IsClient() && ClientJoinSettleCache.ShouldSkipMapBodyQueries)
                 return;
 
-            s_FamilyPlanetBankFrame = frame;
-            s_FamilyPlanetBankWorld = world;
-            if (s_FamilyPlanetBanks == null)
-                s_FamilyPlanetBanks = new int[16];
-            for (int i = 0; i < s_FamilyPlanetBanks.Length; i++)
-                s_FamilyPlanetBanks[i] = -1;
-            s_FamilyPlanetBanks[PlanetShipFamilyAssignment.HomeFamilyConfigIndex] =
+            slot.World = world;
+            slot.Frame = frame;
+            if (slot.Banks == null)
+                slot.Banks = new int[16];
+            for (int i = 0; i < slot.Banks.Length; i++)
+                slot.Banks[i] = -1;
+            slot.Banks[PlanetShipFamilyAssignment.HomeFamilyConfigIndex] =
                 PlanetShipFamilyAssignment.DefaultBulletBankIndex;
 
             using var query = em.CreateEntityQuery(ComponentType.ReadOnly<PlanetState>());
@@ -367,11 +434,11 @@ namespace TitanOrbit.ECS
                 int idx = planet.IsHomePlanet
                     ? PlanetShipFamilyAssignment.HomeFamilyConfigIndex
                     : planet.ShipFamilyConfigIndex;
-                if (idx < 0 || idx >= s_FamilyPlanetBanks.Length)
+                if (idx < 0 || idx >= slot.Banks.Length)
                     continue;
-                if (s_FamilyPlanetBanks[idx] >= 0)
+                if (slot.Banks[idx] >= 0)
                     continue;
-                s_FamilyPlanetBanks[idx] = planet.IsHomePlanet
+                slot.Banks[idx] = planet.IsHomePlanet
                     ? PlanetShipFamilyAssignment.DefaultBulletBankIndex
                     : PlanetShipFamilyAssignment.SanitizeSelectableDamageBank(planet.BulletBankIndex);
             }
@@ -487,7 +554,7 @@ namespace TitanOrbit.ECS
                     string id = item.ComponentId.ToString();
                     if (!IsPurchasedWeaponComponent(id))
                         continue;
-                    if (ResolvePurchasedWeaponBank(em, id, config, hullBank) != bankIndex)
+                    if (ResolveEquippedWeaponBank(em, item, id, config, hullBank) != bankIndex)
                         continue;
                     if (!BulletBankProfileUtility.TryFindComponentInAnyFamily(
                             id, out _, out ShipFamilyDefinition extraFamily, out _, config)

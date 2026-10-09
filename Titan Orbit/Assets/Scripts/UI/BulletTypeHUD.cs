@@ -14,8 +14,7 @@ namespace TitanOrbit.UI
 {
     /// <summary>
     /// Compact top-left in-flight list of fire types the local ship can shoot. Each tile
-    /// names the <see cref="BulletVfxBank"/> category (LASERBOLT) and the ship family
-    /// that authored it (ASTRO EAGLE). Production shows a Titan's original catalog
+    /// names only the <see cref="BulletVfxBank"/> category (LASERBOLT). Production shows a Titan's original catalog
     /// gun first, then the family fleet gun, plus purchased foreign weapons. GameManager cycle-all
     /// (Test) lists every non-reserved catalog bank so testers can click types they
     /// have not bought. B walks the same list; a tile click jumps to that bank.
@@ -45,10 +44,10 @@ namespace TitanOrbit.UI
         const float TileWidth = 108f;
 
         /// <summary>
-        /// Dense two-line tile. Smaller type than rockets so LASERBOLT / family names
-        /// stay on one line instead of wrapping.
+        /// Single-line tile. Tall enough for the bullet-type word and the B keycap,
+        /// with no second line reserved for a ship-family caption.
         /// </summary>
-        const float TileHeight = 38f;
+        const float TileHeight = 22f;
 
         /// <summary>Gap between stacked fire-type buttons.</summary>
         const float TileGap = 3f;
@@ -69,8 +68,6 @@ namespace TitanOrbit.UI
         static readonly Color CaptionSelected = new Color(0.95f, 0.98f, 1f, 1f);
         static readonly Color CaptionDim = new Color(0.62f, 0.78f, 0.95f, 0.55f);
         static readonly Color CaptionUnowned = new Color(0.55f, 0.62f, 0.72f, 0.45f);
-        static readonly Color BodyColor = new Color(0.94f, 0.97f, 1f, 1f);
-        static readonly Color BodyDim = new Color(0.88f, 0.92f, 0.98f, 0.5f);
         static readonly Color ReadyColor = new Color(0.45f, 0.92f, 0.62f, 1f);
         static readonly Color HealColor = new Color(0.49f, 1f, 0.70f, 1f);
         static readonly Color TestColor = new Color(0.95f, 0.72f, 0.28f, 0.85f);
@@ -92,7 +89,6 @@ namespace TitanOrbit.UI
         Canvas _canvas;
         RectTransform _panel;
         GameObject _mainMenuPanel;
-        PlanetShipFamilyConfig _familyConfig;
         BulletVfxBank _bank;
 
         /// <summary>Bank indices painted this frame so clicks map a row to a category.</summary>
@@ -107,7 +103,7 @@ namespace TitanOrbit.UI
         readonly BankTile[] _tiles = new BankTile[MaxRows];
         readonly VisibleBankRow[] _rowScratch = new VisibleBankRow[MaxRows];
 
-        /// <summary>One fire-type button. Kind word + family live on the tile like ROCKET / MINE.</summary>
+        /// <summary>One fire-type button. The bullet-type word fills the tile; B sits on the right.</summary>
         sealed class BankTile
         {
             /// <summary>Root GameObject. Hidden when this slot has no bank.</summary>
@@ -136,9 +132,6 @@ namespace TitanOrbit.UI
 
             /// <summary>Dark keycap behind the hint so B reads as a bind, not body text.</summary>
             public Image HintChip;
-
-            /// <summary>Family that authored this bank, e.g. ASTRO EAGLE.</summary>
-            public TextMeshProUGUI DetailLabel;
         }
 
         /// <summary>[UNITY] Creates the HUD once after the first scene load.</summary>
@@ -157,7 +150,6 @@ namespace TitanOrbit.UI
         void Awake()
         {
             _instance = this;
-            _familyConfig = PlanetShipFamilyConfig.LoadDefault();
             _bank = BulletVfxBank.LoadDefault();
             _lastCycleAll = TitanOrbitDebugFlags.CycleAllBulletBanks;
             BuildUi();
@@ -240,19 +232,14 @@ namespace TitanOrbit.UI
                 return;
             }
 
-            if (!TryReadRows(
-                    out int rowCount,
-                    out int selectedBank,
-                    out bool healLocked,
-                    out string hullFamilyName,
-                    out string titanDisplayName))
+            if (!TryReadRows(out int rowCount, out int selectedBank, out bool healLocked))
             {
                 SetVisible(false);
                 return;
             }
 
             SetVisible(true);
-            Paint(rowCount, selectedBank, healLocked, hullFamilyName, titanDisplayName);
+            Paint(rowCount, selectedBank, healLocked);
         }
 
         /// <summary>
@@ -261,21 +248,12 @@ namespace TitanOrbit.UI
         /// <param name="rowCount">How many <see cref="_rowScratch"/> slots are valid.</param>
         /// <param name="selectedBank">Ghosted fire index (heal bank when heal mode is firing).</param>
         /// <param name="healLocked">True when Production heal mode ignores clicks (same as B).</param>
-        /// <param name="hullFamilyName">Local ship family label for the hull-default tile.</param>
-        /// <param name="titanDisplayName">Titan catalog name for the original-gun tile (empty on regular hulls).</param>
         /// <returns>True when at least one tile should paint.</returns>
-        bool TryReadRows(
-            out int rowCount,
-            out int selectedBank,
-            out bool healLocked,
-            out string hullFamilyName,
-            out string titanDisplayName)
+        bool TryReadRows(out int rowCount, out int selectedBank, out bool healLocked)
         {
             rowCount = 0;
             selectedBank = 0;
             healLocked = false;
-            hullFamilyName = string.Empty;
-            titanDisplayName = string.Empty;
 
             var world = EcsGameBridge.ClientWorld;
             if (world == null || !world.IsCreated)
@@ -297,28 +275,6 @@ namespace TitanOrbit.UI
                 healLocked = loadout.HealingBulletsActive && !TitanOrbitDebugFlags.CycleAllBulletBanks;
             }
 
-            // Family-fleet tile uses THIS ship's family (Astro Eagle), not the
-            // first config row that shares Laserbolt. Titans put the catalog hull
-            // name on the default "Bullets" tile and this family caption on the
-            // second row.
-            if (em.HasComponent<ShipState>(ship))
-            {
-                if (_familyConfig == null)
-                    _familyConfig = PlanetShipFamilyConfig.LoadDefault();
-                if (_familyConfig != null)
-                    hullFamilyName = _familyConfig.GetFamilyDisplayName(
-                        em.GetComponentData<ShipState>(ship).ShipFamilyConfigIndex);
-            }
-
-            if (em.HasComponent<MegaShipState>(ship)
-                && em.GetComponentData<MegaShipState>(ship).IsMega)
-            {
-                var catalog = MegaShipCatalog.Load();
-                if (catalog != null)
-                    titanDisplayName = catalog.GetDisplayName(
-                        em.GetComponentData<MegaShipState>(ship).CatalogIndex);
-            }
-
             return true;
         }
 
@@ -326,12 +282,7 @@ namespace TitanOrbit.UI
         /// Stacks compact tiles for the current visible set, docks under rockets, and
         /// enables scroll only when Test cycle-all would cover Space Brakes.
         /// </summary>
-        void Paint(
-            int rowCount,
-            int selectedBank,
-            bool healLocked,
-            string hullFamilyName,
-            string titanDisplayName)
+        void Paint(int rowCount, int selectedBank, bool healLocked)
         {
             bool cycleAll = TitanOrbitDebugFlags.CycleAllBulletBanks;
             if (cycleAll != _lastCycleAll)
@@ -368,8 +319,7 @@ namespace TitanOrbit.UI
 
                 VisibleBankRow row = _rowScratch[i];
                 bool isSelected = row.BankIndex == caretBank;
-                PaintTile(
-                    _tiles[i], i, row, isSelected, healLocked, cycleAll, hullFamilyName, titanDisplayName);
+                PaintTile(_tiles[i], i, row, isSelected, healLocked, cycleAll);
                 _paintedBanks[i] = row.BankIndex;
                 _paintedCount++;
             }
@@ -410,7 +360,7 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Fills one fire-type button. Kind word on top (LASERBOLT), family under it,
+        /// Fills one fire-type button with the bullet-type word (LASERBOLT) and the
         /// B / HEAL / TEST hint on the live row — same caret language as rockets.
         /// </summary>
         void PaintTile(
@@ -419,9 +369,7 @@ namespace TitanOrbit.UI
             VisibleBankRow data,
             bool isSelected,
             bool healLocked,
-            bool cycleAll,
-            string hullFamilyName,
-            string titanDisplayName)
+            bool cycleAll)
         {
             if (tile == null || tile.Root == null)
                 return;
@@ -432,44 +380,20 @@ namespace TitanOrbit.UI
                 PanelPad,
                 -PanelPad - HeaderHeight - row * (TileHeight + TileGap));
 
-            // Titan original (Bullets / Craizan Star) first. Family fleet
-            // (Laserbolt / Astro Eagle) second. Purchased types fall back to
-            // whoever uniquely authored that bank.
-            string family;
-            if (data.IsTitanOriginal && !string.IsNullOrEmpty(titanDisplayName))
-                family = titanDisplayName;
-            else if (data.IsHullDefault && !string.IsNullOrEmpty(hullFamilyName))
-                family = hullFamilyName;
-            else
-                family = ResolveFamilyCaption(data.BankIndex);
             string category = ResolveCategoryName(data.BankIndex);
             bool unowned = cycleAll && !data.IsOwned;
 
-            // Kind matches ROCKET / MINE: uppercase type word on the top row.
+            // Uppercase type word fills the button. No family caption under it.
             tile.KindLabel.text = string.IsNullOrEmpty(category)
                 ? "BANK " + data.BankIndex.ToString(CultureInfo.InvariantCulture)
                 : category.ToUpperInvariant();
 
-            if (string.IsNullOrEmpty(family))
-                tile.DetailLabel.text = unowned ? "CATALOG" : string.Empty;
-            else
-                tile.DetailLabel.text = family.ToUpperInvariant();
-
             if (isSelected)
-            {
                 tile.KindLabel.color = CaptionSelected;
-                tile.DetailLabel.color = BodyColor;
-            }
             else if (unowned)
-            {
                 tile.KindLabel.color = CaptionUnowned;
-                tile.DetailLabel.color = BodyDim;
-            }
             else
-            {
                 tile.KindLabel.color = CaptionDim;
-                tile.DetailLabel.color = BodyDim;
-            }
 
             PaintHint(tile, isSelected, healLocked, unowned);
 
@@ -529,16 +453,6 @@ namespace TitanOrbit.UI
                 bool wide = label.text != null && label.text.Length > 1;
                 chipRt.sizeDelta = new Vector2(wide ? 26f : 16f, 12f);
             }
-        }
-
-        /// <summary>Family label whose default gun is this bank, or empty when none authored it.</summary>
-        string ResolveFamilyCaption(int bankIndex)
-        {
-            if (_familyConfig == null)
-                _familyConfig = PlanetShipFamilyConfig.LoadDefault();
-            if (_familyConfig == null)
-                return string.Empty;
-            return _familyConfig.GetFamilyDisplayNameForDefaultBank(bankIndex);
         }
 
         /// <summary>Category name from the VFX bank (Laserbolt, Plasma, …).</summary>
@@ -675,7 +589,7 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Builds one fire-type button: kind word, B/HEAL/TEST hint, family caption.
+        /// Builds one fire-type button: bullet-type word and the B/HEAL/TEST hint.
         /// </summary>
         /// <param name="parent">Dark panel that holds the stacked list.</param>
         /// <param name="index">Pool index and click identity (0..MaxRows-1).</param>
@@ -718,24 +632,25 @@ namespace TitanOrbit.UI
             caretImg.enabled = false;
             tile.Caret = caretImg;
 
-            // Kind uses most of the row; the B keycap is a tight 18px chip on the right
-            // so LASERBOLT no longer wraps into the bind.
-            var kind = CreateLabel(rt, "Kind", "LASERBOLT", 9.5f, CaptionSelected, TextAlignmentOptions.Left);
+            // The type word fills the short row. The B keycap sits on the right
+            // so LASERBOLT does not run into the bind.
+            var kind = CreateLabel(rt, "Kind", "LASERBOLT", 9.5f, CaptionSelected, TextAlignmentOptions.MidlineLeft);
             var kindRt = kind.rectTransform;
-            kindRt.anchorMin = new Vector2(0f, 0.46f);
-            kindRt.anchorMax = new Vector2(1f, 1f);
+            kindRt.anchorMin = Vector2.zero;
+            kindRt.anchorMax = Vector2.one;
+            kindRt.pivot = new Vector2(0f, 0.5f);
             kindRt.offsetMin = new Vector2(8f, 0f);
-            kindRt.offsetMax = new Vector2(-22f, -1f);
+            kindRt.offsetMax = new Vector2(-30f, 0f);
             kind.characterSpacing = 0.4f;
             tile.KindLabel = kind;
 
             var chipGo = new GameObject("HintChip", typeof(RectTransform), typeof(Image));
             chipGo.transform.SetParent(rt, false);
             var chipRt = chipGo.GetComponent<RectTransform>();
-            chipRt.anchorMin = new Vector2(1f, 1f);
-            chipRt.anchorMax = new Vector2(1f, 1f);
-            chipRt.pivot = new Vector2(1f, 1f);
-            chipRt.anchoredPosition = new Vector2(-3f, -3f);
+            chipRt.anchorMin = new Vector2(1f, 0.5f);
+            chipRt.anchorMax = new Vector2(1f, 0.5f);
+            chipRt.pivot = new Vector2(1f, 0.5f);
+            chipRt.anchoredPosition = new Vector2(-4f, 0f);
             chipRt.sizeDelta = new Vector2(16f, 12f);
             var chipImg = chipGo.GetComponent<Image>();
             chipImg.color = KeycapFill;
@@ -747,15 +662,6 @@ namespace TitanOrbit.UI
             Stretch(hint.rectTransform);
             hint.characterSpacing = 0f;
             tile.HintLabel = hint;
-
-            var detail = CreateLabel(rt, "Detail", "ASTRO EAGLE", 7.5f, BodyColor, TextAlignmentOptions.Left);
-            var detailRt = detail.rectTransform;
-            detailRt.anchorMin = new Vector2(0f, 0f);
-            detailRt.anchorMax = new Vector2(1f, 0.48f);
-            detailRt.offsetMin = new Vector2(8f, 2f);
-            detailRt.offsetMax = new Vector2(-4f, 0f);
-            detail.characterSpacing = 0.8f;
-            tile.DetailLabel = detail;
 
             rowGo.SetActive(false);
             return tile;

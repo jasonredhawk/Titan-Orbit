@@ -96,6 +96,12 @@ namespace TitanOrbit.UI
         public int PeopleDelivered;
 
         /// <summary>
+        /// [TITAN-ORBIT] Ghosted match score. Gems and troops add points; an enemy kill
+        /// moves half of this value to the killer and leaves this ship with the other half.
+        /// </summary>
+        public int Score;
+
+        /// <summary>
         /// [TITAN-ORBIT] Yaw in degrees around world Y from <c>LocalTransform.Rotation</c>,
         /// used to rotate the ship silhouette so facing is readable on the minimap.
         /// </summary>

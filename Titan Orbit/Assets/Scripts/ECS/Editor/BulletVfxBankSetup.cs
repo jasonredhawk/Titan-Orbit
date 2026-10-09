@@ -244,7 +244,7 @@ namespace TitanOrbit.ECS.Editor
 
         /// <summary>
         /// Scans Demo Prefabs for <c>SciFiProjectileScript</c> OBJ prefabs, groups by folder,
-        /// and writes the categories list. Laserbolt stays first so family default index 0 is unchanged.
+        /// and writes the categories list. Darts stays first so family default index 0 is unchanged.
         /// </summary>
         /// <param name="force">When true, replaces existing categories (menu refill).</param>
         static void PopulateFromDemoPrefabs(BulletVfxBank bank, bool force)
@@ -264,16 +264,16 @@ namespace TitanOrbit.ECS.Editor
             List<BulletVfxBank.Category> built = FindPrefabsGroupedByFolderAndSortedByColor(DemoPrefabsFolder);
             if (built.Count == 0)
             {
-                // Fallback: Laserbolt-only if Demo Prefabs missing (partial checkout).
+                // Fallback: Darts-only if Demo Prefabs missing (partial checkout).
                 built.Add(new BulletVfxBank.Category
                 {
-                    categoryName = "Laserbolt",
+                    categoryName = "Darts",
                     prefabs = LoadLaserboltPrefabsFallback(),
                 });
             }
 
-            // --- Prefer Laserbolt as index 0 (ShipFamilyDefinition.bulletPrefabIndex default) ---
-            built = OrderWithLaserboltFirst(built);
+            // --- Prefer Darts as index 0 (ShipFamilyDefinition.bulletPrefabIndex default) ---
+            built = OrderWithDartsFirst(built);
 
             categoriesProp.arraySize = built.Count;
             for (int c = 0; c < built.Count; c++)
@@ -418,8 +418,10 @@ namespace TitanOrbit.ECS.Editor
         }
 
         /// <summary>
-        /// Parent folder name, with Fireballs/V1 → Fireballs and Fireballs/V2 → FireballsV2
-        /// so B-key floating text is readable.
+        /// Parent folder name, with readable B-key labels.
+        /// Fireballs/V1 → Fireballs, Fireballs/V2 → FireballsV2.
+        /// Arsenal Laserbolt / Laser / LaserSmall become Darts / Photon Bolts / Ion Bolts.
+        /// Bullet banks do not use the word laser — that name is the Titan beam.
         /// </summary>
         static string ResolveCategoryNameFromAssetPath(string assetPath)
         {
@@ -436,6 +438,14 @@ namespace TitanOrbit.ECS.Editor
                 if (string.Equals(parent, "V2", StringComparison.OrdinalIgnoreCase))
                     return "FireballsV2";
             }
+
+            // --- Bolt folders: keep the visuals, drop the laser word ---
+            if (string.Equals(parent, "Laserbolt", StringComparison.OrdinalIgnoreCase))
+                return "Darts";
+            if (string.Equals(parent, "LaserSmall", StringComparison.OrdinalIgnoreCase))
+                return "Ion Bolts";
+            if (string.Equals(parent, "Laser", StringComparison.OrdinalIgnoreCase))
+                return "Photon Bolts";
 
             return parent;
         }
@@ -454,30 +464,35 @@ namespace TitanOrbit.ECS.Editor
             return false;
         }
 
-        static List<BulletVfxBank.Category> OrderWithLaserboltFirst(List<BulletVfxBank.Category> built)
+        static List<BulletVfxBank.Category> OrderWithDartsFirst(List<BulletVfxBank.Category> built)
         {
             var ordered = new List<BulletVfxBank.Category>();
-            BulletVfxBank.Category laser = null;
+            BulletVfxBank.Category starter = null;
             foreach (var cat in built)
             {
-                if (laser == null && string.Equals(cat.categoryName, "Laserbolt", StringComparison.OrdinalIgnoreCase))
-                    laser = cat;
+                if (starter == null && IsStarterBoltCategory(cat.categoryName))
+                    starter = cat;
             }
 
-            if (laser != null)
-                ordered.Add(laser);
+            if (starter != null)
+                ordered.Add(starter);
 
             foreach (var cat in built.OrderBy(c => c.categoryName, StringComparer.OrdinalIgnoreCase))
             {
-                if (laser != null && ReferenceEquals(cat, laser))
+                if (starter != null && ReferenceEquals(cat, starter))
                     continue;
-                if (laser != null && string.Equals(cat.categoryName, "Laserbolt", StringComparison.OrdinalIgnoreCase))
+                if (starter != null && IsStarterBoltCategory(cat.categoryName))
                     continue;
                 ordered.Add(cat);
             }
 
             return ordered;
         }
+
+        /// <summary>Index-0 starter row. Darts is the published name; Laserbolt is the arsenal folder.</summary>
+        static bool IsStarterBoltCategory(string categoryName) =>
+            string.Equals(categoryName, "Darts", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(categoryName, "Laserbolt", StringComparison.OrdinalIgnoreCase);
 
         static List<GameObject> LoadLaserboltPrefabsFallback()
         {

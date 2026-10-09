@@ -8,10 +8,12 @@ namespace TitanOrbit.Data
     /// <para>
     /// Extra Level pools keep only the <b>primary</b> weapon for hull averages (HUD
     /// /hit, Extra Level <c>(N−1)</c> does not apply to guns). Combat still fires
-    /// every mount. Power bars, STATS chips, and upgrade-tree sort need the
-    /// <b>sum of every gun</b>: each barrel Extra-Levels on its own Base, then
+    /// every chassis mount. Power bars, STATS chips, and upgrade-tree sort need the
+    /// <b>sum of those barrels</b>: each one Extra-Levels on its own Base, then
     /// <c>firePower × fireRate</c>, then add. A 4-gun hull is four products, not
-    /// one primary product.
+    /// one primary product. A moon-store weapon is not a fifth barrel — it only
+    /// unlocks a bullet type. Selecting that type scales this DPS by the bank's
+    /// fire-power and fire-rate multipliers.
     /// </para>
     /// <para>
     /// Combat spends <c>firePower</c> energy per shot, so all-gun DPS is also
@@ -30,27 +32,38 @@ namespace TitanOrbit.Data
         public const float PowerScoreReferenceFightSeconds = 8f;
 
         /// <summary>
-        /// Sum of every weapon's Extra-Leveled <c>firePower × fireRate</c>.
+        /// Sum of every chassis barrel's Extra-Leveled <c>firePower × fireRate</c>.
         /// Non-weapons and cosmetic names are skipped. Each gun uses ship + Fire
         /// Power ability only (no component-count term).
+        /// Moon-store rows at or after <paramref name="storeExtraStartIndex"/> are
+        /// skipped: a purchased weapon unlocks a bullet type, it does not add a barrel.
         /// </summary>
-        /// <param name="componentIds">Scale-adjusted part ids (prefab scan order).</param>
+        /// <param name="componentIds">Scale-adjusted part ids (prefab scan order, then store extras).</param>
         /// <param name="perComponentStats">Matching Base / PerExtra at starting scale.</param>
         /// <param name="shipLevel">Chassis tier (1-based).</param>
         /// <param name="attrs">HUD ability purchases (Fire Power steps each gun).</param>
-        /// <returns>All-gun DPS. 0 when the hull is unarmed.</returns>
+        /// <param name="storeExtraStartIndex">
+        /// First moon-store row. <see cref="int.MaxValue"/> when the list is chassis-only.
+        /// </param>
+        /// <returns>Chassis-gun DPS. 0 when the hull is unarmed.</returns>
         public static float SumAllGunDps(
             IReadOnlyList<string> componentIds,
             IReadOnlyList<ShipComponentAbilityStats> perComponentStats,
             int shipLevel,
-            in ShipAbilityLevelCounts attrs)
+            in ShipAbilityLevelCounts attrs,
+            int storeExtraStartIndex = int.MaxValue)
         {
             if (componentIds == null || perComponentStats == null)
                 return 0f;
 
             int n = Mathf.Min(componentIds.Count, perComponentStats.Count);
+            // Store extras are appended after chassis parts. Stop before them so a
+            // bought gun cannot raise the DPS the chip paints.
+            int chassisCount = storeExtraStartIndex >= 0
+                ? Mathf.Min(n, storeExtraStartIndex)
+                : n;
             float dps = 0f;
-            for (int i = 0; i < n; i++)
+            for (int i = 0; i < chassisCount; i++)
             {
                 if (!TryEvaluateGun(componentIds[i], perComponentStats[i], shipLevel, in attrs,
                         out float firePower, out float fireRate))
@@ -69,11 +82,13 @@ namespace TitanOrbit.Data
             IReadOnlyList<string> componentIds,
             IReadOnlyList<ShipComponentAbilityStats> perComponentStats,
             int shipLevel,
-            in ShipAbilityLevelCounts attrs)
+            in ShipAbilityLevelCounts attrs,
+            int storeExtraStartIndex = int.MaxValue)
         {
             ShipAbilityLevelCounts next = attrs;
             next.FirePower = attrs.FirePower + 1;
-            return SumAllGunDps(componentIds, perComponentStats, shipLevel, in next);
+            return SumAllGunDps(
+                componentIds, perComponentStats, shipLevel, in next, storeExtraStartIndex);
         }
 
         /// <summary>
