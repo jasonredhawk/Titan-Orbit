@@ -483,7 +483,7 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Hotkey hint only on the live type, like ALT on the focused rocket row.
+        /// Hotkey hint only on the live type, like Q on the selected rocket row.
         /// Unfocused owned rows stay quiet. Unowned Test rows keep a TEST tag.
         /// </summary>
         static void PaintHint(BankTile tile, bool isSelected, bool healLocked, bool unowned)

@@ -97,11 +97,10 @@ namespace TitanOrbit.Game
             if (cyclePressed && !TryRequestNextVisibleWeapon())
                 ShipPendingInput.LatchCycleBullet();
 
-            // --- ALT activates the focused loadout pack ---
-            // [TITAN-ORBIT] One key for the whole left-side list. UP/DOWN (and clicks)
+            // --- Q activates the focused loadout pack ---
+            // [TITAN-ORBIT] One key for the whole left-side list. Up/Down (and clicks)
             // move the caret across rocket levels and mine packs. When the caret sits on
-            // MINES, ALT places that mine. Otherwise ALT fires the selected rocket.
-            // E does not place mines — it used to, which made the HUD show two hotkeys.
+            // a mine, Q places that mine. Otherwise Q fires the selected rocket.
             bool activatePressed = _input.RocketPressed
                 && !MoonOrbitClientState.IsOrbitMenuVisible
                 && !PlanetaryDefenseTurretClientState.IsControlling;

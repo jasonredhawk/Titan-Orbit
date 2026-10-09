@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -7,9 +8,10 @@ namespace TitanOrbit.Input
 {
     /// <summary>
     /// [UNITY] Cross-platform player input — New Input System actions plus keyboard/mouse fallbacks.
-    /// Feeds ShipInputBridge with move, shoot, aim world position, ALT (focused
+    /// Feeds ShipInputBridge with move, shoot, aim world position, Q (focused
     /// rocket or mine), and toggle flags (space brakes, gem expel). Hold-C is
     /// sampled as <see cref="CommsHeld"/> for the keyword comms matrix.
+    /// SPACE holds fire the same way left mouse does.
     /// Client only — server has no player input handler.
     ///
     /// [TITAN-ORBIT] Left mouse is both "fire weapon" and "click UI". When the pointer sits over a
@@ -62,32 +64,11 @@ namespace TitanOrbit.Input
 
         public bool ShootPressed => shootPressed;
         /// <summary>
-        /// True the frame ALT (or FireRocket) is pressed. <c>ShipInputBridge</c> decides
-        /// whether that activates a rocket or a mine from the loadout caret.
-        /// On WebGL this also includes the browser Alt edge — Chrome otherwise
-        /// keeps Alt for its menu and the Input System never sees the key.
+        /// True the frame Q is pressed. <c>ShipInputBridge</c> fires the focused
+        /// rocket pack, or places the focused mine pack. One-shot — holding Q
+        /// does not dump the pack. Up/Down on the loadout HUD moves that focus.
         /// </summary>
         public bool RocketPressed => rocketPressed;
-
-        /// <summary>True the frame Up Arrow is pressed — cycle the selected rocket pack backward.</summary>
-        public bool CycleRocketUpPressed
-        {
-            get
-            {
-                var k = Keyboard.current;
-                return k != null && k.upArrowKey.wasPressedThisFrame;
-            }
-        }
-
-        /// <summary>True the frame Down Arrow is pressed — cycle the selected rocket pack forward.</summary>
-        public bool CycleRocketDownPressed
-        {
-            get
-            {
-                var k = Keyboard.current;
-                return k != null && k.downArrowKey.wasPressedThisFrame;
-            }
-        }
         /// <summary>
         /// True while V is held to dump cargo as world gems. Server pulses every
         /// <c>GemEconomyConstants.VoluntaryGemExpelIntervalSeconds</c> (0.5s = 2 dumps/sec).
@@ -211,8 +192,6 @@ namespace TitanOrbit.Input
         private void OnEnable()
         {
             // --- Unity lifecycle ---
-            // WebGL: capture Alt before Chrome's menu accelerator eats it.
-            WebGlAltKeyCapture.Install();
             if (moveAction != null) moveAction.Enable();
             if (shootAction != null) shootAction.Enable();
             if (lookAction != null) lookAction.Enable();
@@ -231,16 +210,19 @@ namespace TitanOrbit.Input
         }
 
         /// <summary>
-        /// Samples shoot / thrust / brakes / ALT (focused rocket or mine) every frame.
+        /// Samples shoot / thrust / brakes / Q (focused rocket or mine) every frame.
         /// After raw shoot is computed, mouse-origin fire is cleared when the pointer is over UI
-        /// so HUD clicks (ability upgrades, etc.) do not fire the weapon.
+        /// so HUD clicks (ability upgrades, etc.) do not fire the weapon. SPACE is a second
+        /// fire hold and is not cleared by that pointer test.
         /// </summary>
         private void Update()
         {
             // --- Resolve touch vs desktop input path ---
             // TouchUiActive means MobileInputHandler owns shoot zones; desktop uses LMB / Shoot action.
+            // SPACE is hold-to-fire on every path (same sustained ShootPressed as left mouse).
             MobileInputHandler mobile = MobileInputHandler.Resolve();
             bool useTouchUi = mobile != null && mobile.TouchUiActive;
+            bool spaceShoot = IsSpaceHeld();
 
             if (useTouchUi)
             {
@@ -259,11 +241,13 @@ namespace TitanOrbit.Input
                     editorRightHalfMouseShoot = shootMouse.x >= edge;
                 }
                 bool dedicatedShootButton = mobile.ShootButtonPressed;
-                shootPressed = dedicatedShootButton || actionShoot || editorRightHalfMouseShoot;
+                bool pointerShoot = actionShoot || editorRightHalfMouseShoot;
 
                 // Drop mouse/action fire when the press started over UI; never silence the dedicated shoot button.
                 if (!dedicatedShootButton)
-                    ApplyUiFireHoldGate(ref shootPressed);
+                    ApplyUiFireHoldGate(ref pointerShoot);
+
+                shootPressed = dedicatedShootButton || pointerShoot || spaceShoot;
 
                 // Phones: thrust only in outer left-drag zone; desktop: legacy on-screen joystick deflection.
                 bool anchorThrust = mobile.LeftThrustFromAnchor;
@@ -275,17 +259,20 @@ namespace TitanOrbit.Input
             }
             else
             {
-                // --- Desktop shoot (LMB / Shoot action) ---
+                // --- Desktop shoot (LMB / Shoot action, or SPACE) ---
                 // Left mouse is shared with UGUI buttons — see IsPointerOverUi gate after this block.
+                // SPACE stays live over those buttons; it is not a click.
+                bool pointerShoot;
                 if (shootAction != null)
-                    shootPressed = shootAction.IsPressed();
+                    pointerShoot = shootAction.IsPressed();
                 else if (Mouse.current != null)
-                    shootPressed = Mouse.current.leftButton.isPressed;
+                    pointerShoot = Mouse.current.leftButton.isPressed;
                 else
-                    shootPressed = false;
+                    pointerShoot = false;
 
                 // [TITAN-ORBIT] Upgrade bar blocks the press that started on it — not every hold frame.
-                ApplyUiFireHoldGate(ref shootPressed);
+                ApplyUiFireHoldGate(ref pointerShoot);
+                shootPressed = pointerShoot || spaceShoot;
 
                 moveForwardPressed = Mouse.current != null && Mouse.current.rightButton.isPressed;
             }
@@ -308,20 +295,13 @@ namespace TitanOrbit.Input
                     || Keyboard.current.rightShiftKey.isPressed;
             }
 
-            // --- Rocket fire (ALT) ---
-            // [TITAN-ORBIT] One-shot: WasPressedThisFrame so holding Alt does not dump the pack.
-            // Keyboard fallback covers missing FireRocket bindings on the Gameplay map.
-            // WebGL also ORs the browser edge. Same frame as the Input System when Chrome
-            // does deliver Alt, and the only signal when Chrome keeps the key for its menu.
+            // --- Q activates the focused loadout pack ---
+            // [TITAN-ORBIT] One key for the whole left-side list. Up/Down (and clicks)
+            // move the caret. WasPressedThisFrame so holding Q does not dump the pack.
+            // Q is also the FireRocket binding; the keyboard read covers a missing action.
             bool actionRocket = rocketAction != null && rocketAction.WasPressedThisFrame();
-            bool altRocket = false;
-            if (Keyboard.current != null)
-            {
-                altRocket = Keyboard.current.leftAltKey.wasPressedThisFrame
-                    || Keyboard.current.rightAltKey.wasPressedThisFrame;
-            }
-
-            rocketPressed = actionRocket || altRocket || WebGlAltKeyCapture.ConsumePressed();
+            bool keyRocket = TryResolveKeyboard(out var keys) && keys.qKey.wasPressedThisFrame;
+            rocketPressed = actionRocket || keyRocket;
         }
 
         /// <summary>
@@ -332,6 +312,45 @@ namespace TitanOrbit.Input
         {
             return TryResolveKeyboard(out var k) &&
                    (k.leftCtrlKey.wasPressedThisFrame || k.rightCtrlKey.wasPressedThisFrame);
+        }
+
+        /// <summary>
+        /// SPACE held — same sustained fire as left mouse. Ignored while a text field
+        /// has focus so a name or password can still contain spaces.
+        /// </summary>
+        static bool IsSpaceHeld()
+        {
+            if (!TryResolveKeyboard(out var keyboard) || !keyboard.spaceKey.isPressed)
+                return false;
+            return !IsTextFieldFocused();
+        }
+
+        /// <summary>
+        /// Cached <c>TMPro.TMP_InputField</c>. Resolved by name so this assembly
+        /// does not take a TextMesh Pro reference.
+        /// </summary>
+        static Type s_tmpInputFieldType;
+        static bool s_tmpInputFieldResolved;
+
+        /// <summary>True when the selected UI control is a text entry field.</summary>
+        static bool IsTextFieldFocused()
+        {
+            var selected = EventSystem.current != null
+                ? EventSystem.current.currentSelectedGameObject
+                : null;
+            if (selected == null)
+                return false;
+            if (selected.GetComponent<UnityEngine.UI.InputField>() != null)
+                return true;
+
+            if (!s_tmpInputFieldResolved)
+            {
+                s_tmpInputFieldResolved = true;
+                s_tmpInputFieldType = Type.GetType("TMPro.TMP_InputField, Unity.TextMeshPro");
+            }
+
+            return s_tmpInputFieldType != null
+                && selected.GetComponent(s_tmpInputFieldType) != null;
         }
 
         /// <summary>Keyboard.current, or the first Keyboard device if current is unset.</summary>

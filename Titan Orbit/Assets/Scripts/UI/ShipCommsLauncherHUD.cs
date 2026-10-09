@@ -8,7 +8,8 @@ using UnityEngine.UI;
 namespace TitanOrbit.UI
 {
     /// <summary>
-    /// Top-left [C] COMMS MATRIX keycap. Sits under <see cref="SpaceBrakesHUD"/>
+    /// Top-left COMMS MATRIX keycap with a C hint chip, same corner treatment as
+    /// BRAKES / CTRL. Sits under <see cref="SpaceBrakesHUD"/>
     /// (or the strip above it when brakes are hidden). Click opens the comms card
     /// and leaves it up until SEND or CLOSE. Hold C is a different path: the card
     /// stays only while the key is down and releasing C sends. This button does
@@ -38,6 +39,8 @@ namespace TitanOrbit.UI
         static readonly Color BodyColor = new Color(0.88f, 0.92f, 0.98f, 1f);
         static readonly Color RowIdle = new Color(1f, 1f, 1f, 0.03f);
         static readonly Color AccentColor = new Color(0.35f, 0.72f, 0.95f, 0.95f);
+        /// <summary>Same dark key plate as the CTRL chip on brakes.</summary>
+        static readonly Color KeycapFill = new Color(0.04f, 0.10f, 0.16f, 0.96f);
         static readonly Color LabelOutline = new Color(0.02f, 0.04f, 0.08f, 0.95f);
 
         Canvas _canvas;
@@ -157,7 +160,10 @@ namespace TitanOrbit.UI
             ShipCommsPanel.ToggleFromLauncher();
         }
 
-        /// <summary>Dark glass tile: COMMS, a C keycap, and MATRIX on the second line.</summary>
+        /// <summary>
+        /// Dark glass tile: COMMS on the first line, MATRIX under it, and a C
+        /// keycap in the top-right — the same chip as BRAKES / CTRL.
+        /// </summary>
         void BuildUi()
         {
             _canvas = gameObject.AddComponent<Canvas>();
@@ -204,13 +210,35 @@ namespace TitanOrbit.UI
             btn.transition = Selectable.Transition.None;
             btn.onClick.AddListener(OnClicked);
 
-            var kind = CreateLabel(tileRt, "Kind", "[C] COMMS", 9.5f, CaptionColor, TextAlignmentOptions.Left);
+            var kind = CreateLabel(tileRt, "Kind", "COMMS", 9.5f, CaptionColor, TextAlignmentOptions.Left);
             var kindRt = kind.rectTransform;
             kindRt.anchorMin = new Vector2(0f, 0.46f);
             kindRt.anchorMax = new Vector2(1f, 1f);
             kindRt.offsetMin = new Vector2(8f, 0f);
-            kindRt.offsetMax = new Vector2(-4f, -1f);
+            kindRt.offsetMax = new Vector2(-32f, -1f);
             kind.characterSpacing = 0.4f;
+
+            // Same corner chip as SpaceBrakesHUD's CTRL hint. One letter, so the
+            // plate is narrower, but it still sits in that top-right pocket.
+            var chipGo = new GameObject("HintChip", typeof(RectTransform), typeof(Image));
+            chipGo.transform.SetParent(tileRt, false);
+            var chipRt = chipGo.GetComponent<RectTransform>();
+            chipRt.anchorMin = new Vector2(1f, 1f);
+            chipRt.anchorMax = new Vector2(1f, 1f);
+            chipRt.pivot = new Vector2(1f, 1f);
+            chipRt.anchoredPosition = new Vector2(-3f, -3f);
+            chipRt.sizeDelta = new Vector2(16f, 12f);
+            var hintChip = chipGo.GetComponent<Image>();
+            hintChip.color = KeycapFill;
+            hintChip.raycastTarget = false;
+
+            var hint = CreateLabel(chipRt, "Hint", "C", 7.5f, AccentColor, TextAlignmentOptions.Center);
+            var hintRt = hint.rectTransform;
+            hintRt.anchorMin = Vector2.zero;
+            hintRt.anchorMax = Vector2.one;
+            hintRt.offsetMin = Vector2.zero;
+            hintRt.offsetMax = Vector2.zero;
+            hint.characterSpacing = 0.6f;
 
             var state = CreateLabel(tileRt, "State", "MATRIX", 7.5f, BodyColor, TextAlignmentOptions.Left);
             var stateRt = state.rectTransform;

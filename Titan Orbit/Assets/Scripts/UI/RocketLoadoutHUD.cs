@@ -20,7 +20,7 @@ namespace TitanOrbit.UI
     /// gear-slot buttons. Each button names the pack (ROCKET or MINE) and prints
     /// level, damage, and remaining shots. There is no separate ROCKETS / MINES
     /// header — the words live on the tiles so a mixed loadout reads as one list.
-    /// UP / DOWN (and click) walk the combined list as one caret. ALT activates
+    /// Up / Down (the key strip and the arrow keys) walk the combined list as one caret. Q activates
     /// only the focused pack (fire rocket or place mine). Hidden on the main menu,
     /// Join Team, Orbit Menu, and while the local ship is dead.
     /// <para>
@@ -39,7 +39,7 @@ namespace TitanOrbit.UI
         /// <summary>Hard cap on visible packs. Matches a typical ship loadout plus headroom.</summary>
         const int MaxRows = 8;
 
-        /// <summary>Button width in overlay pixels. Fits "ROCKET" plus an ALT / cooldown hint.</summary>
+        /// <summary>Button width in overlay pixels. Fits "ROCKET" plus a Q / cooldown hint.</summary>
         const float TileWidth = 108f;
 
         /// <summary>Button height for kind + level + damage/charges stacked inside the tile.</summary>
@@ -47,6 +47,9 @@ namespace TitanOrbit.UI
 
         /// <summary>Gap between stacked gear-slot buttons.</summary>
         const float TileGap = 4f;
+
+        /// <summary>Height of the UP / DOWN focus key strip under the packs.</summary>
+        const float FocusKeyHeight = 22f;
 
         /// <summary>Inset from the dark panel edge to the first tile.</summary>
         const float PanelPad = 8f;
@@ -89,6 +92,9 @@ namespace TitanOrbit.UI
         static readonly Color RowSelected = new Color(0.04f, 0.10f, 0.20f, 0.94f);
 
         static readonly Color CaretColor = new Color(0.45f, 0.95f, 1f, 1f);
+
+        /// <summary>Dark chip behind UP / DOWN, same family as the weapons B keycap.</summary>
+        static readonly Color KeycapFill = new Color(0.04f, 0.10f, 0.16f, 0.96f);
         static readonly Color LabelOutline = new Color(0.02f, 0.04f, 0.08f, 0.95f);
 
         /// <summary>
@@ -107,6 +113,12 @@ namespace TitanOrbit.UI
         /// </summary>
         int _paintedRocketCount;
 
+        /// <summary>Mine pack count from the last paint. The UP / DOWN buttons use it with the rocket count.</summary>
+        int _paintedMineCount;
+
+        /// <summary>UP / DOWN key strip. Paint slides it under the last visible pack.</summary>
+        RectTransform _focusKeys;
+
         readonly List<PackTile> _tiles = new List<PackTile>(MaxRows);
 
         /// <summary>
@@ -121,7 +133,7 @@ namespace TitanOrbit.UI
             /// <summary>Anchored to the panel top so Paint can stack rows by Y.</summary>
             public RectTransform Rect;
 
-            /// <summary>[UNITY] Click focuses this pack. ALT still fires / places.</summary>
+            /// <summary>[UNITY] Click focuses this pack. Q still fires or places.</summary>
             public Button Button;
 
             /// <summary>Idle vs selected fill behind the labels.</summary>
@@ -136,7 +148,7 @@ namespace TitanOrbit.UI
             /// <summary>Player-facing type word: ROCKET or MINE.</summary>
             public TextMeshProUGUI KindLabel;
 
-            /// <summary>ALT when this pack is focused and ready; otherwise remaining seconds.</summary>
+            /// <summary>Q when this pack is focused and ready; otherwise remaining seconds.</summary>
             public TextMeshProUGUI HintLabel;
 
             /// <summary>Pack purchase level, e.g. "Lv 1".</summary>
@@ -295,7 +307,7 @@ namespace TitanOrbit.UI
             int mineCount = mineSlots != null ? mineSlots.Count : 0;
 
             // --- Caret ownership ---
-            // If only one weapon type is equipped, force focus onto that type so ALT
+            // If only one weapon type is equipped, force focus onto that type so Q
             // cannot sit on an empty rocket list or an empty mine list.
             if (count <= 0 && mineCount > 0)
                 MineSlotSelection.SetHudFocused(true);
@@ -307,12 +319,12 @@ namespace TitanOrbit.UI
             MineSlotSelection.Clamp(mineCount);
 
             SetVisible(true);
-            Paint(slots, nextFire, infinite, mineSlots, nextMine, infiniteMines, shipLevel);
+            Paint(slots, nextFire, mineSlots, nextMine, shipLevel);
         }
 
         /// <summary>
-        /// UP / DOWN walk rocket packs then mine packs as one list. The focused row
-        /// owns ALT (rockets fire, mines place). Ignored while a turret is possessed.
+        /// Up / Down walk rocket packs then mine packs as one list. The focused row
+        /// owns Q (rockets fire, mines place). Ignored while a turret is possessed.
         /// </summary>
         static void PollCycleKeys(int rocketCount, int mineCount)
         {
@@ -331,8 +343,17 @@ namespace TitanOrbit.UI
             if (delta == 0)
                 return;
 
+            MoveCaret(delta, rocketCount, mineCount);
+        }
+
+        /// <summary>
+        /// Steps the shared caret by one pack. Rockets sit above mines. Wraps at the ends.
+        /// Keyboard Up/Down and the focus-key buttons both call this.
+        /// </summary>
+        static void MoveCaret(int delta, int rocketCount, int mineCount)
+        {
             int total = rocketCount + mineCount;
-            if (total <= 0)
+            if (total <= 0 || delta == 0)
                 return;
 
             if (rocketCount <= 0)
@@ -364,10 +385,10 @@ namespace TitanOrbit.UI
         /// <summary>
         /// Reads rocket + mine slots and cooldowns from the client-world local ship.
         /// </summary>
-        /// <param name="slots">Rocket packs with remaining charges (or a debug INF stub).</param>
+        /// <param name="slots">Rocket packs with remaining charges (or a debug stub).</param>
         /// <param name="nextFire">ElapsedTime when the next rocket may fire.</param>
         /// <param name="infinite">True when Editor infinite-rocket debug is on.</param>
-        /// <param name="mineSlots">Mine packs with remaining charges (or a debug INF stub).</param>
+        /// <param name="mineSlots">Mine packs with remaining charges (or a debug stub).</param>
         /// <param name="nextMine">ElapsedTime when the next mine may drop.</param>
         /// <param name="infiniteMines">True when Editor infinite-mine debug is on.</param>
         /// <param name="shipLevel">Local ship chassis level, used for debug stub packs.</param>
@@ -436,15 +457,13 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// Writes one stacked column of gear-slot buttons. Rockets first, mines after —
-        /// same order as UP / DOWN — with kind / level / damage on each tile.
+        /// same order as Up / Down — with kind / level / damage on each tile.
         /// </summary>
         void Paint(
             List<(int level, int charges)> slots,
             double nextFire,
-            bool infinite,
             List<(int level, int charges)> mineSlots,
             double nextMine,
-            bool infiniteMines,
             int shipLevel)
         {
             double now = 0d;
@@ -455,6 +474,7 @@ namespace TitanOrbit.UI
             int rocketCount = slots != null ? slots.Count : 0;
             int mineCount = mineSlots != null ? mineSlots.Count : 0;
             _paintedRocketCount = rocketCount;
+            _paintedMineCount = mineCount;
 
             int rocketSelected = RocketSlotSelection.Clamp(rocketCount);
             int mineSelected = MineSlotSelection.Clamp(mineCount);
@@ -490,7 +510,6 @@ namespace TitanOrbit.UI
                     isRocket: true,
                     slots[i].level,
                     slots[i].charges,
-                    infinite,
                     isSel,
                     rocketReady,
                     rocketRemain,
@@ -507,7 +526,6 @@ namespace TitanOrbit.UI
                     isRocket: false,
                     mineSlots[i].level,
                     mineSlots[i].charges,
-                    infiniteMines,
                     isSel,
                     mineReady,
                     mineRemain,
@@ -518,7 +536,10 @@ namespace TitanOrbit.UI
                 HideTile(_tiles[i]);
 
             float tilesHeight = row <= 0 ? 0f : row * TileHeight + (row - 1) * TileGap;
+            PlaceFocusKeys(row, tilesHeight);
             float height = tilesHeight + PanelPad * 2f;
+            if (row > 0)
+                height += TileGap + FocusKeyHeight;
             if (_panel != null)
                 _panel.sizeDelta = new Vector2(PanelWidth, Mathf.Max(TileHeight + PanelPad * 2f, height));
         }
@@ -532,8 +553,7 @@ namespace TitanOrbit.UI
         /// <param name="isRocket">True paints ROCKET + rocket damage; false paints MINE.</param>
         /// <param name="level">Store purchase level stamped on the pack.</param>
         /// <param name="charges">Shots / mines left in this pack.</param>
-        /// <param name="infinite">Editor debug: print INF instead of a charge count.</param>
-        /// <param name="isSelected">True when this row owns the caret and ALT.</param>
+        /// <param name="isSelected">True when this row owns the caret and Q.</param>
         /// <param name="ready">True when this weapon type's shared cooldown is finished.</param>
         /// <param name="remain">Seconds until that cooldown finishes.</param>
         /// <param name="fraction">Remaining / total cooldown for the thin bar.</param>
@@ -543,7 +563,6 @@ namespace TitanOrbit.UI
             bool isRocket,
             int level,
             int charges,
-            bool infinite,
             bool isSelected,
             bool ready,
             float remain,
@@ -560,8 +579,8 @@ namespace TitanOrbit.UI
             tile.LevelLabel.text = $"Lv {level}";
             tile.LevelLabel.color = isSelected ? LevelColor : LevelDim;
             tile.DetailLabel.text = isRocket
-                ? FormatRocketDetails(level, charges, infinite)
-                : FormatMineDetails(level, charges, infinite);
+                ? FormatRocketDetails(level, charges)
+                : FormatMineDetails(level, charges);
             tile.DetailLabel.color = isSelected ? BodyColor : BodyDim;
 
             PaintTileHint(tile.HintLabel, ready, remain, isSelected);
@@ -611,7 +630,7 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// Click a row to focus that pack. Rows below <see cref="_paintedRocketCount"/>
-        /// are rockets; the rest are mines. ALT then fires or places.
+        /// are rockets; the rest are mines. Q then fires or places.
         /// </summary>
         void OnRowClicked(int hudIndex)
         {
@@ -628,6 +647,34 @@ namespace TitanOrbit.UI
             int mineIndex = hudIndex - _paintedRocketCount;
             MineSlotSelection.SetHudFocused(true);
             MineSlotSelection.Select(mineIndex, Mathf.Max(1, mineIndex + 1));
+        }
+
+        /// <summary>
+        /// UP button steps the caret toward the top of the list. DOWN steps toward the bottom.
+        /// Same wrap as the arrow keys.
+        /// </summary>
+        void OnFocusKeyClicked(int delta)
+        {
+            if (MoonOrbitClientState.IsOrbitMenuVisible)
+                return;
+            if (PlanetaryDefenseTurretClientState.IsControlling)
+                return;
+
+            MoveCaret(delta, _paintedRocketCount, _paintedMineCount);
+        }
+
+        /// <summary>Slides the UP / DOWN strip to sit one gap under the last visible pack.</summary>
+        void PlaceFocusKeys(int rowCount, float tilesHeight)
+        {
+            if (_focusKeys == null)
+                return;
+
+            bool show = rowCount > 0;
+            _focusKeys.gameObject.SetActive(show);
+            if (!show)
+                return;
+
+            _focusKeys.anchoredPosition = new Vector2(PanelPad, -PanelPad - tilesHeight - TileGap);
         }
 
         /// <summary>Builds dark-glass canvas and a pool of tappable gear-slot buttons.</summary>
@@ -665,10 +712,64 @@ namespace TitanOrbit.UI
 
             for (int i = 0; i < MaxRows; i++)
                 _tiles.Add(BuildTile(_panel, i));
+
+            _focusKeys = BuildFocusKeys(_panel);
         }
 
         /// <summary>
-        /// Builds one gear-slot button: kind word, ALT/cooldown hint, level, damage, thin bar.
+        /// Two keycaps under the packs. UP and DOWN are the labels and the click targets,
+        /// so the highlight keys are visible without opening a tooltip.
+        /// </summary>
+        RectTransform BuildFocusKeys(RectTransform parent)
+        {
+            var rowGo = new GameObject("FocusKeys", typeof(RectTransform));
+            rowGo.transform.SetParent(parent, false);
+            var row = rowGo.GetComponent<RectTransform>();
+            row.anchorMin = new Vector2(0f, 1f);
+            row.anchorMax = new Vector2(0f, 1f);
+            row.pivot = new Vector2(0f, 1f);
+            row.anchoredPosition = new Vector2(PanelPad, -PanelPad - TileHeight - TileGap);
+            row.sizeDelta = new Vector2(TileWidth, FocusKeyHeight);
+
+            float keyWidth = (TileWidth - TileGap) * 0.5f;
+            BuildFocusKey(row, "UP", -1, 0f, keyWidth);
+            BuildFocusKey(row, "DOWN", 1, keyWidth + TileGap, keyWidth);
+            return row;
+        }
+
+        /// <summary>One dark keycap. Click steps the loadout caret by <paramref name="delta"/>.</summary>
+        void BuildFocusKey(RectTransform parent, string label, int delta, float x, float width)
+        {
+            int captured = delta;
+            var keyGo = new GameObject(label, typeof(RectTransform), typeof(Image), typeof(Button));
+            keyGo.transform.SetParent(parent, false);
+            var rt = keyGo.GetComponent<RectTransform>();
+            rt.anchorMin = new Vector2(0f, 0f);
+            rt.anchorMax = new Vector2(0f, 1f);
+            rt.pivot = new Vector2(0f, 0.5f);
+            rt.anchoredPosition = new Vector2(x, 0f);
+            rt.sizeDelta = new Vector2(width, 0f);
+
+            var img = keyGo.GetComponent<Image>();
+            img.color = KeycapFill;
+            var btn = keyGo.GetComponent<Button>();
+            btn.transition = Selectable.Transition.None;
+            var navigation = btn.navigation;
+            navigation.mode = Navigation.Mode.None;
+            btn.navigation = navigation;
+            btn.onClick.AddListener(() => OnFocusKeyClicked(captured));
+
+            var text = CreateLabel(rt, "Label", label, 11f, CaretColor, Vector2.zero, TextAlignmentOptions.Center);
+            var textRt = text.rectTransform;
+            textRt.anchorMin = Vector2.zero;
+            textRt.anchorMax = Vector2.one;
+            textRt.offsetMin = Vector2.zero;
+            textRt.offsetMax = Vector2.zero;
+            text.alignment = TextAlignmentOptions.Center;
+        }
+
+        /// <summary>
+        /// Builds one gear-slot button: kind word, Q or cooldown hint, level, damage, thin bar.
         /// </summary>
         /// <param name="parent">Dark panel that holds the stacked list.</param>
         /// <param name="index">Pool index and click identity (0..MaxRows-1).</param>
@@ -689,6 +790,11 @@ namespace TitanOrbit.UI
             img.color = RowIdle;
             var btn = rowGo.GetComponent<Button>();
             btn.transition = Selectable.Transition.None;
+            // Our Up/Down caret walks the list. Leave Unity navigation off so the
+            // EventSystem does not move a second highlight on the same arrows.
+            var navigation = btn.navigation;
+            navigation.mode = Navigation.Mode.None;
+            btn.navigation = navigation;
             btn.onClick.AddListener(() => OnRowClicked(captured));
 
             tile.Root = rowGo;
@@ -711,7 +817,7 @@ namespace TitanOrbit.UI
             caretImg.enabled = false;
             tile.Caret = caretImg;
 
-            // Kind on the left, ALT / seconds on the right — same top row so the
+            // Kind on the left, Q / seconds on the right — same top row so the
             // type word never leaves the button for a section header.
             var kind = CreateLabel(rt, "Kind", "ROCKET", 12f, CaptionSelected, Vector2.zero, TextAlignmentOptions.Left);
             var kindRt = kind.rectTransform;
@@ -721,7 +827,7 @@ namespace TitanOrbit.UI
             kindRt.offsetMax = new Vector2(-2f, -2f);
             tile.KindLabel = kind;
 
-            var hint = CreateLabel(rt, "Hint", "ALT", 11f, ReadyColor, Vector2.zero, TextAlignmentOptions.Right);
+            var hint = CreateLabel(rt, "Hint", string.Empty, 11f, ReadyColor, Vector2.zero, TextAlignmentOptions.Right);
             var hintRt = hint.rectTransform;
             hintRt.anchorMin = new Vector2(0.55f, 0.68f);
             hintRt.anchorMax = new Vector2(1f, 1f);
@@ -775,9 +881,8 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// ALT only on the focused tile when that pack is ready. Unfocused tiles still
-        /// show remaining cooldown so the player can see the other weapon reload,
-        /// but they never advertise a second hotkey.
+        /// Q only on the focused tile when that pack is ready. Other tiles still
+        /// show remaining cooldown, without a second hotkey.
         /// </summary>
         static void PaintTileHint(TextMeshProUGUI label, bool ready, float remain, bool focused)
         {
@@ -791,7 +896,7 @@ namespace TitanOrbit.UI
                 return;
             }
 
-            label.text = focused ? "ALT" : string.Empty;
+            label.text = focused ? "Q" : string.Empty;
             label.color = ReadyColor;
         }
 
@@ -816,8 +921,8 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Cyan edge around the focused tile so UP/DOWN / click have a clear caret
-        /// beyond the fill tint. Disabled until that row owns ALT.
+        /// Cyan edge around the focused tile so Up/Down / click have a clear caret
+        /// beyond the fill tint. Disabled until that row owns Q.
         /// </summary>
         static Outline AddFocusOutline(GameObject rowGo)
         {
@@ -829,24 +934,27 @@ namespace TitanOrbit.UI
             return outline;
         }
 
-        /// <summary>Rocket damage + charges (or INF) stacked inside the gear-slot button.</summary>
-        static string FormatRocketDetails(int level, int charges, bool infinite)
+        /// <summary>Rocket damage and shots left, e.g. "40  ×2". Damage alone when the pack has no charge count.</summary>
+        static string FormatRocketDetails(int level, int charges)
         {
             float damage = RocketShotMath.ResolveDamage(Mathf.Max(1, level));
-            string dmg = damage.ToString("0", CultureInfo.InvariantCulture);
-            if (infinite)
-                return $"{dmg}  INF";
-            return $"{dmg}  ×{Mathf.Max(0, charges)}";
+            return FormatDamageAndCharges(damage, charges);
         }
 
-        /// <summary>Mine blast damage + charges (or INF) stacked inside the gear-slot button.</summary>
-        static string FormatMineDetails(int level, int charges, bool infinite)
+        /// <summary>Mine blast damage and charges left, e.g. "40  ×4". Damage alone when the pack has no charge count.</summary>
+        static string FormatMineDetails(int level, int charges)
         {
             float damage = MineShotMath.ResolveDamage(Mathf.Max(1, level));
+            return FormatDamageAndCharges(damage, charges);
+        }
+
+        /// <summary>Damage, then shots left. No charge token when the count is zero.</summary>
+        static string FormatDamageAndCharges(float damage, int charges)
+        {
             string dmg = damage.ToString("0", CultureInfo.InvariantCulture);
-            if (infinite)
-                return $"{dmg}  INF";
-            return $"{dmg}  ×{Mathf.Max(0, charges)}";
+            if (charges <= 0)
+                return dmg;
+            return $"{dmg}  ×{charges}";
         }
 
         /// <summary>Creates a TMP label under <paramref name="parent"/>.</summary>

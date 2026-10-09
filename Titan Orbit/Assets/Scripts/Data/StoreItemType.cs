@@ -19,7 +19,7 @@ namespace TitanOrbit.Data
         MiningDrone,
 
         /// <summary>
-        /// [TITAN-ORBIT] Canonical store rockets — pack of 2, fired with ALT.
+        /// [TITAN-ORBIT] Canonical store rockets — pack of 2, fired with Q.
         /// Enum value stays <c>SmallRockets</c> so ghost <c>ItemType</c> ints stay stable.
         /// </summary>
         SmallRockets,
@@ -30,7 +30,7 @@ namespace TitanOrbit.Data
         LargeRockets,
 
         /// <summary>
-        /// [TITAN-ORBIT] Canonical store mines — pack of 4, placed with E.
+        /// [TITAN-ORBIT] Canonical store mines — pack of 4, placed with Q when that pack is focused.
         /// Enum value stays <c>SmallMines</c> so ghost <c>ItemType</c> ints stay stable.
         /// </summary>
         SmallMines,

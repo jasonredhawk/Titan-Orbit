@@ -391,7 +391,7 @@ namespace TitanOrbit.Data
         [Min(0.05f)]
         public float weaponCannonBankScale = DefaultWeaponBankScale;
 
-        [Tooltip("BulletVfxBank category for MEGA missile launchers. Named default is Rockets (target-seeking, same as store ALT rockets).")]
+        [Tooltip("BulletVfxBank category for MEGA missile launchers. Named default is Rockets (target-seeking, same as store rockets).")]
         [BulletVfxBankCategory(true, "Default (Rockets)")]
         public int weaponMissileBankIndex = InheritTypeTableBankIndex;
 

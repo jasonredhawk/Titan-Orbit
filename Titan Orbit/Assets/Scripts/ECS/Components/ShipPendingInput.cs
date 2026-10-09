@@ -36,13 +36,13 @@ namespace TitanOrbit.ECS
         static bool s_cycleBulletLatched;
 
         /// <summary>
-        /// [TITAN-ORBIT] Latched ALT / FireRocket press. Same reason as CycleBullet — Unity
+        /// [TITAN-ORBIT] Latched Q / FireRocket press. Same reason as CycleBullet — Unity
         /// Update can clear WasPressedThisFrame before GhostInputSystemGroup runs.
         /// </summary>
         static bool s_fireRocketLatched;
 
         /// <summary>
-        /// [TITAN-ORBIT] Latched ALT / PlaceMine press (caret on a mine pack). Same reason
+        /// [TITAN-ORBIT] Latched Q / PlaceMine press (caret on a mine pack). Same reason
         /// as FireRocket — Unity Update can clear WasPressedThisFrame before GhostInputSystemGroup.
         /// </summary>
         static bool s_placeMineLatched;
@@ -145,13 +145,13 @@ namespace TitanOrbit.ECS
             Latest = input;
         }
 
-        /// <summary>Call when the player presses ALT (or the rocket HUD). Stays true until consumed.</summary>
+        /// <summary>Call when the player presses Q. Stays true until consumed.</summary>
         public static void LatchFireRocket()
         {
             s_fireRocketLatched = true;
         }
 
-        /// <summary>Clears the ALT latch after ShipInput has been copied onto the local ghost.</summary>
+        /// <summary>Clears the rocket latch after ShipInput has been copied onto the local ghost.</summary>
         public static void ConsumeFireRocketLatch()
         {
             s_fireRocketLatched = false;
@@ -168,7 +168,7 @@ namespace TitanOrbit.ECS
         /// <summary>True while a rocket press is waiting to be applied.</summary>
         public static bool FireRocketLatched => s_fireRocketLatched;
 
-        /// <summary>Call when ALT should place the focused mine pack. Stays true until consumed.</summary>
+        /// <summary>Call when Q should place the focused mine pack. Stays true until consumed.</summary>
         public static void LatchPlaceMine()
         {
             s_placeMineLatched = true;
@@ -303,7 +303,7 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
-    /// Client-side which rocket pack will fire next. HUD UP/DOWN and row clicks write this;
+    /// Client-side which rocket pack Q will fire next. Up/Down and row clicks write this;
     /// <c>ShipInputBridge</c> copies it onto <see cref="ShipInput.SelectedRocketSlot"/> each tick.
     /// Index is among rocket HUD rows (not the raw equipment buffer).
     /// </summary>

@@ -156,11 +156,11 @@ namespace TitanOrbit.Core
         [SerializeField] bool debugCycleAllThrusterVfx;
 
         [Header("Debug — Rockets")]
-        [Tooltip("When enabled, ALT fires a homing rocket without consuming charges (and with an empty loadout). The 5s reload still applies. Local Editor / MPPM host only.")]
+        [Tooltip("When enabled, Q fires a homing rocket without consuming charges (and with an empty loadout). The 5s reload still applies. Local Editor / MPPM host only.")]
         [SerializeField] bool debugInfiniteRockets;
 
         [Header("Debug — Mines")]
-        [Tooltip("When enabled, ALT places the focused mine pack without consuming charges (and with an empty loadout). The deploy cooldown still applies. Local Editor / MPPM host only.")]
+        [Tooltip("When enabled, Q places the focused mine pack without consuming charges (and with an empty loadout). The deploy cooldown still applies. Local Editor / MPPM host only.")]
         [SerializeField] bool debugInfiniteMines;
 
         [Header("Debug — Rocket / Mine Self-Harm")]

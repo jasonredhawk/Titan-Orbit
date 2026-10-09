@@ -12,7 +12,7 @@ using Unity.Transforms;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Server-authoritative ALT rocket fire. Consumes one charge from the first rocket
+    /// Server-authoritative Q rocket fire. Consumes one charge from the selected rocket
     /// equipment slot (unless <see cref="TitanOrbitDebugFlags.InfiniteRockets"/>), then
     /// appends a homing <see cref="BulletElement"/> that uses the reserved Rockets bank.
     /// <para>

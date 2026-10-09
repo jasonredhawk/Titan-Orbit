@@ -32,7 +32,7 @@ namespace TitanOrbit.Data
         /// bank for <see cref="partType"/> (guns / cannons / missiles / snipers).
         /// </summary>
         [BulletVfxBankCategory(true, "Type table default")]
-        [Tooltip("Bullet bank this unique weapon fires. Type table default follows the catalog Gun/Cannon/Missile/Sniper bank. Rockets seek like store ALT rockets.")]
+        [Tooltip("Bullet bank this unique weapon fires. Type table default follows the catalog Gun/Cannon/Missile/Sniper bank. Rockets seek like store rockets.")]
         public int bulletPrefabIndex = MegaShipCatalog.InheritTypeTableBankIndex;
 
         /// <summary>Per-name stats. Seeded from the type table; then hand-tunable.</summary>
