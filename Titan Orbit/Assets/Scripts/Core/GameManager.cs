@@ -28,9 +28,11 @@ namespace TitanOrbit.Core
     /// CARDS for free during testing. Also gates optional tools such as Instruction Image Capture
     /// (F8/F9 reference plates), the stutter isolator, and the per-player egress meter overlay.
     /// Background checkboxes independently enable the shader starfield (production) and the
-    /// optional legacy nebula quad. Publishes debug values to <see cref="TitanOrbitDebugFlags"/> so
-    /// other assemblies can honor toggles without referencing this Core assembly. Dedicated server
-    /// builds normally leave debug flags false.
+    /// optional legacy nebula quad. <see cref="ShowOrbitMenuCardsPanel"/> hides the orbit-menu
+    /// CARDS tab (default off) so the dock shows SHIPS and GEAR only; flip it later to bring
+    /// the spin-offer panel back without deleting that UI. Publishes debug values to
+    /// <see cref="TitanOrbitDebugFlags"/> so other assemblies can honor toggles without
+    /// referencing this Core assembly. Dedicated server builds normally leave debug flags false.
     /// </summary>
     public class GameManager : MonoBehaviour
     {
@@ -66,7 +68,7 @@ namespace TitanOrbit.Core
         // This serialized value is a reminder of what you last chose; the custom inspector syncs it
         // from live PlayMode Tools prefs when you select the component.
         [Header("Multiplayer Mode (Editor)")]
-        [Tooltip("Test = local Client & Server + Local play UI. Production = Client-only + UGS/Relay join (hides Local play). Same as Titan Orbit > Configure Multiplayer menus. Editor-only — does not change player builds by itself (Production still writes TitanOrbitMultiplayerConfig for the next WebGL build).")]
+        [Tooltip("Test = local Client & Server + Local play UI. Production = Client-only + UGS/Relay join (hides Local play). Same as Titan Orbit > Configure Multiplayer menus. Editor Play Mode only. A published WebGL player always hides Local play / Local client, even while this stays on Test.")]
         [SerializeField] EditorMultiplayerMode editorMultiplayerMode = EditorMultiplayerMode.Test;
 
         // [UNITY] / [TITAN-ORBIT] Production may hide the telemetry panel; Test often keeps it on.
@@ -110,6 +112,25 @@ namespace TitanOrbit.Core
 
         /// <summary>Mirror of the last published showStarfieldBackground for change detection.</summary>
         bool _lastPublishedShowStarfieldBackground;
+
+        // [UNITY] / [TITAN-ORBIT] Temporary hide for the orbit-menu CARDS center panel.
+        // The spin-offer UI stays built; this only shows or hides the CARDS nav tab.
+        // Default off so the dock is SHIPS + GEAR until you turn cards back on.
+        [Header("Orbit Menu")]
+        [Tooltip("ON: orbit menu nav includes CARDS (gem spin offers). OFF (default): hide that tab so the menu only shows SHIPS and GEAR. The cards UI stays in the project — flip this later to bring the panel back.")]
+        [SerializeField] bool showOrbitMenuCardsPanel;
+
+        /// <summary>
+        /// Play Mode only: fired when <see cref="ShowOrbitMenuCardsPanel"/> changes so the
+        /// orbit menu can show or hide the CARDS tab without rebuilding the dock.
+        /// </summary>
+        public static event Action<bool> ShowOrbitMenuCardsPanelChanged;
+
+        /// <summary>Last value pushed to <see cref="ShowOrbitMenuCardsPanelChanged"/>.</summary>
+        bool _hasPublishedShowOrbitMenuCardsPanel;
+
+        /// <summary>Mirror of the last published cards-panel flag for change detection.</summary>
+        bool _lastPublishedShowOrbitMenuCardsPanel;
 
         // [UNITY] Inspector toggle — when true, ship upgrade tree treats all nodes as free / clickable.
         [Header("Debug — Ship Upgrade Tree")]
@@ -202,6 +223,12 @@ namespace TitanOrbit.Core
         /// <summary>True when the shader parallax starfield should draw (Inspector on NceGameRoot).</summary>
         public bool ShowStarfieldBackground => showStarfieldBackground;
 
+        /// <summary>
+        /// True when the orbit menu should show the CARDS tab (Inspector on NceGameRoot).
+        /// Default off — SHIPS and GEAR only. The cards panel code stays so this can be turned back on.
+        /// </summary>
+        public bool ShowOrbitMenuCardsPanel => showOrbitMenuCardsPanel;
+
         /// <summary>True when designers enabled free upgrades in the Inspector (client + local-host convenience).</summary>
         public bool DebugFreeShipUpgradeTree => debugFreeShipUpgradeTree;
 
@@ -259,6 +286,13 @@ namespace TitanOrbit.Core
         /// </summary>
         public static bool IsShowStarfieldBackgroundActive =>
             Instance == null || Instance.showStarfieldBackground;
+
+        /// <summary>
+        /// Safe static check for the orbit-menu CARDS tab. Defaults <b>off</b> when no
+        /// GameManager exists yet, matching the Inspector default (SHIPS and GEAR only).
+        /// </summary>
+        public static bool IsShowOrbitMenuCardsPanelActive =>
+            Instance != null && Instance.showOrbitMenuCardsPanel;
 
         /// <summary>
         /// Safe static check used by moon orbit UI. Also true when the Shared flag was published
@@ -368,6 +402,7 @@ namespace TitanOrbit.Core
                 _hasPublishedShowEgressMeter = false;
                 _hasPublishedShowSpaceBackground = false;
                 _hasPublishedShowStarfieldBackground = false;
+                _hasPublishedShowOrbitMenuCardsPanel = false;
             }
         }
 
@@ -446,6 +481,20 @@ namespace TitanOrbit.Core
             NotifyShowEgressMeterChangedIfNeeded();
             NotifyShowSpaceBackgroundChangedIfNeeded();
             NotifyShowStarfieldBackgroundChangedIfNeeded();
+            NotifyShowOrbitMenuCardsPanelChangedIfNeeded();
+        }
+
+        /// <summary>
+        /// Invokes <see cref="ShowOrbitMenuCardsPanelChanged"/> in Play Mode when the orbit-menu
+        /// CARDS tab toggle changes (or on the first publish after Awake).
+        /// </summary>
+        void NotifyShowOrbitMenuCardsPanelChangedIfNeeded()
+        {
+            NotifyBoolChangedIfNeeded(
+                ref _hasPublishedShowOrbitMenuCardsPanel,
+                ref _lastPublishedShowOrbitMenuCardsPanel,
+                showOrbitMenuCardsPanel,
+                ShowOrbitMenuCardsPanelChanged);
         }
 
         /// <summary>

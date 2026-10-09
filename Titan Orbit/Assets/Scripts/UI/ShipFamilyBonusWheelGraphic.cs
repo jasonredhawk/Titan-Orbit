@@ -11,7 +11,7 @@ namespace TitanOrbit.UI
     /// The ice ring is the stock 1.00× base; spokes past the ring are boosts,
     /// spokes short of the ring are penalties. Spokes pack on the left / right
     /// so titles are not stacked at 12 and 6. Colour follows the power-bar
-    /// category (MOVE cyan, COMBAT orange, HULL green, ENERGY gold, HOLD purple, BANK fire-power).
+    /// category (MOVE cyan, COMBAT orange, HULL green, ENERGY gold, HOLD purple).
     /// <para>
     /// Line-only: rings and spokes, no filled wedges. The mesh stops inside
     /// <see cref="LabelBand"/> so <see cref="ShipFamilyBonusListUI"/> can sit a
@@ -336,8 +336,6 @@ namespace TitanOrbit.UI
                     return ShipAbilityCategoryColors.EnergyForHud;
                 case FamilyStatHudCopy.BonusCategory.Hold:
                     return ShipAbilityCategoryColors.CargoForHud;
-                case FamilyStatHudCopy.BonusCategory.Ordnance:
-                    return ShipAbilityCategoryColors.GetPowerBreakdownStatColorForHud(0);
                 default:
                     return RingColor;
             }

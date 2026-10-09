@@ -30,8 +30,9 @@ namespace TitanOrbit.ECS
     /// </para>
     /// <para>
     /// [TITAN-ORBIT] Ships cannot fire while <see cref="ShipOrbitState.InOrbitRing"/> is true —
-    /// orbit rings are movement / people-transport / tractor zones only. Client anticipation
-    /// mirrors this gate in <c>ClientLocalBulletVfxBridge</c>.
+    /// orbit rings are movement / people-transport / tractor zones only. The same lock applies
+    /// while <see cref="ShipMoonDockState.IsFullyLanded"/>: a muzzle inside the moon body
+    /// would spawn a bolt that dies on the first segment and only show the impact flash.
     /// </para>
     /// <para>
     /// Starblast-style hardening vs asteroid tunneling:
@@ -351,7 +352,11 @@ namespace TitanOrbit.ECS
                                         .IsActive(serverElapsed);
                 bool ownerInOrbit = SystemAPI.HasComponent<ShipOrbitState>(entity) &&
                                     SystemAPI.GetComponentRO<ShipOrbitState>(entity).ValueRO.InOrbitRing;
-                bool ownerMayFire = input.ValueRO.Fire.IsSet && !ownerShocked && !ownerInOrbit;
+                // Fully landed hulls sit on the moon body. A shot from there dies at the
+                // muzzle and only the impact flash shows. Takeoff clears IsFullyLanded.
+                bool ownerLandedOnMoon = SystemAPI.HasComponent<ShipMoonDockState>(entity) &&
+                                         SystemAPI.GetComponentRO<ShipMoonDockState>(entity).ValueRO.IsFullyLanded;
+                bool ownerMayFire = input.ValueRO.Fire.IsSet && !ownerShocked && !ownerInOrbit && !ownerLandedOnMoon;
 
                 // The square fills on its own timer even when Fire is up, in orbit, or shocked.
                 // Only the shot is blocked.

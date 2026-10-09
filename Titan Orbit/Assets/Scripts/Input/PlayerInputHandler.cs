@@ -8,7 +8,7 @@ namespace TitanOrbit.Input
     /// <summary>
     /// [UNITY] Cross-platform player input — New Input System actions plus keyboard/mouse fallbacks.
     /// Feeds ShipInputBridge with move, shoot, aim world position, ALT (focused
-    /// rocket or mine), and toggle flags (space brakes, gem expel). Hold-S is
+    /// rocket or mine), and toggle flags (space brakes, gem expel). Hold-C is
     /// sampled as <see cref="CommsHeld"/> for the keyword comms matrix.
     /// Client only — server has no player input handler.
     ///
@@ -64,6 +64,8 @@ namespace TitanOrbit.Input
         /// <summary>
         /// True the frame ALT (or FireRocket) is pressed. <c>ShipInputBridge</c> decides
         /// whether that activates a rocket or a mine from the loadout caret.
+        /// On WebGL this also includes the browser Alt edge — Chrome otherwise
+        /// keeps Alt for its menu and the Input System never sees the key.
         /// </summary>
         public bool RocketPressed => rocketPressed;
 
@@ -142,9 +144,10 @@ namespace TitanOrbit.Input
         public bool OverdriveHeld => overdriveHeld;
 
         /// <summary>
-        /// [TITAN-ORBIT] S held — open the keyword comms matrix. Gameplay never reads WASD
-        /// for thrust (RMB does that), so S is free. Desktop only; mobile has no mapping yet.
-        /// <c>ShipCommsPanel</c> owns show/send; this property is the raw key sample.
+        /// [TITAN-ORBIT] C held — open the keyword comms matrix. Gameplay never reads WASD
+        /// for thrust (RMB does that). C is the comms key (S used to be). Desktop only;
+        /// mobile has no mapping yet. <c>ShipCommsPanel</c> owns show/send; this property
+        /// is the raw key sample. The on-screen COMMS button is a separate sticky path.
         /// </summary>
         public bool CommsHeld
         {
@@ -152,16 +155,22 @@ namespace TitanOrbit.Input
             {
                 if (Application.isMobilePlatform)
                     return false;
-                return TryResolveKeyboard(out var keyboard) && keyboard.sKey.isPressed;
+                return TryResolveKeyboard(out var keyboard) && keyboard.cKey.isPressed;
             }
         }
 
         public bool IsMobile => Application.isMobilePlatform;
 
-        /// <summary>WASD / Move action planar direction (x = world X, y = world Z).</summary>
+        /// <summary>
+        /// Planar stick (x = world X, y = world Z) from the Move action plus W A D
+        /// and the arrow keys. S is not included — that key toggles [S]TATS.
+        /// </summary>
         public Vector2 GetMoveInput()
         {
             // --- Compute value ---
+            // S is the [S]TATS toggle on the ability bar, so it is not backward thrust.
+            // Down Arrow still is. Nothing in the match reads this vector for flight
+            // (RMB thrusts); it stays for any caller that wants a planar stick.
             Vector2 move = Vector2.zero;
             if (moveAction != null)
                 move = moveAction.ReadValue<Vector2>();
@@ -170,9 +179,9 @@ namespace TitanOrbit.Input
             if (k != null)
             {
                 if (k.wKey.isPressed) move.y += 1f;
-                if (k.sKey.isPressed) move.y -= 1f;
                 if (k.aKey.isPressed || k.leftArrowKey.isPressed) move.x -= 1f;
                 if (k.dKey.isPressed || k.rightArrowKey.isPressed) move.x += 1f;
+                if (k.downArrowKey.isPressed) move.y -= 1f;
             }
 
             if (move.sqrMagnitude > 1f)
@@ -202,6 +211,8 @@ namespace TitanOrbit.Input
         private void OnEnable()
         {
             // --- Unity lifecycle ---
+            // WebGL: capture Alt before Chrome's menu accelerator eats it.
+            WebGlAltKeyCapture.Install();
             if (moveAction != null) moveAction.Enable();
             if (shootAction != null) shootAction.Enable();
             if (lookAction != null) lookAction.Enable();
@@ -300,6 +311,8 @@ namespace TitanOrbit.Input
             // --- Rocket fire (ALT) ---
             // [TITAN-ORBIT] One-shot: WasPressedThisFrame so holding Alt does not dump the pack.
             // Keyboard fallback covers missing FireRocket bindings on the Gameplay map.
+            // WebGL also ORs the browser edge. Same frame as the Input System when Chrome
+            // does deliver Alt, and the only signal when Chrome keeps the key for its menu.
             bool actionRocket = rocketAction != null && rocketAction.WasPressedThisFrame();
             bool altRocket = false;
             if (Keyboard.current != null)
@@ -308,7 +321,7 @@ namespace TitanOrbit.Input
                     || Keyboard.current.rightAltKey.wasPressedThisFrame;
             }
 
-            rocketPressed = actionRocket || altRocket;
+            rocketPressed = actionRocket || altRocket || WebGlAltKeyCapture.ConsumePressed();
         }
 
         /// <summary>

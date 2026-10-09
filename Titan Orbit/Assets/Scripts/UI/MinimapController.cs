@@ -1621,7 +1621,9 @@ namespace TitanOrbit.UI
 
         private void SetupExpandButton()
         {
-            // Top-left of minimap (easier thumb reach on phones than bottom-right screen corner)
+            // Top-left of the radar disc. Same control becomes the × when the map is expanded.
+            // [TITAN-ORBIT] Dark void glass + ice rail, same cockpit chrome as the STATS toggle.
+            // A light gray plate read as a website chip sitting on the radar.
             GameObject buttonObj = new GameObject("ExpandButton");
             buttonObj.transform.SetParent(minimapRect, false);
             
@@ -1630,19 +1632,53 @@ namespace TitanOrbit.UI
             buttonRect.anchorMax = new Vector2(0, 1);
             buttonRect.pivot = new Vector2(0, 1);
             buttonRect.anchoredPosition = new Vector2(8, -8);
-            buttonRect.sizeDelta = new Vector2(46f, 20f);
+            buttonRect.sizeDelta = new Vector2(52f, 22f);
             
             Image buttonImage = buttonObj.AddComponent<Image>();
-            buttonImage.color = new Color(0.7f, 0.7f, 0.8f, 0.95f);
             buttonImage.sprite = GetOrCreateWhiteUiSprite();
             buttonImage.type = Image.Type.Simple;
+            buttonImage.raycastTarget = true;
+
+            Color ice = new Color(0.35f, 0.72f, 0.95f, 0.95f);
+            Color glass = new Color(0.04f, 0.06f, 0.09f, 0.92f);
+            Color fill = Color.Lerp(glass, ice, 0.16f);
+            fill.a = glass.a;
+            buttonImage.color = fill;
+
+            var outline = buttonObj.AddComponent<Outline>();
+            Color outlineCol = ice;
+            outlineCol.a = 0.85f;
+            outline.effectColor = outlineCol;
+            outline.effectDistance = new Vector2(1f, -1f);
+
+            // Thin ice rail along the top edge — the only bright colour on the chip.
+            GameObject accentGo = new GameObject("Accent");
+            accentGo.transform.SetParent(buttonObj.transform, false);
+            RectTransform accentRt = accentGo.AddComponent<RectTransform>();
+            accentRt.anchorMin = new Vector2(0f, 1f);
+            accentRt.anchorMax = new Vector2(1f, 1f);
+            accentRt.pivot = new Vector2(0.5f, 1f);
+            accentRt.offsetMin = new Vector2(3f, -3f);
+            accentRt.offsetMax = new Vector2(-3f, -1f);
+            Image accentImg = accentGo.AddComponent<Image>();
+            accentImg.sprite = GetOrCreateWhiteUiSprite();
+            accentImg.color = ice;
+            accentImg.raycastTarget = false;
             
             expandButton = buttonObj.AddComponent<Button>();
+            expandButton.targetGraphic = buttonImage;
             expandButton.onClick.AddListener(ToggleExpand);
-            
+
+            // ColorTint multiplies the glass. Keep the block near white so hover
+            // only lifts the ice, and disabled state cannot wash the chip gray.
             var colors = expandButton.colors;
-            colors.highlightedColor = new Color(0.9f, 0.9f, 1f, 1f);
-            colors.pressedColor = new Color(0.8f, 0.8f, 0.9f, 1f);
+            colors.normalColor = Color.white;
+            colors.highlightedColor = new Color(1.35f, 1.45f, 1.6f, 1f);
+            colors.pressedColor = new Color(0.72f, 0.8f, 0.9f, 1f);
+            colors.selectedColor = Color.white;
+            colors.disabledColor = new Color(0.7f, 0.75f, 0.82f, 1f);
+            colors.colorMultiplier = 1f;
+            colors.fadeDuration = 0.08f;
             expandButton.colors = colors;
 
             GameObject labelGo = new GameObject("Label");
@@ -1650,17 +1686,21 @@ namespace TitanOrbit.UI
             RectTransform labelRt = labelGo.AddComponent<RectTransform>();
             labelRt.anchorMin = Vector2.zero;
             labelRt.anchorMax = Vector2.one;
-            labelRt.offsetMin = Vector2.zero;
-            labelRt.offsetMax = Vector2.zero;
+            labelRt.offsetMin = new Vector2(2f, 1f);
+            labelRt.offsetMax = new Vector2(-2f, -1f);
 
             expandButtonLabel = labelGo.AddComponent<TextMeshProUGUI>();
             expandButtonLabel.text = "[M]ap";
             expandButtonLabel.alignment = TextAlignmentOptions.Center;
+            expandButtonLabel.fontStyle = FontStyles.Bold;
             expandButtonLabel.fontSize = 11f;
-            expandButtonLabel.color = new Color(0.12f, 0.12f, 0.18f, 1f);
+            expandButtonLabel.characterSpacing = 0.6f;
+            expandButtonLabel.color = new Color(0.88f, 0.92f, 0.98f, 1f);
             expandButtonLabel.raycastTarget = false;
             expandButtonLabel.enableWordWrapping = false;
             expandButtonLabel.overflowMode = TextOverflowModes.Overflow;
+            if (TMP_Settings.defaultFontAsset != null)
+                expandButtonLabel.font = TMP_Settings.defaultFontAsset;
         }
         
         private void ToggleExpand()
@@ -1738,7 +1778,7 @@ namespace TitanOrbit.UI
                         buttonRect.anchorMax = new Vector2(0.5f, 1f);
                         buttonRect.pivot = new Vector2(0.5f, 1f);
                         buttonRect.anchoredPosition = new Vector2(0, -8);
-                        buttonRect.sizeDelta = new Vector2(28f, 24f);
+                        buttonRect.sizeDelta = new Vector2(32f, 24f);
                     }
 
                     if (expandButtonLabel != null)
@@ -1973,7 +2013,7 @@ namespace TitanOrbit.UI
                     buttonRect.anchorMax = new Vector2(0, 1);
                     buttonRect.pivot = new Vector2(0, 1);
                     buttonRect.anchoredPosition = new Vector2(8, -8);
-                    buttonRect.sizeDelta = new Vector2(46f, 20f);
+                    buttonRect.sizeDelta = new Vector2(52f, 22f);
                 }
 
                 if (expandButtonLabel != null)

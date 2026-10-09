@@ -1,6 +1,5 @@
 using System.Collections.Generic;
 using TitanOrbit.Data;
-using TitanOrbit.Simulation;
 using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -37,6 +36,8 @@ namespace TitanOrbit.UI
         const float PadTop = 0f;
         const float PadBottom = 0f;
         const float SpokeLabelFont = 7.25f;
+        /// <summary>Shared line box so a taller glyph (percent, digits) cannot resize one title.</summary>
+        const float SpokeLabelLineHeight = 12f;
         const float WheelPlatePadLeft = 88f;
         /// <summary>
         /// Pull the wheel square up by this many pixels so the empty 12 o'clock
@@ -127,14 +128,14 @@ namespace TitanOrbit.UI
                 return;
             }
 
+            // [TITAN-ORBIT] Fleet Bonuses are ShipFamilyDefinition.specialBonuses only.
+            // Bullet-bank vs-target muls (VS GEMS, VS ASTEROIDS, BANK DAMAGE) are weapon
+            // stats, not family identity — they stay on the weapon rail, not this wheel.
             _rows.Clear();
             FamilyStatHudCopy.CollectBonusRows(family.specialBonuses, _rows, includeIdentity: true);
 
             // [TITAN-ORBIT] Planet roll wins over the family Laserbolt fallback.
             string typeName = BulletBankHudCopy.FormatFamilyTypeName(family, planetOrHullBankIndex);
-            BulletBankProfile profile = ResolveBankProfile(family, planetOrHullBankIndex);
-            int extras = BulletBankCombatLogic.CountFirePowerExtraLevels(Mathf.Max(1, shipLevel), 0);
-            FamilyStatHudCopy.CollectBankDamageRows(profile, extras, _rows, includeIdentity: true);
 
             if (_emptyLabel != null)
                 _emptyLabel.gameObject.SetActive(false);
@@ -176,19 +177,6 @@ namespace TitanOrbit.UI
 
             PinOverlays();
             PaintSpokeLabels();
-        }
-
-        /// <summary>
-        /// Resolves the ScriptableObject profile for the planet / family bank.
-        /// Null when the combat bank catalog is not loaded yet.
-        /// </summary>
-        static BulletBankProfile ResolveBankProfile(ShipFamilyDefinition family, int planetOrHullBankIndex)
-        {
-            int idx = BulletBankProfileUtility.ResolveBankIndexForFamily(family, planetOrHullBankIndex);
-            var bank = BulletBankCombatLogic.Bank;
-            if (bank == null || !bank.TryGetProfile(idx, out BulletBankProfile profile))
-                return null;
-            return profile;
         }
 
         /// <summary>
@@ -395,6 +383,9 @@ namespace TitanOrbit.UI
             if (label == null)
                 return;
 
+            // [TITAN-ORBIT] One point size for every spoke. A tight width box and
+            // auto-size were letting longer bonuses render smaller than short ones.
+            LockSpokeLabelMetrics(label);
             if (row.IsIdentity)
                 label.text = row.FullLabel;
             else
@@ -412,16 +403,22 @@ namespace TitanOrbit.UI
             else
                 label.color = cat;
 
+            LockSpokeLabelMetrics(label);
             label.ForceMeshUpdate();
             Vector2 pref = label.GetPreferredValues(label.text);
+            // Measure can rewrite point size when a glyph falls back. Put it back.
+            LockSpokeLabelMetrics(label);
             Vector2 dir = new Vector2(Mathf.Cos(angleRad), Mathf.Sin(angleRad));
             Vector2 pos = fromCenter;
+            pos.x = Mathf.Round(pos.x);
+            pos.y = Mathf.Round(pos.y);
 
             RectTransform rt = label.rectTransform;
             rt.anchorMin = new Vector2(0.5f, 0.5f);
             rt.anchorMax = new Vector2(0.5f, 0.5f);
             rt.localRotation = Quaternion.identity;
-            rt.sizeDelta = new Vector2(Mathf.Clamp(pref.x + 2f, 20f, 160f), Mathf.Max(12f, pref.y));
+            rt.localScale = Vector3.one;
+            rt.sizeDelta = new Vector2(Mathf.Max(20f, pref.x + 4f), SpokeLabelLineHeight);
             rt.anchoredPosition = pos;
             if (dir.x >= 0.28f)
             {
@@ -462,10 +459,7 @@ namespace TitanOrbit.UI
         TextMeshProUGUI CreateSpokeLabel()
         {
             var tmp = CreateLabel(_wheelRt, "Spoke", "MOVE SPEED", SpokeLabelFont, CaptionColor, FontStyles.Bold);
-            tmp.richText = false;
-            tmp.overflowMode = TextOverflowModes.Overflow;
-            tmp.enableWordWrapping = false;
-            tmp.maxVisibleLines = 1;
+            LockSpokeLabelMetrics(tmp);
             // [UNITY] Raycast so IPointerEnter fires. Cards still receive clicks
             // on empty wheel glass because the plate itself has no Graphic.
             tmp.raycastTarget = true;
@@ -473,6 +467,29 @@ namespace TitanOrbit.UI
             var hover = tmp.gameObject.AddComponent<SpokeHover>();
             hover.Owner = this;
             return tmp;
+        }
+
+        /// <summary>
+        /// Pins one spoke title to <see cref="SpokeLabelFont"/>. Called on create
+        /// and every paint so a longer name cannot drop to a smaller point size.
+        /// </summary>
+        static void LockSpokeLabelMetrics(TextMeshProUGUI label)
+        {
+            if (label == null)
+                return;
+
+            label.enableAutoSizing = false;
+            label.fontSizeMin = SpokeLabelFont;
+            label.fontSizeMax = SpokeLabelFont;
+            label.fontSize = SpokeLabelFont;
+            label.fontStyle = FontStyles.Bold;
+            label.characterSpacing = 0f;
+            label.lineSpacing = 0f;
+            label.richText = false;
+            label.textWrappingMode = TextWrappingModes.NoWrap;
+            label.overflowMode = TextOverflowModes.Overflow;
+            label.maxVisibleLines = 1;
+            label.rectTransform.localScale = Vector3.one;
         }
 
         /// <summary>Hides every pooled spoke title (empty / no-family state).</summary>

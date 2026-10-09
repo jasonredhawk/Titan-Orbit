@@ -185,6 +185,9 @@ namespace TitanOrbit.Game
                 ? TMP_InputField.ContentType.Password
                 : TMP_InputField.ContentType.Standard;
             input.characterLimit = password ? 30 : 20;
+
+            // Same caret fix as the main-menu name field (Input System only, runtime-built TMP).
+            TmpInputFieldFocus.Attach(input);
             return input;
         }
 

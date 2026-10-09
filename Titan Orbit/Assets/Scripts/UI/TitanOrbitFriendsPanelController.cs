@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Text;
 using System.Threading.Tasks;
+using TitanOrbit.Game;
 using TitanOrbit.Services;
 using Unity.Services.Friends;
 using Unity.Services.Friends.Models;
@@ -34,6 +35,11 @@ namespace TitanOrbit.UI
                 refreshButton.onClick.RemoveListener(OnRefreshClicked);
                 refreshButton.onClick.AddListener(OnRefreshClicked);
             }
+
+            // Prefab field: caret mesh still depends on the Input System bridge installed here.
+            if (addFriendByIdOrNameField != null)
+                TmpInputFieldFocus.Attach(addFriendByIdOrNameField);
+
             _ = RefreshFriendsUiAsync();
         }
 

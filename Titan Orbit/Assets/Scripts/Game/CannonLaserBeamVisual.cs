@@ -288,6 +288,13 @@ namespace TitanOrbit.Game
             if (!em.HasBuffer<ShipWeaponMountElement>(binding.ShipEntity)
                 || !em.HasBuffer<MegaShipGunnerSlotElement>(binding.ShipEntity))
                 return;
+            // Landed hulls cannot fire. Cut the beam the same frame Fire is still held.
+            if (ShipMoonDockState.IsFullyLandedOnMoon(em, binding.ShipEntity))
+            {
+                ResetRampsForShip(binding.ShipEntity.Index);
+                ClearStickyForShip(binding.ShipEntity.Index);
+                return;
+            }
 
             var mounts = em.GetBuffer<ShipWeaponMountElement>(binding.ShipEntity);
             var gunners = em.GetBuffer<MegaShipGunnerSlotElement>(binding.ShipEntity);

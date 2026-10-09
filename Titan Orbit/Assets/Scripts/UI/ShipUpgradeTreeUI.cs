@@ -141,7 +141,7 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// Writes the uppercase family name on the tree header (right side of the title row)
-        /// and paints the FAMILY BONUSES wheel under it (lineage muls + bullet-type damage).
+        /// and paints the FAMILY BONUSES wheel under it (ShipFamilySpecialBonuses only).
         /// Uses the same caption as the sidebar / gear rail so Cosmic Shark reads as COSMIC SHARK.
         /// Called from orbit hosts when the docked store planet (or editor preview family) is known.
         /// Hosts should call this <b>before</b> <see cref="RebuildIfNeeded"/>. The wheel
@@ -162,8 +162,7 @@ namespace TitanOrbit.UI
             HideHint();
 
             // --- Lineage wheel ---
-            // Family multipliers plus the planet's bullet-type damage board
-            // (BANK DMG / vs asteroids / ships / moons / gems).
+            // Spokes are the family's special-bonus multipliers (MOVE, RAM, GEM CAP, …).
             if (familyBonusList != null)
                 familyBonusList.Paint(family, shipLevel, planetOrHullBankIndex);
         }

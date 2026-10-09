@@ -196,6 +196,56 @@
 #endif
     </div>
     <script>
+      // [TITAN-ORBIT] Chrome uses Alt to focus the browser menu. That runs as the
+      // key's default action, blurs the canvas, and Unity's Input System never
+      // keeps a LeftAlt/RightAlt press — so rockets and mines do nothing.
+      // The Editor has no browser menu in that path, which is why Alt works there.
+      // Capture-phase preventDefault keeps the key on the page. The one-shot edge
+      // is what PlayerInputHandler reads if the Input System still drops Alt.
+      (function () {
+        if (window.__titanOrbitAltCapture) return;
+        window.__titanOrbitAltCapture = true;
+        window.__titanOrbitAltEdge = 0;
+
+        function isAltKey(e) {
+          return e.key === "Alt" || e.code === "AltLeft" || e.code === "AltRight";
+        }
+
+        function onAltKey(e) {
+          if (!isAltKey(e)) return;
+          if (e.cancelable) e.preventDefault();
+          if (e.type === "keydown" && !e.repeat)
+            window.__titanOrbitAltEdge = 1;
+        }
+
+        window.addEventListener("keydown", onAltKey, true);
+        window.addEventListener("keyup", onAltKey, true);
+
+        // Fullscreen Chrome can still reserve Alt. Lock only those two keys.
+        // One failed try outside fullscreen is enough — lock() rejects there,
+        // and preventDefault above is what keeps Alt in a normal tab.
+        var altLockHeld = false;
+        var altLockGaveUp = false;
+        function lockAltKeys() {
+          if (altLockHeld) return;
+          if (altLockGaveUp && !document.fullscreenElement) return;
+          var kb = navigator.keyboard;
+          if (!kb || !kb.lock) return;
+          kb.lock(["AltLeft", "AltRight"]).then(function () {
+            altLockHeld = true;
+          }).catch(function () {
+            if (!document.fullscreenElement) altLockGaveUp = true;
+          });
+        }
+        window.addEventListener("pointerdown", lockAltKeys, true);
+        document.addEventListener("fullscreenchange", function () {
+          if (!document.fullscreenElement) return;
+          altLockGaveUp = false;
+          lockAltKeys();
+        });
+      })();
+    </script>
+    <script>
       var canvas = document.querySelector("#unity-canvas");
 
       // Shows a temporary message banner/ribbon for a few seconds, or

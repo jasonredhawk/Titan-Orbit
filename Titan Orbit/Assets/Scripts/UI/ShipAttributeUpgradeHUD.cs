@@ -25,7 +25,7 @@ namespace TitanOrbit.UI
     /// see ShipAttributeUpgradeLogic.
     /// <para>
     /// [TITAN-ORBIT] Optional quick-stat chips above each button show <b>current</b> and
-    /// <c>+per-buy</c> (toggle via a small STATS control). Fire Power's chip is sustained
+    /// <c>+per-buy</c> (toggle with the S key or the [S]TATS control). Fire Power's chip is sustained
     /// DPS (<c>firePower × fireRate</c>), not damage per shot — same score as the Orbit
     /// Menu power-bar Fire Power lane. Bottom buttons keep name + gem cost
     /// and paint three purchase states: Ready (affordable), Locked (not enough gems), Maxed.
@@ -103,8 +103,8 @@ namespace TitanOrbit.UI
         [Header("STATS row toggle")]
         [Tooltip("When on, the top value/+per-buy chips and their hover tips are available.")]
         [SerializeField] private bool statsChipsVisible = true;
-        [Tooltip("Width of the small STATS toggle control (logical pixels before scale).")]
-        [SerializeField] private float statsToggleWidth = 58f;
+        [Tooltip("Width of the small [S]TATS toggle (logical pixels before scale). Layout never draws it narrower than 72.")]
+        [SerializeField] private float statsToggleWidth = 72f;
         [Tooltip("Height of the small STATS toggle control (logical pixels before scale).")]
         [SerializeField] private float statsToggleHeight = 18f;
 
@@ -652,7 +652,9 @@ namespace TitanOrbit.UI
             _stripRootRect.anchoredPosition = new Vector2(insetL, insetB);
             _stripRootRect.sizeDelta = new Vector2(availableWidth, totalH);
 
-            float toggleW = SnapUi(S(statsToggleWidth));
+            // [S]TATS is one character wider than the old [STATS] label. A saved
+            // 58px width clips the hotkey, so the control never draws narrower than 72.
+            float toggleW = Mathf.Max(SnapUi(S(statsToggleWidth)), SnapUi(S(72f)));
             if (_statsToggleRect != null)
             {
                 _statsToggleRect.anchorMin = new Vector2(0f, 0f);
@@ -785,7 +787,8 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Small top-left STATS control — toggles the chip row and its hover tips on/off.
+        /// Small top-left [S]TATS control — toggles the chip row and its hover tips
+        /// on/off. The S key calls the same flip from <see cref="LateUpdate"/>.
         /// </summary>
         void CreateStatsToggle(Transform parent)
         {
@@ -872,7 +875,7 @@ namespace TitanOrbit.UI
         void RefreshStatsToggleVisual()
         {
             if (_statsToggleLabel != null)
-                _statsToggleLabel.text = "[STATS]";
+                _statsToggleLabel.text = "[S]TATS";
             // Dim when off so the control still reads as a toggle, not a missing button.
             if (_statsToggleBg != null)
             {
@@ -2629,6 +2632,11 @@ namespace TitanOrbit.UI
             var keyboard = Keyboard.current;
             if (keyboard == null)
                 return;
+
+            // S toggles the chip row. Same result as clicking [S]TATS. Edge only,
+            // so holding S does not flicker the row. Digit keys below still buy.
+            if (keyboard.sKey.wasPressedThisFrame)
+                ToggleStatsChipsVisible();
 
             for (int i = 0; i < 9; i++)
             {

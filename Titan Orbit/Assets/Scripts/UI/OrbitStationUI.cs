@@ -29,6 +29,8 @@ namespace TitanOrbit.UI
     /// Landing only reveals the already-built overlay. GameManager debug toggles
     /// (<see cref="GameManager.DebugFreeShipUpgradeTree"/>, <see cref="GameManager.DebugFreeGear"/>,
     /// <see cref="GameManager.DebugFreeCards"/>) paint Free prices and skip gem afford checks.
+    /// <see cref="GameManager.ShowOrbitMenuCardsPanel"/> (default off) hides the CARDS center
+    /// panel so the menu only offers ship upgrades and gear.
     /// </summary>
     public partial class OrbitStationUI : MonoBehaviour, IOrbitStationHost
     {
@@ -512,6 +514,10 @@ namespace TitanOrbit.UI
         private void OnSidebarNavSelected(OrbitDockSidebarPanelUI.NavTarget target)
         {
             if (!_moonDockLayoutActive) return;
+            // [TITAN-ORBIT] CARDS stays in the enum so the panel can return later.
+            // While GameManager.ShowOrbitMenuCardsPanel is off, that click opens SHIPS.
+            if (target == OrbitDockSidebarPanelUI.NavTarget.Cards && !GameManager.IsShowOrbitMenuCardsPanelActive)
+                target = OrbitDockSidebarPanelUI.NavTarget.Ships;
             MoonDockCenterView view = target switch
             {
                 OrbitDockSidebarPanelUI.NavTarget.Gear => MoonDockCenterView.Gear,
@@ -550,6 +556,8 @@ namespace TitanOrbit.UI
             CardShopSystem.ClientSpinOfferConsumed += OnClientSpinOfferConsumed;
             // Bank GEM DEPOSITS ticks with deposit metronome (not only the 1s contributed-gems poll).
             MoonOrbitClientState.LocalDepositBeat += OnLocalDepositBeatForBank;
+            GameManager.ShowOrbitMenuCardsPanelChanged += OnShowOrbitMenuCardsPanelChanged;
+            ApplyOrbitMenuCardsPanelVisibility();
         }
 
         private void OnDisable()
@@ -557,6 +565,29 @@ namespace TitanOrbit.UI
             CardShopSystem.ClientSpinOfferReceived -= OnClientSpinOfferReceived;
             CardShopSystem.ClientSpinOfferConsumed -= OnClientSpinOfferConsumed;
             MoonOrbitClientState.LocalDepositBeat -= OnLocalDepositBeatForBank;
+            GameManager.ShowOrbitMenuCardsPanelChanged -= OnShowOrbitMenuCardsPanelChanged;
+        }
+
+        /// <summary>
+        /// Play Mode callback when the Game Manager CARDS checkbox changes.
+        /// Hides the nav tab immediately. If the player is looking at CARDS when it turns off,
+        /// the center panel falls back to ship upgrades.
+        /// </summary>
+        void OnShowOrbitMenuCardsPanelChanged(bool show)
+        {
+            ApplyOrbitMenuCardsPanelVisibility();
+            if (!show && _moonDockCenterView == MoonDockCenterView.Cards)
+                SetMoonDockCenterView(MoonDockCenterView.Ships);
+        }
+
+        /// <summary>
+        /// Applies <see cref="GameManager.ShowOrbitMenuCardsPanel"/> to the left-dock CARDS button.
+        /// Safe before the sidebar exists — the dock applies the same flag when it builds.
+        /// </summary>
+        void ApplyOrbitMenuCardsPanelVisibility()
+        {
+            if (orbitDockSidebar != null)
+                orbitDockSidebar.ApplyCardsNavVisibility();
         }
 
         private void OnClientSpinOfferReceived()
@@ -8117,6 +8148,11 @@ namespace TitanOrbit.UI
         /// </param>
         private void SetMoonDockCenterView(MoonDockCenterView view, bool reuseWarmedTree = false)
         {
+            // [TITAN-ORBIT] Cards panel is optional. Default off keeps the menu on SHIPS / GEAR
+            // even if an older path asks for the spin-offer center.
+            if (view == MoonDockCenterView.Cards && !GameManager.IsShowOrbitMenuCardsPanelActive)
+                view = MoonDockCenterView.Ships;
+
             _moonDockCenterView = view;
             bool show = view != MoonDockCenterView.None;
 

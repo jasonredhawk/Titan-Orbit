@@ -1081,7 +1081,7 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Owner Fire, ignoring the press while the hull is in a planet orbit ring
-        /// (weapons stay locked there — same gate as Phase B).
+        /// or fully landed on a gem moon (weapons stay locked — same gate as Phase B).
         /// </summary>
         bool OwnerWantsFire(Entity mega)
         {
@@ -1090,6 +1090,8 @@ namespace TitanOrbit.ECS
                 return false;
             if (EntityManager.HasComponent<ShipOrbitState>(mega)
                 && EntityManager.GetComponentData<ShipOrbitState>(mega).InOrbitRing)
+                return false;
+            if (ShipMoonDockState.IsFullyLandedOnMoon(EntityManager, mega))
                 return false;
             return true;
         }

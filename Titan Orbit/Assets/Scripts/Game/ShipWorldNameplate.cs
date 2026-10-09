@@ -23,7 +23,8 @@ namespace TitanOrbit.Game
     /// [      (Badge)          ]  mid-center, overlaps the three bars
     /// [------- Mine bar ------]
     /// [---- Transports bar ---]
-    /// [ K ] [ G ] [ T ]
+    ///        (clear gap)
+    /// [ K ] [ G ] [ T ]         fully below the medallion square
     /// </code>
     /// Name / score are left-justified; ship level / rank are right-justified inside one shared
     /// content width. Long names are truncated by cutting characters.
@@ -36,9 +37,12 @@ namespace TitanOrbit.Game
     /// the plate until takeoff.
     /// </para>
     /// <para>
-    /// Health / gem / troop bars are 9-sliced sprites with a 1-texel transparent rim (bilinear AA)
-    /// and no motion vectors. Hard 1×1 quads crawled along pixel edges while the camera moved;
-    /// TMP names stay SDF so they did not show the same shimmer.
+        /// Health / gem / troop bars and the K/G/T chips are 9-sliced sprites with a 1-texel
+        /// transparent rim (bilinear AA) and no motion vectors. Hard 1×1 quads crawled along
+        /// pixel edges while the camera moved; TMP names stay SDF so they did not show the same shimmer.
+        /// The profile medallion is taller than the three bars and draws in the overlay queue, so the
+        /// K/G/T row is parked under that square — tucking it under the bars hid chips whose art
+        /// fills the badge.
     /// </para>
     /// </summary>
     [DefaultExecutionOrder(67002)]
@@ -106,6 +110,15 @@ namespace TitanOrbit.Game
         const float RoleSlotGap = 0.12f;
 
         /// <summary>
+        /// Label-local gap between the profile medallion's bottom edge and the K/G/T row.
+        /// Art that fills the badge sprite used to cover the top of these chips.
+        /// </summary>
+        const float RoleBelowBadgeGap = 0.28f;
+
+        /// <summary>Pixels-per-unit of the 32×32 role chip. 1px rim ÷ this = thin local AA.</summary>
+        const float RoleSpritePpu = 32f;
+
+        /// <summary>
         /// Profile emblem over the three stat bars (label-local). Taller than the bar stack
         /// so it overlaps health / mine / transports as a centered medallion.
         /// </summary>
@@ -135,7 +148,7 @@ namespace TitanOrbit.Game
         /// <summary>
         /// Bump when row spacing / fonts / clearance policy change so live proxies refresh layout.
         /// </summary>
-        const int LayoutVersion = 21;
+        const int LayoutVersion = 22;
 
         /// <summary>Max name characters before width-fit (wider plate allows longer names).</summary>
         const int MaxNameCharacters = 28;
@@ -162,6 +175,7 @@ namespace TitanOrbit.Game
 
         static Sprite s_WhiteSprite;
         static Sprite s_BarSprite;
+        static Sprite s_RoleSprite;
         static Material s_PlayerBadgeMaterial;
         static readonly StringBuilder s_NameScratch = new StringBuilder(32);
 
@@ -247,6 +261,15 @@ namespace TitanOrbit.Game
         /// whole plate clears the hull, with the lower edge nearest the ship.
         /// </summary>
         float _stackExtentLocal;
+
+        /// <summary>Label-local Y of the profile medallion center, from the last stack layout.</summary>
+        float _badgeMidY;
+
+        /// <summary>
+        /// Label-local Y just under the transport bar (includes that bar's trailing gap).
+        /// The K/G/T row starts here when no profile medallion is showing.
+        /// </summary>
+        float _roleAnchorAfterBars;
 
         struct ThinBar
         {
@@ -605,6 +628,8 @@ namespace TitanOrbit.Game
             if (_stackExtentLocal > 0.5f)
                 return _stackExtentLocal;
 
+            float barStack = BarHeight * 3f + RowGap * 2f;
+            float badgeOverhang = Mathf.Max(0f, PlayerBadgeSize * 0.5f - barStack * 0.5f);
             return NameFontSize * 1.2f
                 + TextRowGap
                 + MetaFontSize * 1.2f
@@ -612,6 +637,8 @@ namespace TitanOrbit.Game
                 + BadgeHeight
                 + RowGap
                 + (BarHeight + RowGap) * 3f
+                + badgeOverhang
+                + RoleBelowBadgeGap
                 + RoleSlotSize;
         }
 
@@ -985,18 +1012,66 @@ namespace TitanOrbit.Game
             PlaceBar(ref _gemsBar, ref y);
             PlaceBar(ref _peopleBar, ref y);
             float barsBottom = y + RowGap;
-            PlacePlayerBadgeOverBars((barsTop + barsBottom) * 0.5f);
+            _badgeMidY = (barsTop + barsBottom) * 0.5f;
+            PlacePlayerBadgeOverBars(_badgeMidY);
 
-            y -= RowGap;
+            // y is one RowGap under the transport bar. Role chips clear the medallion
+            // when one is showing; otherwise they keep this tighter gap.
+            _roleAnchorAfterBars = y;
             if (roleRow != null)
+                PlaceRoleRow(roleRow);
+            else
+                _stackExtentLocal = Mathf.Max(1f, -y);
+        }
+
+        /// <summary>
+        /// Parks K/G/T fully under the profile medallion when that sprite is visible.
+        /// The medallion is taller than the three bars and uses the overlay queue, so a row
+        /// aligned to the bars is covered by badges whose art reaches the sprite edge.
+        /// Without a medallion the row stays one extra gap under the transport bar.
+        /// </summary>
+        void PlaceRoleRow(Transform roleRow)
+        {
+            if (roleRow == null)
+                return;
+
+            float top = _roleAnchorAfterBars;
+            bool badgeShown = _playerBadge != null && _playerBadge.enabled && _playerBadge.sprite != null;
+            if (badgeShown)
             {
-                y -= RoleSlotSize * 0.5f;
-                roleRow.localPosition = new Vector3(0f, y, 0f);
-                y -= RoleSlotSize * 0.5f;
+                // Live sprite bounds, not a fixed square. Tight meshes and off-center art
+                // hang lower on some badges and used to cover the chips.
+                float badgeBottom = BadgeScreenDownLocalY();
+                top = Mathf.Min(top, badgeBottom - RoleBelowBadgeGap);
+            }
+            else
+            {
+                top -= RowGap;
             }
 
-            // Root (y = 0) is the top edge. y is the bottom of the last row.
-            _stackExtentLocal = Mathf.Max(1f, -y);
+            float center = top - RoleSlotSize * 0.5f;
+            roleRow.localPosition = new Vector3(0f, center, 0f);
+            float bottom = center - RoleSlotSize * 0.5f;
+            _stackExtentLocal = Mathf.Max(1f, -bottom);
+        }
+
+        /// <summary>
+        /// Parent-local Y of the profile medallion's screen-down edge (stack grows in −Y).
+        /// Uses the sprite mesh bounds so padding and a shifted pivot change the clearance.
+        /// </summary>
+        float BadgeScreenDownLocalY()
+        {
+            if (_playerBadge == null || _playerBadge.sprite == null)
+                return _badgeMidY - PlayerBadgeSize * 0.5f;
+
+            Bounds mesh = _playerBadge.sprite.bounds;
+            Vector3 scale = _playerBadge.transform.localScale;
+            float posY = _playerBadge.transform.localPosition.y;
+            float yLo = mesh.center.y - mesh.extents.y;
+            float yHi = mesh.center.y + mesh.extents.y;
+            float edgeLo = posY + yLo * scale.y;
+            float edgeHi = posY + yHi * scale.y;
+            return Mathf.Min(edgeLo, edgeHi);
         }
 
         void PlaceBar(ref ThinBar bar, ref float y)
@@ -1213,10 +1288,27 @@ namespace TitanOrbit.Game
 
             Transform bg = slot.Root.Find("Bg");
             if (bg != null)
-                bg.localScale = new Vector3(RoleSlotSize, RoleSlotSize, 1f);
+            {
+                // Older builds scaled a 1×1 quad. Size (sliced) replaces that scale.
+                bg.localScale = Vector3.one;
+                ApplyRoleBgStyle(bg.GetComponent<SpriteRenderer>());
+            }
 
             if (slot.Letter != null)
+            {
                 slot.Letter.fontSize = RoleLetterFontSize;
+                // Same plane as the chip. A local-Z bias parallax-slides the letter
+                // against the square under the perspective follow camera.
+                slot.Letter.transform.localPosition = Vector3.zero;
+                Renderer letterRenderer = slot.Letter.GetComponent<Renderer>();
+                if (letterRenderer != null)
+                {
+                    // Above the profile medallion (overlay queue). A shared order z-fights
+                    // and lets a full-bleed badge hide the letter.
+                    letterRenderer.sortingOrder = PlayerBadgeSortingOrder + 2;
+                    letterRenderer.motionVectorGenerationMode = MotionVectorGenerationMode.ForceNoMotion;
+                }
+            }
         }
 
         static void RestyleBar(ref ThinBar bar)
@@ -1374,6 +1466,9 @@ namespace TitanOrbit.Game
             }
 
             _cachedBadgeId = cleaned;
+            // Medallion height changes which rows the K/G/T chips must clear.
+            if (_labelRoot != null)
+                PlaceRoleRow(_labelRoot.Find("RoleRow"));
         }
 
         void PlacePlayerBadgeOverBars(float midY)
@@ -1381,7 +1476,9 @@ namespace TitanOrbit.Game
             if (_playerBadge == null)
                 return;
 
-            _playerBadge.transform.localPosition = new Vector3(0f, midY, -0.04f);
+            // Coplanar with the bars. A local-Z drop parallax-slides the medallion
+            // across the plate while the ship moves under the perspective camera.
+            _playerBadge.transform.localPosition = new Vector3(0f, midY, 0f);
         }
 
         static SpriteRenderer CreatePlayerBadgeRenderer(Transform parent, string name, int sortingOrder)
@@ -1501,19 +1598,19 @@ namespace TitanOrbit.Game
 
             var bgGo = new GameObject("Bg");
             bgGo.transform.SetParent(rootGo.transform, false);
-            bgGo.transform.localScale = new Vector3(RoleSlotSize, RoleSlotSize, 1f);
             var bg = bgGo.AddComponent<SpriteRenderer>();
-            bg.sprite = GetWhiteSprite();
             bg.color = color;
-            bg.sortingOrder = RoleSortingOrder;
             bg.enabled = false;
+            ApplyRoleBgStyle(bg);
 
             var letterTmp = CreateValueText(rootGo.transform, "Letter", RoleLetterFontSize, Color.white, TextAlignmentOptions.Center);
             letterTmp.text = letter;
             letterTmp.enabled = false;
-            letterTmp.transform.localPosition = new Vector3(0f, 0f, -0.02f);
+            letterTmp.transform.localPosition = Vector3.zero;
 
-            return new RoleSlot { Root = rootGo.transform, Bg = bg, Letter = letterTmp };
+            var slot = new RoleSlot { Root = rootGo.transform, Bg = bg, Letter = letterTmp };
+            RestyleRoleSlot(ref slot);
+            return slot;
         }
 
         static RoleSlot RecoverRoleSlot(Transform roleRow, string name)
@@ -1662,8 +1759,67 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// 1×1 white sprite with point filtering — role slots and the full-version strip stay
-        /// solid (they are not thin tracks, so a hard edge reads cleaner than a fade).
+        /// Soft edge + no motion vectors for K/G/T chips. Same idea as the stat bars:
+        /// a 1px transparent rim, bilinear, sliced so the rim stays a fixed local width.
+        /// 32px (not the bar's 8px) keeps that rim thin on a small square.
+        /// </summary>
+        static void ApplyRoleBgStyle(SpriteRenderer renderer)
+        {
+            if (renderer == null)
+                return;
+
+            renderer.sprite = GetRoleSprite();
+            renderer.drawMode = SpriteDrawMode.Sliced;
+            renderer.size = new Vector2(RoleSlotSize, RoleSlotSize);
+            renderer.sortingOrder = RoleSortingOrder;
+            renderer.shadowCastingMode = ShadowCastingMode.Off;
+            renderer.receiveShadows = false;
+            renderer.allowOcclusionWhenDynamic = false;
+            renderer.motionVectorGenerationMode = MotionVectorGenerationMode.ForceNoMotion;
+        }
+
+        static Sprite GetRoleSprite()
+        {
+            if (s_RoleSprite != null)
+                return s_RoleSprite;
+
+            const int dim = 32;
+            var tex = new Texture2D(dim, dim, TextureFormat.RGBA32, false);
+            tex.name = "ShipNameplateRoleTex_v1";
+            tex.filterMode = FilterMode.Bilinear;
+            tex.wrapMode = TextureWrapMode.Clamp;
+            tex.anisoLevel = 0;
+
+            var pixels = new Color32[dim * dim];
+            var clear = new Color32(255, 255, 255, 0);
+            var solid = new Color32(255, 255, 255, 255);
+            for (int y = 0; y < dim; y++)
+            {
+                for (int x = 0; x < dim; x++)
+                {
+                    bool rim = x == 0 || y == 0 || x == dim - 1 || y == dim - 1;
+                    pixels[y * dim + x] = rim ? clear : solid;
+                }
+            }
+
+            tex.SetPixels32(pixels);
+            tex.Apply(false, true);
+
+            s_RoleSprite = Sprite.Create(
+                tex,
+                new Rect(0f, 0f, dim, dim),
+                new Vector2(0.5f, 0.5f),
+                RoleSpritePpu,
+                0,
+                SpriteMeshType.FullRect,
+                new Vector4(1f, 1f, 1f, 1f));
+            s_RoleSprite.name = "ShipNameplateRoleSprite_v1";
+            return s_RoleSprite;
+        }
+
+        /// <summary>
+        /// 1×1 white sprite with point filtering for the full-version strip.
+        /// K/G/T chips use <see cref="GetRoleSprite"/> — a hard quad crawled while flying.
         /// </summary>
         static Sprite GetWhiteSprite()
         {
