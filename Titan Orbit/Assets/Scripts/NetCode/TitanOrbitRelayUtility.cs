@@ -176,9 +176,7 @@ namespace TitanOrbit.NetCode
 
         /// <summary>
         /// True for the WebGL player, which can only open Relay over <c>wss</c>.
-        /// The Editor is a separate case: it also dials <c>wss</c> (see
-        /// <see cref="ClientConnectionTypeForPlatform"/>) but this flag stays false so a
-        /// Linux dedicated host is not forced onto WebSocket.
+        /// The Editor dials <c>dtls</c> (see <see cref="ClientConnectionTypeForPlatform"/>).
         /// </summary>
         public static bool PlatformRequiresWebSocketRelay()
         {
@@ -191,13 +189,15 @@ namespace TitanOrbit.NetCode
 
         /// <summary>
         /// Relay connection type for joining clients (the host listen type is separate).
-        /// The published WebGL client and the Editor both use <c>wss</c> on the dedicated
-        /// allocation. Relay carries that onto the Linux host's <c>dtls</c> listen.
+        /// WebGL players use <c>wss</c>. The Editor uses <c>dtls</c> on the same allocation:
+        /// its WebSocket driver stays in <c>Connecting</c> with no NetworkId (Player.log
+        /// 2026-10-08, lobby khgn4wa8gHRX99zkUswb9V, endpoint 34.123.2.252:37011 wss=1).
+        /// DTLS authenticates with the allocation key, so a raw Relay IP is valid.
         /// </summary>
         public static string ClientConnectionTypeForPlatform()
         {
 #if UNITY_EDITOR
-            return "wss";
+            return "dtls";
 #else
             return PlatformRequiresWebSocketRelay() ? "wss" : "dtls";
 #endif
@@ -206,8 +206,8 @@ namespace TitanOrbit.NetCode
         /// <summary>
         /// Relay connection type for the dedicated host allocation. GCE may pass <c>--relayProtocol=udp</c>;
         /// that is normalized to <c>dtls</c> for MPS 2.0 (same as legacy NGO dedicated bootstrap).
-        /// The WebGL player and the Editor join with <c>wss</c>. Linux <c>UNITY_SERVER</c> stays dtls.
-        /// Relay delivers both onto the same host allocation.
+        /// The WebGL player joins with <c>wss</c>. The Editor joins with <c>dtls</c>.
+        /// Linux <c>UNITY_SERVER</c> listens on dtls. Relay carries both onto that allocation.
         /// </summary>
         public static string HostConnectionTypeForPlatform(string commandLineOverride = null)
         {

@@ -1911,7 +1911,7 @@ namespace TitanOrbit.NetCode
                 string hostProtocol = lobby.Data.TryGetValue(TitanOrbitLobbyService.LobbyRelayProtocolKey, out var proto)
                     ? TitanOrbitRelayUtility.SanitizeRelayProtocolForRelaySdk(proto.Value)
                     : TitanOrbitRelayUtility.ClientConnectionTypeForPlatform();
-                // Same allocation as the dedicated host. WebGL and the Editor dial its wss endpoint.
+                // Same allocation as the dedicated host. WebGL dials wss; the Editor dials dtls.
                 string clientProtocol = TitanOrbitRelayUtility.ClientConnectionTypeForPlatform();
 
                 Debug.Log("[TitanOrbitSessionManager] Joining Relay lobby=" + lobby.Id + " code=" + joinCode +

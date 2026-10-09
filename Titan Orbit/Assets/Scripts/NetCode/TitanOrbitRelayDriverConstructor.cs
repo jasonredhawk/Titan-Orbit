@@ -25,8 +25,8 @@ namespace TitanOrbit.NetCode
                 var settings = TitanOrbitRelayUtility.ApplyRelayFriendlyNetworkSettings(
                     DefaultDriverBuilder.GetNetworkClientSettings());
                 settings = settings.WithRelayParameters(ref relay);
-                // WebGL player and the Editor join over wss (IsWebSocket). A dtls allocation
-                // still uses UDP. The driver must match RelayServerData or Transport throws.
+                // WebGL player: browser WebSocket. Editor dtls join: UDP. The driver must match
+                // RelayServerData.IsWebSocket or Transport throws on create.
 #if UNITY_WEBGL && !UNITY_EDITOR
                 DefaultDriverBuilder.RegisterClientWebSocketDriver(world, ref driverStore, netDebug, settings);
 #else
