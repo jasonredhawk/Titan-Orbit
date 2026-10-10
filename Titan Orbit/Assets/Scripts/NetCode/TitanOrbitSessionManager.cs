@@ -2405,7 +2405,7 @@ namespace TitanOrbit.NetCode
                     { TitanOrbitLobbyService.LobbyIsOpenKey, new DataObject(DataObject.VisibilityOptions.Public, "1", DataObject.IndexOptions.N1) },
                     { TitanOrbitLobbyService.LobbyIsLatestKey, new DataObject(DataObject.VisibilityOptions.Public, isLatest ? "1" : "0", DataObject.IndexOptions.N2) },
                     { TitanOrbitLobbyService.LobbyCreatedAtEpochKey, new DataObject(DataObject.VisibilityOptions.Public, createdAt.ToString(CultureInfo.InvariantCulture), DataObject.IndexOptions.N3) },
-                    { TitanOrbitLobbyService.LobbyServerAliveEpochKey, new DataObject(DataObject.VisibilityOptions.Public, createdAt.ToString(CultureInfo.InvariantCulture)) },
+                    { TitanOrbitLobbyService.LobbyServerAliveEpochKey, new DataObject(DataObject.VisibilityOptions.Public, createdAt.ToString(CultureInfo.InvariantCulture), DataObject.IndexOptions.N5) },
                     { TitanOrbitLobbyService.LobbyRelayProtocolKey, new DataObject(DataObject.VisibilityOptions.Public, protocol) },
                     { TitanOrbitLobbyService.LobbyServerListenAddressKey, new DataObject(DataObject.VisibilityOptions.Public, serverListenAddress) },
                     { TitanOrbitLobbyService.LobbyActivePlayersKey, new DataObject(DataObject.VisibilityOptions.Public, "0", DataObject.IndexOptions.N4) },
@@ -2530,7 +2530,7 @@ namespace TitanOrbit.NetCode
                     {
                         {
                             TitanOrbitLobbyService.LobbyServerAliveEpochKey,
-                            new DataObject(DataObject.VisibilityOptions.Public, now.ToString(CultureInfo.InvariantCulture))
+                            new DataObject(DataObject.VisibilityOptions.Public, now.ToString(CultureInfo.InvariantCulture), DataObject.IndexOptions.N5)
                         },
                         {
                             TitanOrbitLobbyService.LobbyActivePlayersKey,

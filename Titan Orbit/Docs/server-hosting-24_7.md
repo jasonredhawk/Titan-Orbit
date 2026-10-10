@@ -79,7 +79,7 @@ Notes:
    - `empty_match_recreate` only when the match was empty for the idle window
 2. UGS lobbies:
    - One open game while it still has seats. A second lobby appears only after that roster is full.
-   - Two empty lobbies must not stay listed together. The older empty process closes its lobby and exits.
+   - Join Game hides a second empty lobby. The server process must stay up; exiting 0 does not restart under systemd.
    - `IsOpen` flips to `0` when the roster is full or after the 1-hour empty recreate of the old lobby.
 3. Relay connections:
    - If WebGL fails to connect, check CSP headers (Cloudflare `_headers`) and verify `wss`/`dtls` end-to-end.
