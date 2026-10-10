@@ -455,13 +455,13 @@ namespace TitanOrbit.Data
                 case StoreItemType.LargeRockets:
                 {
                     float cd = RocketCatalog.Get(level).fireCooldown;
-                    return $"ALT to fire · 2 per slot · Lv.{level} · {cd:0.#}s reload.";
+                    return $"Q to fire · 2 per slot · Lv.{level} · {cd:0.#}s reload.";
                 }
                 case StoreItemType.SmallMines:
                 case StoreItemType.LargeMines:
                 {
                     float cd = MineCatalog.Get(level).deployCooldown;
-                    return $"E to place · 4 per slot · Lv.{level} · {cd:0.##}s drop.";
+                    return $"Q to place · 4 per slot · Lv.{level} · {cd:0.##}s drop.";
                 }
                 default: return string.Empty;
             }

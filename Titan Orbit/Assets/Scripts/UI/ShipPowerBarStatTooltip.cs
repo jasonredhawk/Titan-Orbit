@@ -1,4 +1,5 @@
 using TitanOrbit.Data;
+using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -32,8 +33,22 @@ namespace TitanOrbit.UI
         /// <summary>Minimum height before TMP preferredHeight is measured.</summary>
         const float TipMinHeight = 160f;
 
-        /// <summary>Tiny RANK 1 hull thumb in the bottom-left of the card.</summary>
-        const float ThumbSize = 28f;
+        /// <summary>
+        /// RANK 1 hull portrait in the bottom-right of the card.
+        /// Large enough to read the silhouette (wings, nose, color) without
+        /// turning the telemetry card into a second ship panel.
+        /// The portrait overlaps the corner that was already there. It does not
+        /// add a blank row under the copy — that left a wide empty strip.
+        /// </summary>
+        const float ThumbSize = 84f;
+
+        /// <summary>
+        /// TMP right margin for lines the portrait covers, in ems (1 em = body font size).
+        /// About the portrait width, so those lines wrap in the column left of the hull.
+        /// Lines above the sprite stay full width — a right gutter on the whole card
+        /// would just move the empty space.
+        /// </summary>
+        const string RankCornerMargin = "<margin-right=8.5em>";
 
         /// <summary>
         /// Overlay sort so the card paints above Orbit Menu (200) and below
@@ -87,7 +102,7 @@ namespace TitanOrbit.UI
             s_ActiveSlot = statIndex;
             s_ActiveOwner = owner;
 
-            // Gear slot 0 is DPS + ramming. Ship slot 0 is gun DPS. The percent must match the fill.
+            // Gear slot 0 is empty. Ship slot 0 is gun DPS. The percent must match the fill.
             bool componentPool = pool == ShipPowerBarComparisonPool.Components;
             float thisValue = componentPool
                 ? breakdown.GetComponentCompareStatValue(statIndex)
@@ -95,6 +110,8 @@ namespace TitanOrbit.UI
             float maxValue = maxes.Get(statIndex);
             string body = ShipPowerBarStatCopy.BuildPowerBarTipBody(
                 statIndex, thisValue, maxValue, pool, thisChassisId, componentShipLevel);
+
+            ApplyRankThumb(statIndex, pool, thisChassisId, thisValue, componentShipLevel);
 
             if (s_Chrome.CaptionLabel != null)
                 s_Chrome.CaptionLabel.text = "STAT TELEMETRY";
@@ -105,8 +122,11 @@ namespace TitanOrbit.UI
                 in s_Chrome,
                 ShipStatTooltipChrome.AccentForAbilityIndex(statIndex));
 
-            ApplyRankThumb(statIndex, pool, thisChassisId, thisValue, componentShipLevel);
+            // Height first, then wrap only the lines the portrait actually covers.
+            // Wrapping before the measure would narrow the RANK 1 block even when
+            // the sprite sits in padding that was already empty.
             SizeToBody();
+            TuckPortraitIntoCorner();
             PositionNear(anchor);
 
             // --- Reveal ---
@@ -236,15 +256,17 @@ namespace TitanOrbit.UI
                 TipMinHeight,
                 1f);
 
-            // --- RANK 1 thumb ---
-            // Small preview only. The body already names the hull.
+            // --- RANK 1 portrait ---
+            // Bottom-right corner. The body already names the hull; this art
+            // is how the player recognizes which ship that name belongs to.
+            // Parenting after the chrome body keeps the sprite above the text.
             var thumbGo = new GameObject("RankThumb");
             thumbGo.transform.SetParent(s_Chrome.Root.transform, false);
             RectTransform thumbRt = thumbGo.AddComponent<RectTransform>();
             thumbRt.anchorMin = new Vector2(1f, 0f);
             thumbRt.anchorMax = new Vector2(1f, 0f);
             thumbRt.pivot = new Vector2(1f, 0f);
-            thumbRt.anchoredPosition = new Vector2(-10f, 10f);
+            thumbRt.anchoredPosition = new Vector2(-12f, 12f);
             thumbRt.sizeDelta = new Vector2(ThumbSize, ThumbSize);
             s_RankThumb = thumbGo.AddComponent<Image>();
             s_RankThumb.raycastTarget = false;
@@ -281,7 +303,99 @@ namespace TitanOrbit.UI
             s_RankThumb.enabled = true;
         }
 
-        /// <summary>Fits the card height to the TMP body so short stats do not leave a tall empty plate.</summary>
+        /// <summary>
+        /// Wraps copy that runs into the portrait so it sits in the column to the left.
+        /// Does not grow a blank footer. Text above the sprite stays full width, and
+        /// any corner that was already empty stays empty — the hull just occupies it.
+        /// </summary>
+        static void TuckPortraitIntoCorner()
+        {
+            if (s_RankThumb == null || !s_RankThumb.enabled || s_Chrome.BodyLabel == null)
+                return;
+
+            TextMeshProUGUI body = s_Chrome.BodyLabel;
+            if (string.IsNullOrEmpty(body.text) || body.text.Contains(RankCornerMargin))
+                return;
+
+            // Mesh has to exist before line bottoms are real. SizeToBody already forced one pass.
+            body.ForceMeshUpdate(true);
+            TMP_TextInfo info = body.textInfo;
+            if (info == null || info.lineCount <= 0)
+                return;
+
+            // World y grows upward. The portrait's top corner is the line we must clear.
+            Vector3[] corners = new Vector3[4];
+            s_RankThumb.rectTransform.GetWorldCorners(corners);
+            float shipTop = corners[1].y;
+
+            RectTransform bodyRt = body.rectTransform;
+            int insertAt = -1;
+            bool overlapsText = false;
+            for (int i = 0; i < info.lineCount; i++)
+            {
+                TMP_LineInfo line = info.lineInfo[i];
+                if (line.characterCount <= 0)
+                    continue;
+                if (line.firstCharacterIndex < 0 || line.firstCharacterIndex >= info.characterCount)
+                    continue;
+
+                // bottomLeft is a mesh vertex in the text's local space (y up).
+                TMP_CharacterInfo ch = info.characterInfo[line.firstCharacterIndex];
+                float lineBottom = bodyRt.TransformPoint(new Vector3(0f, ch.bottomLeft.y, 0f)).y;
+                if (lineBottom >= shipTop)
+                    continue;
+
+                // This line runs into the hull. Lines above it stay full width.
+                overlapsText = true;
+                insertAt = ch.index;
+                // index is the source-string position of this glyph. If it does not
+                // match, the mesh index drifted from the rich-text string — fall
+                // through and use the RANK 1 banner instead of splicing a tag.
+                if (insertAt >= 0 && insertAt < body.text.Length && body.text[insertAt] == ch.character)
+                    break;
+
+                insertAt = -1;
+                break;
+            }
+
+            // Portrait already sits in empty padding. Leave the copy full width.
+            if (!overlapsText)
+                return;
+
+            if (insertAt < 0)
+                insertAt = IndexOfRankBanner(body.text);
+            if (insertAt < 0 || insertAt > body.text.Length)
+                return;
+
+            // Tag goes in front of the first glyph the hull would cover. TMP keeps
+            // that right margin through the rest of the card (the RANK 1 block).
+            body.text = body.text.Insert(insertAt, RankCornerMargin);
+            SizeToBody();
+        }
+
+        /// <summary>
+        /// Source index of the RANK 1 colour tag, or -1 when this tip has no leader line.
+        /// Used when the mesh index cannot be trusted.
+        /// </summary>
+        static int IndexOfRankBanner(string body)
+        {
+            if (string.IsNullOrEmpty(body))
+                return -1;
+
+            const string marker = "> RANK 1";
+            int markerAt = body.IndexOf(marker, System.StringComparison.Ordinal);
+            if (markerAt < 0)
+                return -1;
+
+            int colorAt = body.LastIndexOf("<color=", markerAt, System.StringComparison.Ordinal);
+            return colorAt >= 0 ? colorAt : markerAt;
+        }
+
+        /// <summary>
+        /// Fits the card height to the TMP body so short stats do not leave a tall empty plate.
+        /// The RANK 1 portrait overlaps the bottom-right corner. It does not add height —
+        /// extra height would stack as a blank strip to the left of the hull.
+        /// </summary>
         static void SizeToBody()
         {
             if (s_Chrome.RootRect == null || s_Chrome.BodyLabel == null)

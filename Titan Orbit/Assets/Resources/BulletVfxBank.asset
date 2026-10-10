@@ -13,7 +13,7 @@ MonoBehaviour:
   m_Name: BulletVfxBank
   m_EditorClassIdentifier: TitanOrbit.Data::TitanOrbit.Data.BulletVfxBank
   categories:
-  - categoryName: Laserbolt
+  - categoryName: Darts
     globalVisualScaleMultiplier: 1
     upgradeVisualScaleMultiplier: 1
     prefabs:
@@ -24,23 +24,23 @@ MonoBehaviour:
     - {fileID: 171462, guid: ee648e9d50d9ac9458d25447f58e5056, type: 3}
     profile:
       statModifiers:
-        firePowerMultiplier: 1
-        bulletSpeedMultiplier: 1
-        fireRateMultiplier: 1
+        firePowerMultiplier: 0.95
+        bulletSpeedMultiplier: 1.2
+        fireRateMultiplier: 1.05
         rammingPowerMultiplier: 1
-        bulletRangeMultiplier: 1
+        bulletRangeMultiplier: 1.15
       abilities:
-      - type: 10
-        magnitude: 2
-        magnitudePerExtra: 0.5
+      - type: 8
+        magnitude: 1.18
+        magnitudePerExtra: 0.03
         duration: 1
         durationPerExtra: 0
         tickInterval: 0.25
         tickIntervalPerExtra: 0
-        radius: 0.5
-        radiusPerExtra: 0.0625
-        energyDrain: 0
-        energyDrainPerExtra: 0
+        radius: 0
+        radiusPerExtra: 0
+        energyDrain: 0.75
+        energyDrainPerExtra: 0.12
         damageTarget: 0
   - categoryName: Bullets
     globalVisualScaleMultiplier: 1
@@ -140,25 +140,25 @@ MonoBehaviour:
     - {fileID: 114088, guid: 839cf5777496e2642be45ea065d34f83, type: 3}
     profile:
       statModifiers:
-        firePowerMultiplier: 1.15
-        bulletSpeedMultiplier: 0.8
-        fireRateMultiplier: 0.6
+        firePowerMultiplier: 1.3
+        bulletSpeedMultiplier: 0.65
+        fireRateMultiplier: 0.5
         rammingPowerMultiplier: 1
-        bulletRangeMultiplier: 1.2
+        bulletRangeMultiplier: 1
       abilities:
       - type: 1
-        magnitude: 1.5
-        magnitudePerExtra: 0.4
-        duration: 2
-        durationPerExtra: 0.25
-        tickInterval: 0.25
+        magnitude: 2.2
+        magnitudePerExtra: 0.45
+        duration: 1.1
+        durationPerExtra: 0.12
+        tickInterval: 0.2
         tickIntervalPerExtra: 0
-        radius: 1.2
-        radiusPerExtra: 0.03
-        energyDrain: 2.5
-        energyDrainPerExtra: 0.55
+        radius: 1
+        radiusPerExtra: 0.02
+        energyDrain: 3
+        energyDrainPerExtra: 0.6
         damageTarget: 0
-  - categoryName: Laser
+  - categoryName: Photon Bolts
     globalVisualScaleMultiplier: 1
     upgradeVisualScaleMultiplier: 1
     prefabs:
@@ -169,25 +169,25 @@ MonoBehaviour:
     - {fileID: 179554, guid: 0d83e615f1a143845924d338711efd68, type: 3}
     profile:
       statModifiers:
-        firePowerMultiplier: 0.9
-        bulletSpeedMultiplier: 1.25
-        fireRateMultiplier: 0.95
+        firePowerMultiplier: 1.25
+        bulletSpeedMultiplier: 0.8
+        fireRateMultiplier: 0.6
         rammingPowerMultiplier: 1
-        bulletRangeMultiplier: 1.15
+        bulletRangeMultiplier: 1.35
       abilities:
-      - type: 10
-        magnitude: 2
-        magnitudePerExtra: 0.08
+      - type: 7
+        magnitude: 1.3
+        magnitudePerExtra: 0.05
         duration: 1
         durationPerExtra: 0
         tickInterval: 0.25
         tickIntervalPerExtra: 0
-        radius: 0.5
-        radiusPerExtra: 0.02
-        energyDrain: 0.5
-        energyDrainPerExtra: 0.08
+        radius: 0
+        radiusPerExtra: 0
+        energyDrain: 1.25
+        energyDrainPerExtra: 0.2
         damageTarget: 0
-  - categoryName: LaserSmall
+  - categoryName: Ion Bolts
     globalVisualScaleMultiplier: 1
     upgradeVisualScaleMultiplier: 1
     prefabs:
@@ -198,23 +198,23 @@ MonoBehaviour:
     - {fileID: 128200, guid: 7f2f36bd6a647724f9be19a963f0e60a, type: 3}
     profile:
       statModifiers:
-        firePowerMultiplier: 0.9
-        bulletSpeedMultiplier: 1.25
-        fireRateMultiplier: 0.95
+        firePowerMultiplier: 0.8
+        bulletSpeedMultiplier: 1.3
+        fireRateMultiplier: 1.1
         rammingPowerMultiplier: 1
-        bulletRangeMultiplier: 1.15
+        bulletRangeMultiplier: 0.9
       abilities:
-      - type: 10
-        magnitude: 2
-        magnitudePerExtra: 0.08
+      - type: 3
+        magnitude: 4
+        magnitudePerExtra: 0.6
         duration: 1
         durationPerExtra: 0
         tickInterval: 0.25
         tickIntervalPerExtra: 0
-        radius: 0.5
-        radiusPerExtra: 0.02
-        energyDrain: 0.5
-        energyDrainPerExtra: 0.08
+        radius: 2.4
+        radiusPerExtra: 0.15
+        energyDrain: 2
+        energyDrainPerExtra: 0.3
         damageTarget: 0
   - categoryName: Lightning
     globalVisualScaleMultiplier: 1
@@ -386,20 +386,20 @@ MonoBehaviour:
     profile:
       statModifiers:
         firePowerMultiplier: 1
-        bulletSpeedMultiplier: 1
-        fireRateMultiplier: 0.7
+        bulletSpeedMultiplier: 0.85
+        fireRateMultiplier: 0.55
         rammingPowerMultiplier: 1
-        bulletRangeMultiplier: 1
+        bulletRangeMultiplier: 1.1
       abilities:
       - type: 4
-        magnitude: 6
-        magnitudePerExtra: 1
-        duration: 1
-        durationPerExtra: 0.12
+        magnitude: 3.5
+        magnitudePerExtra: 0.6
+        duration: 1.4
+        durationPerExtra: 0.15
         tickInterval: 0.25
         tickIntervalPerExtra: 0
-        radius: 4
-        radiusPerExtra: 0.4
+        radius: 8
+        radiusPerExtra: 0.6
         energyDrain: 3.5
         energyDrainPerExtra: 0.55
         damageTarget: 0

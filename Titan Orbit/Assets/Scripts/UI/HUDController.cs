@@ -9,7 +9,7 @@ namespace TitanOrbit.UI
     /// keeps shared visibility flags so gameplay chrome can hide together.
     /// <para>
     /// Hide reasons: the ship upgrade tree overlay, the expanded full-map minimap, the
-    /// hold-S comms matrix, and local-player death (so the explosion and
+    /// hold-C comms matrix, and local-player death (so the explosion and
     /// <see cref="DeathScreenController"/> plaque stay unobstructed). Widgets read the
     /// static properties each frame — they do not write ship state.
     /// </para>
@@ -22,7 +22,7 @@ namespace TitanOrbit.UI
         // [TITAN-ORBIT] When true, gameplay chrome defers to the expanded full-map minimap.
         static bool s_minimapExpandedObscuresHud;
 
-        // [TITAN-ORBIT] When true, gameplay chrome defers to the hold-S comms matrix.
+        // [TITAN-ORBIT] When true, gameplay chrome defers to the hold-C comms matrix.
         static bool s_commsMatrixObscuresHud;
 
         /// <summary>
@@ -67,7 +67,7 @@ namespace TitanOrbit.UI
         /// <summary>True while the expanded minimap should hide the rest of the gameplay HUD.</summary>
         public static bool MinimapExpandedObscuresHud => s_minimapExpandedObscuresHud;
 
-        /// <summary>Called from <see cref="ShipCommsPanel"/> while S is held.</summary>
+        /// <summary>Called from <see cref="ShipCommsPanel"/> while the comms matrix is open.</summary>
         public static void SetCommsMatrixObscuresHud(bool obscures) =>
             s_commsMatrixObscuresHud = obscures;
 

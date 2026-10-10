@@ -412,6 +412,7 @@ namespace TitanOrbit.ECS
             }
             mount.BulletSpeed = math.max(0.1f, partSpeed);
             mount.ReferenceFirePower = math.max(0f, raw.firePower);
+            mount.ReferenceFireRate = mount.FireRate;
             mount.FirePowerPerExtraLevel = 0f;
             mount.WeaponRotationSpeed = 0f;
             mount.BulletBankIndex = row != null

@@ -386,7 +386,11 @@ namespace TitanOrbit.Game
             PlayBurst(center, hullRadius, power01, (TeamId)team);
             var audio = AudioManager.GetOrFind();
             if (audio != null)
-                audio.PlayShipDeathSound();
+            {
+                float hear = GameplaySfxProximity.VolumeAt((Vector3)center);
+                if (hear > 0.001f)
+                    audio.PlayShipDeathSound(hear);
+            }
             return true;
         }
 

@@ -16,6 +16,8 @@ namespace TitanOrbit.UI
     /// Narrow left Orbit Menu dock: SHIPS / GEAR / CARDS nav, current ship, family name,
     /// bank, and one LOADOUT list (cards + components + drones + rockets + mines share slots).
     /// Glance cards stay compact; full ability text lives on the right-hand purchase tiles.
+    /// The CARDS nav button follows <see cref="GameManager.ShowOrbitMenuCardsPanel"/> (default off)
+    /// so the dock can show only SHIPS and GEAR until that panel is turned back on.
     /// </summary>
     public class OrbitDockSidebarPanelUI : MonoBehaviour
     {
@@ -145,6 +147,7 @@ namespace TitanOrbit.UI
                 if (_customizeHullButton == null)
                     CreateCustomizeHullButton(_contentRoot);
                 DestroyChildIfPresent(_contentRoot, "PlayerAccentPicker");
+                ApplyCardsNavVisibility();
                 return;
             }
 
@@ -300,6 +303,29 @@ namespace TitanOrbit.UI
             _navStoreBtn = _navGearBtn;
             _navUpgradesBg = _navShipsBg;
             _navStoreBg = _navGearBg;
+            // [TITAN-ORBIT] Default off: hide CARDS so the strip is SHIPS + GEAR. The button
+            // stays in the hierarchy so GameManager can show it again without a rebuild.
+            ApplyCardsNavVisibility();
+        }
+
+        /// <summary>
+        /// Shows or hides the CARDS nav button from <see cref="GameManager.ShowOrbitMenuCardsPanel"/>.
+        /// Off leaves SHIPS and GEAR sharing the strip. Called when the dock is built and again
+        /// if the Inspector checkbox changes during Play Mode.
+        /// </summary>
+        public void ApplyCardsNavVisibility()
+        {
+            if (_navCardsBtn == null)
+                return;
+
+            // [TITAN-ORBIT] Missing GameManager matches the Inspector default: cards panel off.
+            bool show = GameManager.IsShowOrbitMenuCardsPanelActive;
+            if (_navCardsBtn.gameObject.activeSelf == show)
+                return;
+
+            // [UNITY] Deactivating a HorizontalLayoutGroup child drops it from the strip
+            // so SHIPS and GEAR expand to fill the nav row.
+            _navCardsBtn.gameObject.SetActive(show);
         }
 
         private Button CreateNavButton(Transform parent, string label, NavTarget target, out Image bg)
@@ -344,6 +370,7 @@ namespace TitanOrbit.UI
         private void ApplyNavVisuals()
         {
             // --- Apply changes ---
+            ApplyCardsNavVisibility();
             ApplyNavButtonVisual(_navShipsBg, _activeNav == NavTarget.Ships);
             ApplyNavButtonVisual(_navGearBg, _activeNav == NavTarget.Gear);
             ApplyNavButtonVisual(_navCardsBg, _activeNav == NavTarget.Cards);
@@ -372,22 +399,16 @@ namespace TitanOrbit.UI
             if (_familyNameText != null)
                 _familyNameText.text = FamilyStatHudCopy.FormatFamilyCaption(family);
 
-            // Family lineage + this planet's bullet-type damage (Rockets +20% vs rocks).
-            int extras = BulletBankCombatLogic.CountFirePowerExtraLevels(Mathf.Max(1, shipLevel), 0);
-            BulletBankProfile bankProfile = ResolveBankProfile(family, planetOrHullBankIndex);
+            // Family Special Bonuses only. Bullet-bank vs-target lines live on the weapon glance.
             string familyLines = family != null
                 ? FamilyStatHudCopy.FormatListedBonusesRichText(family.specialBonuses)
                 : string.Empty;
-            string bankLines = FamilyStatHudCopy.FormatListedBankDamageRichText(bankProfile, extras);
-            bool showStats = !string.IsNullOrEmpty(familyLines) || !string.IsNullOrEmpty(bankLines);
+            bool showStats = !string.IsNullOrEmpty(familyLines);
             if (_familyStatsBlock != null)
                 _familyStatsBlock.SetActive(showStats);
             if (showStats && _familyStatsText != null)
             {
-                if (!string.IsNullOrEmpty(familyLines) && !string.IsNullOrEmpty(bankLines))
-                    _familyStatsText.text = familyLines + "\n" + bankLines;
-                else
-                    _familyStatsText.text = !string.IsNullOrEmpty(familyLines) ? familyLines : bankLines;
+                _familyStatsText.text = familyLines;
                 ApplyFamilyStatsBlockHeight();
             }
 
@@ -1371,17 +1392,5 @@ namespace TitanOrbit.UI
                 tmp.font = fontAsset;
         }
 
-        /// <summary>
-        /// Planet / family bank profile for the FAMILY BONUSES damage lines.
-        /// Null when the combat catalog has not loaded yet.
-        /// </summary>
-        static BulletBankProfile ResolveBankProfile(ShipFamilyDefinition family, int planetOrHullBankIndex)
-        {
-            int idx = BulletBankProfileUtility.ResolveBankIndexForFamily(family, planetOrHullBankIndex);
-            var bank = BulletBankCombatLogic.Bank;
-            if (bank == null || !bank.TryGetProfile(idx, out BulletBankProfile profile))
-                return null;
-            return profile;
-        }
     }
 }

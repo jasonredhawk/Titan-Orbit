@@ -65,7 +65,9 @@ namespace TitanOrbit.ECS.Editor
                 "Test — Client & Server worlds, Local play menu buttons (local host / LAN).\n" +
                 "Production — Client-only Editor, UGS/Relay join to a dedicated server " +
                 "(hides Local play; same as Configure Multiplayer For Dedicated Server).\n\n" +
-                "Stop Play before switching. Restart Play after changing mode.",
+                "Stop Play before switching. Restart Play after changing mode.\n\n" +
+                "A published WebGL player always uses the Production menu " +
+                "(no Local play / Local client), even if this stays on Test.",
                 MessageType.Info);
 
             if (_editorMultiplayerModeProp == null)

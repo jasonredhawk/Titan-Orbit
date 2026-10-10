@@ -47,8 +47,9 @@ namespace TitanOrbit.Game
         float _predictedBelowGhostStableTime;
 
         /// <summary>
-        /// [TITAN-ORBIT] Local energy-queue cursor mirroring server
-        /// <see cref="ShipWeaponState.NextMountIndex"/>. Not ghosted — cosmetic only.
+        /// [TITAN-ORBIT] Unused local mirror of
+        /// <see cref="ShipWeaponState.NextMountIndex"/>. The arsenal reads the
+        /// ghosted cursor on the ship instead.
         /// </summary>
         int _nextMountIndex;
 

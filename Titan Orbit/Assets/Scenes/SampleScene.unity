@@ -4128,7 +4128,7 @@ RectTransform:
   m_AnchorMin: {x: 0, y: 0}
   m_AnchorMax: {x: 1, y: 1}
   m_AnchoredPosition: {x: 0, y: 0}
-  m_SizeDelta: {x: -10, y: -10}
+  m_SizeDelta: {x: 0, y: 0}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &733525217
 MonoBehaviour:
@@ -8721,16 +8721,19 @@ MonoBehaviour:
   showEgressMeter: 0
   showSpaceBackground: 0
   showStarfieldBackground: 1
+  showOrbitMenuCardsPanel: 0
   debugFreeShipUpgradeTree: 1
   debugFreeGear: 1
   debugFreeCards: 1
   debugCycleAllBulletBanks: 0
   debugCycleAllThrusterVfx: 0
-  debugInfiniteRockets: 1
-  debugInfiniteMines: 1
+  debugInfiniteRockets: 0
+  debugInfiniteMines: 0
   debugSelfHarmRocketsAndMines: 0
   debugMegaShipsAutoFireAsteroids: 1
   debugDisableMegaShipAutoFire: 0
+  debugAiShips: 0
+  debugAiShipsPerTeam: 3
   debugLogAsteroidDestroyPerf: 0
   debugEnableInstructionImageCapture: 0
   debugEnableStutterIsolator: 0

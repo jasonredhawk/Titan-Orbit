@@ -2,7 +2,7 @@
 
 These tests verify:
 - free users join only the newest `IsLatest` lobby
-- a new match is spawned when the current latest match reaches the rotation age threshold
+- a new match is spawned when the current latest match reaches a debug rotation age threshold (`--ageThresholdSeconds`, off in production)
 - a new match is spawned when a lobby reaches `maxPlayers` (full) and the old lobby is closed
 
 ## 0) Build
@@ -23,9 +23,9 @@ TitanOrbitServer.exe -batchmode -nographics ^
   --ageThresholdSeconds=30
 ```
 
-`--ageThresholdSeconds` is an optional debug/testing override. It defaults to 30 minutes in production (only applies while the lobby still has players).
+`--ageThresholdSeconds` is an optional debug/testing override. Production leaves it at 0 so a second game is not opened while the first still has seats. This test sets 30 seconds.
 
-`--emptyMatchRecreateSeconds` controls how long a lobby may sit with zero players before the headless server deletes it and publishes a new lobby (default 30 minutes). Relay stay-alive uses UTP transport heartbeats only (no periodic allocation swap).
+`--emptyMatchRecreateSeconds` controls how long a lobby may sit with zero players before the headless server deletes it and publishes a new lobby (default 1 hour). Relay stay-alive uses UTP transport heartbeats only (no periodic allocation swap).
 
 The dedicated server also publishes `ServerAliveAt` on each lobby heartbeat (every ~15s). Clients skip listings older than ~120s without a fresh heartbeat, and the server regenerates the map after in-process Netcode restarts so empty overnight lobbies do not serve a zero-blueprint world.
 

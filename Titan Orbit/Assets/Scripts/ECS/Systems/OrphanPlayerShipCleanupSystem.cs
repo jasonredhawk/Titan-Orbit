@@ -74,6 +74,9 @@ namespace TitanOrbit.ECS
                          .WithEntityAccess())
             {
                 int id = owner.ValueRO.NetworkId;
+                // AI hulls have no player connection. A missing NetworkId must not despawn them.
+                if (em.HasComponent<BotShipTag>(entity) || BotShipIds.IsBot(id))
+                    continue;
                 // Owner 0 is a hull mid-spawn. Leave it for TeamManagementSystem.
                 if (id <= 0)
                     continue;

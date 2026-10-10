@@ -12,21 +12,24 @@ namespace TitanOrbit.Data
     /// <para>
     /// Tree cards use <see cref="FormatFamilyDisplayName"/> (title case).
     /// Header rails use <see cref="FormatFamilyCaption"/> (uppercase).
-    /// The upgrade-tree lineage matrix and the sidebar FAMILY BONUSES block
-    /// both walk <see cref="CollectBonusRows"/> so every authored multiplier
-    /// can be listed, including 1× baseline fields (shown as <c>1.00×</c>).
-    /// Hull and Energy are separate groups so defense and power are not mixed.
-    /// The same plate also lists bullet-type damage via <see cref="CollectBankDamageRows"/>.
+    /// The upgrade-tree Fleet Bonuses wheel and the sidebar FAMILY BONUSES block
+    /// both walk <see cref="CollectBonusRows"/> so every
+    /// <see cref="ShipFamilySpecialBonuses"/> field can be listed, including 1×
+    /// baselines (shown as <c>1.00×</c>). Hovering a spoke uses
+    /// <see cref="FormatSpokeHoverBody"/>: the lineage percent plus a one-line
+    /// description of what that multiplier changes. Hull and Energy are separate
+    /// groups so defense and power are not mixed. Bullet-bank vs-target damage
+    /// is a weapon stat and is not part of this plate.
     /// </para>
     /// </summary>
     public static class FamilyStatHudCopy
     {
         /// <summary>
         /// HUD grouping for one family bonus. Matches the five power-bar
-        /// categories (Movement / Offense / Defense / Energy / Capacity) plus a
-        /// BANK row for planet bullet-type damage. Camera height stays in Hold —
-        /// it is presentation zoom, not a cargo stat, but it is still a lineage
-        /// identity lever and should sit with the other non-combat extras.
+        /// categories (Movement / Offense / Defense / Energy / Capacity).
+        /// Camera height stays in Hold — it is presentation zoom, not a cargo
+        /// stat, but it is still a lineage identity lever and should sit with
+        /// the other non-combat extras.
         /// </summary>
         public enum BonusCategory
         {
@@ -35,9 +38,7 @@ namespace TitanOrbit.Data
             Hull = 2,
             /// <summary>Energy cap / regen — split from Hull so defense and power are not one mixed strip.</summary>
             Energy = 3,
-            Hold = 4,
-            /// <summary>Planet / hull bullet-bank damage (FP + vs-target muls).</summary>
-            Ordnance = 5
+            Hold = 4
         }
 
         /// <summary>
@@ -105,8 +106,7 @@ namespace TitanOrbit.Data
             "COMBAT",
             "HULL",
             "ENERGY",
-            "HOLD",
-            "BANK"
+            "HOLD"
         };
 
         /// <summary>Uppercase HUD family name from familyId (AstroEagle → ASTRO EAGLE).</summary>
@@ -307,80 +307,7 @@ namespace TitanOrbit.Data
                 lowerIsBetter: false, isNeutral: true, includeIdentity);
         }
 
-        /// <summary>
-        /// Bullet-type damage board for the lineage matrix. Bank fire-power plus
-        /// vs-asteroid / ship / moon / gem multipliers at the current Extra Level.
-        /// <see cref="BulletBankProfile.GetDamageMultiplier"/> already stacks
-        /// Everything-target rows onto each class.
-        /// </summary>
-        /// <param name="profile">Resolved bank profile. Null skips the row.</param>
-        /// <param name="extras">Fire Power Extra Levels (hull level only in the store).</param>
-        /// <param name="dest">Caller-owned list. Appended — not cleared.</param>
-        /// <param name="includeIdentity">When true, 1× targets stay as <c>1.00×</c> stock bases.</param>
-        public static void CollectBankDamageRows(
-            BulletBankProfile profile,
-            int extras,
-            List<BonusRow> dest,
-            bool includeIdentity)
-        {
-            if (dest == null || profile == null)
-                return;
-
-            int extraLevels = Mathf.Max(0, extras);
-            float fp = profile.statModifiers.firePowerMultiplier;
-
-            // --- General shot damage ---
-            // firePowerMultiplier is the bank's "this type hits harder / softer" lever.
-            TryAdd(dest, "DMG", "BANK DAMAGE", fp, BonusCategory.Ordnance,
-                lowerIsBetter: false, isNeutral: false, includeIdentity);
-
-            // --- Per-target combat bonuses ---
-            // Magnitude 1.2 at Extra 0 = +20% vs that class. Extra Levels add
-            // magnitudePerExtra before we convert to a signed percent.
-            TryAdd(dest, "AST", "VS ASTEROIDS",
-                profile.GetDamageMultiplier(BulletBankDamageTarget.Asteroid, extraLevels),
-                BonusCategory.Ordnance, lowerIsBetter: false, isNeutral: false, includeIdentity);
-            TryAdd(dest, "SHIP", "VS SHIPS",
-                profile.GetDamageMultiplier(BulletBankDamageTarget.ShipOrDrone, extraLevels),
-                BonusCategory.Ordnance, lowerIsBetter: false, isNeutral: false, includeIdentity);
-            TryAdd(dest, "MOON", "VS MOONS",
-                profile.GetDamageMultiplier(BulletBankDamageTarget.GemMoon, extraLevels),
-                BonusCategory.Ordnance, lowerIsBetter: false, isNeutral: false, includeIdentity);
-            TryAdd(dest, "GEM", "VS GEMS",
-                profile.GetDamageMultiplier(BulletBankDamageTarget.Gem, extraLevels),
-                BonusCategory.Ordnance, lowerIsBetter: false, isNeutral: false, includeIdentity);
-        }
-
-        /// <summary>
-        /// Sidebar lines for ≠1 bank damage (BANK DAMAGE +20%, VS ASTEROIDS +12%).
-        /// Empty when the profile is missing or every mul is 1×.
-        /// </summary>
-        public static string FormatListedBankDamageRichText(BulletBankProfile profile, int extras)
-        {
-            s_ScratchBankRows.Clear();
-            CollectBankDamageRows(profile, extras, s_ScratchBankRows, includeIdentity: false);
-            if (s_ScratchBankRows.Count == 0)
-                return string.Empty;
-
-            var sb = new StringBuilder(s_ScratchBankRows.Count * 40);
-            for (int i = 0; i < s_ScratchBankRows.Count; i++)
-            {
-                BonusRow row = s_ScratchBankRows[i];
-                if (sb.Length > 0)
-                    sb.AppendLine();
-                sb.Append("<color=#").Append(HexNeutral).Append('>')
-                    .Append(row.FullLabel)
-                    .Append("</color>  <color=#")
-                    .Append(HexForRow(row))
-                    .Append('>')
-                    .Append(FormatSignedPercent(row))
-                    .Append("</color>");
-            }
-
-            return sb.ToString();
-        }
-
-        /// <summary>Caption for a matrix category group (MOVE, COMBAT, HULL, ENERGY, HOLD, BANK).</summary>
+        /// <summary>Caption for a matrix category group (MOVE, COMBAT, HULL, ENERGY, HOLD).</summary>
         public static string GetCategoryCaption(BonusCategory category)
         {
             int i = (int)category;
@@ -404,9 +331,95 @@ namespace TitanOrbit.Data
             string body = abs.ToString("0.#", CultureInfo.InvariantCulture);
             if (row.SignedPercent > 0.05f)
                 return "+" + body + "%";
+            // ASCII hyphen stays in the UI font. U+2212 minus falls back to another
+            // face and that glyph renders at a different size on the wheel.
             if (row.SignedPercent < -0.05f)
-                return "−" + body + "%";
+                return "-" + body + "%";
             return NeutralBaseText;
+        }
+
+        /// <summary>
+        /// Hover body for one Fleet Bonuses spoke: coloured lineage value, then
+        /// a sentence on what that multiplier changes. The wheel stores this
+        /// string when it paints, then the hover card only assigns it.
+        /// </summary>
+        /// <param name="row">Spoke already collected by <see cref="CollectBonusRows"/>.</param>
+        /// <returns>TMP rich text. Description is omitted when the short tag is unknown.</returns>
+        public static string FormatSpokeHoverBody(in BonusRow row)
+        {
+            // Reused so a hover does not allocate a fresh builder each time.
+            s_HoverBody.Clear();
+
+            // --- Lineage value ---
+            // Stock 1× still prints a value so the card is not title-only.
+            // Drain already flipped SignedPercent: green +% means less energy spent.
+            string value = row.IsIdentity ? "STOCK " + NeutralBaseText : FormatSignedPercent(row);
+            s_HoverBody.Append("<color=#").Append(HexForRow(row)).Append("><b>")
+                .Append(value)
+                .Append("</b></color>");
+
+            // --- What the spoke changes ---
+            string description = GetSpokeDescription(row.ShortLabel);
+            if (!string.IsNullOrEmpty(description))
+            {
+                s_HoverBody.AppendLine();
+                s_HoverBody.AppendLine();
+                s_HoverBody.Append("<color=#D0D8E4>").Append(description).Append("</color>");
+            }
+
+            return s_HoverBody.ToString();
+        }
+
+        /// <summary>
+        /// One sentence for a Fleet Bonuses spoke. Keyed by the short tag from
+        /// <see cref="CollectBonusRows"/> (MOVE, RAM, CAM). Empty when unknown.
+        /// </summary>
+        /// <param name="shortLabel">Telemetry tag on the bonus row.</param>
+        public static string GetSpokeDescription(string shortLabel)
+        {
+            switch (shortLabel)
+            {
+                case "MOVE":
+                    return "Cruise speed for this family, after cargo mass. Engines and Extra Level still raise the hull's own cap.";
+                case "ACCEL":
+                    return "How quickly the ship reaches cruise speed.";
+                case "TURN":
+                    return "How fast the nose yaws, so you can aim and hold a tight orbit.";
+                case "OD%":
+                    return "Extra speed added on top of cruise while overdrive is held.";
+                case "DRAIN":
+                    return "Energy spent each second while overdrive is held. Green means this family burns less for the same burst.";
+                case "FP":
+                    return "Damage dealt by each shot. Fire rate is its own spoke.";
+                case "RATE":
+                    return "Shots fired per second. Damage per shot is its own spoke.";
+                case "BSPD":
+                    return "How fast shots travel. Faster rounds arrive sooner and are harder to dodge. Damage is unchanged.";
+                case "RANGE":
+                    return "How far shots travel before they expire.";
+                case "RAM":
+                    return "Damage dealt when the hull rams another ship or a rock.";
+                case "HP":
+                    return "Maximum hull hit points. The ship is destroyed when this reaches zero.";
+                case "H.REG":
+                    return "Hit points recovered each second while the hull is below its cap.";
+                case "EN":
+                    return "Energy the ship can store. Weapons spend this pool.";
+                case "E.REG":
+                    return "Energy recovered each second. Higher regen keeps guns firing after the first burst.";
+                case "GEMS":
+                    return "How many gems this hull can carry.";
+                case "TROOPS":
+                    return "How many people this hull can carry for colony and transport runs.";
+                case "TRACT":
+                    return "How far the tractor beam can reach to pull gems and people.";
+                case "T.PWR":
+                    return "How strongly the tractor beam reels a target in.";
+                case "CAM":
+                    return "Gameplay camera height. Above stock zooms out; below stock zooms in. Ship stats do not change.";
+                default:
+                    return string.Empty;
+            }
         }
 
         /// <summary>TMP hex for a cell value (boost / penalty / zoom / baseline).</summary>
@@ -424,7 +437,9 @@ namespace TitanOrbit.Data
         }
 
         static readonly List<BonusRow> s_ScratchRows = new List<BonusRow>(20);
-        static readonly List<BonusRow> s_ScratchBankRows = new List<BonusRow>(8);
+
+        /// <summary>Scratch builder for spoke hover cards. Pointer-enter only.</summary>
+        static readonly StringBuilder s_HoverBody = new StringBuilder(256);
 
         static void TryAdd(
             List<BonusRow> dest,

@@ -17,9 +17,11 @@ using UnityEngine.UI;
 namespace TitanOrbit.UI
 {
     /// <summary>
-    /// Hold-S comms matrix: a centered dark-glass HUD card with keyword tiles. The player
-    /// holds S, clicks 1–5 words in order (3 free; one ad unlocks the 4th and 5th), then releases S to send that sentence above
-    /// their ship. Granted extras keep a quiet brass hint (same idea as the Orbit Menu
+    /// Hold-C comms matrix: a centered dark-glass HUD card with keyword tiles. The player
+    /// holds C, clicks 1–5 words in order (3 free; one ad unlocks the 4th and 5th), then releases C to send that sentence above
+    /// their ship. The left-column [C] COMMS MATRIX button (<see cref="ShipCommsLauncherHUD"/>)
+    /// opens the same card and leaves it up — that session hangs SEND and CLOSE under the
+    /// card, because a click has no key release to transmit. Granted extras keep a quiet brass hint (same idea as the Orbit Menu
     /// +1 gear slot, dimmer) so chips 4–5 and extra RECENT rows stay distinct from the free set.
     /// Top-level rails stay TACTICAL / SUBJECT / SOCIAL / COMMANDER (plus TEAM).
     /// Inside each rail, slim telemetry captions (STRIKE, WHO, GEAR, …) keep related
@@ -34,13 +36,13 @@ namespace TitanOrbit.UI
     /// title returns. We do not strip it into a different, non-command sentence.
     /// Flying inside a non-friendly territory triangle jams comms: a lock veil covers
     /// the keyword card <b>and</b> the docked minimap (COMMS JAMMED / FROM ENEMY
-    /// TERRITORY). Clicks, Here pings, and release-S do nothing. Open space and
+    /// TERRITORY). Clicks, Here pings, release-C, and SEND do nothing. Open space and
     /// friendly overlaps stay clear.
     /// <para>
     /// Client presentation only. Sending goes through <see cref="ShipCommsRpcClient"/>
     /// (RPC — Remote Procedure Call: the client asks the server to broadcast or target
     /// teammates). This panel never writes ship ghosts. Desktop only for v1 — phones have
-    /// no S key mapping yet.
+    /// no C key mapping yet.
     /// </para>
     /// Layout is explicit RectTransforms (no nested ContentSizeFitters). Spawn style
     /// matches <see cref="SpaceBrakesHUD"/>: <c>RuntimeInitializeOnLoadMethod</c> plus
@@ -94,6 +96,11 @@ namespace TitanOrbit.UI
         const float FamilyGap = 8f;
         const float PanelPad = 12f;
         const float RecentRowHeight = TileHeight * RecentScale;
+        /// <summary>SEND / CLOSE row hung under the card when the matrix was opened from the button.</summary>
+        const float PinnedActionHeight = 28f;
+        const float PinnedCloseWidth = 72f;
+        const float PinnedSendWidth = 96f;
+        const float PinnedActionGap = 6f;
 
         static readonly Color FillColor = new Color(0.012f, 0.016f, 0.028f, 1f);
         static readonly Color CaptionPlateColor = new Color(0.018f, 0.028f, 0.045f, 1f);
@@ -172,18 +179,40 @@ namespace TitanOrbit.UI
         TextMeshProUGUI _allLabel;
         TextMeshProUGUI _teamLabel;
         bool _wasHeld;
+        /// <summary>
+        /// True after the [C] COMMS MATRIX button opens the card. The card stays up
+        /// until SEND or CLOSE. Hold-C leaves this false so releasing C still sends.
+        /// </summary>
+        bool _pinned;
+        /// <summary>
+        /// After a button session ends while C is still down, ignore the key until
+        /// it releases. Otherwise CLOSE would drop the card and the same held C
+        /// would reopen it as a hold-to-send session.
+        /// </summary>
+        bool _suppressHoldUntilRelease;
         bool _built;
+        /// <summary>Live card. The left-column launcher calls <see cref="ToggleFromLauncher"/>.</summary>
+        static ShipCommsPanel s_instance;
+        RectTransform _pinnedActions;
+        Button _sendButton;
+        Image _sendFill;
+        TextMeshProUGUI _sendLabel;
+        Outline _sendOutline;
+        /// <summary>Last SHOW we applied to the SEND / CLOSE row. Skips repeat paints.</summary>
+        bool _pinnedActionsShown;
+        /// <summary>Last armed state of SEND. False while the rail is empty or jammed.</summary>
+        bool _sendArmed;
         RectTransform _minimapDock;
         RectTransform _minimapHost;
         float _overlayW;
         float _dockSize;
         bool _minimapDocked;
 
-        /// <summary>Highlighted RECENT row while S is held. -1 = none.</summary>
+        /// <summary>Highlighted RECENT row while the matrix is open. -1 = none.</summary>
         int _recentCursor = -1;
 
         /// <summary>
-        /// Last commander rank we painted while S was held. Rank can flip mid-hold
+        /// Last commander rank we painted while the matrix was open. Rank can flip mid-hold
         /// (a teammate deposits). We only rebuild audience / tiles / RECENT when
         /// this changes so LateUpdate does not recolor the card every frame.
         /// </summary>
@@ -383,6 +412,7 @@ namespace TitanOrbit.UI
         /// <summary>Builds the overlay once, then starts hidden.</summary>
         void Awake()
         {
+            s_instance = this;
             // [TITAN-ORBIT] MPPM clones share one PlayerPrefs store — suffix the keys so
             // Player 2's All/Team choice and RECENT list do not overwrite Player 1.
             ShipCommsClientState.BindPrefsKey(
@@ -399,6 +429,8 @@ namespace TitanOrbit.UI
         /// </summary>
         void OnDestroy()
         {
+            if (s_instance == this)
+                s_instance = null;
             UndockMinimap();
             HUDController.SetCommsMatrixObscuresHud(false);
             if (ShipCommsClientState.IsOpen)
@@ -406,8 +438,10 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Samples S, opens/closes the card, and sends on release. Runs after
-        /// <see cref="PlayerInputHandler"/> so <c>CommsHeld</c> is this frame's value.
+        /// Samples C, opens/closes the card, and sends on release. A button session
+        /// (<see cref="_pinned"/>) stays open and ignores C so releasing the key
+        /// does not transmit — SEND does. Runs after <see cref="PlayerInputHandler"/>
+        /// so <c>CommsHeld</c> is this frame's value.
         /// </summary>
         void LateUpdate()
         {
@@ -420,18 +454,39 @@ namespace TitanOrbit.UI
             bool held = IsCommsKeyHeld();
             bool canUse = CanUseComms();
 
+            // --- C still down after CLOSE / SEND ---
+            // Treat the key as up until the player actually lets go, or the card
+            // would pop straight back open in hold-to-send mode.
+            if (_suppressHoldUntilRelease)
+            {
+                if (!held)
+                    _suppressHoldUntilRelease = false;
+                else
+                    held = false;
+            }
+
             // --- Cancel while blocked ---
             // Escape, orbit station, death, or the title screen must not leave a stuck overlay.
-            if (_wasHeld && (!canUse || InGameEscapeMenuController.IsOpen))
+            // Button sessions are not "_wasHeld", so the pin flag has to count too.
+            if ((_wasHeld || _pinned || ShipCommsClientState.IsOpen) &&
+                (!canUse || InGameEscapeMenuController.IsOpen))
             {
                 SetOpen(false, clearSequence: true);
                 _wasHeld = false;
                 return;
             }
 
-            if (held && canUse)
+            if (_pinned && canUse)
             {
-                // --- S down / hold ---
+                // --- Button session ---
+                // Stay open. Do not arm release-to-send even if C is also down.
+                if (!ShipCommsClientState.IsOpen)
+                    SetOpen(true, clearSequence: false);
+                _wasHeld = false;
+            }
+            else if (held && canUse)
+            {
+                // --- C down / hold ---
                 if (!_wasHeld)
                 {
                     _sequence.Clear();
@@ -442,7 +497,7 @@ namespace TitanOrbit.UI
             }
             else if (_wasHeld && ShipCommsClientState.IsOpen)
             {
-                // --- S up ---
+                // --- C up ---
                 // A non-empty sentence sends; an empty hold is a cancel.
                 TrySendSequence();
                 SetOpen(false, clearSequence: true);
@@ -459,15 +514,15 @@ namespace TitanOrbit.UI
                 UndockMinimap();
             }
 
-            _wasHeld = held && canUse;
+            _wasHeld = !_pinned && held && canUse;
 
             // Aim / recent-wheel only matter while the matrix is up. Sampling Camera.main
             // and IsPointerOverGameObject every closed frame showed up as extra LateUpdate work.
-            if (held && canUse)
+            if ((held && canUse) || (_pinned && canUse))
                 TrySamplePlayAim();
             if (ShipCommsClientState.IsOpen)
             {
-                // Rank can change while S is held (a teammate deposits). Drop Commander,
+                // Rank can change while C is held (a teammate deposits). Drop Commander,
                 // strip command words from the rail, and lock RECENT rows that used them.
                 EnsureCommanderLocksWhileOpen();
                 // Hull can cross a triangle edge mid-hold — show or lift the jam veil live.
@@ -479,6 +534,8 @@ namespace TitanOrbit.UI
                     if (ShipCommsClientState.ConsumeWaypointChipDirty())
                         EnsureMapPointChip();
                 }
+
+                PaintPinnedActions();
             }
         }
 
@@ -568,7 +625,7 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// True when this machine may open the matrix: in a match, flying, desktop, no
-        /// blocking overlay. Mobile is v2 (no S key).
+        /// blocking overlay. Mobile is v2 (no C key, no on-screen comms button yet).
         /// </summary>
         bool CanUseComms()
         {
@@ -590,7 +647,7 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// S held this frame. Prefers <see cref="PlayerInputHandler.CommsHeld"/>, then polls
+        /// C held this frame. Prefers <see cref="PlayerInputHandler.CommsHeld"/>, then polls
         /// the keyboard directly so an unfocused Game view or a missing handler still works.
         /// </summary>
         bool IsCommsKeyHeld()
@@ -614,7 +671,69 @@ namespace TitanOrbit.UI
             }
 
             _cachedKeyboard = keyboard;
-            return keyboard != null && keyboard.sKey.isPressed;
+            return keyboard != null && keyboard.cKey.isPressed;
+        }
+
+        /// <summary>
+        /// Left-column [C] COMMS MATRIX click. Opens a sticky session (SEND / CLOSE)
+        /// or dismisses one that is already sticky. Hold-C does not call this —
+        /// releasing C still sends that session.
+        /// </summary>
+        public static void ToggleFromLauncher()
+        {
+            if (s_instance == null)
+                return;
+            s_instance.TogglePinned();
+        }
+
+        /// <summary>
+        /// Button path. First click clears the rail and leaves the card up.
+        /// Second click (or CLOSE) drops it without sending. Ignored on menus,
+        /// while dead, and while C is already holding the card open.
+        /// </summary>
+        void TogglePinned()
+        {
+            if (!_built || !CanUseComms())
+                return;
+
+            // Hold-C already owns the card. The launcher hides then; ignore a
+            // stray click so we do not turn a release-to-send into a sticky card.
+            if (!_pinned && IsCommsKeyHeld())
+                return;
+
+            if (_pinned)
+            {
+                SetOpen(false, clearSequence: true);
+                return;
+            }
+
+            _pinned = true;
+            _sequence.Clear();
+            _wasHeld = false;
+            SetOpen(true, clearSequence: false);
+        }
+
+        /// <summary>
+        /// Sticky-session transmit. Empty and jammed sentences stay on the card
+        /// so the player can still CLOSE or pick a word. A real send then closes.
+        /// </summary>
+        void OnSendClicked()
+        {
+            if (!_pinned || !ShipCommsClientState.IsOpen)
+                return;
+            if (_sequence.Count < 1 || ShipCommsRpcClient.IsLocalShipJammed())
+                return;
+
+            TrySendSequence();
+            SetOpen(false, clearSequence: true);
+        }
+
+        /// <summary>Sticky-session dismiss. Does not transmit the rail.</summary>
+        void OnCloseClicked()
+        {
+            if (!ShipCommsClientState.IsOpen)
+                return;
+            SetOpen(false, clearSequence: true);
         }
 
         /// <summary>
@@ -624,6 +743,16 @@ namespace TitanOrbit.UI
         void SetOpen(bool open, bool clearSequence)
         {
             bool wasOpen = ShipCommsClientState.IsOpen;
+            if (!open)
+            {
+                // C still physically down after a button session must not immediately
+                // reopen the card as hold-to-send. Hold-C closes happen on key-up,
+                // so this only arms when the sticky flag is still set.
+                if (_pinned && IsCommsKeyHeld())
+                    _suppressHoldUntilRelease = true;
+                _pinned = false;
+            }
+
             if (clearSequence)
             {
                 _sequence.Clear();
@@ -632,7 +761,7 @@ namespace TitanOrbit.UI
             }
 
             // Put the HUD map back before hiding the dock. The live minimap is a child of
-            // the dock while S is held — SetActive(false) on the dock would disable it,
+            // the dock while C is held — SetActive(false) on the dock would disable it,
             // clear MinimapController.Instance, and skip the reparent.
             if (!open && wasOpen)
             {
@@ -674,16 +803,17 @@ namespace TitanOrbit.UI
             }
 
             ShipCommsClientState.SetOpen(open);
+            PaintPinnedActions();
         }
 
         /// <summary>
-        /// Releases S: send 1–5 indices (and an optional minimap ping), paint an
-        /// optimistic local bubble, then clear.
+        /// Releases C, or the sticky SEND button: send 1–5 indices (and an optional
+        /// minimap ping), paint an optimistic local bubble, then clear.
         /// </summary>
         void TrySendSequence()
         {
             // --- Enemy-territory jam ---
-            // Overlay already blocks clicks. Release-S must not sneak a sentence out
+            // Overlay already blocks clicks. Release-C and SEND must not sneak a sentence out
             // if the hull crossed into enemy fill after the last paint.
             if (ShipCommsRpcClient.IsLocalShipJammed())
                 return;
@@ -803,9 +933,11 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Locks the closest-in-range ship when the player clicks "You".
-        /// [TITAN-ORBIT] No hull in range (or only the local ship) leaves You empty.
-        /// Send must not rewrite that as Me — "You Asteroid" then draws the rock only.
+        /// Locks the closest on-screen ship when the player clicks "You".
+        /// [TITAN-ORBIT] No hull in the local view (or only the local ship) leaves
+        /// You empty. A ship past the camera edge is not "You" even if it is the
+        /// nearest body inside the select radius. Send must not rewrite an empty
+        /// You as Me — "You Asteroid" then draws the rock only.
         /// </summary>
         void TryLockYouOnClick(byte index)
         {
@@ -828,10 +960,11 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Rings the speaker plus nearby friendlies when the player clicks "Us".
-        /// [TITAN-ORBIT] Us always includes this hull. Other seats are teammates
-        /// inside <see cref="ShipCommsCalloutGraphics.YouSelectRange"/> of Me —
-        /// not the play-plane aim used by You.
+        /// Rings the speaker plus friendlies on the local camera when the player
+        /// clicks "Us". [TITAN-ORBIT] Us always includes this hull. Other seats
+        /// are teammates inside <see cref="ShipCommsCalloutGraphics.YouSelectRange"/>
+        /// whose hulls are on screen — not far ships, and not the play-plane aim
+        /// used by You.
         /// </summary>
         void TryLockUsOnClick(byte index)
         {
@@ -918,7 +1051,7 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Loads a previous sentence into the 1/2/3 rail so release-S sends it again.
+        /// Loads a previous sentence into the 1/2/3 rail so the next send repeats it.
         /// Rows past the free first three sit under one unlock plate until that ad runs.
         /// A command sentence is ignored while this machine is not a commander — the
         /// row stays in history and the click is a no-op until rank returns.
@@ -1338,9 +1471,11 @@ namespace TitanOrbit.UI
             catch (Exception e)
             {
                 // Jam veils are presentation-only. A TMP/UGUI failure here used to
-                // abort Awake, disable this behaviour, and make hold-S do nothing.
+                // abort Awake, disable this behaviour, and make hold-C do nothing.
                 Debug.LogException(e);
             }
+
+            BuildPinnedActions();
 
             if (_minimapDock != null)
                 _minimapDock.gameObject.SetActive(false);
@@ -1376,9 +1511,10 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Two-line header: COMMS MATRIX + HOLD S · N WORDS, with an All / Team
+        /// Two-line header: COMMS MATRIX + HOLD C or SEND · N WORDS, with an All / Team
         /// channel switch on the right. Team relabels to Team Commander when this
         /// machine holds a command seat. The switch is remembered in PlayerPrefs.
+        /// HOLD C is the key session. SEND is the sticky button session.
         /// </summary>
         void BuildHeader(Transform parent, ref float y, float width)
         {
@@ -1399,7 +1535,7 @@ namespace TitanOrbit.UI
             title.characterSpacing = 1.8f;
             title.fontStyle = FontStyles.Bold;
 
-            _headerSub = CreateLabel(plate, "Sub", "HOLD S  ·  3 WORDS  ·  ALL", 8f, CaptionTextColor, TextAlignmentOptions.Left);
+            _headerSub = CreateLabel(plate, "Sub", "HOLD C  ·  3 WORDS  ·  ALL", 8f, CaptionTextColor, TextAlignmentOptions.Left);
             var subRt = _headerSub.rectTransform;
             subRt.anchorMin = new Vector2(0f, 0f);
             subRt.anchorMax = new Vector2(1f, 0.48f);
@@ -1411,6 +1547,105 @@ namespace TitanOrbit.UI
             PaintAudience();
 
             y += HeaderHeight;
+        }
+
+        /// <summary>
+        /// SEND and CLOSE hung under the card. Only a button session shows them.
+        /// Hold-C still transmits on key release, so this row stays hidden then.
+        /// Parent is the compose card, pivot on the top edge, so the buttons sit
+        /// just below the glass and move with the card when the minimap docks.
+        /// </summary>
+        void BuildPinnedActions()
+        {
+            if (_panel == null)
+                return;
+
+            const float pad = 4f;
+            float innerW = PinnedCloseWidth + PinnedActionGap + PinnedSendWidth;
+            float width = innerW + pad * 2f;
+            float height = PinnedActionHeight + pad * 2f;
+
+            var rowGo = new GameObject("PinnedActions", typeof(RectTransform), typeof(Image));
+            rowGo.transform.SetParent(_panel, false);
+            _pinnedActions = rowGo.GetComponent<RectTransform>();
+            _pinnedActions.anchorMin = new Vector2(0.5f, 0f);
+            _pinnedActions.anchorMax = new Vector2(0.5f, 0f);
+            _pinnedActions.pivot = new Vector2(0.5f, 1f);
+            _pinnedActions.anchoredPosition = new Vector2(0f, -8f);
+            _pinnedActions.sizeDelta = new Vector2(width, height);
+            var plate = rowGo.GetComponent<Image>();
+            plate.color = FillColor;
+            plate.raycastTarget = true;
+
+            var accent = CreateIgnoredImage(rowGo.transform, "Accent", AccentColor);
+            var accentRt = accent.rectTransform;
+            accentRt.anchorMin = new Vector2(0f, 1f);
+            accentRt.anchorMax = new Vector2(1f, 1f);
+            accentRt.pivot = new Vector2(0.5f, 1f);
+            accentRt.sizeDelta = new Vector2(-8f, 2f);
+            accentRt.anchoredPosition = Vector2.zero;
+
+            Image closeFill = CreateTile(
+                rowGo.transform, "Close", pad, pad, PinnedCloseWidth, PinnedActionHeight, TileIdle);
+            var closeLabel = CreateLabel(closeFill.transform, "Label", "CLOSE", 10f, CaptionTextColor, TextAlignmentOptions.Center);
+            Stretch(closeLabel.rectTransform, 2f);
+            closeLabel.fontStyle = FontStyles.Bold;
+            closeLabel.characterSpacing = 1.2f;
+            closeFill.GetComponent<Button>().onClick.AddListener(OnCloseClicked);
+
+            _sendFill = CreateTile(
+                rowGo.transform,
+                "Send",
+                pad + PinnedCloseWidth + PinnedActionGap,
+                pad,
+                PinnedSendWidth,
+                PinnedActionHeight,
+                TileIdle);
+            _sendLabel = CreateLabel(_sendFill.transform, "Label", "SEND", 11f, CaptionTextColor, TextAlignmentOptions.Center);
+            Stretch(_sendLabel.rectTransform, 2f);
+            _sendLabel.fontStyle = FontStyles.Bold;
+            _sendLabel.characterSpacing = 1.6f;
+            var sendOutline = _sendFill.gameObject.AddComponent<Outline>();
+            sendOutline.effectColor = AccentColor;
+            sendOutline.effectDistance = new Vector2(1.2f, -1.2f);
+            sendOutline.useGraphicAlpha = false;
+            sendOutline.enabled = false;
+            _sendOutline = sendOutline;
+            _sendButton = _sendFill.GetComponent<Button>();
+            _sendButton.onClick.AddListener(OnSendClicked);
+
+            rowGo.transform.SetAsLastSibling();
+            rowGo.SetActive(false);
+        }
+
+        /// <summary>
+        /// Shows SEND / CLOSE only for a button session, and lights SEND when the
+        /// rail has a word and the hull is not jammed. Hold-C hides the row.
+        /// Cached so a held key does not recolor the buttons every frame.
+        /// </summary>
+        void PaintPinnedActions()
+        {
+            bool show = _pinned && ShipCommsClientState.IsOpen;
+            bool canSend = show && _sequence.Count > 0 && !ShipCommsRpcClient.IsLocalShipJammed();
+            if (_pinnedActionsShown == show && _sendArmed == canSend)
+                return;
+
+            _pinnedActionsShown = show;
+            _sendArmed = canSend;
+
+            if (_pinnedActions != null)
+                _pinnedActions.gameObject.SetActive(show);
+            if (!show)
+                return;
+
+            if (_sendButton != null)
+                _sendButton.interactable = canSend;
+            if (_sendFill != null)
+                _sendFill.color = canSend ? Color.Lerp(TileSelected, AccentColor, 0.45f) : TileIdle;
+            if (_sendLabel != null)
+                _sendLabel.color = canSend ? BodyTextColor : CaptionTextColor;
+            if (_sendOutline != null)
+                _sendOutline.enabled = canSend;
         }
 
         /// <summary>
@@ -1479,10 +1714,11 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Highlights the active All / Team pill and updates the HOLD S subtitle
-        /// so the channel is readable without staring at the switch. While this
-        /// machine holds a command seat, TEAM reads TEAM COMMANDER and uses
-        /// command brass instead of the faction accent.
+        /// Highlights the active All / Team pill and updates the subtitle so the
+        /// channel is readable without staring at the switch. Hold-C sessions say
+        /// HOLD C. Button sessions say SEND, matching the commit button under the
+        /// card. While this machine holds a command seat, TEAM reads TEAM COMMANDER
+        /// and uses command brass instead of the faction accent.
         /// </summary>
         void PaintAudience()
         {
@@ -1526,12 +1762,13 @@ namespace TitanOrbit.UI
                 string audience = allOn
                     ? "ALL"
                     : (commanderEligible ? "TEAM COMMANDER" : "TEAM");
-                _headerSub.text = "HOLD S  ·  " + words + "  ·  " + audience;
+                string verb = _pinned ? "SEND" : "HOLD C";
+                _headerSub.text = verb + "  ·  " + words + "  ·  " + audience;
             }
         }
 
         /// <summary>
-        /// While S is held, titles can flip (a teammate deposits more gems). Strip
+        /// While the matrix is open, titles can flip (a teammate deposits more gems). Strip
         /// command-deck words from the compose rail and lock RECENT rows that used
         /// those words. We only repaint when commander status changes so this
         /// LateUpdate path stays cheap.
@@ -2505,7 +2742,7 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// Space-glass card to the left of the compose panel, same height, same chrome.
-        /// The live minimap reparents into the inner host while S is held so the player
+        /// The live minimap reparents into the inner host while the matrix is open so the player
         /// can ping a world point.
         /// </summary>
         void BuildMinimapDock()
@@ -2533,7 +2770,7 @@ namespace TitanOrbit.UI
 
             // Stay active until BuildJamOverlay parents the lock veil. Building TMP /
             // UGUI on an inactive dock threw in Awake and disabled this behaviour,
-            // so hold-S never opened the matrix.
+            // so hold-C never opened the matrix.
         }
 
         /// <summary>Square card whose side matches the compose panel height.</summary>
@@ -2802,7 +3039,7 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// Shows or hides the enemy-territory lock on both the keyword card and the
-        /// docked minimap. Called while S is held so crossing a triangle edge
+        /// docked minimap. Called while the matrix is open so crossing a triangle edge
         /// mid-compose updates the veil without reopening the card.
         /// </summary>
         /// <param name="jammed">True when the local hull is in a non-friendly triangle.</param>

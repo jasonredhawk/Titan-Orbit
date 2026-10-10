@@ -387,10 +387,11 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
-    /// [ECS/DOTS] Energy-queue cursor for multi-cannon fire (server sim).
+    /// [ECS/DOTS] Energy-queue cursor for multi-cannon fire.
     /// Per-barrel cooldowns live on <see cref="ShipWeaponMountElement.FireCooldown"/>.
-    /// <see cref="NextMountIndex"/> is which mount may spend energy under Energy Hybrid (when a
-    /// full volley is not affordable) or Always Round-Robin. Unused while Always Fire Together waits.
+    /// <see cref="NextMountIndex"/> is which projectile square may spend energy when the
+    /// hull pool cannot pay every armed barrel. That index is ghosted so the arsenal
+    /// paints the charging chip. The other fields stay server-local.
     /// </summary>
     public struct ShipWeaponState : IComponentData
     {
@@ -409,9 +410,11 @@ namespace TitanOrbit.ECS
         public float ChargeDuration;
 
         /// <summary>
-        /// [TITAN-ORBIT] Which barrel’s square is energizing. After it fires, this
-        /// steps to the next armed square and wraps from the last weapon to the first.
+        /// [TITAN-ORBIT] Which barrel’s square is charging. After it fires, this
+        /// steps to the next armed projectile and wraps from the last weapon to the first.
+        /// A full pool resets it to the first projectile so the next short cycle starts there.
         /// </summary>
+        [GhostField]
         public int NextMountIndex;
 
         /// <summary>

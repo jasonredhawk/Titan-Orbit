@@ -329,6 +329,52 @@ namespace TitanOrbit.ECS
             DestroyLocal(em, e, spawnId);
         }
 
+        static readonly List<int> CullScratch = new List<int>(32);
+
+        /// <summary>
+        /// Drops local crystals outside the padded camera rectangle without marking them consumed.
+        /// The server catch-up respawns them if they are still alive when the camera returns.
+        /// </summary>
+        public static void CullOutsideView(
+            EntityManager em,
+            float3 center,
+            float halfW,
+            float halfH,
+            float mapW,
+            float mapH)
+        {
+            if (!ToroidalMapEcs.IsValidMapSize(mapW, mapH))
+                return;
+
+            CullScratch.Clear();
+            foreach (var kv in BySpawnId)
+            {
+                Entity e = kv.Value;
+                if (!em.Exists(e) || !em.HasComponent<LocalTransform>(e))
+                {
+                    CullScratch.Add(kv.Key);
+                    continue;
+                }
+
+                float3 pos = em.GetComponentData<LocalTransform>(e).Position;
+                if (ViewInterestMath.PointInView(center.x, center.z, halfW, halfH, pos, mapW, mapH, 0f))
+                    continue;
+                CullScratch.Add(kv.Key);
+            }
+
+            for (int i = 0; i < CullScratch.Count; i++)
+            {
+                int spawnId = CullScratch[i];
+                if (!TryGet(spawnId, out Entity e))
+                {
+                    BySpawnId.Remove(spawnId);
+                    continue;
+                }
+
+                DestroyLocal(em, e, spawnId);
+            }
+        }
+
         /// <summary>Applies a tractor lock / unlock to a live local gem.</summary>
         public static void ApplyTractorLock(EntityManager em, in GemTractorLockRpc rpc)
         {

@@ -512,7 +512,11 @@ namespace TitanOrbit.Core
         /// World-space particles ignore transform scale — drone 0.58× flashes stayed ship-sized.
         /// One-shot flashes do not move, so Local matches the authored look and then shrinks.
         /// </summary>
-        public static void ApplyImpactVisualScale(GameObject root, float scale)
+        /// <param name="lockUniformParticleSize">
+        /// Tracers: drop random start size and size-over-lifetime so a held trigger
+        /// does not mix small, medium, and large bolts. Muzzle and impact leave this off.
+        /// </param>
+        public static void ApplyImpactVisualScale(GameObject root, float scale, bool lockUniformParticleSize = false)
         {
             if (root == null)
                 return;
@@ -531,6 +535,8 @@ namespace TitanOrbit.Core
                 if (main.simulationSpace == ParticleSystemSimulationSpace.World)
                     main.simulationSpace = ParticleSystemSimulationSpace.Local;
                 main.scalingMode = ParticleSystemScalingMode.Hierarchy;
+                if (lockUniformParticleSize)
+                    LockParticleSize(systems[i]);
             }
 
             // Trail width is world units — parent scale does not shrink the ribbon.
@@ -551,6 +557,38 @@ namespace TitanOrbit.Core
             }
 
             marker.HierarchyScaleReady = true;
+        }
+
+        /// <summary>
+        /// One constant start size (the larger authored bound) and no size-over-lifetime.
+        /// Sci-Fi projectile prefabs randomize start size and shrink along the flight,
+        /// so a stream looked like mixed bullet sizes.
+        /// </summary>
+        static void LockParticleSize(ParticleSystem ps)
+        {
+            var main = ps.main;
+            if (main.startSize3D)
+            {
+                main.startSizeX = ConstantParticleSize(main.startSizeX);
+                main.startSizeY = ConstantParticleSize(main.startSizeY);
+                main.startSizeZ = ConstantParticleSize(main.startSizeZ);
+            }
+            else
+            {
+                main.startSize = ConstantParticleSize(main.startSize);
+            }
+
+            var overLife = ps.sizeOverLifetime;
+            if (overLife.enabled)
+                overLife.enabled = false;
+        }
+
+        static ParticleSystem.MinMaxCurve ConstantParticleSize(ParticleSystem.MinMaxCurve curve)
+        {
+            float size = Mathf.Max(curve.constantMax, curve.constantMin);
+            if (size < 0.001f)
+                size = Mathf.Max(0.001f, curve.constant);
+            return new ParticleSystem.MinMaxCurve(Mathf.Max(0.001f, size));
         }
 
         /// <summary>Weapon fire: compact cone burst using URP Particles Unlit only (mobile; no AllIn1 prefabs).</summary>

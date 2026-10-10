@@ -142,7 +142,8 @@ namespace TitanOrbit.UI
                     unitSuffix = " DPS/s";
                     if (live.IsMega)
                     {
-                        // Catalog per-gun DPS, plus Extra-Leveled LOADOUT guns when AllGunDps was filled.
+                        // Catalog barrel DPS. Purchased weapons are not added; the
+                        // selected bullet type scales AllGunDps before this read.
                         var mega = MegaShipCatalog.Load();
                         value = mega != null
                             ? mega.GetPowerBreakdown(live.MegaCatalogIndex).GetDisplayDps()
@@ -202,7 +203,7 @@ namespace TitanOrbit.UI
                     // [TITAN-ORBIT] Static post–mass-tax turn from the same snapshot.
                     float chassisTurn = live.ChassisTurnDeg > 0.01f ? live.ChassisTurnDeg : eff.turnSpeed;
                     value = Mathf.Max(0f, live.TaxedTurnDeg > 0.01f ? live.TaxedTurnDeg : chassisTurn);
-                    unitSuffix = "°/s";
+                    unitSuffix = "deg/s";
                     nextStep = Mathf.Max(0f, eff.turnSpeedPerExtraLevel);
                     break;
                 case 8:
@@ -256,7 +257,7 @@ namespace TitanOrbit.UI
                 return sb.Length > 0 ? sb.ToString() : "<color=#888888>No breakdown available</color>";
             }
 
-            AppendHeader(sb, $"{shortLabel} — {title}", chipVal, unit, lv, maxLv, nextStep, abilityIndex == 6);
+            AppendHeader(sb, $"{shortLabel} - {title}", chipVal, unit, lv, maxLv, nextStep, abilityIndex == 6);
 
             switch (abilityIndex)
             {
@@ -294,7 +295,7 @@ namespace TitanOrbit.UI
                     float turnLive = live.TaxedTurnDeg > 0.01f
                         ? live.TaxedTurnDeg
                         : (live.ChassisTurnDeg > 0.01f ? live.ChassisTurnDeg : live.EffectiveStats.turnSpeed);
-                    AppendTenPercentPipeline(sb, parts, live, attrs, StatField.TurnSpeed, "°/s", lv, turnLive);
+                    AppendTenPercentPipeline(sb, parts, live, attrs, StatField.TurnSpeed, "deg/s", lv, turnLive);
                     break;
                 case 8:
                     AppendTenPercentPipeline(sb, parts, live, attrs, StatField.MaxGems, "Gem Cap", lv, live.EffectiveStats.maxGems);
@@ -507,7 +508,7 @@ namespace TitanOrbit.UI
             }
 
             if (!wrotePrimary && useStackWeight)
-                sb.AppendLine("<color=#888888>PRIMARY — none</color>");
+                sb.AppendLine("<color=#888888>PRIMARY - none</color>");
 
             // --- Other parts in the pool (own Base + own PerExtra) ---
             bool wroteExtra = false;
@@ -549,7 +550,7 @@ namespace TitanOrbit.UI
             float scaleFactor,
             string extraPoolKey)
         {
-            AppendTint(sb, HexCount, count.ToString(CultureInfo.InvariantCulture) + "×");
+            AppendTint(sb, HexCount, count.ToString(CultureInfo.InvariantCulture) + "x");
             sb.Append(" ").Append(displayName);
             if (isExtra)
             {
@@ -566,8 +567,8 @@ namespace TitanOrbit.UI
                     sb.Append("  ");
                     AppendTint(sb, HexPrimary, FDetail(catalogEach));
                     sb.Append(" ");
-                    AppendTint(sb, HexScale, "Scale ×" + FDetail(scaleFactor));
-                    sb.Append(" → ");
+                    AppendTint(sb, HexScale, "Scale x" + FDetail(scaleFactor));
+                    sb.Append(" -> ");
                     AppendTint(sb, HexResult, FDetail(authoredEach));
                 }
                 else
@@ -642,7 +643,7 @@ namespace TitanOrbit.UI
                 return;
             }
 
-            AppendGridHeader(sb, "PART", "ROLE", "BASE", "PERX", "×LV", "ADD");
+            AppendGridHeader(sb, "PART", "ROLE", "BASE", "PERX", "xLV", "ADD");
             ShipStatTooltipChrome.AppendGridRule(sb);
 
             float running = 0f;
@@ -657,14 +658,14 @@ namespace TitanOrbit.UI
 
                 string name = p.PoolKey ?? "?";
                 if (HasMeaningfulScale(p.Scale))
-                    name = TrimGridName(name, GridNameW - 2) + "×" + FDetail(p.Scale);
+                    name = TrimGridName(name, GridNameW - 2) + "x" + FDetail(p.Scale);
 
                 string role = p.IsWeaponPool
                     ? (p.IsDisplayPrimary ? "PRI" : "GUN")
                     : (p.IsDisplayPrimary ? "PRI" : "+X");
                 string roleHex = p.IsDisplayPrimary ? HexPrimary : HexCount;
                 string nameHex = p.IsDisplayPrimary ? HexPrimary : HexCount;
-                string baseText = p.IncludeBase ? FGrid(baseDisp) : "—";
+                string baseText = p.IncludeBase ? FGrid(baseDisp) : "-";
                 string baseHex = p.IncludeBase ? HexPrimary : HexMute;
 
                 AppendGridRowOpen(sb, name, nameHex, role, roleHex, baseText, baseHex, FGrid(perDisp), HexPerExtra);
@@ -685,10 +686,10 @@ namespace TitanOrbit.UI
                 AppendGridRow(
                     sb,
                     "family", HexMute,
-                    "×", HexMute,
+                    "x", HexMute,
                     FGrid(familyMul), HexMute,
-                    "—", HexMute,
-                    "—", HexMute,
+                    "-", HexMute,
+                    "-", HexMute,
                     FGrid(afterMul), HexResult);
                 running = afterMul;
             }
@@ -765,8 +766,8 @@ namespace TitanOrbit.UI
                 ShipStatTooltipChrome.AppendGridRule(sb);
                 AppendGridRow(
                     sb, "totalMass", HexMute,
-                    "—", HexMute,
-                    "—", HexMute,
+                    "-", HexMute,
+                    "-", HexMute,
                     FGrid(totalMass), HexResult,
                     "", HexMute, "", HexMute);
             }
@@ -794,7 +795,7 @@ namespace TitanOrbit.UI
                 "", HexMute, "", HexMute);
             ShipStatTooltipChrome.AppendGridRule(sb);
             string totalUnit = field == StatField.TurnSpeed
-                ? "°/s"
+                ? "deg/s"
                 : field == StatField.AccelerationCap
                     ? "Accel"
                     : field == StatField.MoveSpeed
@@ -985,9 +986,9 @@ namespace TitanOrbit.UI
                 ? Tint(HexAbility, "ability")
                 : Tint(HexMute, "(") + Tint(HexShip, "ship") + Tint(HexMute, "+") + Tint(HexAbility, "ability") + Tint(HexMute, ")");
             return primary
-                   + Tint(HexMute, " + Σ ")
+                   + Tint(HexMute, " + sum ")
                    + perExtra
-                   + Tint(HexMute, " × ")
+                   + Tint(HexMute, " x ")
                    + levels;
         }
 
@@ -1057,6 +1058,12 @@ namespace TitanOrbit.UI
                 {
                     int gi = pair.Value[m];
                     if (gi < 0 || gi >= parts.Stats.Count)
+                        continue;
+
+                    // Bought guns are bullet types, not extra Fire Power on the DPS chip.
+                    if (isWeapon
+                        && gi >= parts.StoreExtraStartIndex
+                        && field == StatField.FirePower)
                         continue;
 
                     // Cache stats are already catalog × starting scale (same as the motor).
@@ -1221,14 +1228,14 @@ namespace TitanOrbit.UI
             AppendTint(sb, HexAbility, "NEXT BUY");
             sb.Append("  +");
             AppendTint(sb, HexPerExtra, FDetail(moveStep));
-            AppendTint(sb, HexMute, " Move (Σ PerExtra)");
+            AppendTint(sb, HexMute, " Move (sum PerExtra)");
             sb.AppendLine();
         }
 
         /// <summary>
-        /// Related weapon DPS + max ramming at full cruise (not current flight speed).
-        /// Ramming Extra Level uses Fire Power purchases — there is no Ramming chip.
-        /// Called from the Fire Power details card when the HUD snapshot rebuilds.
+        /// Related weapon DPS, the RAM chip, and the full-cruise impact that chip becomes.
+        /// The parts total is grind per second at 1× mass. Asteroid floaters use
+        /// chip × mass ratio × speed. Called when the Fire Power details card rebuilds.
         /// </summary>
         /// <param name="firePowerAbilityLv">Bottom-HUD Fire Power purchases (stand-in for RAM).</param>
         static void AppendRelatedFireExtras(
@@ -1251,24 +1258,71 @@ namespace TitanOrbit.UI
             sb.Append("<color=#5B7A94>").Append(FResult(live.Weapon.FireRate)).Append("/s</color>").AppendLine();
 
             // [TITAN-ORBIT] RAM Extra Level = shipLevel + Fire Power (same as EvaluatePool).
+            // The grid total is the chip (grind /s at 1× mass). It is not the asteroid floater.
             AppendStatCalcGrid(
-                sb, in parts, in live, StatField.RammingPower, "RAM",
+                sb, in parts, in live, StatField.RammingPower, "chip",
                 firePowerAbilityLv, live.EffectiveStats.rammingPower);
 
-            // [TITAN-ORBIT] Recompute grind / ram from rating × mass so B-key muls stay honest.
+            AppendRamCruiseImpact(sb, in live);
+        }
+
+        /// <summary>
+        /// Full-cruise ram the player should compare with the first asteroid floater.
+        /// Chip × mass ratio × speed. Grind after that first hit is a separate line.
+        /// </summary>
+        static void AppendRamCruiseImpact(
+            StringBuilder sb,
+            in ShipSpeedometerStatTooltips.LiveContext live)
+        {
+            // --- Same rating the collision system multiplies ---
+            // [TITAN-ORBIT] Prefer the speedometer rating (motor power × global × bank).
+            // Fall back to the parts-grid chip when that snapshot has not filled yet.
+            float rating = live.RamRating > 0.001f
+                ? live.RamRating
+                : ShipComponentRammingSuggestions.ComputeDamageRatingFromFamilyPower(
+                    live.EffectiveStats.rammingPower);
             float impactSpeed = live.CruiseMaxSpeed > 0.01f ? live.CruiseMaxSpeed : live.ChassisMaxSpeed;
-            float grindDps = ShipComponentRammingSuggestions.ComputeGrindDps(
-                live.RamRating, live.TotalMass, live.ComponentSize);
-            float ramAst = ShipComponentRammingSuggestions.ComputeImpactDamage(
-                live.RamRating, live.TotalMass, impactSpeed, live.ComponentSize);
-            float ramSelf = ShipComponentRammingSuggestions.ComputeImpactSelfDamage(
-                live.RamRating, live.TotalMass, impactSpeed, live.ComponentSize);
-            ShipStatTooltipChrome.AppendSectionBanner(sb, "GRIND / RAM", "FFCC66");
-            sb.Append("Grind  ").Append(FResult(grindDps)).Append("/s");
-            sb.Append(" <color=#5B7A94>(RAM x mass / this hull)</color>").AppendLine();
-            sb.Append("At full cruise  ").Append(FDetail(impactSpeed)).Append("/s -> ");
-            sb.Append("ast ").Append(FResult(ramAst))
-                .Append("  hull ").Append(FResult(ramSelf)).AppendLine();
+            ShipComponentRammingSuggestions.RamCruiseImpactPreview hit =
+                ShipComponentRammingSuggestions.BuildCruiseImpactPreview(
+                    rating, live.TotalMass, impactSpeed, live.ComponentSize);
+
+            ShipStatTooltipChrome.AppendSectionBanner(sb, "FULL CRUISE IMPACT", "FFCC66");
+            AppendTint(sb, HexMute, "Chip is grind/s on an empty hull. First contact is chip x mass x speed.");
+            sb.AppendLine();
+
+            sb.Append("Chip  ").Append(FResult(hit.Rating));
+            AppendTint(sb, HexMute, "   grind/s at 1x mass");
+            sb.AppendLine();
+
+            sb.Append("Mass  ").Append(FResult(hit.TotalMass))
+                .Append(" / ").Append(FResult(hit.HullReference))
+                .Append("  =  ");
+            AppendTint(sb, HexMass, FResult(hit.MassFactor) + "x");
+            if (hit.UsedMassReferenceFallback)
+                AppendTint(sb, HexMute, "  (hull size not ready)");
+            sb.AppendLine();
+
+            sb.Append("Grind  ").Append(FResult(hit.GrindDps)).Append("/s");
+            AppendTint(sb, HexMute, "   chip x mass, while held");
+            sb.AppendLine();
+
+            sb.Append("Cruise  ").Append(FResult(hit.CruiseSpeed)).Append("/s");
+            sb.Append("    Speed  1 + ")
+                .Append(FResult(hit.CruiseSpeed)).Append("/")
+                .Append(FResult(hit.SpeedForDouble))
+                .Append("  =  ");
+            AppendTint(sb, "FFCC66", FResult(hit.SpeedMultiplier) + "x");
+            sb.AppendLine();
+
+            // The floater on the first bump. Later grind pulses add on top of this.
+            sb.Append("<b>");
+            AppendTint(sb, "FFAA66", "Asteroid  " + FResult(hit.AsteroidDamage));
+            sb.Append("</b>");
+            AppendTint(sb, HexMute, "   first contact");
+            sb.AppendLine();
+            sb.Append("Hull  ").Append(FResult(hit.SelfDamage));
+            AppendTint(sb, HexMute, "   " + FResult(ShipComponentRammingSuggestions.SelfToAsteroidDamageRatio) + "x asteroid, capped to rock HP");
+            sb.AppendLine();
         }
 
         /// <summary>
@@ -1315,7 +1369,7 @@ namespace TitanOrbit.UI
         {
             // --- Readout (no purchase language) ---
             ShipStatTooltipChrome.AppendSectionBanner(sb, "READOUT", "7EC8FF");
-            sb.Append("<b><color=#E8F4FF>").Append(shortLabel).Append(" — ").Append(title)
+            sb.Append("<b><color=#E8F4FF>").Append(shortLabel).Append(" - ").Append(title)
                 .Append("</color></b>").AppendLine();
             sb.Append("<size=125%>");
             AppendTint(sb, HexResult, FResult(chipVal));
@@ -1323,7 +1377,7 @@ namespace TitanOrbit.UI
             if (!string.IsNullOrEmpty(unit))
                 AppendTint(sb, HexMute, unit);
             sb.AppendLine();
-                AppendTint(sb, HexMute, "Titan hull — static catalog; gear is PerExtra only");
+                AppendTint(sb, HexMute, "Titan hull - static catalog; gear is PerExtra only");
             sb.AppendLine();
 
             StatField field = abilityIndex switch
@@ -1425,7 +1479,7 @@ namespace TitanOrbit.UI
                     continue;
 
                 wrote = true;
-                AppendTint(sb, HexCount, count.count.ToString(CultureInfo.InvariantCulture) + "×");
+                AppendTint(sb, HexCount, count.count.ToString(CultureInfo.InvariantCulture) + "x");
                 sb.Append(" ").Append(count.displayName).Append("  ");
                 AppendTint(sb, HexResult, FDetail(each));
                 if (!string.IsNullOrEmpty(unitLabel))
@@ -1437,7 +1491,7 @@ namespace TitanOrbit.UI
                 if (count.count > 1)
                 {
                     sb.Append("  ");
-                    AppendTint(sb, HexMute, "→ ");
+                    AppendTint(sb, HexMute, "-> ");
                     AppendTint(sb, HexResult, FResult(each * count.count));
                 }
 
@@ -1479,6 +1533,9 @@ namespace TitanOrbit.UI
                 string id = parts.Ids[i];
                 if (string.IsNullOrWhiteSpace(id))
                     continue;
+                if (field == StatField.FirePower
+                    && ShipComponentAbilityStats.IsWeaponComponent(id))
+                    continue;
 
                 ShipComponentAbilityStats extra = MegaShipStatsCalculator.EvaluateLoadoutExtra(
                     parts.Stats[i], id, level);
@@ -1490,7 +1547,7 @@ namespace TitanOrbit.UI
                 if (!wroteHeader)
                 {
                     ShipStatTooltipChrome.AppendSectionBanner(sb, "GEAR", "FFAA66");
-                    AppendTint(sb, HexMute, "LOADOUT extras add PerExtra × Titan tier (no Base)");
+                    AppendTint(sb, HexMute, "LOADOUT extras add PerExtra x Titan tier (no Base)");
                     sb.AppendLine();
                     wroteHeader = true;
                 }
@@ -1500,7 +1557,7 @@ namespace TitanOrbit.UI
                     && entry != null)
                     label = ShipComponentStoreData.GetDisplayName(entry);
 
-                AppendTint(sb, HexCount, "1×");
+                AppendTint(sb, HexCount, "1x");
                 sb.Append(" ").Append(label).Append("  ");
                 AppendTint(sb, HexResult, FDetail(value));
                 if (!string.IsNullOrEmpty(unitLabel))
@@ -1550,7 +1607,7 @@ namespace TitanOrbit.UI
                 for (int n = 0; n < count.count; n++)
                     moves.Add(unique.stats.moveSpeed);
 
-                AppendTint(sb, HexCount, count.count.ToString(CultureInfo.InvariantCulture) + "×");
+                AppendTint(sb, HexCount, count.count.ToString(CultureInfo.InvariantCulture) + "x");
                 sb.Append(" ").Append(count.displayName).Append("  ");
                 AppendTint(sb, HexResult, FDetail(unique.stats.moveSpeed));
                 sb.Append(" ");
@@ -1784,12 +1841,12 @@ namespace TitanOrbit.UI
         {
             float pct = weight * 100f;
             if (Mathf.Abs(pct - 100f) < 0.05f)
-                return "×100%";
+                return "x100%";
             if (Mathf.Abs(pct - 10f) < 0.05f)
-                return "×10%";
+                return "x10%";
             if (Mathf.Abs(pct - Mathf.Round(pct)) < 0.05f)
-                return "×" + Mathf.RoundToInt(pct).ToString(CultureInfo.InvariantCulture) + "%";
-            return "×" + pct.ToString("0.##", CultureInfo.InvariantCulture) + "%";
+                return "x" + Mathf.RoundToInt(pct).ToString(CultureInfo.InvariantCulture) + "%";
+            return "x" + pct.ToString("0.##", CultureInfo.InvariantCulture) + "%";
         }
 
         static string PadRightPlain(string s, int width)

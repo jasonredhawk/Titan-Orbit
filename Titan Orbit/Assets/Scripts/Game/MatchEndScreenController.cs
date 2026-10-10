@@ -169,7 +169,7 @@ namespace TitanOrbit.Game
             /// <summary>Match-long troops unloaded onto planets.</summary>
             public int People;
 
-            /// <summary>kills×100 + gems×2 + people×5.</summary>
+            /// <summary>Ghosted match score. An enemy kill moves half of this onto the killer.</summary>
             public int Score;
 
             /// <summary>True for this machine's ship, so the row can say YOU.</summary>
@@ -347,12 +347,14 @@ namespace TitanOrbit.Game
                 int kills = 0;
                 int gems = 0;
                 int people = 0;
+                int score = 0;
                 if (em.HasComponent<ShipMatchStats>(entities[i]))
                 {
                     ShipMatchStats stats = em.GetComponentData<ShipMatchStats>(entities[i]);
                     kills = Mathf.Max(0, stats.Kills);
                     gems = Mathf.Max(0, stats.GemsDeposited);
                     people = Mathf.Max(0, stats.PeopleDelivered);
+                    score = Mathf.Max(0, stats.Score);
                 }
 
                 _rows.Add(new ScoreRow
@@ -363,7 +365,7 @@ namespace TitanOrbit.Game
                     Kills = kills,
                     Gems = gems,
                     People = people,
-                    Score = TeamCommanderRules.CombinedScore(kills, gems, people),
+                    Score = score,
                     IsLocal = networkId > 0 && networkId == localId,
                     IsDead = ship.IsDead,
                 });

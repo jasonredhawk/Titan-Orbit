@@ -592,9 +592,8 @@ namespace TitanOrbit.ECS
             if (ClientServerBootstrap.ClientWorld != null && ClientServerBootstrap.ClientWorld.IsCreated)
                 PeopleTransportVfxBridge.TryEnqueue(vfxReq);
 
-            // --- Broadcast spawn RPC (62B layout — seat is SpawnPosition.y, must match headless) ---
-            Entity rpcEntity = ecb.CreateEntity();
-            ecb.AddComponent(rpcEntity, new PeopleTransportSpawnRpc
+            // --- Spawn RPC only for cameras the flight crosses (seat stays in SpawnPosition.y) ---
+            var spawnRpc = new PeopleTransportSpawnRpc
             {
                 Sequence = sequence,
                 SpawnPosition = rpcSpawn,
@@ -607,8 +606,10 @@ namespace TitanOrbit.ECS
                 TargetPlanetId = targetPlanetId,
                 IsLoad = isLoadByte,
                 Team = teamByte,
-            });
-            ecb.AddComponent(rpcEntity, new SendRpcCommandRequest { TargetConnection = Entity.Null });
+            };
+            float3 pathFrom = spawnPos;
+            pathFrom.y = 0f;
+            ViewInterestFanout.EmitSegment(ref ecb, spawnRpc, pathFrom, bakedTarget, 4f, 0);
         }
     }
 

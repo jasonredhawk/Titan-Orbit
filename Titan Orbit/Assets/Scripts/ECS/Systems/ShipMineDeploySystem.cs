@@ -10,7 +10,7 @@ using Unity.Transforms;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Server-authoritative mine place (ALT while the loadout caret is on a mine pack).
+    /// Server-authoritative mine place (Q while the loadout caret is on a mine pack).
     /// Consumes one charge from the selected mine equipment slot
     /// (unless <see cref="TitanOrbitDebugFlags.InfiniteMines"/>), then
     /// appends a <see cref="DeployedMineElement"/> on the owner ship ghost.

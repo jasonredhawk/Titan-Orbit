@@ -8,15 +8,14 @@ namespace TitanOrbit.NetCode
     /// <summary>
     /// [NETCODE] Restricts ghost replication so asteroids are <b>not</b> streamed.
     /// Clients hydrate asteroids from the match seed (<see cref="ClientMapHydrateSystem"/>).
-    /// Planets remain relevant (small count) so ownership / population / moon shield GhostFields
-    /// keep working without a full sparse-sync rewrite.
+    /// Planets remain always relevant (small count) so ownership / population / moon shield
+    /// GhostFields keep working. Ships are not in this query — they replicate only when
+    /// <see cref="TitanOrbitGemGhostRelevancySystem"/> adds them (owner, or inside the camera view).
     /// <para>
     /// Uses <see cref="GhostRelevancyMode.SetIsRelevant"/> with
-    /// <see cref="GhostRelevancy.DefaultRelevancyQuery"/> =
-    /// Any(Ship, Planet). People transports are RPC VFX, not ghosts.
-    /// <see cref="TitanOrbitGemGhostRelevancySystem"/> writes ships/planets into
-    /// <see cref="GhostRelevancy.GhostRelevancySet"/> each tick. Gems are event-hydrated RPCs.
-    /// Asteroids are never in this query — clients seed-hydrate them.
+    /// <see cref="GhostRelevancy.DefaultRelevancyQuery"/> = Planet.
+    /// Ghosts that match the query go to every connection. Everyone else needs the relevancy set.
+    /// Gems are event-hydrated RPCs. Asteroids are never in this query — clients seed-hydrate them.
     /// </para>
     /// World: ServerSimulation. Initialization — runs once after GhostRelevancy exists.
     /// </summary>
@@ -34,7 +33,6 @@ namespace TitanOrbit.NetCode
             {
                 Any = new[]
                 {
-                    ComponentType.ReadOnly<ShipTag>(),
                     ComponentType.ReadOnly<PlanetTag>(),
                 },
             });
@@ -51,7 +49,8 @@ namespace TitanOrbit.NetCode
             _configured = true;
 
             Debug.Log(
-                "[TitanOrbitGhostRelevancy] SetIsRelevant — Ship/Planet always; " +
+                "[TitanOrbitGhostRelevancy] SetIsRelevant — Planet always; " +
+                "ships only for the owner and inside that player's camera view; " +
                 "gems are event-hydrated RPCs (not ghosts); " +
                 "asteroids use client seed hydrate + occupancy catch-up; " +
                 "people transports are SpawnRpc (not ghosts).");

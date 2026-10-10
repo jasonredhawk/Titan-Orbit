@@ -311,7 +311,8 @@ namespace TitanOrbit.UI
         {
             if (sb == null)
                 return;
-            sb.Append("<color=#").Append(SectionRailHex).Append(">· · · · · · · · · · · ·</color>")
+            // ASCII dots — Rajdhani's static atlas has no middot, and WebGL cannot bake one at runtime.
+            sb.Append("<color=#").Append(SectionRailHex).Append(">. . . . . . . . . . . .</color>")
                 .AppendLine();
         }
 
@@ -323,8 +324,9 @@ namespace TitanOrbit.UI
         {
             if (sb == null)
                 return;
+            // ASCII hyphens — box-drawing rules fall back to Liberation Sans (or boxes) on WebGL.
             sb.Append("<color=#").Append(SectionRailHex)
-                .Append(">────────────────────────────────────────</color>")
+                .Append(">----------------------------------------</color>")
                 .AppendLine();
         }
 
@@ -366,13 +368,24 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Tries common Shift font asset paths. Returns null if none found (LiberationSans still fine).
+        /// Prefers the Shift face referenced by Resources/SpinCardShiftVisuals so WebGL
+        /// player builds get Rajdhani. AssetDatabase loads exist only in the Editor.
+        /// Returns null if none found (LiberationSans still fine).
         /// </summary>
         static TMP_FontAsset ResolveRajdhani()
         {
             if (_triedFont)
                 return _cachedRajdhani;
             _triedFont = true;
+
+            // [UNITY] A Resources asset reference is what actually packs the SDF into WebGL.
+            // Resources.Load("Rajdhani-SemiBold SDF") misses because that file is not under Resources.
+            SpinCardShiftVisuals visuals = ResolveVisuals();
+            if (visuals != null && visuals.rajdhaniSemiBold != null)
+            {
+                _cachedRajdhani = visuals.rajdhaniSemiBold;
+                return _cachedRajdhani;
+            }
 
             _cachedRajdhani = Resources.Load<TMP_FontAsset>("Rajdhani-SemiBold SDF");
             if (_cachedRajdhani != null)

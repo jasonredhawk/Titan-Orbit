@@ -147,7 +147,7 @@ namespace TitanOrbit.Entities
                     muzzle.transform.SetPositionAndRotation(position, Quaternion.LookRotation(-dir));
                     VfxUrpCompat.ApplyImpactVisualScale(muzzle, visualScale);
                     VfxUrpCompat.PrepareVfxInstance(muzzle);
-                    SetAudioPitchInHierarchy(muzzle, pitch);
+                    SetAudioPitchInHierarchy(muzzle, pitch, position);
                     BulletOneShotVfxPool.ScheduleReturn(muzzle, 1.5f);
                     return;
                 }
@@ -178,10 +178,12 @@ namespace TitanOrbit.Entities
             float pitch = GetFirePowerSoundPitch(damage, baseFirePower, firePowerPerExtra);
             float life = duration > 0.05f ? duration : DefaultImpactDuration;
 
+            float hear = GameplaySfxProximity.VolumeAt(position);
             if (Application.isMobilePlatform)
             {
                 VfxUrpCompat.SpawnMobileImpactBurst(position, GetTeamBulletColor(team), impactScale);
-                AudioManager.Instance?.PlayBulletImpactSound(pitch);
+                if (hear > 0.001f)
+                    AudioManager.Instance?.PlayBulletImpactSound(pitch, hear);
                 return;
             }
 
@@ -189,12 +191,14 @@ namespace TitanOrbit.Entities
             if (prefab == null)
             {
                 VfxUrpCompat.SpawnMobileImpactBurst(position, GetTeamBulletColor(team), impactScale);
-                AudioManager.Instance?.PlayBulletImpactSound(pitch);
+                if (hear > 0.001f)
+                    AudioManager.Instance?.PlayBulletImpactSound(pitch, hear);
                 return;
             }
 
             SpawnImpactAt(position, prefab, pitch, impactScale, life, attachParent, surfaceNormal);
-            AudioManager.Instance?.PlayBulletImpactSound(pitch);
+            if (hear > 0.001f)
+                AudioManager.Instance?.PlayBulletImpactSound(pitch, hear);
         }
 
         public static void ApplyColorToVisual(GameObject root, Color color)
@@ -229,13 +233,31 @@ namespace TitanOrbit.Entities
 
         public static void SetAudioPitchInHierarchy(GameObject root, float pitch)
         {
+            SetAudioPitchInHierarchy(root, pitch, default, applyHear: false);
+        }
+
+        /// <summary>
+        /// Sets pitch and ducks prefab <see cref="AudioSource"/>s by toroidal distance
+        /// from the local ship. Distant PlayOnAwake clips are stopped.
+        /// </summary>
+        public static void SetAudioPitchInHierarchy(GameObject root, float pitch, Vector3 worldPosition)
+        {
+            SetAudioPitchInHierarchy(root, pitch, worldPosition, applyHear: true);
+        }
+
+        static void SetAudioPitchInHierarchy(GameObject root, float pitch, Vector3 worldPosition, bool applyHear)
+        {
             // --- SetAudioPitchInHierarchy ---
             if (root == null) return;
+            float hear = applyHear ? GameplaySfxProximity.VolumeAt(worldPosition) : 1f;
             AudioSource[] sources = root.GetComponentsInChildren<AudioSource>(true);
             for (int i = 0; i < sources.Length; i++)
             {
-                if (sources[i] != null)
-                    sources[i].pitch = pitch;
+                if (sources[i] == null)
+                    continue;
+                sources[i].pitch = pitch;
+                if (applyHear)
+                    GameplaySfxProximity.Apply(sources[i], hear);
             }
         }
 
@@ -251,7 +273,9 @@ namespace TitanOrbit.Entities
             AudioSource[] sources = root.GetComponentsInChildren<AudioSource>(true);
             for (int i = 0; i < sources.Length; i++)
             {
-                if (sources[i] == null)
+                // Muted sources were ducked by hear range — replaying them would
+                // spend a voice on a blast the local ship should not hear.
+                if (sources[i] == null || sources[i].mute)
                     continue;
                 sources[i].Stop();
                 sources[i].Play();
@@ -342,7 +366,7 @@ namespace TitanOrbit.Entities
                 : Quaternion.identity;
             go.transform.SetPositionAndRotation(position, rot);
             VfxUrpCompat.ApplyImpactVisualScale(go, scale);
-            SetAudioPitchInHierarchy(go, pitch);
+            SetAudioPitchInHierarchy(go, pitch, position);
             if (replayAudio)
                 ReplayAudioInHierarchy(go);
             // [UNITY] PrepareVfxInstance restarts ParticleSystems — required after pool Return cleared them.

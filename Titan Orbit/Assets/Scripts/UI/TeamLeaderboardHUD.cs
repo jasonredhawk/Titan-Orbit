@@ -14,7 +14,8 @@ namespace TitanOrbit.UI
     /// <summary>
     /// In-game team leaderboard in the top-right corner — same width as the minimap, height
     /// stretched down until it meets the minimap below. Opens on the team this player joined.
-    /// Press TAB to cycle Team A…E panels; cycling does not snap back until the next join.
+    /// Press TAB, or click the TAB keycap, to cycle Team A…E panels. Click a colored
+    /// planet-share tab to open that team directly. Cycling does not snap back until the next join.
     /// <para>
     /// Shows a player list only: a gold Command Deck for earned commanders (living
     /// top killer / miner / troop mover), then the crew. Role icons, rank, profile
@@ -28,9 +29,11 @@ namespace TitanOrbit.UI
     /// <para>
     /// The header tabs are a planet-control bar: the full leaderboard width is every capturable
     /// planet (homes + neutrals). Each team's colored tab is that team's owned share; leftover
-    /// width is still-neutral worlds. The title line shows that team's score — the sum of every
-    /// member's combined score. Combined player score still uses the old NGO
-    /// <c>ScoreSystem</c> weights: kill=100, deposited gem=2, delivered person=5.
+    /// width is still-neutral worlds. Clicking a team tab opens that roster. The title line
+    /// shows the team name and worlds owned on the left, a TAB keycap, and that team's score
+    /// pinned to the right — the sum of every member's match score. A player earns 2 per
+    /// deposited gem and 5 per delivered troop.
+    /// An enemy kill pays half the victim's current score and leaves the victim with the other half.
     /// Layout uses the minimap's own rect size (not renderer bounds) so moving blips cannot drift
     /// the panel while the ship flies.
     /// </para>
@@ -68,7 +71,7 @@ namespace TitanOrbit.UI
         [SerializeField] bool hideWhenUpgradeTreeOpen = true;
 
         // -------------------------------------------------------------------------
-        // Score weights live in ShipMatchScoreLogic (shared with ship nameplates).
+        // Match score is ShipMatchStats.Score (gems, troops, and kill transfers).
 
         // -------------------------------------------------------------------------
         // Runtime UI roots
@@ -79,6 +82,12 @@ namespace TitanOrbit.UI
         Image _panelBg;
         Image _accentStripe;
         TextMeshProUGUI _titleText;
+        /// <summary>Team total, right edge of the title row. Separate from the name so it stays justified.</summary>
+        TextMeshProUGUI _scoreText;
+        /// <summary>Title row. Rebuilt after the name or score width changes so SCORE stays on the right.</summary>
+        RectTransform _headerRect;
+        /// <summary>Clickable TAB keycap. Same cycle as the keyboard key.</summary>
+        Button _tabCycleButton;
         RectTransform _planetBarRoot;
         ScrollRect _scrollRect;
         RectTransform _viewportRect;
@@ -122,7 +131,8 @@ namespace TitanOrbit.UI
         static Sprite s_WhiteSprite;
 
         // [TITAN-ORBIT] Control bar sits above the title. Its full width is every capturable world.
-        const float PlanetControlBarHeight = 14f;
+        // Tall enough to click a team slice with the mouse, not only to read the planet count.
+        const float PlanetControlBarHeight = 18f;
         const float HeaderHeight = 24f;
         const float TopChromePad = 4f;
         const float RowHeight = 40f;
@@ -150,6 +160,15 @@ namespace TitanOrbit.UI
         static readonly Color CrewCaption = new Color(0.62f, 0.78f, 0.95f, 0.92f);
         /// <summary>Dark-glass fill on the mute cell — same void as tooltip chrome.</summary>
         static readonly Color MuteFill = new Color(0.012f, 0.016f, 0.028f, 0.96f);
+        /// <summary>Gold team total — same hue as each row's score so the header reads as that stat.</summary>
+        static readonly Color ScoreGold = new Color(0.95f, 0.86f, 0.55f, 1f);
+        /// <summary>
+        /// Dark key plate behind TAB. Same fill as the B / CTRL / arsenal chips so the bind
+        /// reads as a key, not as body text in square brackets.
+        /// </summary>
+        static readonly Color KeycapFill = new Color(0.04f, 0.10f, 0.16f, 0.96f);
+        /// <summary>Green glyph on the keycap. Matches the ready hint on brakes and fire types.</summary>
+        static readonly Color KeycapGlyph = new Color(0.45f, 0.92f, 0.62f, 1f);
         /// <summary>Ice caption when this client still hears that speaker.</summary>
         static readonly Color MuteOpenCaption = new Color(0.62f, 0.78f, 0.95f, 0.95f);
         /// <summary>Dimmer caption + slash when that speaker is muted.</summary>
@@ -172,6 +191,11 @@ namespace TitanOrbit.UI
 
             /// <summary>Planet count, shown only when the slice is wide enough to read.</summary>
             public TextMeshProUGUI CountText;
+
+            /// <summary>
+            /// Opens this team's roster. Disabled on the unowned remainder, which is not a team.
+            /// </summary>
+            public Button SelectButton;
         }
 
         /// <summary>Widgets for one pooled leaderboard row.</summary>
@@ -263,8 +287,7 @@ namespace TitanOrbit.UI
             Color teamColor = TeamId.TeamA.ToColor();
             if (_accentStripe != null)
                 _accentStripe.color = new Color(teamColor.r, teamColor.g, teamColor.b, 0.95f);
-            if (_titleText != null)
-                _titleText.text = "Team A  <size=80%><color=#F2DB8C>SCORE 2170</color>  <color=#9EB6D8>4/10  [TAB]</color></size>";
+            ApplyViewedTeamHeader(TeamId.TeamA, 2170, 4, 10);
 
             // Demo: 10 capturable worlds — A leads, some still neutral.
             int[] demoCounts = { 4, 2, 1, 0, 0 };
@@ -324,9 +347,9 @@ namespace TitanOrbit.UI
             if (_canvasGroup != null)
             {
                 _canvasGroup.alpha = hide ? 0f : 1f;
-                // [TITAN-ORBIT] Mute is the only Graphic with raycastTarget = true.
+                // [TITAN-ORBIT] Hits are the mute cells, planet-share tabs, and the TAB keycap.
                 // Enable the group only while visible so a faded panel cannot steal
-                // combat clicks. Names, scores, and the plate stay click-through.
+                // combat clicks. Names, row scores, and the plate stay click-through.
                 bool allowMuteClicks = !hide;
                 _canvasGroup.blocksRaycasts = allowMuteClicks;
                 _canvasGroup.interactable = allowMuteClicks;
@@ -407,6 +430,41 @@ namespace TitanOrbit.UI
             else
                 _viewedTeamIndex = (_viewedTeamIndex + 1) % teamCount;
 
+            _nextRefreshTime = 0f;
+            RefreshRows();
+        }
+
+        /// <summary>
+        /// Opens one team's roster from a planet-share click. The keyboard and the TAB
+        /// keycap still cycle; this jumps straight to the slice the player hit.
+        /// </summary>
+        /// <param name="teamIndex">0-based team (Team A = 0). The unowned slice is ignored.</param>
+        void OnPlanetShareClicked(int teamIndex)
+        {
+            int teamCount = GetActiveTeamCount();
+            // The leftover dark slice is unowned worlds, not a roster.
+            if (teamIndex < 0 || teamIndex >= teamCount)
+                return;
+
+            SelectViewedTeam(teamIndex);
+        }
+
+        /// <summary>
+        /// Shows <paramref name="teamIndex"/> without wrapping. A second click on the
+        /// team already open does nothing, so the list does not rebuild under the cursor.
+        /// </summary>
+        /// <param name="teamIndex">0-based team, clamped to the match's active teams.</param>
+        void SelectViewedTeam(int teamIndex)
+        {
+            int teamCount = GetActiveTeamCount();
+            if (teamCount <= 0)
+                return;
+
+            teamIndex = Mathf.Clamp(teamIndex, 0, teamCount - 1);
+            if (_viewedTeamIndex == teamIndex)
+                return;
+
+            _viewedTeamIndex = teamIndex;
             _nextRefreshTime = 0f;
             RefreshRows();
         }
@@ -509,17 +567,9 @@ namespace TitanOrbit.UI
         static TeamId IndexToTeam(int index) => (TeamId)(Mathf.Clamp(index, 0, 4) + 1);
 
         /// <summary>
-        /// Combined match score from ghosted stats — same weights as the old NGO ScoreSystem
-        /// (shared with ship nameplates via <see cref="ShipMatchScoreLogic"/>).
-        /// </summary>
-        static int ComputeCombinedScore(int kills, int gemsDeposited, int peopleDelivered)
-        {
-            return ShipMatchScoreLogic.ComputeCombinedScore(kills, gemsDeposited, peopleDelivered);
-        }
-
-        /// <summary>
-        /// Sum of combined scores for the ships already filtered to the viewed team.
-        /// Dead hulls stay in the sum — they are still on the roster.
+        /// Sum of match scores for the ships already filtered to the viewed team.
+        /// Dead hulls stay in the sum — they are still on the roster, at their halved score
+        /// if an enemy took the kill.
         /// </summary>
         static int SumAnchorScores(List<MinimapBlipAnchor> ships)
         {
@@ -529,29 +579,68 @@ namespace TitanOrbit.UI
                 MinimapBlipAnchor anchor = ships[i];
                 if (anchor == null)
                     continue;
-                total += ComputeCombinedScore(
-                    Mathf.Max(0, anchor.Kills),
-                    Mathf.Max(0, anchor.GemsDeposited),
-                    Mathf.Max(0, anchor.PeopleDelivered));
+                total += Mathf.Max(0, anchor.Score);
             }
 
             return total;
         }
 
         /// <summary>
-        /// Title line: team name, team score (gold), worlds owned, and the TAB hint.
-        /// Score is the sum of every member on this team, not one player's row.
+        /// Title line: team name and worlds owned on the left, TAB keycap beside them,
+        /// team score pinned to the right edge. Score is the sum of every member on
+        /// this team, not one player's row.
         /// </summary>
         void ApplyViewedTeamHeader(TeamId viewedTeam, int teamScore, int viewedOwned, int capturableTotal)
         {
             if (_titleText == null)
                 return;
 
-            // Gold score matches the row score color so the total reads as the same stat.
+            // Name and planet fraction stay together. The keycap is its own widget, not "[TAB]".
             _titleText.text = viewedTeam.ToDisplayName()
-                + "  <size=80%><color=#F2DB8C>SCORE " + teamScore + "</color>"
-                + "  <color=#9EB6D8>" + viewedOwned + "/" + capturableTotal
-                + "  [TAB]</color></size>";
+                + "  <size=80%><color=#9EB6D8>" + viewedOwned + "/" + capturableTotal + "</color></size>";
+            FitHeaderLabelWidth(_titleText);
+
+            // Gold total matches the row score color so the header reads as the same stat.
+            if (_scoreText != null)
+            {
+                _scoreText.text = "SCORE " + teamScore;
+                FitHeaderLabelWidth(_scoreText);
+            }
+
+            // Preferred widths changed — push SCORE back to the right edge this frame.
+            if (_headerRect != null)
+                LayoutRebuilder.ForceRebuildLayoutImmediate(_headerRect);
+        }
+
+        /// <summary>
+        /// Sets a header label's layout width to the rendered line so the flexible spacer
+        /// can shove the score to the far right instead of leaving a gap inside the text.
+        /// </summary>
+        static void FitHeaderLabelWidth(TextMeshProUGUI label)
+        {
+            if (label == null)
+                return;
+
+            label.ForceMeshUpdate();
+            var le = label.GetComponent<LayoutElement>();
+            if (le == null)
+                return;
+
+            le.preferredWidth = Mathf.Max(8f, Mathf.Ceil(label.preferredWidth));
+        }
+
+        /// <summary>
+        /// Uses the same Shift face as the brakes / fire-type keycaps when that font is in Resources.
+        /// Falls back to the leaderboard face when the asset is missing.
+        /// </summary>
+        static void ApplyKeycapFont(TextMeshProUGUI tmp)
+        {
+            if (tmp == null)
+                return;
+
+            TMP_FontAsset font = Resources.Load<TMP_FontAsset>("Rajdhani-SemiBold SDF");
+            if (font != null)
+                tmp.font = font;
         }
 
         // =========================================================================
@@ -657,8 +746,8 @@ namespace TitanOrbit.UI
                 }
             }
 
-            // Team score is every member's combined score (kills, gems, people), including
-            // an empty roster (0). Painted before the empty-list return so the header stays.
+            // Team score is every member's match score, including an empty roster (0).
+            // Painted before the empty-list return so the header stays.
             int teamScore = SumAnchorScores(_teamShips);
             ApplyViewedTeamHeader(viewedTeam, teamScore, viewedOwned, capturableTotal);
 
@@ -699,7 +788,7 @@ namespace TitanOrbit.UI
                     Kills = kills,
                     Gems = gems,
                     People = people,
-                    Score = ComputeCombinedScore(kills, gems, people),
+                    Score = Mathf.Max(0, a.Score),
                     IsLocalPlayer = a.IsLocalPlayer,
                     IsDead = a.IsDead,
                 });
@@ -712,7 +801,7 @@ namespace TitanOrbit.UI
             for (int i = 0; i < _sorted.Count; i++)
             {
                 RowData r = _sorted[i];
-                if (r.IsDead || r.OwnerNetworkId <= 0)
+                if (r.IsDead || r.OwnerNetworkId <= 0 || BotShipIds.IsBot(r.OwnerNetworkId))
                     continue;
 
                 if (TeamCommandRoleRules.IsBetterTop(r.Kills, r.OwnerNetworkId, bestKills, bestKillerId))
@@ -1201,7 +1290,8 @@ namespace TitanOrbit.UI
         /// Sizes team-color tabs so the bar width is every capturable planet. Anchors are
         /// fractions of <paramref name="capturableTotal"/> — four owned of twenty worlds is 20%
         /// of the leaderboard width. A dim remainder slice is still-neutral worlds. The viewed
-        /// team is brighter so TAB still has a selected tab.
+        /// team is brighter so the open roster still has a selected tab. A team slice
+        /// is a button; the unowned remainder is not.
         /// </summary>
         /// <param name="teamCount">How many team slices to consider.</param>
         /// <param name="viewedIndex">Selected team for the player list below.</param>
@@ -1242,6 +1332,12 @@ namespace TitanOrbit.UI
                     : (isTeam && i < counts.Length ? Mathf.Max(0, counts[i]) : 0);
                 bool viewed = isTeam && i == viewedIndex;
                 bool show = (isTeam || isNeutral) && count > 0;
+                // Only a team that owns worlds accepts a click. The dark remainder is not a roster.
+                bool clickable = isTeam && count > 0;
+                if (seg.Fill != null)
+                    seg.Fill.raycastTarget = clickable;
+                if (seg.SelectButton != null)
+                    seg.SelectButton.interactable = clickable;
                 seg.Root.SetActive(show);
                 if (!show)
                     continue;
@@ -1295,18 +1391,27 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Builds one stretchy bar slice: tinted fill plus an optional planet-count label.
-        /// Anchors are assigned later by <see cref="PlacePlanetBarSlice"/>.
+        /// Builds one stretchy bar slice: tinted fill, planet-count label, and a click
+        /// target that opens this team. Anchors are assigned later by <see cref="PlacePlanetBarSlice"/>.
         /// </summary>
         PlanetBarSegment CreatePlanetBarSegment(int index)
         {
             // [UNITY] Image + TMP child; parent later assigns anchors as planet-share fractions.
-            var go = new GameObject("PlanetShare_" + index, typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            // The button lives on the fill so the colored tab itself is the hit target.
+            int captured = index;
+            var go = new GameObject("PlanetShare_" + index, typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Button));
             go.transform.SetParent(_planetBarRoot, false);
             var rt = go.GetComponent<RectTransform>();
             var img = go.GetComponent<Image>();
             img.sprite = GetWhiteSprite();
-            img.raycastTarget = false;
+            img.raycastTarget = true;
+
+            var button = go.GetComponent<Button>();
+            button.targetGraphic = img;
+            // ColorTint would multiply the team color. None keeps the faction tint exact.
+            button.transition = Selectable.Transition.None;
+            button.navigation = new Navigation { mode = Navigation.Mode.None };
+            button.onClick.AddListener(() => OnPlanetShareClicked(captured));
 
             var labelGo = new GameObject("Count", typeof(RectTransform));
             labelGo.transform.SetParent(go.transform, false);
@@ -1316,6 +1421,7 @@ namespace TitanOrbit.UI
             tmp.fontStyle = FontStyles.Bold;
             tmp.alignment = TextAlignmentOptions.Center;
             tmp.color = Color.white;
+            // The number is paint only. The fill behind it receives the click.
             tmp.raycastTarget = false;
             tmp.enableWordWrapping = false;
             tmp.overflowMode = TextOverflowModes.Ellipsis;
@@ -1326,6 +1432,7 @@ namespace TitanOrbit.UI
                 Rect = rt,
                 Fill = img,
                 CountText = tmp,
+                SelectButton = button,
             };
         }
 
@@ -1341,6 +1448,8 @@ namespace TitanOrbit.UI
         {
             if (_panelRoot != null
                 && _titleText != null
+                && _scoreText != null
+                && _tabCycleButton != null
                 && _contentRect != null
                 && _planetBarRoot != null
                 && _commandDeckBanner != null
@@ -1352,6 +1461,7 @@ namespace TitanOrbit.UI
             if (existing != null)
                 Destroy(existing.gameObject);
             _planetBarSegments.Clear();
+            _rows.Clear();
             _commandDeckBanner = null;
             _crewBanner = null;
 
@@ -1391,11 +1501,12 @@ namespace TitanOrbit.UI
             barTrack.color = new Color(0.04f, 0.055f, 0.09f, 0.95f);
             barTrack.raycastTarget = false;
 
-            // --- Compact header: viewed team name + [TAB] (tabs now live in the bar above) ---
+            // --- Title row: name + worlds, TAB keycap, then SCORE on the far right ---
             float headerTop = planetBarTop - PlanetControlBarHeight - 3f;
-            var header = new GameObject("Header", typeof(RectTransform));
+            var header = new GameObject("Header", typeof(RectTransform), typeof(HorizontalLayoutGroup));
             header.transform.SetParent(_panelRoot.transform, false);
             var headerRt = header.GetComponent<RectTransform>();
+            _headerRect = headerRt;
             headerRt.anchorMin = new Vector2(0f, 1f);
             headerRt.anchorMax = new Vector2(1f, 1f);
             headerRt.pivot = new Vector2(0.5f, 1f);
@@ -1404,12 +1515,75 @@ namespace TitanOrbit.UI
             headerRt.offsetMin = new Vector2(PanelSidePad + 4f, headerRt.offsetMin.y);
             headerRt.offsetMax = new Vector2(-PanelSidePad, headerRt.offsetMax.y);
 
+            // Width comes from each child's preferred size. Height stays on the child so the
+            // 14px keycap can sit centered in the 24px row instead of stretching to full height.
+            var headerLayout = header.GetComponent<HorizontalLayoutGroup>();
+            headerLayout.childAlignment = TextAnchor.MiddleLeft;
+            headerLayout.childControlWidth = true;
+            headerLayout.childControlHeight = false;
+            headerLayout.childForceExpandWidth = false;
+            headerLayout.childForceExpandHeight = false;
+            headerLayout.spacing = 8f;
+
             _titleText = CreateTmp(header.transform, "Title", 15f, TextAlignmentOptions.MidlineLeft,
                 new Color(0.90f, 0.94f, 1f, 1f));
-            StretchFull(_titleText.rectTransform);
+            _titleText.rectTransform.sizeDelta = new Vector2(120f, HeaderHeight);
+            var titleLayout = _titleText.gameObject.AddComponent<LayoutElement>();
+            titleLayout.preferredHeight = HeaderHeight;
+            titleLayout.minHeight = HeaderHeight;
+            titleLayout.flexibleWidth = 0f;
             _titleText.fontStyle = FontStyles.Bold;
             _titleText.richText = true;
-            _titleText.text = "Team A  [TAB]";
+            _titleText.text = "Team A  <size=80%><color=#9EB6D8>0/0</color></size>";
+            FitHeaderLabelWidth(_titleText);
+
+            // Same dark plate + green glyph as the B / CTRL / arsenal keycaps.
+            const float tabKeycapWidth = 30f;
+            const float tabKeycapHeight = 14f;
+            var chipGo = new GameObject("TabKeycap", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Button), typeof(LayoutElement));
+            chipGo.transform.SetParent(header.transform, false);
+            var chipRt = chipGo.GetComponent<RectTransform>();
+            chipRt.sizeDelta = new Vector2(tabKeycapWidth, tabKeycapHeight);
+            var chipImg = chipGo.GetComponent<Image>();
+            chipImg.sprite = GetWhiteSprite();
+            chipImg.color = KeycapFill;
+            chipImg.raycastTarget = true;
+            var chipLayout = chipGo.GetComponent<LayoutElement>();
+            chipLayout.preferredWidth = tabKeycapWidth;
+            chipLayout.minWidth = tabKeycapWidth;
+            chipLayout.preferredHeight = tabKeycapHeight;
+            chipLayout.minHeight = tabKeycapHeight;
+            chipLayout.flexibleWidth = 0f;
+            _tabCycleButton = chipGo.GetComponent<Button>();
+            _tabCycleButton.targetGraphic = chipImg;
+            _tabCycleButton.transition = Selectable.Transition.None;
+            _tabCycleButton.navigation = new Navigation { mode = Navigation.Mode.None };
+            _tabCycleButton.onClick.AddListener(CycleViewedTeam);
+
+            var chipLabel = CreateTmp(chipGo.transform, "Glyph", 8f, TextAlignmentOptions.Center, KeycapGlyph);
+            StretchFull(chipLabel.rectTransform);
+            chipLabel.fontStyle = FontStyles.Bold;
+            chipLabel.characterSpacing = 0.6f;
+            chipLabel.text = "TAB";
+            ApplyKeycapFont(chipLabel);
+
+            // Eats leftover width so the score's left edge is the right side of the row.
+            var spacer = new GameObject("ScoreSpacer", typeof(RectTransform), typeof(LayoutElement));
+            spacer.transform.SetParent(header.transform, false);
+            var spacerLayout = spacer.GetComponent<LayoutElement>();
+            spacerLayout.flexibleWidth = 1f;
+            spacerLayout.minWidth = 6f;
+            spacerLayout.preferredWidth = 6f;
+
+            _scoreText = CreateTmp(header.transform, "Score", 13f, TextAlignmentOptions.MidlineRight, ScoreGold);
+            _scoreText.rectTransform.sizeDelta = new Vector2(72f, HeaderHeight);
+            _scoreText.fontStyle = FontStyles.Bold;
+            _scoreText.text = "SCORE 0";
+            var scoreLayout = _scoreText.gameObject.AddComponent<LayoutElement>();
+            scoreLayout.preferredHeight = HeaderHeight;
+            scoreLayout.minHeight = HeaderHeight;
+            scoreLayout.flexibleWidth = 0f;
+            FitHeaderLabelWidth(_scoreText);
 
             // --- Scroll area fills everything under the planet bar + title ---
             float scrollTop = TopChromePad + PlanetControlBarHeight + 3f + HeaderHeight + 2f;

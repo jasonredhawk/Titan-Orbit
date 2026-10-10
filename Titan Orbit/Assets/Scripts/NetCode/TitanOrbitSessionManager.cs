@@ -1702,6 +1702,30 @@ namespace TitanOrbit.NetCode
         }
 
         /// <summary>
+        /// True when every joinable seat is taken. Uses teams × max-per-team once the map
+        /// has rolled; otherwise the dedicated <c>--maxPlayers</c> ceiling. A second game is
+        /// opened only in this state.
+        /// </summary>
+        /// <param name="connectedPlayers">Live NetCode connection count.</param>
+        public bool IsServerMatchRosterFull(int connectedPlayers)
+        {
+            // --- IsServerMatchRosterFull ---
+            int cap = _serverConfig != null ? _serverConfig.MaxPlayers : TitanOrbitServerCommandLine.DefaultMaxPlayers;
+            var server = ClientServerBootstrap.ServerWorld;
+            if (MapSessionMetaCache.TryReadFromServerWorld(server, out MapSessionMetaRpc meta) &&
+                meta.TeamCount > 0 &&
+                MapSessionMetaCache.TryReadMaxPlayersPerTeam(server, out int perTeam) &&
+                perTeam > 0)
+            {
+                int rosterCap = meta.TeamCount * perTeam;
+                if (rosterCap > 0)
+                    cap = Math.Min(cap, rosterCap);
+            }
+
+            return connectedPlayers >= Math.Max(1, cap);
+        }
+
+        /// <summary>
         /// Destroys every player ship ghost on the server world and zeroes team roster counts.
         /// Call when the match is empty or when an in-process lobby recreate publishes a "new game"
         /// on the same ServerWorld. Without this, NetCode reassigns NetworkId 1 to the next joiner
@@ -1911,7 +1935,7 @@ namespace TitanOrbit.NetCode
                 string hostProtocol = lobby.Data.TryGetValue(TitanOrbitLobbyService.LobbyRelayProtocolKey, out var proto)
                     ? TitanOrbitRelayUtility.SanitizeRelayProtocolForRelaySdk(proto.Value)
                     : TitanOrbitRelayUtility.ClientConnectionTypeForPlatform();
-                // Platform-valid client endpoint on the same allocation (wss on WebGL, dtls otherwise).
+                // Same allocation as the dedicated host. WebGL dials wss; the Editor dials dtls.
                 string clientProtocol = TitanOrbitRelayUtility.ClientConnectionTypeForPlatform();
 
                 Debug.Log("[TitanOrbitSessionManager] Joining Relay lobby=" + lobby.Id + " code=" + joinCode +
@@ -1947,8 +1971,31 @@ namespace TitanOrbit.NetCode
                 // connects before NetworkStreamReceiveSystem polls the WebSocket.
                 TitanOrbitWebGlRelayConnect.Request();
 #else
-                ResetClientDriverIfNeeded();
-                ConnectRelayClient(clientWorld);
+                // A leftover IPC connection from the Editor's local ServerWorld makes
+                // ResetDriverStore refuse, and Connect then dials Relay on the wrong driver.
+                int released = ForceReleaseClientConnectionEntities(clientWorld.EntityManager);
+                if (released > 0)
+                    Debug.Log("[TitanOrbitSessionManager] Released " + released +
+                              " stale connection(s) before the Editor Relay driver rebuild.");
+                if (!ResetClientDriverIfNeeded())
+                {
+                    Debug.LogError("[TitanOrbitSessionManager] Editor Relay driver was not rebuilt.");
+                    LastStatusMessage = "Could not open the online connection. Stop Play, then Join game again.";
+                    return false;
+                }
+
+                Entity connection = ConnectRelayClient(clientWorld);
+                if (connection == Entity.Null)
+                {
+                    Debug.LogError("[TitanOrbitSessionManager] Editor Relay connect was skipped.");
+                    LastStatusMessage = "Online connect did not start. Tap Refresh, then join again.";
+                    return false;
+                }
+
+                TitanOrbitRelayState.TryGetClientRelay(out var dial);
+                Debug.Log("[TitanOrbitSessionManager] Editor Relay connect issued endpoint=" + dial.Endpoint +
+                          " wss=" + dial.IsWebSocket + " secure=" + dial.IsSecure +
+                          " connection=" + connection.Index);
 #endif
                 for (int i = 0; i < 30; i++)
                 {
@@ -2358,7 +2405,7 @@ namespace TitanOrbit.NetCode
                     { TitanOrbitLobbyService.LobbyIsOpenKey, new DataObject(DataObject.VisibilityOptions.Public, "1", DataObject.IndexOptions.N1) },
                     { TitanOrbitLobbyService.LobbyIsLatestKey, new DataObject(DataObject.VisibilityOptions.Public, isLatest ? "1" : "0", DataObject.IndexOptions.N2) },
                     { TitanOrbitLobbyService.LobbyCreatedAtEpochKey, new DataObject(DataObject.VisibilityOptions.Public, createdAt.ToString(CultureInfo.InvariantCulture), DataObject.IndexOptions.N3) },
-                    { TitanOrbitLobbyService.LobbyServerAliveEpochKey, new DataObject(DataObject.VisibilityOptions.Public, createdAt.ToString(CultureInfo.InvariantCulture)) },
+                    { TitanOrbitLobbyService.LobbyServerAliveEpochKey, new DataObject(DataObject.VisibilityOptions.Public, createdAt.ToString(CultureInfo.InvariantCulture), DataObject.IndexOptions.N5) },
                     { TitanOrbitLobbyService.LobbyRelayProtocolKey, new DataObject(DataObject.VisibilityOptions.Public, protocol) },
                     { TitanOrbitLobbyService.LobbyServerListenAddressKey, new DataObject(DataObject.VisibilityOptions.Public, serverListenAddress) },
                     { TitanOrbitLobbyService.LobbyActivePlayersKey, new DataObject(DataObject.VisibilityOptions.Public, "0", DataObject.IndexOptions.N4) },
@@ -2483,7 +2530,7 @@ namespace TitanOrbit.NetCode
                     {
                         {
                             TitanOrbitLobbyService.LobbyServerAliveEpochKey,
-                            new DataObject(DataObject.VisibilityOptions.Public, now.ToString(CultureInfo.InvariantCulture))
+                            new DataObject(DataObject.VisibilityOptions.Public, now.ToString(CultureInfo.InvariantCulture), DataObject.IndexOptions.N5)
                         },
                         {
                             TitanOrbitLobbyService.LobbyActivePlayersKey,

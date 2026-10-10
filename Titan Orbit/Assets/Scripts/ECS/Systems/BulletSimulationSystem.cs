@@ -21,17 +21,18 @@ namespace TitanOrbit.ECS
     /// <see cref="PredictedFixedStepSimulationSystemGroup"/> (which contains
     /// <see cref="ShipPhysicsDriveSystem"/>) so muzzle positions use current transforms.
     /// <para>
-    /// Multi-cannon fire uses <see cref="ShipWeaponFireLogic"/>. Each barrel's
-    /// square fills on a <c>1 / fireRate</c> timer and does not draw from the
-    /// hull pool while it fills. A finished timer fires only when
-    /// <see cref="ShipState.CurrentEnergy"/> can pay that shot. Several ready
-    /// barrels in one tick walk gun, laser, missile, sniper, and each one the
-    /// pool can still afford fires. Empty mount buffer = unarmed.
+    /// Multi-cannon fire uses <see cref="ShipWeaponFireLogic"/>. Each barrel
+    /// waits <c>1 / fireRate</c>, then fires only when
+    /// <see cref="ShipState.CurrentEnergy"/> can pay that shot. A pool that
+    /// covers every armed projectile fires those ready barrels together. A
+    /// short pool fires the cursor square only, then steps to the next
+    /// projectile and wraps. Empty mount buffer = unarmed.
     /// </para>
     /// <para>
     /// [TITAN-ORBIT] Ships cannot fire while <see cref="ShipOrbitState.InOrbitRing"/> is true —
-    /// orbit rings are movement / people-transport / tractor zones only. Client anticipation
-    /// mirrors this gate in <c>ClientLocalBulletVfxBridge</c>.
+    /// orbit rings are movement / people-transport / tractor zones only. The same lock applies
+    /// while <see cref="ShipMoonDockState.IsFullyLanded"/>: a muzzle inside the moon body
+    /// would spawn a bolt that dies on the first segment and only show the impact flash.
     /// </para>
     /// <para>
     /// Starblast-style hardening vs asteroid tunneling:
@@ -351,7 +352,11 @@ namespace TitanOrbit.ECS
                                         .IsActive(serverElapsed);
                 bool ownerInOrbit = SystemAPI.HasComponent<ShipOrbitState>(entity) &&
                                     SystemAPI.GetComponentRO<ShipOrbitState>(entity).ValueRO.InOrbitRing;
-                bool ownerMayFire = input.ValueRO.Fire.IsSet && !ownerShocked && !ownerInOrbit;
+                // Fully landed hulls sit on the moon body. A shot from there dies at the
+                // muzzle and only the impact flash shows. Takeoff clears IsFullyLanded.
+                bool ownerLandedOnMoon = SystemAPI.HasComponent<ShipMoonDockState>(entity) &&
+                                         SystemAPI.GetComponentRO<ShipMoonDockState>(entity).ValueRO.IsFullyLanded;
+                bool ownerMayFire = input.ValueRO.Fire.IsSet && !ownerShocked && !ownerInOrbit && !ownerLandedOnMoon;
 
                 // The square fills on its own timer even when Fire is up, in orbit, or shocked.
                 // Only the shot is blocked.
@@ -397,7 +402,8 @@ namespace TitanOrbit.ECS
                 float3 shipVel = kinematics.ValueRO.Velocity;
                 shipVel.y = 0f;
 
-                // Ready delay already ticked. Pay shot cost only when a square is full.
+                // Ready delay already ticked. A full pool volleys; a short pool
+                // pays the cursor square and steps NextMountIndex.
                 var arm = ShipWeaponArmState.Resolve(state.EntityManager, entity);
                 if (isMega)
                 {
@@ -425,30 +431,38 @@ namespace TitanOrbit.ECS
                 }
 
                 float pooledEnergy = shipState.ValueRO.CurrentEnergy;
-                if (!ShipWeaponFireLogic.TryPlanReadyShots(
-                        ref pooledEnergy,
-                        mounts,
-                        in arm,
-                        isMega: false,
-                        weaponCfg.ValueRO.BulletDamage,
-                        weaponCfg.ValueRO.FireRate,
-                        abilityEnergy,
-                        s_ShotScratch,
-                        out int shotCount))
+                bool fired = ShipWeaponFireLogic.TryPlanHybridShots(
+                    ref pooledEnergy,
+                    mounts,
+                    in arm,
+                    isMega: false,
+                    weaponCfg.ValueRO.BulletDamage,
+                    weaponCfg.ValueRO.FireRate,
+                    abilityEnergy,
+                    weaponState.ValueRO.NextMountIndex,
+                    s_ShotScratch,
+                    out int shotCount,
+                    out int nextMountIndex);
+                weaponState.ValueRW.NextMountIndex = nextMountIndex;
+                shipState.ValueRW.CurrentEnergy = pooledEnergy;
+                if (!fired)
                 {
-                    shipState.ValueRW.CurrentEnergy = pooledEnergy;
                     PublishShipReady(ref state, entity);
                     continue;
                 }
-
-                shipState.ValueRW.CurrentEnergy = pooledEnergy;
 
                 // [TITAN-ORBIT] Top killer: +5% damage, same energy. Snapshot rebuilt this tick.
                 bool topKiller = SystemAPI.TryGetSingleton<ShipCommandRoleSnapshot>(out var killerRoles)
                                  && killerRoles.IsKiller(
                                      shipState.ValueRO.Team, ghostOwner.ValueRO.NetworkId);
 
-                // --- Spawn each planned barrel with that mount’s own damage / VFX scale ---
+                // One tracer size for the whole hull: peak DPS, not this barrel and not
+                // remaining energy. Held fire stays the same size until level or
+                // Fire Power changes.
+                SumPeakFirepowerDps(mounts, bankIndex, out float shipPeakDps, out float shipReferenceDps);
+                shipPeakDps = TeamCommandRoleRules.ScaleFirePower(shipPeakDps, topKiller);
+
+                // --- Spawn each planned barrel with that mount’s own damage ---
                 for (int shot = 0; shot < shotCount; shot++)
                 {
                     var planned = s_ShotScratch[shot];
@@ -461,7 +475,7 @@ namespace TitanOrbit.ECS
                         ref state, ref ecb, bulletEntity, mountIdx,
                         fireOrigin, fireForward, planned.Damage,
                         weaponCfg.ValueRO, in mount, bankIndex, firePowerExtras,
-                        categoryUpgradeScale, shipVel,
+                        categoryUpgradeScale, shipPeakDps, shipReferenceDps, shipVel,
                         ghostOwner.ValueRO.NetworkId, (byte)shipState.ValueRO.Team,
                         shipState.ValueRO.ShipLevel,
                         dt, gemPrefab, gemSpawnServerTime, mapW, mapH,
@@ -493,8 +507,10 @@ namespace TitanOrbit.ECS
         /// Owner Shift aims each muzzle at the mouse point here — not only in
         /// <see cref="MegaShipAutoFireSystem"/> — so tracers and damage stay on the
         /// same ray when auto-aim is isolated. The mouse yaw is applied to a spawn
-        /// copy only (mount pose stays independent). Ready squares walk gun, laser,
-        /// missile, sniper; a laser pulse is paid in that order before later barrels.
+        /// copy only (mount pose stays independent). A full pool walks gun, laser,
+        /// missile, sniper and fires every ready projectile. A short pool still
+        /// burns lasers, but only the cursor projectile may shoot, then the cursor
+        /// steps.
         /// Lead intercept distance from <see cref="MegaShipAutoAimSlotElement"/> (or
         /// muzzle→mouse while Shift is held) grows <c>MaxDistance</c> so shots are
         /// not culled early.
@@ -558,6 +574,12 @@ namespace TitanOrbit.ECS
             if (anyLaser && laser != null)
                 laser.BeginLaserTick(mega, energy, shipState.MaxEnergy);
 
+            var gate = ShipWeaponFireLogic.EvaluateHybridEnergy(
+                energy, mounts, in arm, isMega: true,
+                fallbackDamage: 0f, weaponCfg.FireRate, abilityEnergy: 0f,
+                weaponState.NextMountIndex);
+            bool cursorFired = false;
+
             float walk = math.max(0f, energy);
             float spend = walk;
             int shotCount = 0;
@@ -580,6 +602,12 @@ namespace TitanOrbit.ECS
 
                     continue;
                 }
+
+                // Short pool: earlier guns must not drink the cursor's clip.
+                // Lasers above already took their pulse. Later guns wait their turn.
+                if (!gate.PoolCoversProjectiles
+                    && (!gate.HasProjectile || i != gate.CursorMountIndex))
+                    continue;
 
                 if (!ShipWeaponFireLogic.TryTakeSequentialSlot(ref walk, cost))
                 {
@@ -604,6 +632,18 @@ namespace TitanOrbit.ECS
                     EnergyCost = cost,
                     CooldownSeconds = interval,
                 };
+                if (!gate.PoolCoversProjectiles && i == gate.CursorMountIndex)
+                    cursorFired = true;
+            }
+
+            if (gate.HasProjectile)
+            {
+                if (gate.PoolCoversProjectiles)
+                    weaponState.NextMountIndex = gate.FirstProjectileMount;
+                else if (cursorFired)
+                    weaponState.NextMountIndex = gate.NextMountAfterShot;
+                else
+                    weaponState.NextMountIndex = gate.CursorMountIndex;
             }
 
             shipState.CurrentEnergy = math.max(0f, spend);
@@ -612,6 +652,11 @@ namespace TitanOrbit.ECS
 
             if (shotCount <= 0)
                 return;
+
+            // Same tracer size for every MEGA barrel this hold. Mount banks still
+            // change hit damage inside the shot plan; they do not resize the mesh.
+            SumPeakFirepowerDps(mounts, fallbackBankIndex, out float shipPeakDps, out float shipReferenceDps);
+            shipPeakDps = TeamCommandRoleRules.ScaleFirePower(shipPeakDps, topKiller);
 
             int megaOwnerNet = ghostOwner.NetworkId;
             bool shiftMouseAim = input.Overdrive;
@@ -676,7 +721,7 @@ namespace TitanOrbit.ECS
                     ref state, ref ecb, bulletEntity, m,
                     fireOrigin, fireForward, planned.Damage,
                     weaponCfg, in fireMount, mountBank, firePowerExtras: 0,
-                    categoryUpgradeScale, shipVel,
+                    categoryUpgradeScale, shipPeakDps, shipReferenceDps, shipVel,
                     megaOwnerNet, (byte)shipState.Team,
                     shipState.ShipLevel,
                     dt, gemPrefab, gemSpawnServerTime, mapW, mapH,
@@ -738,6 +783,41 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
+        /// Peak DPS for tracer size: every barrel’s fire power × fire rate, times this
+        /// bank’s power and rate multipliers. Reference is the unleveled catalog sum.
+        /// Battery energy is not read — running dry slows the trigger, it does not
+        /// shrink the bullet.
+        /// </summary>
+        static void SumPeakFirepowerDps(
+            DynamicBuffer<ShipWeaponMountElement> mounts,
+            int bankIndex,
+            out float peakDps,
+            out float referenceDps)
+        {
+            float live = 0f;
+            float reference = 0f;
+            if (mounts.IsCreated)
+            {
+                for (int i = 0; i < mounts.Length; i++)
+                {
+                    ShipWeaponMountElement m = mounts[i];
+                    float fp = m.FirePower;
+                    float fr = m.FireRate;
+                    if (fp <= 0.01f || fr <= 0.01f)
+                        continue;
+                    float refFp = m.ReferenceFirePower > 0.01f ? m.ReferenceFirePower : fp;
+                    float refFr = m.ReferenceFireRate > 0.01f ? m.ReferenceFireRate : fr;
+                    live += fp * fr;
+                    reference += refFp * refFr;
+                }
+            }
+
+            BulletBankCombatLogic.GetShotScales(bankIndex, out float firePowerMul, out float fireRateMul);
+            peakDps = live * firePowerMul * fireRateMul;
+            referenceDps = math.max(0.01f, reference);
+        }
+
+        /// <summary>
         /// One ship/MEGA shot: modifiers, spawn RPC, same-frame <see cref="TryResolveBulletHit"/>.
         /// Misses stay in the live buffer for Phase A next tick — never advance twice this tick.
         /// </summary>
@@ -754,6 +834,8 @@ namespace TitanOrbit.ECS
             int bankIndex,
             int firePowerExtras,
             float categoryUpgradeScale,
+            float shipPeakDps,
+            float shipReferenceDps,
             float3 shipVel,
             int ownerNetworkId,
             byte ownerTeam,
@@ -800,7 +882,9 @@ namespace TitanOrbit.ECS
                 refMuzzleSpeed,
                 bankIndex,
                 firePowerExtras,
-                categoryUpgradeScale);
+                categoryUpgradeScale,
+                shipPeakDps,
+                shipReferenceDps);
 
             byte homing = 0;
             float turnSpeedDeg = 0f;

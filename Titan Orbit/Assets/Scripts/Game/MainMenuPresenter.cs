@@ -472,6 +472,10 @@ namespace TitanOrbit.Game
             input.onEndEdit.RemoveAllListeners();
             input.onEndEdit.AddListener(LocalPlayerDisplayName.Set);
 
+            // Blinking caret + lit plate. Must run after textComponent is assigned:
+            // TMP only creates the Caret child during OnEnable when that reference exists.
+            TmpInputFieldFocus.Attach(input);
+
             inputGo.SetActive(true);
         }
 

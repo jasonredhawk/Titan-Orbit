@@ -55,6 +55,8 @@ namespace TitanOrbit.Simulation
 
         /// <summary>
         /// One ship/MEGA shot: bank modifiers, visual scale, Starblast velocity.
+        /// <paramref name="shipPeakDps"/> / <paramref name="shipReferenceDps"/> size every
+        /// barrel the same. Leave them 0 to size from this shot’s damage.
         /// </summary>
         public static BulletShotPlan Build(
             float3 fireOrigin,
@@ -71,7 +73,9 @@ namespace TitanOrbit.Simulation
             float referenceSpeed,
             int bankIndex,
             int firePowerExtras,
-            float categoryUpgradeScale)
+            float categoryUpgradeScale,
+            float shipPeakDps = 0f,
+            float shipReferenceDps = 0f)
         {
             float bulletSpeed = hullBulletSpeed;
             float maxDistance = ResolveMaxDistance(mountBulletRange, hullMaxDistance);
@@ -82,11 +86,15 @@ namespace TitanOrbit.Simulation
                 firePowerExtras);
             float fireRateMul = fireRate / math.max(0.1f, hullFireRate);
 
+            // Hull peak DPS when the caller summed every barrel. Otherwise this shot's
+            // damage (turret / legacy). Energy remaining is not an input.
+            float scaleDamage = shipPeakDps > 0.01f ? shipPeakDps : damage;
+            float scaleReference = shipReferenceDps > 0.01f ? shipReferenceDps : referenceDamage;
             float visualScale = BulletVisualScale.ComputePerShotScale(
                 authoredBulletScale,
-                damage,
+                scaleDamage,
                 bulletSpeed,
-                referenceDamage,
+                scaleReference,
                 referenceSpeed,
                 categoryUpgradeScale);
 

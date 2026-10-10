@@ -483,7 +483,9 @@ namespace TitanOrbit.Game
                     float gemsDelta = state.CurrentGems - last.Gems;
                     if (gemsDelta > 0.01f)
                     {
-                        AudioManager.Instance?.PlayGemCollectSound(gemsDelta);
+                        float hear = GameplaySfxProximity.VolumeAt(anchor.position);
+                        if (hear > 0.001f)
+                            AudioManager.Instance?.PlayGemCollectSound(gemsDelta, hear);
                         WorldFloatingCountManager.Instance.ShowOrAccumulateOnShip(
                             networkId,
                             anchor,

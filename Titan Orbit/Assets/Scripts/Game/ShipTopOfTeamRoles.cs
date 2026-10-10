@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using TitanOrbit.Core;
+using TitanOrbit.ECS;
 
 namespace TitanOrbit.Game
 {
@@ -47,6 +48,13 @@ namespace TitanOrbit.Game
             /// <summary>Match-long troops delivered.</summary>
             public int PeopleDelivered;
 
+            /// <summary>
+            /// Ghosted match score (gems, troops, and kill transfers). Used to rank a team.
+            /// Role badges still compare <see cref="Kills"/>, <see cref="GemsDeposited"/>, and
+            /// <see cref="PeopleDelivered"/>, not this total.
+            /// </summary>
+            public int Score;
+
             /// <summary>Dead ships never win a top-of-team role.</summary>
             public bool IsDead;
         }
@@ -76,6 +84,9 @@ namespace TitanOrbit.Game
             {
                 Candidate ship = candidates[i];
                 if (ship.IsDead || ship.Team == TeamId.None || ship.OwnerNetworkId <= 0)
+                    continue;
+                // Same exclusion as ShipCommandRoleRefreshSystem — bots do not earn command seats.
+                if (BotShipIds.IsBot(ship.OwnerNetworkId))
                     continue;
 
                 if (!topsByTeam.TryGetValue(ship.Team, out var tops))

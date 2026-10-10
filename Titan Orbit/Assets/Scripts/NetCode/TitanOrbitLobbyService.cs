@@ -50,8 +50,12 @@ namespace TitanOrbit.NetCode
         public const string LobbyMapHeightKey = "MapHeight";
         public const string LobbyMatchRequestGameName = "TitanOrbitMatchRequest";
         public const string LobbyMatchRequestEpochKey = "RequestedAt";
-        public const int DedicatedLobbyStaleSeconds = 45;
-        public const int DedicatedLobbyJoinMaxHeartbeatAgeSeconds = 45;
+        /// <summary>
+        /// Hide a listing only after this long without a heartbeat. Short enough to drop a dead
+        /// process, long enough that one UGS 429 does not blank Join Game.
+        /// </summary>
+        public const int DedicatedLobbyStaleSeconds = 120;
+        public const int DedicatedLobbyJoinMaxHeartbeatAgeSeconds = 120;
 
         static readonly SemaphoreSlim LobbyApiGate = new SemaphoreSlim(1, 1);
         static readonly SemaphoreSlim OpenLobbyRefreshGate = new SemaphoreSlim(1, 1);
@@ -194,7 +198,78 @@ namespace TitanOrbit.NetCode
             if (latestOnly.Count > 0)
                 list = latestOnly;
 
-            return list;
+            return CollapseExtraEmptyGames(list);
+        }
+
+        /// <summary>
+        /// Join Game lists one open match. Extra empty lobbies are dropped. An empty lobby is
+        /// kept only when every other listing is full (that is the successor for a packed game).
+        /// </summary>
+        static List<LobbySummary> CollapseExtraEmptyGames(List<LobbySummary> list)
+        {
+            // --- CollapseExtraEmptyGames ---
+            if (list == null || list.Count <= 1)
+                return list;
+
+            var withPlayers = new List<LobbySummary>();
+            var empties = new List<LobbySummary>();
+            for (int i = 0; i < list.Count; i++)
+            {
+                LobbySummary lobby = list[i];
+                if (lobby == null)
+                    continue;
+                if (BrowsablePlayerCount(lobby) > 0)
+                    withPlayers.Add(lobby);
+                else
+                    empties.Add(lobby);
+            }
+
+            bool gameWithOpenSeats = false;
+            for (int i = 0; i < withPlayers.Count; i++)
+            {
+                if (BrowsablePlayerCount(withPlayers[i]) < BrowsableRosterCap(withPlayers[i]))
+                {
+                    gameWithOpenSeats = true;
+                    break;
+                }
+            }
+
+            if (gameWithOpenSeats)
+                empties.Clear();
+            else if (empties.Count > 1)
+            {
+                empties.Sort((a, b) =>
+                {
+                    int byAge = b.CreatedAtEpochSeconds.CompareTo(a.CreatedAtEpochSeconds);
+                    if (byAge != 0)
+                        return byAge;
+                    return string.CompareOrdinal(b.LobbyId, a.LobbyId);
+                });
+                var newestEmpty = empties[0];
+                empties.Clear();
+                empties.Add(newestEmpty);
+            }
+
+            if (empties.Count == 0)
+                return withPlayers;
+
+            withPlayers.AddRange(empties);
+            return withPlayers;
+        }
+
+        static int BrowsablePlayerCount(LobbySummary summary)
+        {
+            if (summary.ActivePlayers >= 0)
+                return summary.ActivePlayers;
+            return Mathf.Max(0, summary.CurrentPlayers);
+        }
+
+        static int BrowsableRosterCap(LobbySummary summary)
+        {
+            int cap = Mathf.Max(1, summary.MaxPlayers);
+            if (summary.MapTeamCount > 0 && summary.MapMaxPlayersPerTeam > 0)
+                cap = Mathf.Min(cap, summary.MapTeamCount * summary.MapMaxPlayersPerTeam);
+            return Mathf.Max(1, cap);
         }
 
         static bool TryAcceptBrowsableDedicatedLobby(LobbySummary l, out string rejectReason)
@@ -346,8 +421,10 @@ namespace TitanOrbit.NetCode
             }
             catch (Exception e)
             {
+                // [TITAN-ORBIT] 429 means UGS is busy, not that the lobby was deleted. Treating it as
+                // "not joinable" started the stale-recreate clock and left Join Game empty.
                 Debug.LogWarning("[TitanOrbitLobbyService] TryIsLobbyJoinableByIdAsync failed: " + e.Message);
-                return false;
+                return !IsLobbyRateLimit(e);
             }
         }
 
@@ -929,8 +1006,17 @@ namespace TitanOrbit.NetCode
             // --- IsDedicatedLobbyStale ---
             if (lobby?.Data == null || !lobby.Data.ContainsKey(LobbyServerListenAddressKey))
                 return false;
-            return TryGetDedicatedLobbyHeartbeatAgeSeconds(lobby, out long ageSeconds) &&
-                   ageSeconds > DedicatedLobbyStaleSeconds;
+            if (!TryGetDedicatedLobbyHeartbeatAgeSeconds(lobby, out long ageSeconds))
+                return false;
+            return ageSeconds > DedicatedLobbyStaleSeconds;
+        }
+
+        /// <summary>True when UGS rejected the call for volume, not because the lobby is gone.</summary>
+        static bool IsLobbyRateLimit(Exception exception)
+        {
+            string message = exception?.Message ?? string.Empty;
+            return message.Contains("429") ||
+                   message.IndexOf("Too Many Requests", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         public static bool TryGetDedicatedLobbyHeartbeatAgeSeconds(Lobby lobby, out long ageSeconds)
@@ -964,11 +1050,16 @@ namespace TitanOrbit.NetCode
                 return false;
 
             // Align with join validation: missing heartbeat means the listing is not joinable.
-            if (summary.ServerAliveAtEpochSeconds <= 0)
+            long nowEpoch = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            // Query results sometimes omit a non-indexed heartbeat. Fall back to create time so a
+            // match that just came up is not hidden for lack of that field.
+            long aliveEpoch = summary.ServerAliveAtEpochSeconds > 0
+                ? summary.ServerAliveAtEpochSeconds
+                : summary.CreatedAtEpochSeconds;
+            if (aliveEpoch <= 0)
                 return true;
 
-            long nowEpoch = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-            return nowEpoch - summary.ServerAliveAtEpochSeconds > DedicatedLobbyStaleSeconds;
+            return nowEpoch - aliveEpoch > DedicatedLobbyStaleSeconds;
         }
 
         /// <summary>

@@ -64,6 +64,12 @@ namespace TitanOrbit.UI
         bool _lastOn = true;
         bool _hasPainted;
 
+        /// <summary>
+        /// Live brakes tile. <see cref="ShipCommsLauncherHUD"/> reads the bottom edge
+        /// after this component's LateUpdate so COMMS sits under CTRL.
+        /// </summary>
+        static SpaceBrakesHUD _instance;
+
         /// <summary>[UNITY] Creates the HUD once after the first scene load.</summary>
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         static void EnsureExists()
@@ -79,8 +85,39 @@ namespace TitanOrbit.UI
         /// <summary>Builds the CTRL tile in the column under the ship stats.</summary>
         void Awake()
         {
+            _instance = this;
             BuildUi();
             SetVisible(false);
+        }
+
+        /// <summary>Drops the dock pointer so COMMS cannot sit under a destroyed brakes tile.</summary>
+        void OnDestroy()
+        {
+            if (_instance == this)
+                _instance = null;
+        }
+
+        /// <summary>
+        /// Bottom edge of the CTRL glass in the shared 1920×1080 overlay
+        /// (top-left anchor space, Y down as negative). <see cref="ShipCommsLauncherHUD"/>
+        /// calls this after we LateUpdate so the comms keycap docks under this tile.
+        /// </summary>
+        /// <param name="y">Overlay Y of the panel bottom when visible, or 0 when hidden.</param>
+        /// <param name="visible">True when the brakes tile is showing.</param>
+        /// <returns>True when this HUD exists and has a panel to measure.</returns>
+        public static bool TryGetOverlayDockBottomY(out float y, out bool visible)
+        {
+            y = 0f;
+            visible = false;
+            if (_instance == null || _instance._panel == null)
+                return false;
+
+            visible = _instance._panel.gameObject.activeSelf;
+            if (!visible)
+                return true;
+
+            y = RocketLoadoutHUD.OverlayPanelBottomY(_instance._panel);
+            return true;
         }
 
         /// <summary>

@@ -1,3 +1,4 @@
+using TMPro;
 using UnityEngine;
 
 namespace TitanOrbit.UI
@@ -6,6 +7,8 @@ namespace TitanOrbit.UI
     /// <summary>
     /// References sprites from the Shift — Complete Sci-Fi UI pack for spin-offer cards.
     /// Default instance: Resources/SpinCardShiftVisuals (optional inspector override on <see cref="OrbitStationUI"/>).
+    /// The Rajdhani fields exist so player builds (WebGL) keep a reference to the SDF assets.
+    /// Editor-only AssetDatabase loads are stripped from those builds.
     /// </summary>
     [CreateAssetMenu(fileName = "SpinCardShiftVisuals", menuName = "Titan Orbit/UI/Spin Card Shift Visuals")]
     public class SpinCardShiftVisuals : ScriptableObject
@@ -22,5 +25,11 @@ namespace TitanOrbit.UI
         public Sprite accentLineSliced;
         [Tooltip("Background Glow — soft vignette behind inner panel.")]
         public Sprite innerGlowSliced;
+
+        [Tooltip("Ability-details body face. Referenced here so WebGL includes the SDF without a Resources copy.")]
+        public TMP_FontAsset rajdhaniSemiBold;
+
+        [Tooltip("Bold weight the details caption and rich-text bold tags switch to. Same include reason as SemiBold.")]
+        public TMP_FontAsset rajdhaniBold;
     }
 }

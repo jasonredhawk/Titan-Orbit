@@ -96,6 +96,12 @@ namespace TitanOrbit.UI
         public int PeopleDelivered;
 
         /// <summary>
+        /// [TITAN-ORBIT] Ghosted match score. Gems and troops add points; an enemy kill
+        /// moves half of this value to the killer and leaves this ship with the other half.
+        /// </summary>
+        public int Score;
+
+        /// <summary>
         /// [TITAN-ORBIT] Yaw in degrees around world Y from <c>LocalTransform.Rotation</c>,
         /// used to rotate the ship silhouette so facing is readable on the minimap.
         /// </summary>
@@ -134,8 +140,30 @@ namespace TitanOrbit.UI
         /// <summary>True for team home world planets.</summary>
         public bool IsHomePlanet;
 
-        /// <summary>ECS entity this blip tracks — used for add/remove sync.</summary>
+        /// <summary>ECS entity this blip tracks — used for add/remove sync. Null entity for roster-only dots.</summary>
         public Entity SourceEntity;
+
+        /// <summary>
+        /// [TITAN-ORBIT] True when this dot comes from the off-screen roster, not a live ship ghost.
+        /// The corner minimap hides these. The expanded map draws them once a position packet arrives.
+        /// The leaderboard still counts them.
+        /// </summary>
+        public bool IsRosterOnly;
+
+        /// <summary>
+        /// [TITAN-ORBIT] True after a position packet placed this roster dot. Until then the expanded
+        /// map does not draw it (the transform would sit at the origin).
+        /// </summary>
+        public bool HasMapPosition;
+
+        /// <summary>Displayed spot when the latest full-map sample arrived. The X lerps from here.</summary>
+        public Vector3 MapLerpFrom;
+
+        /// <summary>Latest full-map sample. The X lerps toward this.</summary>
+        public Vector3 MapLerpTo;
+
+        /// <summary><see cref="Time.unscaledTime"/> when <see cref="MapLerpTo"/> was stored.</summary>
+        public float MapLerpStartTime;
     }
 
 }

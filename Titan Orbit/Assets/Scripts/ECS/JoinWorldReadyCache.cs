@@ -6,8 +6,9 @@ namespace TitanOrbit.ECS
     /// [TITAN-ORBIT] Single join contract for a late-join into a <b>live</b> match.
     /// Loading UI and Join Team both read <see cref="IsComplete"/> — not a pile of independent flags.
     /// <para>
-    /// Paths: asteroids = seed Instantiates + occupancy RPC; planets/ships/gems = NetCode
-    /// GhostSpawn Instantiates; people transports = SpawnRpc catch-up (not ghosts).
+    /// Paths: asteroids = seed Instantiates + occupancy RPC; planets = NetCode ghosts;
+    /// ships = view interest (owner or on-screen only, not a join snapshot);
+    /// people transports = SpawnRpc catch-up (not ghosts).
     /// </para>
     /// Reset on session leave / Play Mode enter.
     /// </summary>
@@ -43,10 +44,10 @@ namespace TitanOrbit.ECS
         /// <summary>Client planet ghosts Instantiates so far (CalculateEntityCount).</summary>
         public static int ReceivedPlanets { get; private set; }
 
-        /// <summary>Server live ship count from recipe meta.</summary>
+        /// <summary>Server live ship count from recipe meta. Diagnostic only — not a join gate.</summary>
         public static int ExpectedShips { get; set; }
 
-        /// <summary>Client ship ghosts Instantiates so far.</summary>
+        /// <summary>Client ship ghosts Instantiates so far. Off-screen hulls stay at 0 until the camera sees them.</summary>
         public static int ReceivedShips { get; private set; }
 
         /// <summary>NetCode <see cref="GhostCount.GhostCountOnServer"/> (relevancy-filtered).</summary>
@@ -67,7 +68,11 @@ namespace TitanOrbit.ECS
         /// <summary>True when planet Instantiates meet <see cref="PlanetReadyRatio"/>.</summary>
         public static bool PlanetsReady { get; private set; }
 
-        /// <summary>True when ship Instantiates meet expected N (0 ships is immediately ready).</summary>
+        /// <summary>
+        /// True for join purposes. Ship ghosts are not a loading snapshot: the server sends a hull
+        /// only to its owner and to connections whose camera overlaps it, so AI ships at other homes
+        /// never arrive during this screen.
+        /// </summary>
         public static bool ShipsReady { get; private set; }
 
         /// <summary>True when GhostCount Instantiates ratio or timeout is satisfied.</summary>
@@ -226,10 +231,9 @@ namespace TitanOrbit.ECS
             PlanetsReady = expectPlanets <= 0 ||
                            ReceivedPlanets >= Mathf.CeilToInt(expectPlanets * PlanetReadyRatio);
 
-            ShipsReady = ExpectedShips <= 0 ||
-                         ReceivedShips >= ExpectedShips ||
-                         (ExpectedShips > 0 &&
-                          ReceivedShips >= Mathf.CeilToInt(ExpectedShips * PlanetReadyRatio));
+            // LiveShipCount includes every AI hull. Those stay off the wire until a camera
+            // can see them, so requiring ReceivedShips >= ExpectedShips stalls join at 0/N.
+            ShipsReady = true;
 
             bool ghostTimeout = inGame &&
                                 InGameRealtime >= 0f &&

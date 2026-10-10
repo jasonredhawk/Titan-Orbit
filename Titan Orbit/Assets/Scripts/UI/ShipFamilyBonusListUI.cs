@@ -1,6 +1,5 @@
 using System.Collections.Generic;
 using TitanOrbit.Data;
-using TitanOrbit.Simulation;
 using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -37,6 +36,8 @@ namespace TitanOrbit.UI
         const float PadTop = 0f;
         const float PadBottom = 0f;
         const float SpokeLabelFont = 7.25f;
+        /// <summary>Shared line box so a taller glyph (percent, digits) cannot resize one title.</summary>
+        const float SpokeLabelLineHeight = 12f;
         const float WheelPlatePadLeft = 88f;
         /// <summary>
         /// Pull the wheel square up by this many pixels so the empty 12 o'clock
@@ -46,6 +47,12 @@ namespace TitanOrbit.UI
         const float WheelPlateTopTuck = 28f;
         const float IdentityRailWidth = 268f;
         const float IdentityRailMinHeight = 40f;
+
+        /// <summary>Hover card width. Wide enough for a wrapped description.</summary>
+        const float SpokeTipWidth = 268f;
+
+        /// <summary>Floor so a missing description still looks like a card, not a sliver.</summary>
+        const float SpokeTipMinHeight = 88f;
 
         static readonly Color CaptionColor = new Color(0.62f, 0.78f, 0.95f, 0.95f);
         static readonly Color IdentityValue = new Color(0.42f, 0.54f, 0.62f, 0.55f);
@@ -127,14 +134,14 @@ namespace TitanOrbit.UI
                 return;
             }
 
+            // [TITAN-ORBIT] Fleet Bonuses are ShipFamilyDefinition.specialBonuses only.
+            // Bullet-bank vs-target muls (VS GEMS, VS ASTEROIDS, BANK DAMAGE) are weapon
+            // stats, not family identity — they stay on the weapon rail, not this wheel.
             _rows.Clear();
             FamilyStatHudCopy.CollectBonusRows(family.specialBonuses, _rows, includeIdentity: true);
 
             // [TITAN-ORBIT] Planet roll wins over the family Laserbolt fallback.
             string typeName = BulletBankHudCopy.FormatFamilyTypeName(family, planetOrHullBankIndex);
-            BulletBankProfile profile = ResolveBankProfile(family, planetOrHullBankIndex);
-            int extras = BulletBankCombatLogic.CountFirePowerExtraLevels(Mathf.Max(1, shipLevel), 0);
-            FamilyStatHudCopy.CollectBankDamageRows(profile, extras, _rows, includeIdentity: true);
 
             if (_emptyLabel != null)
                 _emptyLabel.gameObject.SetActive(false);
@@ -176,19 +183,6 @@ namespace TitanOrbit.UI
 
             PinOverlays();
             PaintSpokeLabels();
-        }
-
-        /// <summary>
-        /// Resolves the ScriptableObject profile for the planet / family bank.
-        /// Null when the combat bank catalog is not loaded yet.
-        /// </summary>
-        static BulletBankProfile ResolveBankProfile(ShipFamilyDefinition family, int planetOrHullBankIndex)
-        {
-            int idx = BulletBankProfileUtility.ResolveBankIndexForFamily(family, planetOrHullBankIndex);
-            var bank = BulletBankCombatLogic.Bank;
-            if (bank == null || !bank.TryGetProfile(idx, out BulletBankProfile profile))
-                return null;
-            return profile;
         }
 
         /// <summary>
@@ -395,6 +389,9 @@ namespace TitanOrbit.UI
             if (label == null)
                 return;
 
+            // [TITAN-ORBIT] One point size for every spoke. A tight width box and
+            // auto-size were letting longer bonuses render smaller than short ones.
+            LockSpokeLabelMetrics(label);
             if (row.IsIdentity)
                 label.text = row.FullLabel;
             else
@@ -412,16 +409,22 @@ namespace TitanOrbit.UI
             else
                 label.color = cat;
 
+            LockSpokeLabelMetrics(label);
             label.ForceMeshUpdate();
             Vector2 pref = label.GetPreferredValues(label.text);
+            // Measure can rewrite point size when a glyph falls back. Put it back.
+            LockSpokeLabelMetrics(label);
             Vector2 dir = new Vector2(Mathf.Cos(angleRad), Mathf.Sin(angleRad));
             Vector2 pos = fromCenter;
+            pos.x = Mathf.Round(pos.x);
+            pos.y = Mathf.Round(pos.y);
 
             RectTransform rt = label.rectTransform;
             rt.anchorMin = new Vector2(0.5f, 0.5f);
             rt.anchorMax = new Vector2(0.5f, 0.5f);
             rt.localRotation = Quaternion.identity;
-            rt.sizeDelta = new Vector2(Mathf.Clamp(pref.x + 2f, 20f, 160f), Mathf.Max(12f, pref.y));
+            rt.localScale = Vector3.one;
+            rt.sizeDelta = new Vector2(Mathf.Max(20f, pref.x + 4f), SpokeLabelLineHeight);
             rt.anchoredPosition = pos;
             if (dir.x >= 0.28f)
             {
@@ -449,9 +452,10 @@ namespace TitanOrbit.UI
             {
                 hover.Owner = this;
                 hover.FullTitle = row.FullLabel;
-                hover.ValueCopy = row.IsIdentity
-                    ? string.Empty
-                    : FamilyStatHudCopy.FormatSignedPercent(row);
+                // Percent plus the sentence that explains the spoke. Built here
+                // so pointer-enter only assigns text it already has.
+                hover.BodyCopy = FamilyStatHudCopy.FormatSpokeHoverBody(row);
+                hover.Accent = ShipFamilyBonusWheelGraphic.ColorForCategory(row.Category);
             }
         }
 
@@ -462,10 +466,7 @@ namespace TitanOrbit.UI
         TextMeshProUGUI CreateSpokeLabel()
         {
             var tmp = CreateLabel(_wheelRt, "Spoke", "MOVE SPEED", SpokeLabelFont, CaptionColor, FontStyles.Bold);
-            tmp.richText = false;
-            tmp.overflowMode = TextOverflowModes.Overflow;
-            tmp.enableWordWrapping = false;
-            tmp.maxVisibleLines = 1;
+            LockSpokeLabelMetrics(tmp);
             // [UNITY] Raycast so IPointerEnter fires. Cards still receive clicks
             // on empty wheel glass because the plate itself has no Graphic.
             tmp.raycastTarget = true;
@@ -473,6 +474,29 @@ namespace TitanOrbit.UI
             var hover = tmp.gameObject.AddComponent<SpokeHover>();
             hover.Owner = this;
             return tmp;
+        }
+
+        /// <summary>
+        /// Pins one spoke title to <see cref="SpokeLabelFont"/>. Called on create
+        /// and every paint so a longer name cannot drop to a smaller point size.
+        /// </summary>
+        static void LockSpokeLabelMetrics(TextMeshProUGUI label)
+        {
+            if (label == null)
+                return;
+
+            label.enableAutoSizing = false;
+            label.fontSizeMin = SpokeLabelFont;
+            label.fontSizeMax = SpokeLabelFont;
+            label.fontSize = SpokeLabelFont;
+            label.fontStyle = FontStyles.Bold;
+            label.characterSpacing = 0f;
+            label.lineSpacing = 0f;
+            label.richText = false;
+            label.textWrappingMode = TextWrappingModes.NoWrap;
+            label.overflowMode = TextOverflowModes.Overflow;
+            label.maxVisibleLines = 1;
+            label.rectTransform.localScale = Vector3.one;
         }
 
         /// <summary>Hides every pooled spoke title (empty / no-family state).</summary>
@@ -487,7 +511,8 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// Shared chrome for a spoke hover. Caption is the full name
-        /// (MOVE SPEED); body is the signed percent or 1.00×.
+        /// (MOVE SPEED). Body is the lineage percent plus a short description
+        /// of what that family multiplier changes.
         /// </summary>
         internal void ShowSpokeHover(SpokeHover spoke)
         {
@@ -498,10 +523,14 @@ namespace TitanOrbit.UI
             if (_spokeTip.Root == null)
                 return;
 
+            // --- Copy ---
             if (_spokeTip.CaptionLabel != null)
                 _spokeTip.CaptionLabel.text = spoke.FullTitle.ToUpperInvariant();
             if (_spokeTip.BodyLabel != null)
-                _spokeTip.BodyLabel.text = spoke.ValueCopy;
+                _spokeTip.BodyLabel.text = string.IsNullOrEmpty(spoke.BodyCopy) ? string.Empty : spoke.BodyCopy;
+
+            // Stripe follows the wheel category (move / combat / hull / energy / hold).
+            ShipStatTooltipChrome.ApplyAccent(in _spokeTip, spoke.Accent);
 
             var self = spoke.transform as RectTransform;
             var tip = _spokeTip.RootRect;
@@ -509,6 +538,20 @@ namespace TitanOrbit.UI
             if (self == null || tip == null || canvas == null)
                 return;
 
+            // Active before the measure. An inactive TMP rect can report 0 height
+            // and the description would draw past the card.
+            _spokeTip.Root.SetActive(true);
+
+            // --- Size to the description ---
+            // Width first so TMP wraps before we read preferredHeight.
+            tip.sizeDelta = new Vector2(SpokeTipWidth, tip.sizeDelta.y);
+            if (_spokeTip.BodyLabel != null)
+                _spokeTip.BodyLabel.ForceMeshUpdate(true);
+            float bodyH = _spokeTip.BodyLabel != null ? _spokeTip.BodyLabel.preferredHeight : 0f;
+            float tipH = Mathf.Max(SpokeTipMinHeight, bodyH + _spokeTip.ExtraHeightPadding);
+            tip.sizeDelta = new Vector2(SpokeTipWidth, tipH);
+
+            // --- Place just above the spoke title, then keep it on the canvas ---
             tip.SetParent(canvas.transform, false);
             Vector3[] corners = new Vector3[4];
             self.GetWorldCorners(corners);
@@ -516,9 +559,25 @@ namespace TitanOrbit.UI
             RectTransformUtility.ScreenPointToLocalPointInRectangle(
                 canvas.transform as RectTransform, screen, canvas.worldCamera, out Vector2 local);
             tip.pivot = new Vector2(0f, 0f);
-            tip.anchoredPosition = local + new Vector2(10f, 10f);
-            tip.sizeDelta = new Vector2(220f, 72f);
-            _spokeTip.Root.SetActive(true);
+            tip.anchoredPosition = ClampSpokeTip(canvas.transform as RectTransform, local + new Vector2(10f, 10f), tip.sizeDelta);
+        }
+
+        /// <summary>
+        /// Keeps the hover card inside the canvas. Pivot is bottom-left, so the
+        /// card grows up and to the right from <paramref name="bottomLeft"/>.
+        /// </summary>
+        static Vector2 ClampSpokeTip(RectTransform canvasRt, Vector2 bottomLeft, Vector2 size)
+        {
+            if (canvasRt == null)
+                return bottomLeft;
+
+            Rect area = canvasRt.rect;
+            const float margin = 8f;
+            float maxX = area.xMax - size.x - margin;
+            float maxY = area.yMax - size.y - margin;
+            bottomLeft.x = Mathf.Clamp(bottomLeft.x, area.xMin + margin, Mathf.Max(area.xMin + margin, maxX));
+            bottomLeft.y = Mathf.Clamp(bottomLeft.y, area.yMin + margin, Mathf.Max(area.yMin + margin, maxY));
+            return bottomLeft;
         }
 
         /// <summary>Hides the shared spoke hover card.</summary>
@@ -542,8 +601,8 @@ namespace TitanOrbit.UI
                 "FamilyBonusSpokeTip",
                 canvas.transform,
                 "MOVE SPEED",
-                220f,
-                72f,
+                SpokeTipWidth,
+                SpokeTipMinHeight,
                 1f);
             if (_spokeTip.Root != null)
                 _spokeTip.Root.SetActive(false);
@@ -692,7 +751,7 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// Pointer hover on one spoke title. Forwards to the list so one shared
-        /// chrome card can show MOVE SPEED instead of MOVE.
+        /// chrome card can show the full name plus what that bonus changes.
         /// </summary>
         public sealed class SpokeHover : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler
         {
@@ -702,8 +761,14 @@ namespace TitanOrbit.UI
             /// <summary>Full player-facing name (MOVE SPEED).</summary>
             public string FullTitle;
 
-            /// <summary>Signed percent or 1.00×.</summary>
-            public string ValueCopy;
+            /// <summary>
+            /// Rich-text body: coloured lineage percent, then the sentence that
+            /// explains what this spoke changes. Empty until the wheel paints.
+            /// </summary>
+            public string BodyCopy;
+
+            /// <summary>Category stripe colour (move, combat, hull, energy, hold).</summary>
+            public Color Accent;
 
             /// <summary>[UNITY] Pointer entered the short tag.</summary>
             public void OnPointerEnter(PointerEventData eventData)

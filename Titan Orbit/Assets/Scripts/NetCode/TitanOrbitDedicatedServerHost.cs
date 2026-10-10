@@ -30,9 +30,12 @@ namespace TitanOrbit.NetCode
     ///   The next Join Game is that new match — never the finished map.
     /// - When the last player leaves, orphan ship ghosts are wiped immediately so a new joiner
     ///   cannot be offered a previous player's ship via NetworkId reuse.
-    /// - After N successful 30‑minute idle recreates only (default 6 ≈ 3h empty), exit so
+    /// - After N successful 1-hour idle recreates only (default 6 ≈ 6h empty), exit so
     ///   systemd/Edgegap starts a fresh binary. Stale/self-heal/heartbeat/match-request must
     ///   NOT exit — that made Join Game empty more often (2026-07-25 regression).
+    /// - Do not open a second game while this one still has room. A successor process starts
+    ///   only when every team slot is taken. Never exit just because another lobby is listed —
+    ///   systemd will not restart an exit 0, and Join Game goes empty.
     /// - Empty process recycle: spawn a new IsLatest sibling FIRST, wait until its lobby is
     ///   browseable, then close this lobby and exit 0 (no Join Game gap; no duplicate Unity
     ///   under systemd Restart=on-failure). Hang / crash still exit 1 for restart.
@@ -45,7 +48,7 @@ namespace TitanOrbit.NetCode
         const int MaxSpawnAttemptsPerHandoff = 5;
         const float SpawnRetryDelaySeconds = 10f;
         const float SuccessorPollIntervalSeconds = 3f;
-        const float SelfHealPollIntervalSeconds = 30f;
+        const float SelfHealPollIntervalSeconds = 90f;
         /// <summary>How often we evaluate RSS / struggling empty-recycle (seconds).</summary>
         const float MemoryHealthPollSeconds = 15f;
         /// <summary>After a full handoff fails, wait before starting another (avoids spawn spam every 3s).</summary>
@@ -88,6 +91,19 @@ namespace TitanOrbit.NetCode
 
         /// <summary>Consecutive failed Relay rebinds. Three failures exit so systemd can republish.</summary>
         int _relayRebindFailures;
+
+        /// <summary>Samples in a row with a full UDP receive queue. Three means the transport stopped reading.</summary>
+        int _udpRxHighStreak;
+
+        /// <summary>Rebinds triggered by a stuck UDP queue. A third detection exits; a healthy sample resets this.</summary>
+        int _udpWedgedRebinds;
+
+        /// <summary>Realtime seconds to ignore the UDP queue after a rebind so the new socket can settle.</summary>
+        float _udpWatchQuietUntil;
+
+        const int UdpRxHighSamplesBeforeRebind = 3;
+        const int UdpRebindsBeforeProcessExit = 2;
+        const float UdpWatchQuietSeconds = 45f;
 
         /// <summary>Unix seconds of last periodic memory log (throttles MemoryLogIntervalSeconds).</summary>
         int _lastMemoryLogUnixSeconds;
@@ -413,6 +429,12 @@ namespace TitanOrbit.NetCode
             var wait = new WaitForSeconds(3f);
             while (true)
             {
+                if (_processExitRequested)
+                {
+                    yield return wait;
+                    continue;
+                }
+
                 bool pendingEmptyRecreate = false;
                 bool pendingStaleRecreate = false;
                 try
@@ -433,7 +455,8 @@ namespace TitanOrbit.NetCode
                             string lobbyId = _activeLobbyId;
                             TrackEmptyMatchTime(playerCount);
 
-                        bool isFull = playerCount >= _config.MaxPlayers;
+                        bool isFull = TitanOrbitSessionManager.Instance != null &&
+                                      TitanOrbitSessionManager.Instance.IsServerMatchRosterFull(playerCount);
                         long nowEpoch = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
                         long ageSeconds = nowEpoch - _createdAtEpochSeconds;
 
@@ -454,9 +477,11 @@ namespace TitanOrbit.NetCode
                                 pendingStaleRecreate = true;
                         }
 
-                        // [TITAN-ORBIT] Age rotation — spawn a fresh IsLatest successor for new joiners.
-                        // Occupied maps stay open (demoted only); see RunRotationHandoff.
-                        if (_matchIsLatest && !_spawnedFromAge && playerCount > 0 &&
+                        // [TITAN-ORBIT] Age rotation is off in production (AgeThresholdSeconds == 0).
+                        // Opening a second lobby at 30 minutes left two games in Join Game while
+                        // the first still had seats. A successor starts only when the roster is full.
+                        if (_config.AgeThresholdSeconds > 0 &&
+                            _matchIsLatest && !_spawnedFromAge && playerCount > 0 &&
                             ageSeconds >= _config.AgeThresholdSeconds && !isFull)
                         {
                             Debug.Log("[TitanOrbitDedicatedServerHost] Age rotation: starting handoff for " + lobbyId);
@@ -478,7 +503,7 @@ namespace TitanOrbit.NetCode
 
                 // In-process recreate — skip while a process handoff is in flight (Relay churn).
                 // [TITAN-ORBIT] Only when playerCount==0 (gated above). Process recycle counts ONLY
-                // empty_match_recreate (30‑min idle) — never stale/self-heal (those must repair
+                // empty_match_recreate (1-hour idle) — never stale/self-heal (those must repair
                 // without exiting, or Join Game goes empty more often).
                 if ((pendingEmptyRecreate || pendingStaleRecreate) && !_handoffInProgress &&
                     TitanOrbitSessionManager.Instance != null)
@@ -811,7 +836,7 @@ namespace TitanOrbit.NetCode
         IEnumerator MatchRequestWatchdogLoop()
         {
             // --- MatchRequestWatchdogLoop ---
-            var wait = new WaitForSeconds(20f);
+            var wait = new WaitForSeconds(60f);
             while (true)
             {
                 yield return wait;
@@ -889,9 +914,9 @@ namespace TitanOrbit.NetCode
         }
 
         /// <summary>
-        /// When Relay invalidates the host allocation, the lobby heartbeat can still look fresh
-        /// and Join Game lists a match whose join code never loads the map. Replace the allocation
-        /// and keep this conquest map.
+        /// When Relay invalidates the host allocation, or the UDP socket stops being read,
+        /// the lobby heartbeat can still look fresh and Join Game lists a match whose join
+        /// code never loads the map. Replace the allocation and keep this conquest map.
         /// </summary>
         IEnumerator RelayAllocationWatchLoop()
         {
@@ -903,13 +928,32 @@ namespace TitanOrbit.NetCode
                     continue;
                 if (TitanOrbitSessionManager.Instance == null)
                     continue;
-                if (!TitanOrbitRelayAllocationSignal.ConsumeServerInvalid())
+
+                bool allocationInvalid = TitanOrbitRelayAllocationSignal.ConsumeServerInvalid();
+                int rxBytes = 0;
+                bool exitForUdp = false;
+                bool udpWedged = !allocationInvalid &&
+                                 TryNoteWedgedUdpListen(out rxBytes, out exitForUdp);
+                if (exitForUdp)
+                {
+                    Debug.LogError("[TitanOrbitDedicatedServerHost] UDP receive queue stayed full after rebind; exiting.");
+                    DedicatedServerFileLog.Append(
+                        "netcode",
+                        "UDP recv queue still stuck rxBytes=" + rxBytes + " — exiting for a fresh process");
+                    _ = CloseLobbyAndExitAsync(_activeLobbyId, "udp_recv_wedged");
+                    yield break;
+                }
+
+                if (!allocationInvalid && !udpWedged)
                     continue;
 
-                DedicatedServerFileLog.Append(
-                    "netcode",
-                    "Relay allocation invalid — rebinding join code without wiping the match");
-                Debug.LogWarning("[TitanOrbitDedicatedServerHost] Relay allocation invalid — rebinding.");
+                string reason = allocationInvalid
+                    ? "Relay allocation invalid — rebinding join code without wiping the match"
+                    : "UDP recv queue stuck rxBytes=" + rxBytes +
+                      " rebind=" + _udpWedgedRebinds + "/" + UdpRebindsBeforeProcessExit +
+                      " — rebinding join code without wiping the match";
+                DedicatedServerFileLog.Append("netcode", reason);
+                Debug.LogWarning("[TitanOrbitDedicatedServerHost] " + reason);
 
                 Task<bool> rebind = TitanOrbitSessionManager.Instance.RebindDedicatedRelayKeepMatchAsync();
                 while (!rebind.IsCompleted)
@@ -933,6 +977,45 @@ namespace TitanOrbit.NetCode
                     _relayRebindFailures = 0;
                 }
             }
+        }
+
+        /// <summary>
+        /// True when <c>/proc/self/net/udp</c> shows a receive queue that stayed large across
+        /// several polls. The sim can keep ticking at 60 Hz while that socket is never read,
+        /// so new joins never become connections and the loading bar stops at the local warmup.
+        /// </summary>
+        bool TryNoteWedgedUdpListen(out int rxBytes, out bool exitProcess)
+        {
+            rxBytes = 0;
+            exitProcess = false;
+            if (!LinuxDedicatedHostNative.IsLinuxHost)
+                return false;
+            if (Time.realtimeSinceStartup < _udpWatchQuietUntil)
+                return false;
+            if (!LinuxDedicatedHostNative.TryReadMaxUdpRxQueue(out rxBytes))
+                return false;
+
+            if (rxBytes < LinuxDedicatedHostNative.WedgedRxBytes)
+            {
+                _udpRxHighStreak = 0;
+                _udpWedgedRebinds = 0;
+                return false;
+            }
+
+            _udpRxHighStreak++;
+            if (_udpRxHighStreak < UdpRxHighSamplesBeforeRebind)
+                return false;
+
+            _udpRxHighStreak = 0;
+            _udpWedgedRebinds++;
+            _udpWatchQuietUntil = Time.realtimeSinceStartup + UdpWatchQuietSeconds;
+            if (_udpWedgedRebinds > UdpRebindsBeforeProcessExit)
+            {
+                exitProcess = true;
+                return false;
+            }
+
+            return true;
         }
 
         IEnumerator NetcodeHealthLoop()
@@ -1068,8 +1151,10 @@ namespace TitanOrbit.NetCode
         }
 
         /// <summary>
-        /// Launches a sibling headless process for rotation. Returns false when the executable cannot be resolved
-        /// or <see cref="Process.Start"/> throws (logged for GCE diagnosis).
+        /// Launches a sibling headless process for rotation. On Linux this uses
+        /// <c>posix_spawn</c> because IL2CPP <see cref="Process.Start"/> throws
+        /// <c>Win32Exception</c> "Native error= Success" and does not create the child.
+        /// Returns false when the executable cannot be resolved or spawn fails.
         /// </summary>
         bool TrySpawnNextMatch(bool nextIsLatest)
         {
@@ -1115,11 +1200,33 @@ namespace TitanOrbit.NetCode
                 DedicatedServerFileLog.Append("rotation", logLine);
                 Debug.Log("[TitanOrbitDedicatedServerHost] " + logLine);
 
+                string workDir = Environment.CurrentDirectory;
+                if (LinuxDedicatedHostNative.IsLinuxHost)
+                {
+                    if (!LinuxDedicatedHostNative.TryPosixSpawn(exePath, workDir, args, out int childPid, out string spawnError))
+                    {
+                        DedicatedServerFileLog.Append(
+                            "rotation",
+                            "posix_spawn failed: " + spawnError + " — trying Process.Start");
+                        Debug.LogWarning("[TitanOrbitDedicatedServerHost] posix_spawn failed: " + spawnError);
+                    }
+                    else
+                    {
+                        DedicatedServerFileLog.Append(
+                            "rotation",
+                            "SpawnNextMatch posix_spawn pid=" + childPid + " isLatest=" + nextIsLatest +
+                            " port=" + derivedPort);
+                        Debug.Log("[TitanOrbitDedicatedServerHost] SpawnNextMatch posix_spawn pid=" + childPid +
+                                  " isLatest=" + nextIsLatest + " port=" + derivedPort);
+                        return true;
+                    }
+                }
+
                 Process.Start(new ProcessStartInfo(exePath, args)
                 {
                     CreateNoWindow = true,
                     UseShellExecute = false,
-                    WorkingDirectory = Environment.CurrentDirectory
+                    WorkingDirectory = workDir
                 });
 
                 Debug.Log("[TitanOrbitDedicatedServerHost] SpawnNextMatch started isLatest=" + nextIsLatest +
@@ -1236,7 +1343,7 @@ namespace TitanOrbit.NetCode
 
         /// <summary>
         /// True when this empty host has already done enough <c>empty_match_recreate</c> cycles
-        /// and should exit for a fresh binary. Only consulted on the 30‑minute idle path.
+        /// and should exit for a fresh binary. Only consulted on the 1-hour idle path.
         /// </summary>
         bool ShouldRecycleProcessInsteadOfInProcessEmptyRecreate()
         {

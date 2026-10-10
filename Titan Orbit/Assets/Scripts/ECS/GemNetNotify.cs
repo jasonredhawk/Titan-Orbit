@@ -7,22 +7,21 @@ namespace TitanOrbit.ECS
 {
     /// <summary>
     /// Server → client notify helpers for event-hydrated gems (spawn / burst / consume / value /
-    /// tractor / catch-up). Mirrors <see cref="BulletNetNotify"/>: broadcast RPC with
-    /// <see cref="SendRpcCommandRequest.TargetConnection"/> null, or a targeted connection.
+    /// tractor / catch-up). Spawn, burst, consume, value, and tractor go only to connections
+    /// whose camera can see the crystal. Catch-up stays targeted at one connection.
+    /// Clients drop crystals that leave the view; the view-enter catch-up puts live ones back.
     /// </summary>
     public static class GemNetNotify
     {
-        /// <summary>Broadcasts one <see cref="GemSpawnRpc"/> from a resolved recipe.</summary>
+        /// <summary>Sends one <see cref="GemSpawnRpc"/> to cameras that can see the crystal.</summary>
         public static void SendSpawn(ref EntityCommandBuffer ecb, in GemSpawnRecipe recipe)
         {
             float3 pos = recipe.Position;
             pos.y = 0f;
-            Entity rpcEntity = ecb.CreateEntity();
-            ecb.AddComponent(rpcEntity, ToSpawnRpc(recipe, pos));
-            ecb.AddComponent(rpcEntity, new SendRpcCommandRequest { TargetConnection = Entity.Null });
+            ViewInterestFanout.EmitPoint(ref ecb, ToSpawnRpc(recipe, pos), pos, ViewInterestTuning.GemKeepMargin, 0);
         }
 
-        /// <summary>Broadcasts one asteroid-destroy burst (client expands chord recipes locally).</summary>
+        /// <summary>Sends one asteroid-destroy burst to cameras that can see the origin.</summary>
         public static void SendBurst(
             ref EntityCommandBuffer ecb,
             float3 origin,
@@ -32,53 +31,50 @@ namespace TitanOrbit.ECS
             GemVisualTint tint)
         {
             origin.y = 0f;
-            Entity rpcEntity = ecb.CreateEntity();
-            ecb.AddComponent(rpcEntity, new GemBurstRpc
+            var rpc = new GemBurstRpc
             {
                 Origin = origin,
                 RemainingValue = remainingValue,
                 Seed = seed,
                 SpawnServerTime = spawnServerTime,
                 IsBonus = (byte)tint,
-            });
-            ecb.AddComponent(rpcEntity, new SendRpcCommandRequest { TargetConnection = Entity.Null });
+            };
+            ViewInterestFanout.EmitPoint(ref ecb, rpc, origin, ViewInterestTuning.GemKeepMargin, 0);
         }
 
-        /// <summary>Broadcasts a full scoop so clients hide and destroy the local crystal.</summary>
-        public static void SendConsumed(ref EntityCommandBuffer ecb, int spawnId)
+        /// <summary>Tells viewers to hide a scooped or expired crystal.</summary>
+        public static void SendConsumed(ref EntityCommandBuffer ecb, int spawnId, float3 position)
         {
             if (spawnId == 0)
                 return;
 
-            Entity rpcEntity = ecb.CreateEntity();
-            ecb.AddComponent(rpcEntity, new GemConsumedRpc { SpawnId = spawnId });
-            ecb.AddComponent(rpcEntity, new SendRpcCommandRequest { TargetConnection = Entity.Null });
+            position.y = 0f;
+            ViewInterestFanout.EmitPoint(ref ecb, new GemConsumedRpc { SpawnId = spawnId }, position, ViewInterestTuning.GemKeepMargin, 0);
         }
 
-        /// <summary>Broadcasts a leftover value after a partial scoop.</summary>
-        public static void SendValueChanged(ref EntityCommandBuffer ecb, int spawnId, float remainingValue)
+        /// <summary>Tells viewers the leftover value after a partial scoop.</summary>
+        public static void SendValueChanged(ref EntityCommandBuffer ecb, int spawnId, float remainingValue, float3 position)
         {
             if (spawnId == 0)
                 return;
 
-            Entity rpcEntity = ecb.CreateEntity();
-            ecb.AddComponent(rpcEntity, new GemValueChangedRpc
-            {
-                SpawnId = spawnId,
-                RemainingValue = remainingValue,
-            });
-            ecb.AddComponent(rpcEntity, new SendRpcCommandRequest { TargetConnection = Entity.Null });
+            position.y = 0f;
+            ViewInterestFanout.EmitPoint(
+                ref ecb,
+                new GemValueChangedRpc { SpawnId = spawnId, RemainingValue = remainingValue },
+                position,
+                ViewInterestTuning.GemKeepMargin,
+                0);
         }
 
-        /// <summary>Broadcasts a tractor lock or unlock (TractorShipId 0 = unlock).</summary>
-        public static void SendTractorLock(ref EntityCommandBuffer ecb, in GemTractorLockRpc rpc)
+        /// <summary>Sends a tractor lock or unlock to cameras that can see the crystal.</summary>
+        public static void SendTractorLock(ref EntityCommandBuffer ecb, in GemTractorLockRpc rpc, float3 position)
         {
             if (rpc.SpawnId == 0)
                 return;
 
-            Entity rpcEntity = ecb.CreateEntity();
-            ecb.AddComponent(rpcEntity, rpc);
-            ecb.AddComponent(rpcEntity, new SendRpcCommandRequest { TargetConnection = Entity.Null });
+            position.y = 0f;
+            ViewInterestFanout.EmitPoint(ref ecb, rpc, position, ViewInterestTuning.GemKeepMargin, rpc.TractorShipId);
         }
 
         /// <summary>Sends one live-gem snapshot to a joining connection.</summary>

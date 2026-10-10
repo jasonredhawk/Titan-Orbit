@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Reflection;
+using TitanOrbit.Audio;
 using TitanOrbit.Core;
 using TitanOrbit.Data;
 using TitanOrbit.ECS;
@@ -241,6 +242,7 @@ namespace TitanOrbit.Game
             _humFireHeld = false;
             float drawnHumRamp = 0f;
             bool hadDrawnRamp = false;
+            float humHear = 0f;
             MarkAllStale();
             // Interval-gated proxy walk — same cache bullet tracers use to stop on hulls.
             BulletCosmeticHitQuery.TryRefresh();
@@ -249,13 +251,17 @@ namespace TitanOrbit.Game
             if (bindings != null)
             {
                 for (int b = 0; b < bindings.Count; b++)
-                    TickBinding(em, bindings[b], mapW, mapH, now, ref drawnHumRamp, ref hadDrawnRamp);
+                    TickBinding(em, bindings[b], mapW, mapH, now, ref drawnHumRamp, ref hadDrawnRamp, ref humHear);
             }
 
             if (hadDrawnRamp)
                 _humRampSeconds = drawnHumRamp;
+            // Local Fire is the player's own ship — keep the hum if one snapshot
+            // dropped the beam pose. Remote beams only contribute their distance.
+            if (_humFireHeld)
+                humHear = math.max(humHear, 1f);
             bool anyDrawn = HideStale();
-            UpdateHum(anyDrawn || (_humFireHeld && AnyRecentLive(now)), _humRampSeconds);
+            UpdateHum(anyDrawn || (_humFireHeld && AnyRecentLive(now)), _humRampSeconds, humHear);
         }
 
         void TickBinding(
@@ -265,7 +271,8 @@ namespace TitanOrbit.Game
             float mapH,
             float now,
             ref float drawnHumRamp,
-            ref bool hadDrawnRamp)
+            ref bool hadDrawnRamp,
+            ref float humHear)
         {
             if (binding == null || !em.Exists(binding.ShipEntity))
                 return;
@@ -281,6 +288,13 @@ namespace TitanOrbit.Game
             if (!em.HasBuffer<ShipWeaponMountElement>(binding.ShipEntity)
                 || !em.HasBuffer<MegaShipGunnerSlotElement>(binding.ShipEntity))
                 return;
+            // Landed hulls cannot fire. Cut the beam the same frame Fire is still held.
+            if (ShipMoonDockState.IsFullyLandedOnMoon(em, binding.ShipEntity))
+            {
+                ResetRampsForShip(binding.ShipEntity.Index);
+                ClearStickyForShip(binding.ShipEntity.Index);
+                return;
+            }
 
             var mounts = em.GetBuffer<ShipWeaponMountElement>(binding.ShipEntity);
             var gunners = em.GetBuffer<MegaShipGunnerSlotElement>(binding.ShipEntity);
@@ -382,6 +396,7 @@ namespace TitanOrbit.Game
                 ApplyRampWidth(slot, rampSeconds);
                 drawnHumRamp = math.max(drawnHumRamp, rampSeconds);
                 hadDrawnRamp = true;
+                humHear = math.max(humHear, GameplaySfxProximity.VolumeAt(muzzle));
 
                 slot.Root.transform.position = muzzle;
                 Vector3 toEnd = end - muzzle;
@@ -1122,7 +1137,7 @@ namespace TitanOrbit.Game
             return found;
         }
 
-        void UpdateHum(bool anyLive, float rampSeconds = 0f)
+        void UpdateHum(bool anyLive, float rampSeconds = 0f, float hear = 0f)
         {
             if (_hum == null)
             {
@@ -1137,8 +1152,11 @@ namespace TitanOrbit.Game
                 _hum.clip = _humClip;
 
             _hum.pitch = ComputeHumPitch(rampSeconds);
+            _hum.volume = 0.35f * math.saturate(hear);
 
-            if (anyLive && _hum.clip != null)
+            // One shared hum for every live beam. Only beams near the local ship
+            // contribute; a MEGA firing across the map does not fill the mix.
+            if (anyLive && hear > 0.001f && _hum.clip != null)
             {
                 if (!_hum.isPlaying)
                     _hum.Play();

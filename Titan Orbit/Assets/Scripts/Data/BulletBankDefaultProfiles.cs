@@ -28,7 +28,10 @@ namespace TitanOrbit.Data
 
         /// <summary>
         /// Builds first-pass stats + abilities from a category / folder name.
-        /// More specific tokens (FireballsV2, Laserbolt) win over generic ones (Fireballs, Laser).
+        /// More specific tokens (FireballsV2, Ring2, Photon, Ion) win over generic ones.
+        /// Arsenal folders Laserbolt / Laser / LaserSmall are published as Darts, Photon Bolts,
+        /// and Ion Bolts. Bullet banks do not use the word laser — that name is the Titan beam.
+        /// None of these rows stretch in flight.
         /// </summary>
         public static void BuildDefaults(
             string categoryName,
@@ -50,7 +53,21 @@ namespace TitanOrbit.Data
                 return;
             }
 
-            if (Contains(n, "fireballsv2") || Contains(n, "fireballs"))
+            if (Contains(n, "fireballsv2"))
+            {
+                // Hotter, shorter burn than Fireballs — slow heavy shot, not a copy of V1.
+                stats.bulletSpeedMultiplier = 0.65f;
+                stats.firePowerMultiplier = 1.3f;
+                stats.fireRateMultiplier = 0.5f;
+                stats.bulletRangeMultiplier = 1f;
+                BulletBankAbility burn = Burn(2.2f, 0.45f, 1.1f, 0.12f, 0.2f, 1f, 0.02f);
+                burn.energyDrain = 3f;
+                burn.energyDrainPerExtra = 0.6f;
+                abilities.Add(burn);
+                return;
+            }
+
+            if (Contains(n, "fireballs"))
             {
                 stats.bulletSpeedMultiplier = 0.8f;
                 stats.firePowerMultiplier = 1.15f;
@@ -85,7 +102,17 @@ namespace TitanOrbit.Data
                 return;
             }
 
-            if (Contains(n, "ring2") || Contains(n, "ring"))
+            if (Contains(n, "ring2"))
+            {
+                // Wide, soft, longer well. Ring stays the tight yank.
+                stats.bulletSpeedMultiplier = 0.85f;
+                stats.fireRateMultiplier = 0.55f;
+                stats.bulletRangeMultiplier = 1.1f;
+                abilities.Add(Gravity(8f, 0.6f, 3.5f, 0.6f, 1.4f, 0.15f));
+                return;
+            }
+
+            if (Contains(n, "ring"))
             {
                 stats.fireRateMultiplier = 0.7f;
                 abilities.Add(Gravity(4f, 0.4f, 6f, 1f, 1f, 0.12f));
@@ -137,13 +164,35 @@ namespace TitanOrbit.Data
                 return;
             }
 
-            if (Contains(n, "laserbolt") || Contains(n, "lasersmall") || Contains(n, "laser"))
+            if (Contains(n, "photon") || IsExact(n, "laser"))
             {
-                stats.bulletSpeedMultiplier = 1.25f;
+                // Heavy long shot (Photon Bolts, or the arsenal Laser folder before rename).
+                ApplyPhotonBoltDefaults(ref stats, abilities);
+                return;
+            }
+
+            if (Contains(n, "ion") || Contains(n, "lasersmall"))
+            {
+                // Fast light tap. Small push, not Lightning's stun and not a stretch.
+                stats.firePowerMultiplier = 0.8f;
+                stats.bulletSpeedMultiplier = 1.3f;
+                stats.fireRateMultiplier = 1.1f;
+                stats.bulletRangeMultiplier = 0.9f;
+                BulletBankAbility push = Push(4f, 0.6f, 2.4f, 0.15f);
+                push.energyDrain = 2f;
+                push.energyDrainPerExtra = 0.3f;
+                abilities.Add(push);
+                return;
+            }
+
+            if (Contains(n, "dart") || Contains(n, "laserbolt"))
+            {
+                // Starter tracer. Fast, extra vs loose gems. Published name is Darts.
+                stats.firePowerMultiplier = 0.95f;
+                stats.bulletSpeedMultiplier = 1.2f;
+                stats.fireRateMultiplier = 1.05f;
                 stats.bulletRangeMultiplier = 1.15f;
-                stats.firePowerMultiplier = 0.9f;
-                stats.fireRateMultiplier = 0.95f;
-                abilities.Add(Stretch(0.5f, 0.02f, 2f, 0.08f));
+                abilities.Add(MulVs(BulletBankAbilityType.DamageMultiplierVsGem, 1.18f, 0.03f));
                 return;
             }
 
@@ -156,6 +205,22 @@ namespace TitanOrbit.Data
 
         static bool Contains(string name, string token) =>
             name.IndexOf(token, StringComparison.OrdinalIgnoreCase) >= 0;
+
+        static bool IsExact(string name, string token) =>
+            string.Equals(name, token, StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>Photon Bolts: slow, long, extra damage vs gem moons.</summary>
+        static void ApplyPhotonBoltDefaults(ref BulletBankStatModifiers stats, List<BulletBankAbility> abilities)
+        {
+            stats.firePowerMultiplier = 1.25f;
+            stats.bulletSpeedMultiplier = 0.8f;
+            stats.fireRateMultiplier = 0.6f;
+            stats.bulletRangeMultiplier = 1.35f;
+            BulletBankAbility moon = MulVs(BulletBankAbilityType.DamageMultiplierVsGemMoon, 1.3f, 0.05f);
+            moon.energyDrain = 1.25f;
+            moon.energyDrainPerExtra = 0.2f;
+            abilities.Add(moon);
+        }
 
         static BulletBankAbility Shock(float duration, float durationPerExtra) => new BulletBankAbility
         {
@@ -233,16 +298,5 @@ namespace TitanOrbit.Data
                 energyDrainPerExtra = 0.12f,
             };
 
-        static BulletBankAbility Stretch(float start, float startPerExtra, float end, float endPerExtra) =>
-            new BulletBankAbility
-            {
-                type = BulletBankAbilityType.StretchLengthInFlight,
-                radius = start,
-                radiusPerExtra = startPerExtra,
-                magnitude = end,
-                magnitudePerExtra = endPerExtra,
-                energyDrain = 0.5f,
-                energyDrainPerExtra = 0.08f,
-            };
     }
 }

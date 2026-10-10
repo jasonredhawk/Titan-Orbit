@@ -509,8 +509,8 @@ namespace TitanOrbit.ECS
 
             // --- Expire uncollected gems ---
             // [TITAN-ORBIT] Matches NGO Gem.FixedUpdate: elapsed >= lifetimeSeconds → Despawn.
-            foreach (var (gemState, gemEntity) in SystemAPI
-                         .Query<RefRO<GemState>>()
+            foreach (var (gemState, xf, gemEntity) in SystemAPI
+                         .Query<RefRO<GemState>, RefRO<LocalTransform>>()
                          .WithAll<GemTag>()
                          .WithEntityAccess())
             {
@@ -540,7 +540,7 @@ namespace TitanOrbit.ECS
                 if (elapsed < lifetime)
                     continue;
 
-                GemNetNotify.SendConsumed(ref ecb, gemState.ValueRO.SpawnId);
+                GemNetNotify.SendConsumed(ref ecb, gemState.ValueRO.SpawnId, xf.ValueRO.Position);
                 ecb.DestroyEntity(gemEntity);
             }
 
@@ -775,14 +775,14 @@ namespace TitanOrbit.ECS
                         gemTransforms[gi] = leftoverXf;
                         ecb.SetComponent(gemEntity, gemState);
                         ecb.SetComponent(gemEntity, leftoverXf);
-                        GemNetNotify.SendValueChanged(ref ecb, gemState.SpawnId, remainder);
+                        GemNetNotify.SendValueChanged(ref ecb, gemState.SpawnId, remainder, gemTransform.Position);
                     }
                     else
                     {
                         gemConsumed[gi] = true;
                         gemState.IsConsumed = true;
                         gemStates[gi] = gemState;
-                        GemNetNotify.SendConsumed(ref ecb, gemState.SpawnId);
+                        GemNetNotify.SendConsumed(ref ecb, gemState.SpawnId, gemTransform.Position);
                         ecb.DestroyEntity(gemEntity);
                     }
 
@@ -1040,15 +1040,15 @@ namespace TitanOrbit.ECS
                         // --- Match-long miner score (minimap top miner badge) ---
                         // [TITAN-ORBIT] Cumulative gems deposited this match — not live cargo hold.
                         // Integer floor matches the "score" feel; fractional leftovers round down.
-                        if (state.EntityManager.HasComponent<ShipMatchStats>(shipEntity))
+                        int gemsScore = (int)amount;
+                        if (gemsScore > 0)
                         {
-                            int gemsScore = (int)amount;
-                            if (gemsScore > 0)
-                            {
-                                var matchStats = state.EntityManager.GetComponentData<ShipMatchStats>(shipEntity);
-                                matchStats.GemsDeposited += gemsScore;
-                                state.EntityManager.SetComponentData(shipEntity, matchStats);
-                            }
+                            ShipMatchStatsLogic.TryAddOnShip(
+                                state.EntityManager,
+                                shipEntity,
+                                kills: 0,
+                                gemsDeposited: gemsScore,
+                                peopleDelivered: 0);
                         }
 
                         // --- Ghosted presentation beat (clients SFX / Ship↓ / Bank↑ from this) ---

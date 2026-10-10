@@ -189,6 +189,47 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
+        /// Empty toroidal grid with the same cell size as <see cref="Build"/>.
+        /// Call <see cref="Insert"/> for each live body. Used when a caller only
+        /// needs one kind (asteroids) and should not scan ships or transports.
+        /// </summary>
+        public static BulletObstacleSpatialHash Create(
+            float mapW,
+            float mapH,
+            int capacity,
+            Allocator allocator)
+        {
+            int n = math.max(capacity, 8);
+            var hash = new BulletObstacleSpatialHash
+            {
+                Entries = new NativeList<BulletObstacleEntry>(n, allocator),
+                _cells = new NativeParallelMultiHashMap<int, int>(math.max(n * 4, 32), allocator),
+                _mapW = mapW,
+                _mapH = mapH,
+                _created = true,
+            };
+
+            if (!ToroidalMapEcs.IsValidMapSize(mapW, mapH))
+            {
+                hash._cellsX = 1;
+                hash._cellsZ = 1;
+                return hash;
+            }
+
+            hash._cellsX = math.max(1, (int)math.ceil(mapW / CellSize));
+            hash._cellsZ = math.max(1, (int)math.ceil(mapH / CellSize));
+            return hash;
+        }
+
+        /// <summary>Stamps one body into the cells it overlaps. No-op if disposed.</summary>
+        public void Insert(in BulletObstacleEntry entry)
+        {
+            if (!_created)
+                return;
+            Add(entry);
+        }
+
+        /// <summary>
         /// Entry indices in cells overlapping the segment. Large hulls were
         /// stamped into every cell they cover, so the query radius is only
         /// the step plus a small pad — not the MEGA covering sphere.

@@ -1314,7 +1314,8 @@ namespace TitanOrbit.Game
             AudioManager.GetOrFind()?.PlayWeaponShootSound(
                 BulletVisualFactory.GetFirePowerSoundPitch(
                     pianoLive, req.FirePowerBase, req.FirePowerPerExtra),
-                BulletVisualFactory.GetFirePowerShootVolume(req.Damage));
+                BulletVisualFactory.GetFirePowerShootVolume(req.Damage)
+                    * GameplaySfxProximity.VolumeAt(spawnDisplay));
 
             // --- Pooled tracer shell (destroy-probe: spawnMs ~14 ms was Instantiates here) ---
             GameObject projectilePrefab = null;
@@ -1344,33 +1345,22 @@ namespace TitanOrbit.Game
             float visualScale = BulletVisualFactory.GetBulletVisualScale(_bank, scaleMul, bankIndex)
                                 * cameraScale;
             BulletVisualFactory.ApplyColorToVisual(visual, BulletVisualFactory.GetTeamBulletColor(team));
-            VfxUrpCompat.ApplyImpactVisualScale(go, visualScale);
+            // Root scale is the ship's DPS size. Lock particles so the prefab cannot
+            // roll a new size or shrink the bolt while it flies.
+            VfxUrpCompat.ApplyImpactVisualScale(go, visualScale, lockUniformParticleSize: true);
             VfxUrpCompat.PrepareVfxInstance(go);
             BulletVisualFactory.SetAudioPitchInHierarchy(
                 go, BulletVisualFactory.GetFirePowerSoundPitch(
-                    pianoLive, req.FirePowerBase, req.FirePowerPerExtra));
+                    pianoLive, req.FirePowerBase, req.FirePowerPerExtra),
+                spawnDisplay);
 
+            // Length stays at the prefab size. Stretch-in-flight (0.5 → 2) made a held
+            // burst look like small, medium, and large bullets. DPS scale is the root.
             ClientBulletStretchVisual stretch = go.GetComponent<ClientBulletStretchVisual>();
-            if (_bank != null
-                && _bank.TryGetProfile(bankIndex, out var profile)
-                && profile != null
-                && profile.TryGetStretchLengthFactors(out float startFactor, out float endFactor))
+            if (stretch != null)
             {
-                // Camera scale is on the tracer root (thickness). Divide length so a 4× MEGA
-                // lens does not push the slug tip through the target before XZ collision.
-                if (cameraScale > 1.01f)
-                {
-                    startFactor /= cameraScale;
-                    endFactor /= cameraScale;
-                }
-
-                if (stretch == null)
-                {
-                    if (ClientBulletStretchVisual.TryAttach(go.transform, visual, startFactor, endFactor))
-                        stretch = go.GetComponent<ClientBulletStretchVisual>();
-                }
-                else
-                    stretch.Rebind(visual, startFactor, endFactor);
+                stretch.Collapse();
+                stretch = null;
             }
 
             var tracer = new Tracer

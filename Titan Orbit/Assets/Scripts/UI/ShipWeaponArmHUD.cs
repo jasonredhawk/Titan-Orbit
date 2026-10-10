@@ -17,9 +17,11 @@ namespace TitanOrbit.UI
     /// Compact arsenal strip under the ship stats, stacked with WEAPONS: every barrel on the local ship, grouped by
     /// combat class (gun / laser / missile / sniper). Click a cell to mute that
     /// barrel; click the class header to mute or arm the whole group. Each chip
-    /// has two bars: the inner square is sequential hull energy (left to right
-    /// across the strip), and the border is that barrel's fire-rate timer.
-    /// Both full means the square can fire. User-off is a muted slate chip.
+    /// has two bars: the inner square is hull energy, and the border is that
+    /// barrel's fire-rate timer. A pool that covers every barrel fills left to
+    /// right. A short pool fills only the cursor square, then the next square
+    /// after that barrel fires. Both full means the square can fire. User-off
+    /// is a muted slate chip.
     /// <para>
     /// Regular family hulls show one GUN (or live bullet-type name) group.
     /// MEGA / Titan hulls show whichever classes the catalog actually mounted.
@@ -156,7 +158,7 @@ namespace TitanOrbit.UI
         readonly int[] _kindCounts = new int[MaxGroups];
         readonly int[] _kindArmed = new int[MaxGroups];
 
-        /// <summary>Per-mount energy fill (0–1). Sequential hull pool, left to right.</summary>
+        /// <summary>Per-mount energy fill (0–1). Left to right, or the cursor chip when the pool is short.</summary>
         readonly float[] _mountFill = new float[ShipWeaponArmState.MaxTrackedMounts];
 
         /// <summary>Per-mount fire-rate border fill (0–1). 1 = delay finished.</summary>
@@ -391,9 +393,13 @@ namespace TitanOrbit.UI
             if (em.HasBuffer<ShipWeaponReadyElement>(ship))
                 ready = em.GetBuffer<ShipWeaponReadyElement>(ship);
 
+            int cursorMount = em.HasComponent<ShipWeaponState>(ship)
+                ? em.GetComponentData<ShipWeaponState>(ship).NextMountIndex
+                : 0;
+
             ComputeMountCharges(
                 mounts, ready, in arm, isMega, laserLockout, energy,
-                in weaponCfg, abilityEnergy);
+                in weaponCfg, abilityEnergy, cursorMount);
 
             int paintedCells = PaintGroupsAndCells(mounts, gunCaption, layoutDirty);
 
@@ -539,8 +545,9 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Inner square is sequential energy. Border is the fire-rate timer,
-        /// drawn clockwise from the top edge.
+        /// Inner square is hull energy (left to right, or the cursor chip when
+        /// the pool is short). Border is the fire-rate timer, drawn clockwise
+        /// from the top edge.
         /// </summary>
         void PaintCell(
             BarrelCell cell,
@@ -583,7 +590,8 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Inner fill is the hull pool left to right. Border fill is
+        /// Inner fill is the hull pool. A full pool pours left to right. A short
+        /// pool fills only the cursor square. Border fill is
         /// <c>1 - cooldown / (1/fireRate)</c>, moved between snapshots.
         /// Both full and not lockout is ready.
         /// </summary>
@@ -595,7 +603,8 @@ namespace TitanOrbit.UI
             bool laserLockout,
             float energy,
             in ShipWeaponConfig weaponCfg,
-            float abilityEnergy)
+            float abilityEnergy,
+            int cursorMountIndex)
         {
             int mountCount = mounts.Length;
             if (mountCount > ShipWeaponArmState.MaxTrackedMounts)
@@ -618,6 +627,11 @@ namespace TitanOrbit.UI
 
             int orderCount = ShipWeaponFireLogic.BuildArmedStripOrder(
                 mounts, in arm, _cascadeOrder, skipCannonLasers: false);
+            var gate = ShipWeaponFireLogic.EvaluateHybridEnergy(
+                energy, mounts, in arm, isMega,
+                weaponCfg.BulletDamage, weaponCfg.FireRate, abilityEnergy,
+                cursorMountIndex);
+            bool drip = gate.HasProjectile && !gate.PoolCoversProjectiles;
             float remaining = energy;
 
             for (int n = 0; n < orderCount; n++)
@@ -630,9 +644,31 @@ namespace TitanOrbit.UI
 
                 ShipWeaponMountElement mount = mounts[i];
                 float cost = ResolveMountShotCost(mount, isMega, in weaponCfg, abilityEnergy);
-                float fill = ShipWeaponFireLogic.SequentialSquareFill(remaining, cost);
+                float fill;
+                bool energyFull;
+                if (drip)
+                {
+                    // The shared pool sits on the barrel that fires next.
+                    // Every other chip stays empty until the cursor reaches it.
+                    if (i == gate.CursorMountIndex)
+                    {
+                        float pool = energy;
+                        fill = ShipWeaponFireLogic.SequentialSquareFill(pool, cost);
+                        energyFull = ShipWeaponFireLogic.TryTakeSequentialSlot(ref pool, cost);
+                    }
+                    else
+                    {
+                        fill = 0f;
+                        energyFull = false;
+                    }
+                }
+                else
+                {
+                    fill = ShipWeaponFireLogic.SequentialSquareFill(remaining, cost);
+                    energyFull = ShipWeaponFireLogic.TryTakeSequentialSlot(ref remaining, cost);
+                }
+
                 _mountFill[i] = fill;
-                bool energyFull = ShipWeaponFireLogic.TryTakeSequentialSlot(ref remaining, cost);
 
                 float ghost = mount.FireCooldown;
                 if (ready.IsCreated && i < ready.Length)

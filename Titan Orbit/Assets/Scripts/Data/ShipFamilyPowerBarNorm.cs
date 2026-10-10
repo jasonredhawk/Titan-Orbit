@@ -14,7 +14,8 @@ namespace TitanOrbit.Data
     /// a second ceiling: every armed catalog MEGA. Gear shares a third: every
     /// component on every family, at the card's ship level. A Titan's guns would
     /// squash regular bars, and a whole ship's health would squash a single part.
-    /// Slot 0 on a ship is sustained DPS. On gear it is DPS plus ramming.
+    /// Slot 0 on a ship is sustained DPS from the barrels that fire. On gear that
+    /// lane stays empty: a bought weapon unlocks a bullet type, and ramming is not DPS.
     /// Paired with <see cref="UI.ShipUpgradeTreePowerBarUI"/>.
     /// </para>
     /// </summary>
@@ -74,9 +75,9 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Same as <see cref="Absorb"/> but slot 0 uses DPS plus ramming.
-        /// Gear bars call this so a ram component can set the Offense ceiling.
-        /// Ship bars must keep <see cref="Absorb"/> — a hull’s Fire Power lane is gun DPS only.
+        /// Same lanes as <see cref="Absorb"/>, but slot 0 stays empty.
+        /// Gear does not add ship DPS. Ship bars must keep <see cref="Absorb"/> —
+        /// a hull’s Fire Power lane is the guns that are actually firing.
         /// </summary>
         public void AbsorbComponentCompare(in ShipFamilyPowerScoreBreakdown breakdown)
         {
@@ -672,7 +673,7 @@ namespace TitanOrbit.Data
         /// Ties keep the first winner so the tip does not flip between equals.
         /// </summary>
         /// <param name="useComponentCompare">
-        /// True for gear. Slot 0 then includes ramming. Ship walks leave this false.
+        /// True for gear. Slot 0 stays empty (no added DPS). Ship walks leave this false.
         /// </param>
         static void AbsorbLeaders(
             ShipPowerBarStatLeader[] leaders,

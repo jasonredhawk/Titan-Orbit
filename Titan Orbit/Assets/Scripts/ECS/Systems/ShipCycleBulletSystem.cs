@@ -78,6 +78,15 @@ namespace TitanOrbit.ECS
                         // HealingBulletsActive or Production then ignores B and every
                         // owned gun looks jammed (heal drain can exceed the clip).
                     }
+                    else if (!loadout.ValueRO.HealingBulletsActive || TitanOrbitDebugFlags.CycleAllBulletBanks)
+                    {
+                        // The client picked a row this world does not list (source planet
+                        // not ghosted, or the shared planet cache disagreed). Dropping the
+                        // press left prediction on the new gun until the snapshot rolled
+                        // it back to the hull type. Step this world's own owned list instead.
+                        loadout.ValueRW.RuntimeBulletIndex = BulletBankOwnership.NextVisibleBank(
+                            state.EntityManager, entity, loadout.ValueRO.RuntimeBulletIndex);
+                    }
 
                     if (loadout.ValueRO.RuntimeBulletIndex != previousBank)
                         ResetMountCooldowns(state.EntityManager, entity);

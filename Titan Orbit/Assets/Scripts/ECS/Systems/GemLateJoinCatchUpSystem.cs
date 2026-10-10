@@ -1,3 +1,4 @@
+using TitanOrbit.Generation;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
@@ -39,6 +40,16 @@ namespace TitanOrbit.ECS
             if (_pendingConnQuery.IsEmptyIgnoreFilter)
                 return;
 
+            float mapW = 0f;
+            float mapH = 0f;
+            if (!SystemAPI.TryGetSingleton<MapStateSingleton>(out var map) ||
+                !ToroidalMapEcs.IsValidMapSize(map.MapWidth, map.MapHeight))
+                return;
+
+            mapW = map.MapWidth;
+            mapH = map.MapHeight;
+
+            var em = state.EntityManager;
             var connections = _pendingConnQuery.ToEntityArray(Allocator.Temp);
             var gemEntities = _gemQuery.ToEntityArray(Allocator.Temp);
             var gemStates = _gemQuery.ToComponentDataArray<GemState>(Allocator.Temp);
@@ -50,6 +61,10 @@ namespace TitanOrbit.ECS
             for (int c = 0; c < connections.Length; c++)
             {
                 Entity connection = connections[c];
+                if (!em.HasComponent<ConnectionViewInterest>(connection))
+                    continue;
+
+                ConnectionViewInterest view = em.GetComponentData<ConnectionViewInterest>(connection);
                 for (int g = 0; g < gemStates.Length; g++)
                 {
                     var s = gemStates[g];
@@ -58,6 +73,10 @@ namespace TitanOrbit.ECS
 
                     float3 pos = xf[g].Position;
                     pos.y = 0f;
+                    if (!ViewInterestMath.PointInView(
+                            view.CenterX, view.CenterZ, view.HalfW, view.HalfH, pos, mapW, mapH, ViewInterestTuning.GemKeepMargin))
+                        continue;
+
                     GemNetNotify.SendCatchUp(ref ecb, connection, new GemCatchUpRpc
                     {
                         SpawnId = s.SpawnId,

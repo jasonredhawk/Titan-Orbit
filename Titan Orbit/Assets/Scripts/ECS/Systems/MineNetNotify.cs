@@ -33,8 +33,7 @@ namespace TitanOrbit.ECS
             if (ClientServerBootstrap.ClientWorld != null && ClientServerBootstrap.ClientWorld.IsCreated)
                 MineExplosionBridge.Enqueue(req);
 
-            Entity rpcEntity = ecb.CreateEntity();
-            ecb.AddComponent(rpcEntity, new MineExplodeRpc
+            var rpc = new MineExplodeRpc
             {
                 Sequence = mine.Sequence,
                 Position = pos,
@@ -43,8 +42,8 @@ namespace TitanOrbit.ECS
                 VisualScale = req.VisualScale,
                 ExplosionVfxScale = req.ExplosionVfxScale,
                 Damage = mine.Damage,
-            });
-            ecb.AddComponent(rpcEntity, new SendRpcCommandRequest { TargetConnection = Entity.Null });
+            };
+            ViewInterestFanout.EmitPoint(ref ecb, rpc, pos, 8f, mine.OwnerNetworkId);
         }
     }
 }

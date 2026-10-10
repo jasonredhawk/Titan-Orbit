@@ -222,7 +222,7 @@ namespace TitanOrbit.Entities
         /// <summary>
         /// Legacy mining bank name. Live combat uses the drone's purchase-planet family bank.
         /// </summary>
-        public const string MiningBankCategoryName = "Laserbolt";
+        public const string MiningBankCategoryName = "Darts";
 
         /// <summary>
         /// Deterministic buzz/orbit phase from ship network id + slot so peers match.

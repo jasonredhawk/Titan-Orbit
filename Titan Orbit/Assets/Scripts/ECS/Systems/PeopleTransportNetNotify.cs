@@ -46,17 +46,20 @@ namespace TitanOrbit.ECS
                 });
             }
 
-            // --- All remote clients (+ host client connection) ---
-            Entity rpcEntity = ecb.CreateEntity();
-            ecb.AddComponent(rpcEntity, new PeopleTransportPoseRpc
+            // --- Viewers near the end of the hop (a missed end packet times out on the client) ---
+            var rpc = new PeopleTransportPoseRpc
             {
                 Sequence = sequence,
                 Position = position,
                 Velocity = velocity,
                 Status = status,
                 Health = health,
-            });
-            ecb.AddComponent(rpcEntity, new SendRpcCommandRequest { TargetConnection = Entity.Null });
+            };
+            float3 back = position;
+            float speed = math.length(velocity);
+            if (speed > 0.01f)
+                back = position - velocity / speed * 40f;
+            ViewInterestFanout.EmitSegment(ref ecb, rpc, back, position, 16f, 0);
         }
 
         /// <summary>

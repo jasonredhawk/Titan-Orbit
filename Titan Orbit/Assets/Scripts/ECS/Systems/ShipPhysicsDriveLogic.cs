@@ -15,8 +15,10 @@ namespace TitanOrbit.ECS
     /// [NETCODE] Identical math on both worlds inside PredictedFixedStepSimulationSystemGroup —
     /// same inputs must produce the same velocity/yaw so reconciliation stays quiet.
     /// [PHYSICS] Drive <b>adds</b> thrust / brakes to the previous step's
-    /// <see cref="PhysicsVelocity.Linear"/> (the solver bounce). It must not snap that
-    /// inherited speed back to MaxSpeed — that erased rams and felt scripted.
+    /// <see cref="PhysicsVelocity.Linear"/> (the solver bounce). Holding thrust always
+    /// ends the tick at or under MaxSpeed — keeping the previous magnitude used to
+    /// ratchet cruise up to the 3× safety ceiling (speedometer 3 / overdrive 4, hull at 7–9).
+    /// Ram overspeed still bleeds only while thrust is released.
     /// Unity Physics then integrates position and resolves hull contacts.
     /// [TITAN-ORBIT] Also detects planet orbit rings (ship pivot vs the annulus, toroidal),
     /// blends passive orbit
@@ -567,9 +569,11 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Continuous thrust and optional space-brake deceleration on the XZ plane.
-        /// Thrust is added to the inherited (post-collision) velocity. Cruise clamp only
-        /// stops this tick's thrust from pushing a sub-max ship past MaxSpeed.
-        /// Inherited bounce / ram overspeed is left for <see cref="ApplyRecoilDecay"/>.
+        /// Thrust is added to the inherited (post-collision) velocity, then magnitude is
+        /// clamped to <paramref name="maxSpeed"/>. A ram leftover must not become the new
+        /// cruise — that ratchet, plus the 3× safety ceiling below, held hulls at 7–9 while
+        /// the speedometer cap stayed on the taxed MaxSpeed. Released thrust still leaves
+        /// bounce overspeed for <see cref="ApplyRecoilDecay"/>.
         /// When <paramref name="spaceBrakes"/> is false and the player is not thrusting,
         /// velocity is left alone (frictionless coast — Left Ctrl / AIR BRAKES toggle).
         /// </summary>
@@ -605,8 +609,9 @@ namespace TitanOrbit.ECS
                     }
                     else
                     {
-                        // Already at / above cruise (bounce leftover): steer only, do not add
-                        // along-track speed — and do not snap the inherited overspeed down.
+                        // Already at / above cruise (bounce leftover): steer only. The clamp
+                        // below still pulls magnitude back to MaxSpeed — do not add along-track
+                        // speed on the way there.
                         float3 velNorm = math.normalize(vel);
                         float3 accelVec = moveDirection * acceleration;
                         float alongVel = math.dot(accelVec, velNorm);
@@ -616,14 +621,10 @@ namespace TitanOrbit.ECS
                     vel += accel * dt;
                     vel.y = 0f;
 
-                    // Thrust may reach the cruise cap, and may steer while a ram is
-                    // still above that cap, but it must not add speed past either.
-                    // A pure side-step (turn while already at cap) used to grow
-                    // magnitude with no clamp — registered 6.5, still flying ~9.
-                    float speedOut = math.length(vel);
-                    float thrustCap = speedIn > maxSpeed ? speedIn : maxSpeed;
-                    if (speedOut > thrustCap)
-                        vel = math.normalize(vel) * thrustCap;
+                    // Holding thrust is cruise (or OVERDRIVE), not a license to keep last
+                    // tick's magnitude. Side-step used to grow speed with no clamp; preserving
+                    // speedIn above MaxSpeed then ratcheted that leftover up to the 3× ceiling.
+                    ClampPlanarSpeed(ref vel, maxSpeed);
                 }
             }
             else if (spaceBrakes && math.lengthsq(vel) > 0.001f)
@@ -948,6 +949,24 @@ namespace TitanOrbit.ECS
             transform.Rotation = angle <= maxRadians
                 ? targetRotation
                 : math.slerp(transform.Rotation, targetRotation, maxRadians / math.max(angle, 1e-6f));
+        }
+
+        /// <summary>
+        /// Caps planar speed at <paramref name="maxSpeed"/>. Zero and sub-cap velocities
+        /// are left unchanged. Shared by the thrust motor and the post-physics planar pass
+        /// so solver separation cannot leave the speedometer above the cruise tick.
+        /// </summary>
+        public static void ClampPlanarSpeed(ref float3 vel, float maxSpeed)
+        {
+            if (maxSpeed <= 0.001f)
+                return;
+
+            vel.y = 0f;
+            float mag = math.length(vel);
+            if (mag <= maxSpeed || mag <= 0.0001f)
+                return;
+
+            vel = math.normalize(vel) * maxSpeed;
         }
 
         /// <summary>

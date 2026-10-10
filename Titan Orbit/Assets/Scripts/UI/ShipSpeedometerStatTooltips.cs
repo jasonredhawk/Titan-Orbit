@@ -539,8 +539,8 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// RAM: parts with rammingPower, grind DPS at current mass, and max ram at full cruise.
-        /// Recomputes from rating × mass so a live B-key ram mul cannot drift from the snapshot.
+        /// RAM tip: parts, then the same full-cruise product as the Fire Power card.
+        /// Asteroid is the first-contact floater (chip × mass ratio × speed), not the chip alone.
         /// </summary>
         static void AppendRamTooltip(StringBuilder sb, in PartCache parts, in LiveContext live)
         {
@@ -585,27 +585,39 @@ namespace TitanOrbit.UI
                     plowMul = catalog.GetAsteroidPlowDamageMultiplier();
                 sb.AppendLine("<color=#FFAA66>TITAN PLOW — rocks die on contact. Hull takes rock HP × catalog slider. Field does not slow the hull.</color>");
                 sb.Append("Plow slider  ").Append(F1(plowMul)).Append("×  <color=#5B7A94>(1 = equal rock HP)</color>").AppendLine();
+                return;
             }
-            sb.Append("Motor Ramming  ").Append(F1(familyRam)).AppendLine();
-            sb.Append("Rating  ").Append(F1(live.RamRating)).AppendLine();
-            sb.Append("totalMass  ").Append(F1(live.TotalMass));
-            sb.Append(" / hull ").Append(F1(live.ComponentSize > 0.01f
-                ? live.ComponentSize
-                : ShipComponentRammingSuggestions.MassReference)).AppendLine();
 
-            // --- Live products (same helpers as the server) ---
-            // [TITAN-ORBIT] Recompute from RamRating after B-key muls so the tip matches authority.
-            float grindDps = ShipComponentRammingSuggestions.ComputeGrindDps(
-                live.RamRating, live.TotalMass, live.ComponentSize);
-            float ramAst = ShipComponentRammingSuggestions.ComputeImpactDamage(
-                live.RamRating, live.TotalMass, fullCruise, live.ComponentSize);
-            float ramSelf = ShipComponentRammingSuggestions.ComputeImpactSelfDamage(
-                live.RamRating, live.TotalMass, fullCruise, live.ComponentSize);
-            sb.Append("Grind  ").Append(F1(grindDps)).Append("/s");
-            sb.Append(" <color=#5B7A94>(mass-scaled RAM chip)</color>").AppendLine();
-            sb.Append("At full cruise  ").Append(F1(fullCruise)).Append("/s -> ");
-            sb.Append("ast <color=#FFAA66>").Append(F1(ramAst)).Append("</color>  ");
-            sb.Append("hull <color=#FF6666>").Append(F1(ramSelf)).Append("</color>");
+            sb.Append("Motor Ramming  ").Append(F1(familyRam)).AppendLine();
+
+            // --- Same product the Fire Power card prints ---
+            // [TITAN-ORBIT] Chip × mass ratio × (1 + cruise / ram-double). The floater on
+            // first contact is Asteroid, not the motor chip.
+            float rating = live.RamRating > 0.001f
+                ? live.RamRating
+                : ShipComponentRammingSuggestions.ComputeDamageRatingFromFamilyPower(familyRam);
+            ShipComponentRammingSuggestions.RamCruiseImpactPreview hit =
+                ShipComponentRammingSuggestions.BuildCruiseImpactPreview(
+                    rating, live.TotalMass, fullCruise, live.ComponentSize);
+            sb.Append("Chip  ").Append(F1(hit.Rating));
+            sb.Append(" <color=#5B7A94>grind/s at 1x mass</color>").AppendLine();
+            sb.Append("Mass  ").Append(F1(hit.TotalMass)).Append(" / ").Append(F1(hit.HullReference));
+            sb.Append("  =  <color=#FF8A8A>").Append(F1(hit.MassFactor)).Append("x</color>");
+            if (hit.UsedMassReferenceFallback)
+                sb.Append(" <color=#5B7A94>(hull size not ready)</color>");
+            sb.AppendLine();
+            sb.Append("Grind  ").Append(F1(hit.GrindDps)).Append("/s");
+            sb.Append(" <color=#5B7A94>chip x mass, while held</color>").AppendLine();
+            sb.Append("Cruise  ").Append(F1(hit.CruiseSpeed)).Append("/s");
+            sb.Append("   Speed  1 + ").Append(F1(hit.CruiseSpeed)).Append("/")
+                .Append(F1(hit.SpeedForDouble));
+            sb.Append("  =  <color=#FFCC66>").Append(F1(hit.SpeedMultiplier)).Append("x</color>").AppendLine();
+            sb.Append("Asteroid  <color=#FFAA66>").Append(F1(hit.AsteroidDamage)).Append("</color>");
+            sb.Append(" <color=#5B7A94>first contact</color>").AppendLine();
+            sb.Append("Hull  <color=#FF6666>").Append(F1(hit.SelfDamage)).Append("</color>");
+            sb.Append(" <color=#5B7A94>")
+                .Append(F1(ShipComponentRammingSuggestions.SelfToAsteroidDamageRatio))
+                .Append("x asteroid, capped to rock HP</color>").AppendLine();
         }
 
         /// <summary>BUL: weapon parts + hull-average config the HUD shows.</summary>

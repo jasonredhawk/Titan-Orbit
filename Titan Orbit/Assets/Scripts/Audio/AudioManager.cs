@@ -207,6 +207,9 @@ namespace TitanOrbit.Audio
             if (shootSound == null) return;
             EnsureWeaponSoundPool();
             float volume = GetSFXVolume(shootVolume * Mathf.Max(0f, volumeScale));
+            // Far shots pass a hear-range scale of 0 — do not burn a pool voice.
+            if (volume <= 0.001f)
+                return;
             if (weaponSoundSources == null || weaponSoundSources.Length == 0)
             {
                 PlaySFX(shootSound, shootVolume * Mathf.Max(0f, volumeScale));
@@ -246,9 +249,14 @@ namespace TitanOrbit.Audio
         /// <see cref="IMPACT_PITCH_MIN"/> / <see cref="IMPACT_PITCH_MAX"/> squash so high
         /// fire power can sit at the same floor as muzzle.
         /// </summary>
-        public void PlayBulletImpactSound(float pitch)
+        /// <param name="volumeScale">
+        /// Extra 0–1 attenuation. Callers pass <see cref="GameplaySfxProximity.VolumeAt"/>
+        /// so impacts across the map stay silent.
+        /// </param>
+        public void PlayBulletImpactSound(float pitch, float volumeScale = 1f)
         {
-            PlayPooledImpactSound(impactSound, impactVolume, pitch, clampToImpactRange: false);
+            PlayPooledImpactSound(
+                impactSound, impactVolume, pitch, clampToImpactRange: false, volumeScale: volumeScale);
         }
 
         public void PlayAsteroidCollisionSound()
@@ -318,6 +326,8 @@ namespace TitanOrbit.Audio
             if (clip == null) return;
             EnsureImpactSoundPool();
             float volume = GetSFXVolume(clipVolumeMultiplier * Mathf.Clamp01(volumeScale));
+            if (volume <= 0.001f)
+                return;
             if (impactSoundSources == null || impactSoundSources.Length == 0)
             {
                 PlaySFX(clip, clipVolumeMultiplier * Mathf.Clamp01(volumeScale));
@@ -352,8 +362,14 @@ namespace TitanOrbit.Audio
         /// plays a C-major chord via <see cref="GemChordValues"/> so it matches explode splits.
         /// </summary>
         /// <param name="amount">Cargo gems gained this frame (drives which piano key / chord).</param>
-        public void PlayGemCollectSound(float amount)
+        /// <param name="volumeScale">
+        /// Extra 0–1 attenuation from <see cref="GameplaySfxProximity"/> for another ship's pickup.
+        /// </param>
+        public void PlayGemCollectSound(float amount, float volumeScale = 1f)
         {
+            if (volumeScale <= 0.001f)
+                return;
+
             // --- Single note vs chord ---
             // [TITAN-ORBIT] Individual gem pickups (amount ≤ 88) keep one pitch — burst gems are
             // already chord-toned, so scooping them in sequence layers a chord in the pool.
@@ -361,7 +377,7 @@ namespace TitanOrbit.Audio
             int voices = GemChordValues.VoiceCountForCollect(amount, GemChordValues.DefaultMaxUnitValue);
             if (voices <= 1)
             {
-                PlayGemMusicalSFX(gemCollectSound, amount, gemVolume, 1f);
+                PlayGemMusicalSFX(gemCollectSound, amount, gemVolume, volumeScale);
                 return;
             }
 
@@ -369,7 +385,7 @@ namespace TitanOrbit.Audio
             GemChordValues.Fill(amount, voices, GemChordValues.DefaultMaxUnitValue, chordValues);
 
             // Slightly ease volume per voice so a triad does not triple the loudness.
-            float voiceVolumeScale = 1f / Mathf.Sqrt(voices);
+            float voiceVolumeScale = volumeScale / Mathf.Sqrt(voices);
             for (int i = 0; i < voices; i++)
             {
                 if (chordValues[i] < 0.001f)
@@ -389,9 +405,9 @@ namespace TitanOrbit.Audio
         /// Called from <c>PeopleTransportVfxDriver</c> on Consumed — not from server sim.
         /// </summary>
         /// <param name="amount">People transferred (N). Mapped 1…10 → pitch offset.</param>
-        public void PlayPeopleLoadSound(float amount)
+        public void PlayPeopleLoadSound(float amount, float volumeScale = 1f)
         {
-            PlayPeopleTransferSound(amount, true);
+            PlayPeopleTransferSound(amount, true, volumeScale);
         }
 
         /// <summary>
@@ -399,9 +415,9 @@ namespace TitanOrbit.Audio
         /// larger N still pushes pitch down within <see cref="peoplePitchMin"/>…<see cref="peoplePitchMax"/>.
         /// </summary>
         /// <param name="amount">People transferred (N). Mapped 1…10 → pitch offset.</param>
-        public void PlayPeopleUnloadSound(float amount)
+        public void PlayPeopleUnloadSound(float amount, float volumeScale = 1f)
         {
-            PlayPeopleTransferSound(amount, false);
+            PlayPeopleTransferSound(amount, false, volumeScale);
         }
 
         public void PlayCaptureSound()
@@ -443,9 +459,12 @@ namespace TitanOrbit.Audio
             PlaySFX(explosionSound, explosionVolume);
         }
 
-        public void PlayShipDeathSound()
+        /// <param name="volumeScale">0–1 hear-range attenuation. 0 skips the sting.</param>
+        public void PlayShipDeathSound(float volumeScale = 1f)
         {
-            PlaySFX(shipDeathSound, shipDeathVolume);
+            if (volumeScale <= 0.001f)
+                return;
+            PlaySFX(shipDeathSound, shipDeathVolume * Mathf.Clamp01(volumeScale));
         }
 
         public void PlayUpgradeSound()
@@ -531,17 +550,21 @@ namespace TitanOrbit.Audio
         /// </summary>
         /// <param name="amount">People count N for pitch scaling.</param>
         /// <param name="isLoad">True = load (planet→ship), false = unload (ship→planet).</param>
-        private void PlayPeopleTransferSound(float amount, bool isLoad)
+        private void PlayPeopleTransferSound(float amount, bool isLoad, float volumeScale)
         {
             // --- People transfer one-shot (N-scaled pitch) ---
-            if (peopleTransferSound == null)
+            if (peopleTransferSound == null || volumeScale <= 0.001f)
+                return;
+
+            float volume = GetSFXVolume(peopleVolume * Mathf.Clamp01(volumeScale));
+            if (volume <= 0.001f)
                 return;
 
             EnsureGemSoundPool();
             if (gemSoundSources == null || gemSoundSources.Length == 0)
             {
                 // Pool not ready — still play the clip without custom pitch.
-                PlaySFX(peopleTransferSound, peopleVolume);
+                PlaySFX(peopleTransferSound, peopleVolume * Mathf.Clamp01(volumeScale));
                 return;
             }
 
@@ -557,7 +580,7 @@ namespace TitanOrbit.Audio
             if (src != null)
             {
                 src.pitch = pitch;
-                src.PlayOneShot(peopleTransferSound, GetSFXVolume(peopleVolume));
+                src.PlayOneShot(peopleTransferSound, volume);
             }
         }
 

@@ -70,6 +70,11 @@ namespace TitanOrbit.ECS
                 int id = owners[i].NetworkId;
                 if (id <= 0)
                     continue;
+                // AI ships help the team but must not take a Command Deck seat.
+                // A bot that deposits the most gems would otherwise be the only
+                // person allowed to retask the bots.
+                if (BotShipIds.IsBot(id))
+                    continue;
 
                 int team = (int)ship.Team;
                 if (team < 1 || team > 5)

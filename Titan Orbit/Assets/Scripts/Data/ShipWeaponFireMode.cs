@@ -5,15 +5,17 @@ namespace TitanOrbit.Data
     /// Authored on the family asset (Bullets header) and copied into
     /// <c>ShipWeaponConfig.FireMode</c> by <c>ShipStatApplyLogic</c>.
     /// <para>
-    /// [TITAN-ORBIT] Live fire does not branch on this enum. Every barrel waits
-    /// <c>1 / fireRate</c>, then fires if the hull pool can pay that shot.
-    /// The values stay so existing family assets keep a stable serialized byte.
+    /// [TITAN-ORBIT] Live fire is <see cref="EnergyHybrid"/>. A pool that covers
+    /// every armed projectile volleys those ready barrels. A short pool cycles
+    /// one arsenal square at a time. The other values stay so existing family
+    /// assets keep a stable serialized byte.
     /// </para>
     /// </summary>
     public enum ShipWeaponFireMode : byte
     {
         /// <summary>
-        /// Default serialized value. Ready delay plus a per-shot energy check.
+        /// Default. Volley when the pool covers every armed projectile;
+        /// otherwise cycle one arsenal square at a time.
         /// </summary>
         EnergyHybrid = 0,
 

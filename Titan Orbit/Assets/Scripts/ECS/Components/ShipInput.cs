@@ -51,7 +51,8 @@ namespace TitanOrbit.ECS
         public InputEvent CycleBullet;
 
         /// <summary>
-        /// [NETCODE] InputEvent — ALT / FireRocket. Server <c>ShipRocketFireSystem</c> consumes
+        /// [NETCODE] InputEvent — Q / FireRocket when the loadout caret is on a rocket.
+        /// Server <c>ShipRocketFireSystem</c> consumes
         /// one store rocket charge (unless infinite-rocket debug) and spawns a homing shot.
         /// </summary>
         [GhostField]
@@ -78,7 +79,7 @@ namespace TitanOrbit.ECS
         public int SelectedRocketSlot;
 
         /// <summary>
-        /// [NETCODE] InputEvent — ALT while the loadout caret is on a mine pack.
+        /// [NETCODE] InputEvent — Q while the loadout caret is on a mine pack.
         /// Server <c>ShipMineDeploySystem</c> consumes one store mine charge (unless
         /// infinite-mine debug) and appends a deployed mine.
         /// Appended after <see cref="SelectedRocketSlot"/> so older command layouts still line up.

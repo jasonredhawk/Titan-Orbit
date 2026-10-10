@@ -107,7 +107,8 @@ namespace TitanOrbit.Core
 
         /// <summary>
         /// True when this hold has "Us" on the rail. Compose rings the speaker plus
-        /// friendlies inside <c>YouSelectRange</c> of that hull — not the mouse.
+        /// friendlies on the local camera inside <c>YouSelectRange</c> of that hull —
+        /// not far ships, and not the mouse.
         /// </summary>
         static bool s_HasPendingUs;
 

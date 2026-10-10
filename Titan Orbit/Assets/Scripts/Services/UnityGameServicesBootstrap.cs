@@ -30,6 +30,14 @@ namespace TitanOrbit.Services
         /// <summary>Last UGS PlayerId that had a confirmed Unity identity (debug / future validation).</summary>
         const string UnityAccountLinkedPlayerIdPrefsKey = "TitanOrbit_UnityAccountPlayerId_v1";
 
+        /// <summary>
+        /// PlayerId from the last successful username/password sign-in.
+        /// Unity Authentication stores that login on <see cref="PlayerInfo.Username"/>, not in
+        /// <see cref="PlayerInfo.Identities"/>, and a later GetPlayerInfo can replace the object
+        /// without copying the username. Purchases treat this id as a durable account.
+        /// </summary>
+        const string UsernamePasswordPlayerIdPrefsKey = "TitanOrbit_UsernamePasswordPlayerId_v1";
+
         static bool _authEventsHooked;
         static bool _playerAccountHooksHooked;
         static TaskCompletionSource<bool> _pendingUnityAuthCompletion;
@@ -119,6 +127,7 @@ namespace TitanOrbit.Services
 
             const int maxAttempts = 12;
             Exception last = null;
+            bool clearedStaleUnitySession = false;
             for (int attempt = 1; attempt <= maxAttempts; attempt++)
             {
                 try
@@ -133,6 +142,21 @@ namespace TitanOrbit.Services
                 {
                     last = e;
                     string msg = e.Message ?? string.Empty;
+                    // A cached Editor session can belong to the Unity ID provider. When that
+                    // provider is off, every restore returns 401 and Join game never lists lobbies.
+                    // Drop the token and open a fresh guest, which is enough to join Relay.
+                    if (!clearedStaleUnitySession &&
+                        msg.IndexOf("external id provider is not active", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        clearedStaleUnitySession = true;
+                        hadCachedToken = false;
+                        Debug.LogWarning(
+                            "[UnityGameServicesBootstrap] Cached session needs the Unity ID provider, which is inactive. " +
+                            "Clearing it and starting a guest session for online play.");
+                        auth.SignOut(true);
+                        continue;
+                    }
+
                     bool waitForConcurrentSignIn = msg.IndexOf("already signing in", StringComparison.OrdinalIgnoreCase) >= 0 ||
                         msg.IndexOf("invalid state", StringComparison.OrdinalIgnoreCase) >= 0;
                     if (!waitForConcurrentSignIn || attempt >= maxAttempts)
@@ -278,7 +302,15 @@ namespace TitanOrbit.Services
                 return true;
             if (UnityServices.State != ServicesInitializationState.Initialized || !AuthenticationService.Instance.IsSignedIn)
                 return false;
+
             var info = AuthenticationService.Instance.PlayerInfo;
+            // Username/password is PlayerInfo.Username. Identities stays empty for that provider,
+            // so a successful dashboard username sign-in used to look like a guest.
+            if (!string.IsNullOrEmpty(info?.Username))
+                return true;
+            if (UsernamePasswordRememberedForCurrentPlayer())
+                return true;
+
             if (info?.Identities == null)
                 return false;
             for (int i = 0; i < info.Identities.Count; i++)
@@ -292,6 +324,17 @@ namespace TitanOrbit.Services
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// True when this process signed in with username/password and the cached session is still that player.
+        /// </summary>
+        static bool UsernamePasswordRememberedForCurrentPlayer()
+        {
+            string remembered = PlayerPrefs.GetString(UsernamePasswordPlayerIdPrefsKey, "");
+            if (string.IsNullOrEmpty(remembered))
+                return false;
+            return string.Equals(remembered, PlayerId, StringComparison.Ordinal);
         }
 
         static bool PlayerInfoHasIdentity(PlayerInfo info, string typeId)
@@ -348,11 +391,23 @@ namespace TitanOrbit.Services
             Debug.Log("[UnityGameServicesBootstrap] Remembered Unity account link. PlayerId=" + PlayerId);
         }
 
+        /// <summary>
+        /// Records the username/password player before PlayerInfo refresh, so Orbit Unlocked
+        /// stops showing Sign in after the dashboard username login succeeds.
+        /// </summary>
+        static void RememberUsernamePasswordAccount()
+        {
+            if (!string.IsNullOrEmpty(PlayerId))
+                PlayerPrefs.SetString(UsernamePasswordPlayerIdPrefsKey, PlayerId);
+            RememberUnityAccountLinked();
+        }
+
         /// <summary>Clears the local remember-me flag (explicit Sign out only).</summary>
         static void ForgetUnityAccountLinked()
         {
             PlayerPrefs.DeleteKey(UnityAccountLinkedPrefsKey);
             PlayerPrefs.DeleteKey(UnityAccountLinkedPlayerIdPrefsKey);
+            PlayerPrefs.DeleteKey(UsernamePasswordPlayerIdPrefsKey);
             PlayerPrefs.Save();
         }
 
@@ -502,8 +557,12 @@ namespace TitanOrbit.Services
                 return (false, "Sign-in failed. Try again.");
             }
 
+            // Remember before GetPlayerInfo. That call replaces PlayerInfo and does not
+            // put username/password into Identities, which used to clear the Sign out state.
+            RememberUsernamePasswordAccount();
             await TryFetchPlayerInfoForUiAsync(allowReplacePlayerInfo: true);
-            RememberUnityAccountLinked();
+            if (!string.IsNullOrEmpty(AuthenticationService.Instance.PlayerInfo?.Username))
+                RememberUsernamePasswordAccount();
             TitanOrbitEntitlements.LoadSessionForCurrentPlayer();
             AuthStateChanged?.Invoke();
             return (true, null);
