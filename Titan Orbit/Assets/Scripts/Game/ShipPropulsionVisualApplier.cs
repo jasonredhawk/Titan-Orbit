@@ -145,6 +145,8 @@ namespace TitanOrbit.Game
             public ParticleSystem[] particles;
             public Color[] originalStartColors;
             public Material[] tintMaterials;
+            /// <summary>One cloned material array per particle renderer. <c>Renderer.materials</c> orphans the previous clone.</summary>
+            public Material[][] layerMaterials;
             public TrailRenderer[] trails;
             public bool[] authoredColEnabled;
             public Gradient[] authoredColGradients;
@@ -1412,7 +1414,15 @@ namespace TitanOrbit.Game
                 var rend = ps.GetComponent<ParticleSystemRenderer>();
                 if (rend == null)
                     continue;
-                Material[] mats = rend.materials;
+                if (jet.layerMaterials == null || jet.layerMaterials.Length != layerCount)
+                    jet.layerMaterials = new Material[layerCount][];
+                Material[] mats = jet.layerMaterials[i];
+                if (mats == null)
+                {
+                    // [UNITY] Renderer.materials clones every call. Keep the first instances.
+                    mats = rend.materials;
+                    jet.layerMaterials[i] = mats;
+                }
                 for (int m = 0; m < mats.Length; m++)
                 {
                     if (mats[m] != null)

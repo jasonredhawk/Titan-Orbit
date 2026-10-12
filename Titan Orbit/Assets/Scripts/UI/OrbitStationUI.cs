@@ -3065,7 +3065,7 @@ namespace TitanOrbit.UI
             toggleLabelRt.offsetMin = new Vector2(4f, 0f);
             toggleLabelRt.offsetMax = new Vector2(-4f, 0f);
             slotUi.placementToggleLabel = toggleLabelGo.AddComponent<TextMeshProUGUI>();
-            slotUi.placementToggleLabel.text = "Adjust mount ▸";
+            slotUi.placementToggleLabel.text = "Adjust mount >";
             // #region agent log
             TitanOrbit.MaterialCloneProbe.StoreLabelSets++;
             // #endregion
@@ -7196,7 +7196,7 @@ namespace TitanOrbit.UI
                 slotUi.placementToggleRow.SetActive(canAdjustMount);
                 if (slotUi.placementToggleLabel != null)
                 {
-                    slotUi.placementToggleLabel.text = showPlacement ? "Hide mount ▾" : "Adjust mount ▸";
+                    slotUi.placementToggleLabel.text = showPlacement ? "Hide mount v" : "Adjust mount >";
                     // #region agent log
                     TitanOrbit.MaterialCloneProbe.StoreLabelSets++;
                     // #endregion

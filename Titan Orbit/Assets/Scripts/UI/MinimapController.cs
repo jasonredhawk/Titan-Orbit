@@ -2085,6 +2085,45 @@ namespace TitanOrbit.UI
             }
         }
         
+        /// <summary>
+        /// Replaces a circular minimap sprite and destroys the previous runtime sprite and its texture.
+        /// Prefab sprites (anything not named MinimapBorder / MinimapBackground / MinimapMask) are left alone.
+        /// WebGL does not GC <see cref="Texture2D"/> native memory when <see cref="Image.sprite"/> is overwritten.
+        /// </summary>
+        static void AssignOwnedCircularSprite(Image image, Sprite next)
+        {
+            if (image == null)
+                return;
+
+            Sprite prev = image.sprite;
+            image.sprite = next;
+            if (prev == null || prev == next || !IsOwnedCircularSprite(prev))
+                return;
+
+            Texture2D tex = prev.texture;
+            Destroy(prev);
+            if (tex != null)
+                Destroy(tex);
+        }
+
+        static bool IsOwnedCircularSprite(Sprite sprite)
+        {
+            if (sprite == null)
+                return false;
+            string n = sprite.name;
+            return n == "MinimapBorder" || n == "MinimapBackground" || n == "MinimapMask";
+        }
+
+        /// <summary>
+        /// Drops the CPU pixel copy after <see cref="Sprite.Create"/>. FullRect and Tight meshes
+        /// are already built, so the readable duplicate is only extra WASM heap.
+        /// </summary>
+        static void DropCpuTextureCopy(Texture2D texture)
+        {
+            if (texture != null)
+                texture.Apply(false, true);
+        }
+
         private void SetupCircularBorder()
         {
             // Find the border object (it's a child named "Border")
@@ -2114,7 +2153,7 @@ namespace TitanOrbit.UI
 
                     int discTex = Mathf.Max(8, Mathf.RoundToInt(displaySize));
                     int textureSize = discTex + Mathf.RoundToInt(RingEdgeCoverPx) * 2;
-                    borderImage.sprite = CreateCircularBorderSprite(textureSize, discTex);
+                    AssignOwnedCircularSprite(borderImage, CreateCircularBorderSprite(textureSize, discTex));
                 }
             }
         }
@@ -2162,6 +2201,7 @@ namespace TitanOrbit.UI
                 0,
                 SpriteMeshType.FullRect);
             sprite.name = "MinimapBorder";
+            DropCpuTextureCopy(texture);
             return sprite;
         }
         
@@ -2176,7 +2216,7 @@ namespace TitanOrbit.UI
             
             // Collapsed disc matches the team leaderboard panel (black at 0.72). Expanded stays near-opaque.
             float backgroundAlpha = isExpanded ? expandedBackgroundAlpha : 0.72f;
-            bgImage.sprite = CreateCircularBackgroundSprite((int)displaySize, backgroundAlpha);
+            AssignOwnedCircularSprite(bgImage, CreateCircularBackgroundSprite((int)displaySize, backgroundAlpha));
             bgImage.type = Image.Type.Simple;
             // Scene Image may ship with alpha 0.4; use white so sprite alpha is not multiplied down.
             bgImage.color = Color.white;
@@ -2219,6 +2259,7 @@ namespace TitanOrbit.UI
             
             Sprite sprite = Sprite.Create(texture, new Rect(0, 0, textureSize, textureSize), new Vector2(0.5f, 0.5f), 100f);
             sprite.name = "MinimapBackground";
+            DropCpuTextureCopy(texture);
             return sprite;
         }
         
@@ -2242,7 +2283,7 @@ namespace TitanOrbit.UI
             }
             
             // Create circular mask sprite
-            maskImage.sprite = CreateCircularMaskSprite((int)displaySize);
+            AssignOwnedCircularSprite(maskImage, CreateCircularMaskSprite((int)displaySize));
             maskImage.type = Image.Type.Simple;
         }
         
@@ -2292,6 +2333,7 @@ namespace TitanOrbit.UI
             
             Sprite sprite = Sprite.Create(texture, new Rect(0, 0, textureSize, textureSize), new Vector2(0.5f, 0.5f), 100f);
             sprite.name = "MinimapMask";
+            DropCpuTextureCopy(texture);
             return sprite;
         }
 
