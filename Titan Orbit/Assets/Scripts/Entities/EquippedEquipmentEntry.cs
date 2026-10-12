@@ -19,6 +19,13 @@ namespace TitanOrbit.Entities
         /// </summary>
         public int itemLevel;
 
+        /// <summary>
+        /// Purchased weapon's bullet-bank index plus one, copied from the ghost
+        /// <c>StampedBulletBankPlusOne</c>. 0 means an older buy with no stamp —
+        /// the Orbit Menu then falls back to that family's live planet roll.
+        /// </summary>
+        public byte stampedBulletBankPlusOne;
+
         // --- Local transform (ship hull space) ---
         public float localPosX;
         public float localPosY;

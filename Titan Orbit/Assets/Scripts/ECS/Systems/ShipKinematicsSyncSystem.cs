@@ -73,7 +73,7 @@ namespace TitanOrbit.ECS
             {
                 Velocity = linear,
                 FormationHeading = PeopleTransportMath.StepEscortFormationHeading(
-                    kinematics.ValueRO.FormationHeading, transform.ValueRO.Rotation, linear, dt),
+                    kinematics.ValueRO.FormationHeading, transform.ValueRO.Rotation, dt),
             };
         }
     }

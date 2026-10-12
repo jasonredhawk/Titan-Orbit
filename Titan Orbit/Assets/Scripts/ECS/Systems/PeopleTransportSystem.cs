@@ -481,17 +481,12 @@ namespace TitanOrbit.ECS
             float3 shipPos = shipTransform.Position;
             PeopleTransportEscortLogic.GetEscortHullExtents(
                 state.EntityManager, shipEntity, shipTransform.Scale, out float extX, out float extZ);
-            float3 shipVel = float3.zero;
             float3 heading = float3.zero;
             if (state.EntityManager.HasComponent<ShipKinematics>(shipEntity))
-            {
-                var kin = state.EntityManager.GetComponentData<ShipKinematics>(shipEntity);
-                shipVel = kin.Velocity;
-                heading = kin.FormationHeading;
-            }
+                heading = state.EntityManager.GetComponentData<ShipKinematics>(shipEntity).FormationHeading;
             float3 spawnPos = PeopleTransportMath.EvaluateEscortSwarmPose(
                 shipPos, shipTransform.Rotation, extX, extZ, seatId, amount, shipNetworkId,
-                shipVel, hopClock, mapW, mapH, heading);
+                hopClock, mapW, mapH, heading);
             float3 targetPos = PeopleTransportMath.GetPlanetSurfaceToward(
                 planetPos, planetSize, spawnPos, mapW, mapH);
 

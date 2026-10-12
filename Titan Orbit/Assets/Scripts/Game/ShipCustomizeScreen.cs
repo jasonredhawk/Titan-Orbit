@@ -21,12 +21,25 @@ namespace TitanOrbit.Game
     /// </para>
     /// Writes <see cref="LocalPlayerShipAccents"/> / <see cref="LocalPlayerThrusterStyle"/>
     /// and pings <see cref="ShipAccentColorsRpcClient"/> so remotes see paint and jets.
+    /// <para>
+    /// The studio is the last child of the dock canvas, drawn in that same canvas.
+    /// A second Canvas on this object sorts under the dock after the first close,
+    /// which is why the panel only became clickable once the Orbit Menu hid.
+    /// </para>
     /// </summary>
+    [DefaultExecutionOrder(10000)]
     public sealed class ShipCustomizeScreen : MonoBehaviour
     {
         public const string OverlayObjectName = "ShipCustomizeScreen";
 
-        const int OverlaySortingOrder = 540;
+        /// <summary>The one studio instance. Stays parented to the dock canvas while hidden.</summary>
+        static ShipCustomizeScreen s_Screen;
+
+        /// <summary>Dock or main-menu canvas we parent under so we share its draw batch.</summary>
+        Canvas _scaleSource;
+
+        /// <summary>True while the player can see and click the studio.</summary>
+        bool _open;
 
         static readonly Color PanelFill = new Color(0.012f, 0.016f, 0.028f, 0.96f);
         static readonly Color CaptionColor = new Color(0.62f, 0.78f, 0.95f, 0.92f);
@@ -85,66 +98,194 @@ namespace TitanOrbit.Game
         Sprite _whiteSprite;
 
         /// <summary>
-        /// Finds or creates the overlay under <paramref name="canvasRoot"/> and shows it.
+        /// Finds or creates the studio and shows it over <paramref name="canvasRoot"/>.
+        /// The studio stays a child of that canvas — see <see cref="EnsureDrawOnTop"/>.
         /// </summary>
         public static void Open(Transform canvasRoot, TeamId team)
         {
             if (canvasRoot == null)
                 return;
 
-            Transform existing = canvasRoot.Find(OverlayObjectName);
-            ShipCustomizeScreen screen;
-            if (existing != null)
+            ShipCustomizeScreen screen = FindScreen(canvasRoot);
+            if (screen == null)
             {
-                screen = existing.GetComponent<ShipCustomizeScreen>();
-                if (screen == null)
-                    screen = existing.gameObject.AddComponent<ShipCustomizeScreen>();
-            }
-            else
-            {
+                // No Canvas on this object. A nested canvas draws behind the dock
+                // after the first close. Sibling order in the dock canvas does not.
                 var go = new GameObject(
                     OverlayObjectName,
                     typeof(RectTransform),
-                    typeof(Canvas),
-                    typeof(GraphicRaycaster),
                     typeof(ShipCustomizeScreen));
                 go.layer = canvasRoot.gameObject.layer;
-                go.transform.SetParent(canvasRoot, false);
                 screen = go.GetComponent<ShipCustomizeScreen>();
+                s_Screen = screen;
             }
 
+            screen._scaleSource = ResolveScaleSource(canvasRoot);
             screen.Show(team);
         }
 
-        /// <summary>Builds chrome once, then paints from prefs and the requested team Color1.</summary>
+        /// <summary>
+        /// Reuses the open studio, a copy still sitting under the dock, or a
+        /// closed one at the scene root (inactive objects are invisible to Find).
+        /// </summary>
+        static ShipCustomizeScreen FindScreen(Transform canvasRoot)
+        {
+            if (s_Screen != null)
+                return s_Screen;
+
+            if (canvasRoot != null)
+            {
+                Transform nested = canvasRoot.Find(OverlayObjectName);
+                if (nested != null)
+                {
+                    s_Screen = nested.GetComponent<ShipCustomizeScreen>();
+                    if (s_Screen == null)
+                        s_Screen = nested.gameObject.AddComponent<ShipCustomizeScreen>();
+                    return s_Screen;
+                }
+            }
+
+            // [UNITY] Include inactive so a studio left disabled by an older Close still resolves.
+            var found = UnityEngine.Object.FindObjectsByType<ShipCustomizeScreen>(
+                FindObjectsInactive.Include,
+                FindObjectsSortMode.None);
+            for (int i = 0; i < found.Length; i++)
+            {
+                if (found[i] == null)
+                    continue;
+                s_Screen = found[i];
+                return s_Screen;
+            }
+
+            return null;
+        }
+
+        /// <summary>Root canvas of the menu that opened us, so the scaler matches that menu.</summary>
+        static Canvas ResolveScaleSource(Transform canvasRoot)
+        {
+            if (canvasRoot == null)
+                return null;
+
+            var canvas = canvasRoot.GetComponent<Canvas>();
+            if (canvas == null)
+                canvas = canvasRoot.GetComponentInParent<Canvas>();
+            if (canvas == null)
+                return null;
+            return canvas.rootCanvas != null ? canvas.rootCanvas : canvas;
+        }
+
+        /// <summary>
+        /// Builds chrome once, then paints from prefs and the requested team Color1.
+        /// Called from <see cref="Open"/> when the player hits CUSTOMIZE HULL on the orbit dock.
+        /// </summary>
         public void Show(TeamId team)
         {
             _team = team == TeamId.None ? TeamId.TeamA : team;
             // Free players may cycle every look here; nothing is kept until they buy.
             TitanOrbitCosmeticGate.BeginHangarPreview();
+            _open = true;
+
+            // Older builds deactivated this object on Close. Wake it, then leave it awake.
+            if (!gameObject.activeSelf)
+                gameObject.SetActive(true);
+
+            EnsureDrawOnTop();
             EnsureChrome();
             SetPreviewWorldActive(true);
             ApplyTeamToPreview();
             RefreshFromStore();
             RefreshThrusterSection();
             RefreshUnlockBanner();
-            gameObject.SetActive(true);
-            transform.SetAsLastSibling();
+            ApplyVisibility(true);
+            EnsureDrawOnTop();
         }
 
-        /// <summary>Hides the studio and tears down the leftover preview camera / hull.</summary>
+        /// <summary>
+        /// Draws this studio inside the dock canvas, after every dock widget.
+        /// A Canvas on this object is a separate batch. After the first close Unity
+        /// paints that batch under the dock, which is why the panel only accepted
+        /// clicks once the Orbit Menu hid. Sharing the dock canvas avoids that.
+        /// </summary>
+        void EnsureDrawOnTop()
+        {
+            // --- Drop our own canvas ---
+            // [UNITY] DestroyImmediate so this frame already renders with the dock.
+            // Destroy() would wait until end of frame and the old batch would cover us once.
+            var ray = GetComponent<GraphicRaycaster>();
+            if (ray != null)
+                DestroyImmediate(ray);
+            var scaler = GetComponent<CanvasScaler>();
+            if (scaler != null)
+                DestroyImmediate(scaler);
+            var overlayCanvas = GetComponent<Canvas>();
+            if (overlayCanvas != null)
+                DestroyImmediate(overlayCanvas);
+
+            if (_scaleSource == null)
+                return;
+
+            // Parent canvas already asks TMP for the extra UV channel. Keep that on.
+            // Assigning the same flags every frame rebuilds the dock, so only fill gaps.
+            var neededChannels =
+                AdditionalCanvasShaderChannels.TexCoord1
+                | AdditionalCanvasShaderChannels.Normal
+                | AdditionalCanvasShaderChannels.Tangent;
+            if ((_scaleSource.additionalShaderChannels & neededChannels) != neededChannels)
+                _scaleSource.additionalShaderChannels |= neededChannels;
+
+            bool reparented = transform.parent != _scaleSource.transform;
+            if (reparented)
+                transform.SetParent(_scaleSource.transform, false);
+
+            // Later siblings paint over earlier ones in a single canvas.
+            // Skip the call when we are already last — it dirties the whole dock.
+            if (_open && transform.parent != null
+                && transform.GetSiblingIndex() != transform.parent.childCount - 1)
+                transform.SetAsLastSibling();
+
+            if (reparented)
+            {
+                var rt = GetComponent<RectTransform>();
+                if (rt != null)
+                    StretchFull(rt);
+            }
+        }
+
+        /// <summary>
+        /// Shows or hides the studio without leaving the dock canvas.
+        /// The dock's raycaster still hits us while <c>blocksRaycasts</c> is on.
+        /// </summary>
+        void ApplyVisibility(bool visible)
+        {
+            var group = GetComponent<CanvasGroup>();
+            if (group == null)
+                group = gameObject.AddComponent<CanvasGroup>();
+            group.alpha = visible ? 1f : 0f;
+            group.interactable = visible;
+            group.blocksRaycasts = visible;
+        }
+
+        /// <summary>
+        /// Hides the studio and tears down the leftover preview camera / hull.
+        /// Stays parented and active so the next open is just "draw last" again.
+        /// </summary>
         public void Close()
         {
             if (TitanOrbitCosmeticGate.IsCustomizationUnlocked)
                 FlushPersist();
             TitanOrbitCosmeticGate.EndHangarPreview();
             SetPreviewWorldActive(false);
-            gameObject.SetActive(false);
+            _open = false;
+            ApplyVisibility(false);
+            // First sibling draws behind the dock if a fade ever fails.
+            transform.SetAsFirstSibling();
         }
 
         void OnEnable()
         {
             TitanOrbit.Services.TitanOrbitEntitlements.OrbitUnlockedOwnershipChanged += OnOrbitUnlockedChanged;
+            if (_open)
+                EnsureDrawOnTop();
         }
 
         void OnDisable()
@@ -159,6 +300,8 @@ namespace TitanOrbit.Game
         /// </summary>
         void OnOrbitUnlockedChanged()
         {
+            if (!_open)
+                return;
             RefreshFromStore();
             RefreshThrusterSection();
             RefreshUnlockBanner();
@@ -223,13 +366,17 @@ namespace TitanOrbit.Game
         /// <summary>Opens the one-item IAP overlay above this studio.</summary>
         void OpenOrbitUnlockedFromCustomize()
         {
-            // This overlay is a child Canvas; the parent is the Main Menu canvas.
-            Transform host = transform.parent != null ? transform.parent : transform.root;
+            // Host is the dock canvas (our parent). The buy sheet adds its own canvas
+            // at sort 580 so it paints above this studio and the Orbit Menu.
+            Transform host = transform.parent != null ? transform.parent : transform;
             OrbitUnlockedPurchaseScreen.Open(host);
         }
 
         void OnDestroy()
         {
+            if (s_Screen == this)
+                s_Screen = null;
+
             if (_previewRt != null)
             {
                 _previewRt.Release();
@@ -302,9 +449,8 @@ namespace TitanOrbit.Game
 
         void BuildFullChrome()
         {
-            var overlayCanvas = GetComponent<Canvas>();
-            overlayCanvas.overrideSorting = true;
-            overlayCanvas.sortingOrder = OverlaySortingOrder;
+            // Draw order is sibling index on the dock canvas, applied in Show().
+            EnsureDrawOnTop();
 
             var rootRt = GetComponent<RectTransform>();
             StretchFull(rootRt);
@@ -1343,7 +1489,12 @@ namespace TitanOrbit.Game
 
         void LateUpdate()
         {
-            if (!isActiveAndEnabled || _previewHull == null || _previewCam == null)
+            // Dock code can SetAsLastSibling during Update. Run after that so the
+            // studio is still the front child when this frame renders.
+            if (_open)
+                EnsureDrawOnTop();
+
+            if (!_open || _previewHull == null || _previewCam == null)
                 return;
 
             TickPreviewFlight();

@@ -30,7 +30,9 @@ namespace TitanOrbit.Core
     /// Background checkboxes independently enable the shader starfield (production) and the
     /// optional legacy nebula quad. <see cref="ShowOrbitMenuCardsPanel"/> hides the orbit-menu
     /// CARDS tab (default off) so the dock shows SHIPS and GEAR only; flip it later to bring
-    /// the spin-offer panel back without deleting that UI. Publishes debug values to
+    /// the spin-offer panel back without deleting that UI. <see cref="ShowJoinGameClosesIn"/>
+    /// hides the Join Game "closes in…" countdown (default off); flip it to show empty-lobby
+    /// idle-kill time again. Publishes debug values to
     /// <see cref="TitanOrbitDebugFlags"/> so other assemblies can honor toggles without
     /// referencing this Core assembly. Dedicated server builds normally leave debug flags false.
     /// </summary>
@@ -132,6 +134,12 @@ namespace TitanOrbit.Core
         /// <summary>Mirror of the last published cards-panel flag for change detection.</summary>
         bool _lastPublishedShowOrbitMenuCardsPanel;
 
+        // [UNITY] / [TITAN-ORBIT] Join Game lobby rows can show "closes in Xm" for empty matches.
+        // Default off — the idle-kill still happens on the server; this only hides the label.
+        [Header("Join Game")]
+        [Tooltip("ON: each empty lobby row on the Join Game screen shows \"closes in…\" until the idle-kill deadline. OFF (default): hide that countdown. The server still closes empty matches on the same schedule.")]
+        [SerializeField] bool showJoinGameClosesIn;
+
         // [UNITY] Inspector toggle — when true, ship upgrade tree treats all nodes as free / clickable.
         [Header("Debug — Ship Upgrade Tree")]
         [Tooltip("When enabled, the moon orbit ship upgrade tree unlocks every node. Click any ship to try it for free (local Editor / development only).")]
@@ -229,6 +237,12 @@ namespace TitanOrbit.Core
         /// </summary>
         public bool ShowOrbitMenuCardsPanel => showOrbitMenuCardsPanel;
 
+        /// <summary>
+        /// True when Join Game lobby rows should show the empty-match "closes in…" countdown
+        /// (Inspector on NceGameRoot). Default off — the label stays hidden until you turn it back on.
+        /// </summary>
+        public bool ShowJoinGameClosesIn => showJoinGameClosesIn;
+
         /// <summary>True when designers enabled free upgrades in the Inspector (client + local-host convenience).</summary>
         public bool DebugFreeShipUpgradeTree => debugFreeShipUpgradeTree;
 
@@ -293,6 +307,13 @@ namespace TitanOrbit.Core
         /// </summary>
         public static bool IsShowOrbitMenuCardsPanelActive =>
             Instance != null && Instance.showOrbitMenuCardsPanel;
+
+        /// <summary>
+        /// Safe static check for the Join Game "closes in…" label. Defaults <b>off</b> when no
+        /// GameManager exists yet, matching the Inspector default (countdown hidden).
+        /// </summary>
+        public static bool IsShowJoinGameClosesInActive =>
+            Instance != null && Instance.showJoinGameClosesIn;
 
         /// <summary>
         /// Safe static check used by moon orbit UI. Also true when the Shared flag was published

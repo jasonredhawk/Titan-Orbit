@@ -5358,8 +5358,27 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
+        /// Gun on an owned weapon card. The purchase stamp wins — that is the moon
+        /// you bought at (Ring stays Ring even when another world of the same family
+        /// rolled Fireballs). Older gear with no stamp still walks that family's planet.
+        /// </summary>
+        static int ResolveEquippedComponentBulletBank(
+            EquippedEquipmentEntry entry,
+            ShipFamilyDefinition componentFamily)
+        {
+            if (entry.stampedBulletBankPlusOne > 0)
+            {
+                return PlanetShipFamilyAssignment.SanitizeSelectableDamageBank(
+                    entry.stampedBulletBankPlusOne - 1);
+            }
+
+            return ResolveComponentSourceBulletBankIndex(componentFamily);
+        }
+
+        /// <summary>
         /// Gun stamped on the planet that rolled <paramref name="componentFamily"/> this match.
-        /// Hull stamp is the fallback when that world is unknown.
+        /// Hull stamp is the fallback when that world is unknown. Prefer
+        /// <see cref="ResolveEquippedComponentBulletBank"/> for a row that already has a purchase stamp.
         /// </summary>
         static int ResolveComponentSourceBulletBankIndex(ShipFamilyDefinition componentFamily)
         {
@@ -6742,7 +6761,7 @@ namespace TitanOrbit.UI
                             componentLevel,
                             componentFamily,
                             2,
-                            ResolveComponentSourceBulletBankIndex(componentFamily));
+                            ResolveEquippedComponentBulletBank(entry, componentFamily));
                     }
                     else
                         equipmentDescTexts[i].text = StoreItemData.GetDescription(itemType);
@@ -7051,7 +7070,7 @@ namespace TitanOrbit.UI
                 if (filled && entry.IsShipComponent && componentEntry != null)
                 {
                     int componentLevel = entry.itemLevel > 0 ? entry.itemLevel : shipLevel;
-                    int sourceBank = ResolveComponentSourceBulletBankIndex(family);
+                    int sourceBank = ResolveEquippedComponentBulletBank(entry, family);
                     float power = ShipComponentStoreData.GetComponentPowerScore(
                         componentEntry, componentLevel, family, sourceBank);
                     slotUi.sublineText.text = FormatEquippedComponentMeta(
@@ -7116,7 +7135,7 @@ namespace TitanOrbit.UI
                             componentEntry,
                             componentLevel,
                             family,
-                            ResolveComponentSourceBulletBankIndex(family)),
+                            ResolveEquippedComponentBulletBank(entry, family)),
                         in componentMaxes,
                         trackWidth,
                         ShipFamilyPowerBarNorm.FormatComponentLeaderKey(

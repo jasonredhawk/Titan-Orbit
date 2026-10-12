@@ -344,7 +344,7 @@ namespace TitanOrbit.Game
             btnRt.pivot = new Vector2(0.5f, 0.5f);
 
             // Reuse Play's sliced Cut Frame sprite + ColorBlock (not a flat navy fill).
-            StyleButton(btnGo, "Sign in with Unity", buttonStyle, 44f, 240f);
+            StyleButton(btnGo, "Sign in", buttonStyle, 44f, 240f);
 
             var btnLabel = btnGo.GetComponentInChildren<TextMeshProUGUI>(true);
             if (btnLabel != null)

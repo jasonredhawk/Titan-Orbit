@@ -41,13 +41,16 @@ namespace TitanOrbit.Data
                 { "Engine2", ShipFamilyPartTypes.Engine },
                 { "Engine", ShipFamilyPartTypes.Engine },
                 { "Thruster", ShipFamilyPartTypes.Thruster },
-                // Weapons — rapid small vs heavy slow
+                // Weapons — one family profile, whatever the prefab calls the barrel
                 { "Gun", ShipFamilyPartTypes.WeaponBullet },
                 { "Machinegun", ShipFamilyPartTypes.WeaponBullet },
                 { "Barrel", ShipFamilyPartTypes.WeaponBullet },
                 { "Ammunition", ShipFamilyPartTypes.WeaponBullet },
-                { "Missile", ShipFamilyPartTypes.WeaponCannon },
-                { "Missile_Launcher", ShipFamilyPartTypes.WeaponCannon },
+                { "Cannon", ShipFamilyPartTypes.WeaponBullet },
+                { "Missile", ShipFamilyPartTypes.WeaponBullet },
+                { "Missile_Launcher", ShipFamilyPartTypes.WeaponBullet },
+                { "Rocket", ShipFamilyPartTypes.WeaponBullet },
+                { "Launcher", ShipFamilyPartTypes.WeaponBullet },
                 // Wings / cockpit
                 { "WingHolder", ShipFamilyPartTypes.Wing },
                 { "Small_Wing", ShipFamilyPartTypes.Wing },

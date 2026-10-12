@@ -4,18 +4,9 @@ using Unity.Mathematics;
 namespace TitanOrbit.Simulation
 {
     /// <summary>
-    /// Bullet VFX sizing from firepower + designer scale knobs on <c>BulletVfxBank</c>.
-    /// Authored cannon scale is the baseline; size then grows with firepower versus a
-    /// level baseline. Ship guns pass the hull’s peak DPS (every barrel’s fire power ×
-    /// fire rate) so a held trigger fires one size. Energy left in the battery does not
-    /// change it. Bullet speed does <b>not</b> affect size.
-    /// <para>
-    /// Global shrink/grow: bank <c>GlobalVisualScaleMultiplier</c> × per-category global
-    /// (default 1), applied in <see cref="Entities.BulletVisualFactory"/>.
-    /// Upgrade growth: bank <see cref="ActiveUpgradeVisualScaleMultiplier"/> × per-category
-    /// upgrade (default 1) — e.g. bank 0.5 × category 1 → fire power 3→8 grows size by ~1.83×.
-    /// </para>
-    /// Burst-safe static — server writes <c>ScaleMultiplier</c> on spawn; clients render it.
+    /// Bullet size from fire power. Bullet type does not change it.
+    /// Ship guns pass the hull’s fire power (level, abilities, upgrades) so a held
+    /// trigger is one size. Energy and bullet speed do not change it.
     /// </summary>
     [BurstCompile]
     public static class BulletVisualScale

@@ -559,6 +559,12 @@ namespace TitanOrbit.UI
                 view.SetOwnedOccupantStyle();
         }
 
+        /// <summary>
+        /// Paints the left-panel Your Ship card: the hull you are flying, its preview,
+        /// and the power bar. The title on the art is the ship name only — the family
+        /// caption already sits above that image. Tree cards in the center keep the
+        /// full "family + name" label.
+        /// </summary>
         private void PopulateCurrentShipDisplayNode(ShipUpgradeTreeNodeUI view, ShipPowerBarStatMaxes maxes)
         {
             Planet storePlanet = GetShipUpgradeStorePlanet();
@@ -582,8 +588,11 @@ namespace TitanOrbit.UI
                 view.SetLevelLabel("You");
             else
                 view.SetLevelLabel($"Lv {currentLevel}");
-            view.SetShipName(GetCurrentShipDisplayName());
-            view.SetFamilyName(GetCurrentShipFamilyDisplayName());
+            // "Astro Eagle Hawk" → "Hawk". Family is the caption above the silhouette.
+            string familyLabel = GetCurrentShipFamilyDisplayName();
+            view.SetShipName(DisplayNameFormatting.StripLeadingFamilyLabel(
+                GetCurrentShipDisplayName(), familyLabel));
+            view.SetFamilyName(familyLabel);
             view.SetPrice(canSwapHull ? "Free" : "—");
             // Sidebar "You" card uses the same pool as the tree node for this hull.
             view.ApplyPowerBreakdown(

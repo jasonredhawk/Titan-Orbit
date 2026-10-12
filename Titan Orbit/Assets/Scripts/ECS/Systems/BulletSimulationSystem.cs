@@ -21,12 +21,12 @@ namespace TitanOrbit.ECS
     /// <see cref="PredictedFixedStepSimulationSystemGroup"/> (which contains
     /// <see cref="ShipPhysicsDriveSystem"/>) so muzzle positions use current transforms.
     /// <para>
-    /// Multi-cannon fire uses <see cref="ShipWeaponFireLogic"/>. Each barrel
-    /// waits <c>1 / fireRate</c>, then fires only when
-    /// <see cref="ShipState.CurrentEnergy"/> can pay that shot. A pool that
-    /// covers every armed projectile fires those ready barrels together. A
-    /// short pool fires the cursor square only, then steps to the next
-    /// projectile and wraps. Empty mount buffer = unarmed.
+    /// Multi-cannon fire uses <see cref="ShipWeaponFireLogic"/>. A full energy
+    /// pool fires every ready barrel together. Each barrel waits
+    /// <c>1 / fireRate</c>, times that bullet type's flat rate. Extra barrels
+    /// add muzzles on that same rate; they do not speed the rate up, and ship
+    /// level does not shorten the wait. A short energy pool pays only the
+    /// cursor barrel, then steps. Empty mount buffer = unarmed.
     /// </para>
     /// <para>
     /// [TITAN-ORBIT] Ships cannot fire while <see cref="ShipOrbitState.InOrbitRing"/> is true —
@@ -339,7 +339,7 @@ namespace TitanOrbit.ECS
                 if (mounts.Length == 0)
                     continue;
 
-                // --- Per-barrel ready delay (independent cadences) ---
+                // --- Per-barrel ready delay (each barrel counts down its own shot) ---
                 // [TITAN-ORBIT] The delay keeps ticking in orbit, while shocked, and while
                 // Fire is up, so a square can be full before the next legal shot.
                 // It does not spend hull energy. A shot spends energy only when it fires.
@@ -402,8 +402,8 @@ namespace TitanOrbit.ECS
                 float3 shipVel = kinematics.ValueRO.Velocity;
                 shipVel.y = 0f;
 
-                // Ready delay already ticked. A full pool volleys; a short pool
-                // pays the cursor square and steps NextMountIndex.
+                // Ready delay already ticked. A full pool fires every ready barrel
+                // together; a short pool pays the cursor square and steps NextMountIndex.
                 var arm = ShipWeaponArmState.Resolve(state.EntityManager, entity);
                 if (isMega)
                 {
@@ -431,6 +431,8 @@ namespace TitanOrbit.ECS
                 }
 
                 float pooledEnergy = shipState.ValueRO.CurrentEnergy;
+                // One bullet-type bonus for this hull. Not multiplied by barrel count.
+                float bankRateMul = BulletBankCombatLogic.SingularFireRateMultiplier(bankIndex);
                 bool fired = ShipWeaponFireLogic.TryPlanHybridShots(
                     ref pooledEnergy,
                     mounts,
@@ -442,7 +444,8 @@ namespace TitanOrbit.ECS
                     weaponState.ValueRO.NextMountIndex,
                     s_ShotScratch,
                     out int shotCount,
-                    out int nextMountIndex);
+                    out int nextMountIndex,
+                    bankRateMul);
                 weaponState.ValueRW.NextMountIndex = nextMountIndex;
                 shipState.ValueRW.CurrentEnergy = pooledEnergy;
                 if (!fired)
@@ -456,9 +459,9 @@ namespace TitanOrbit.ECS
                                  && killerRoles.IsKiller(
                                      shipState.ValueRO.Team, ghostOwner.ValueRO.NetworkId);
 
-                // One tracer size for the whole hull: peak DPS, not this barrel and not
-                // remaining energy. Held fire stays the same size until level or
-                // Fire Power changes.
+                // One tracer size for the whole hull: fire power, not this barrel
+                // and not the bullet type. Held fire stays the same size until
+                // fire power changes.
                 SumPeakFirepowerDps(mounts, bankIndex, out float shipPeakDps, out float shipReferenceDps);
                 shipPeakDps = TeamCommandRoleRules.ScaleFirePower(shipPeakDps, topKiller);
 
@@ -507,10 +510,10 @@ namespace TitanOrbit.ECS
         /// Owner Shift aims each muzzle at the mouse point here — not only in
         /// <see cref="MegaShipAutoFireSystem"/> — so tracers and damage stay on the
         /// same ray when auto-aim is isolated. The mouse yaw is applied to a spawn
-        /// copy only (mount pose stays independent). A full pool walks gun, laser,
-        /// missile, sniper and fires every ready projectile. A short pool still
-        /// burns lasers, but only the cursor projectile may shoot, then the cursor
-        /// steps.
+        /// copy only (mount pose stays independent). A full pool walks gun,
+        /// laser, missile, sniper and fires every ready projectile on its own
+        /// rate. A short pool still burns lasers, but only the cursor
+        /// projectile may shoot, then the cursor steps.
         /// Lead intercept distance from <see cref="MegaShipAutoAimSlotElement"/> (or
         /// muzzle→mouse while Shift is held) grows <c>MaxDistance</c> so shots are
         /// not culled early.
@@ -603,8 +606,8 @@ namespace TitanOrbit.ECS
                     continue;
                 }
 
-                // Short pool: earlier guns must not drink the cursor's clip.
-                // Lasers above already took their pulse. Later guns wait their turn.
+                // Short pool: only the cursor projectile may shoot.
+                // A full pool fires every ready barrel on its own cadence.
                 if (!gate.PoolCoversProjectiles
                     && (!gate.HasProjectile || i != gate.CursorMountIndex))
                     continue;
@@ -619,9 +622,10 @@ namespace TitanOrbit.ECS
                 if (mount.FireCooldown > 0.001f)
                     continue;
 
-                float fireRate = math.max(
-                    0.15f, mount.FireRate > 0.01f ? mount.FireRate : weaponCfg.FireRate);
-                float interval = 1f / fireRate;
+                int shotBank = ShotBankIndex(mount, fallbackBankIndex);
+                float interval = ShipWeaponFireLogic.SingularProjectileInterval(
+                    mount.FireRate, weaponCfg.FireRate,
+                    BulletBankCombatLogic.SingularFireRateMultiplier(shotBank));
                 mount.FireCooldown = interval;
                 mounts[i] = mount;
                 spend -= cost;
@@ -653,8 +657,8 @@ namespace TitanOrbit.ECS
             if (shotCount <= 0)
                 return;
 
-            // Same tracer size for every MEGA barrel this hold. Mount banks still
-            // change hit damage inside the shot plan; they do not resize the mesh.
+            // Same tracer size for every barrel this hold. Fire power sets it.
+            // The mount's bullet type still changes hit damage, not the mesh size.
             SumPeakFirepowerDps(mounts, fallbackBankIndex, out float shipPeakDps, out float shipReferenceDps);
             shipPeakDps = TeamCommandRoleRules.ScaleFirePower(shipPeakDps, topKiller);
 
@@ -753,6 +757,17 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
+        /// Bullet type for this barrel's fire-rate nudge. Guns follow the hull
+        /// B-key bank. Missiles and snipers keep the bank stamped on the mount.
+        /// </summary>
+        static int ShotBankIndex(in ShipWeaponMountElement mount, int hullBankIndex)
+        {
+            if (ShipWeaponKind.UsesCycledBulletBank(mount))
+                return hullBankIndex;
+            return mount.BulletBankIndex >= 0 ? mount.BulletBankIndex : hullBankIndex;
+        }
+
+        /// <summary>
         /// Shared muzzle resolve — same fallback as the old Phase B inline block.
         /// </summary>
         static void ResolveFirePose(
@@ -783,8 +798,8 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Peak DPS for tracer size: every barrel’s fire power × fire rate, times this
-        /// bank’s power and rate multipliers. Reference is the unleveled catalog sum.
+        /// Tracer size is this hull’s fire power (level, abilities, upgrades).
+        /// Bullet type is not included — no bank multiplier, no fire rate.
         /// Battery energy is not read — running dry slows the trigger, it does not
         /// shrink the bullet.
         /// </summary>
@@ -794,6 +809,7 @@ namespace TitanOrbit.ECS
             out float peakDps,
             out float referenceDps)
         {
+            _ = bankIndex;
             float live = 0f;
             float reference = 0f;
             if (mounts.IsCreated)
@@ -802,18 +818,15 @@ namespace TitanOrbit.ECS
                 {
                     ShipWeaponMountElement m = mounts[i];
                     float fp = m.FirePower;
-                    float fr = m.FireRate;
-                    if (fp <= 0.01f || fr <= 0.01f)
+                    if (fp <= 0.01f)
                         continue;
                     float refFp = m.ReferenceFirePower > 0.01f ? m.ReferenceFirePower : fp;
-                    float refFr = m.ReferenceFireRate > 0.01f ? m.ReferenceFireRate : fr;
-                    live += fp * fr;
-                    reference += refFp * refFr;
+                    live += fp;
+                    reference += refFp;
                 }
             }
 
-            BulletBankCombatLogic.GetShotScales(bankIndex, out float firePowerMul, out float fireRateMul);
-            peakDps = live * firePowerMul * fireRateMul;
+            peakDps = live;
             referenceDps = math.max(0.01f, reference);
         }
 
@@ -877,7 +890,8 @@ namespace TitanOrbit.ECS
                 lifetime,
                 weaponCfg.FireRate,
                 mount.BulletRange,
-                ShipWeaponMountElement.ResolveAuthoredScale(in mount, weaponCfg.BulletScale),
+                // Ignored for size. Fire power sets the tracer; bullet type does not.
+                1f,
                 refDamage,
                 refMuzzleSpeed,
                 bankIndex,

@@ -12,8 +12,8 @@ namespace TitanOrbit.ECS
     /// <para>
     /// [TITAN-ORBIT] Templates keep authored colliders so hull-bake remaps can measure
     /// the foreign silhouette. Live proxies strip those colliders after clone.
-    /// Weapon child <c>localScale</c> comes from the lowest-tier prefab so
-    /// Weapon Bullet vs Weapon Cannon keep their designed size after a B-key swap.
+    /// Weapon child <c>localScale</c> comes from the lowest-tier prefab so a
+    /// swapped barrel keeps its designed size.
     /// </para>
     /// </summary>
     public static class ShipFamilyPartVisualCache
@@ -34,8 +34,8 @@ namespace TitanOrbit.ECS
         /// <summary>
         /// Returns a hidden template for <paramref name="componentId"/> on
         /// <paramref name="sourceFamily"/>, or null when no upgrade-tree prefab contains it.
-        /// Weapon templates use the lowest-tier authored size so Bullet vs Cannon
-        /// keep their designed localScale. Other parts still prefer
+        /// Weapon templates use the lowest-tier authored size so a swapped barrel
+        /// keeps its designed localScale. Other parts still prefer
         /// <paramref name="shipLevel"/>.
         /// </summary>
         public static GameObject GetOrCreateTemplate(
@@ -67,7 +67,7 @@ namespace TitanOrbit.ECS
         /// <summary>
         /// Instantiates <paramref name="template"/> under the host slot's parent,
         /// copies the host hardpoint pose, and applies the source part's authored
-        /// localScale (Weapon Bullet vs Cannon keep their own size). Attribute grow
+        /// localScale (every family weapon shares one designed size). Attribute grow
         /// runs afterward from that base — do not copy the live grown host scale.
         /// </summary>
         /// <param name="stripColliders">

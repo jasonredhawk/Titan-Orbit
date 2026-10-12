@@ -1655,6 +1655,7 @@ namespace TitanOrbit.UI
                         skipMassTax: true);
                     live.TotalMass = taxed.TotalMass;
                     live.CruiseMaxSpeed = taxed.MaxSpeed;
+                    live.BaseCruiseSpeed = taxed.MaxSpeed;
                     live.TaxedAccel = taxed.EngineThrust;
                     live.TaxedTurnDeg = taxed.RotationSpeed;
                     live.LiveMaxSpeed = taxed.MaxSpeed;
@@ -1739,6 +1740,11 @@ namespace TitanOrbit.UI
 
                 // Mass tax only when ComponentSize is known — otherwise leave CruiseMaxSpeed at 0
                 // so IsChipLiveContextReady keeps retrying (MS would look like chassis / no drag).
+                // Stock cruise is the motor's pre-Move-Speed max, taxed the same way. Buying Move
+                // Speed does not change that baseline, so a stale speedometer motor is still right.
+                float stockUntaxed = live.ChassisMaxSpeed;
+                if (gotMobilityShared && mobilityShared.Motor.BaseMaxSpeed > 0.01f)
+                    stockUntaxed = mobilityShared.Motor.BaseMaxSpeed;
                 if (hasComponentSize)
                 {
                     ShipMobilityResolution.TaxedMotorStats taxed = ShipMobilityResolution.ResolveLiveMotorStats(
@@ -1754,6 +1760,23 @@ namespace TitanOrbit.UI
                     live.TaxedAccel = taxed.EngineThrust;
                     live.TaxedTurnDeg = taxed.RotationSpeed;
                     live.LiveMaxSpeed = taxed.MaxSpeed;
+                    if (Mathf.Abs(stockUntaxed - live.ChassisMaxSpeed) <= 0.01f)
+                    {
+                        live.BaseCruiseSpeed = taxed.MaxSpeed;
+                    }
+                    else
+                    {
+                        ShipMobilityResolution.TaxedMotorStats taxedStock =
+                            ShipMobilityResolution.ResolveLiveMotorStats(
+                                stockUntaxed,
+                                live.ChassisAccel,
+                                live.ChassisTurnDeg,
+                                ship.CurrentGems,
+                                ship.CurrentPeople,
+                                componentSize,
+                                skipMassTax: IsLocalShipMega());
+                        live.BaseCruiseSpeed = taxedStock.MaxSpeed;
+                    }
                 }
 
                 // If speedometer has not filled max-ram yet, estimate at full cruise here.
@@ -1816,6 +1839,8 @@ namespace TitanOrbit.UI
                 return;
 
             live.CruiseMaxSpeed *= territory;
+            if (live.BaseCruiseSpeed > 0.01f)
+                live.BaseCruiseSpeed *= territory;
             live.TaxedAccel *= territory;
             live.LiveMaxSpeed = live.CruiseMaxSpeed;
         }

@@ -13,7 +13,7 @@ MonoBehaviour:
   m_Name: BulletVfxBank
   m_EditorClassIdentifier: TitanOrbit.Data::TitanOrbit.Data.BulletVfxBank
   categories:
-  - categoryName: Darts
+  - categoryName: Bullets
     globalVisualScaleMultiplier: 1
     upgradeVisualScaleMultiplier: 1
     prefabs:
@@ -24,13 +24,13 @@ MonoBehaviour:
     - {fileID: 171462, guid: ee648e9d50d9ac9458d25447f58e5056, type: 3}
     profile:
       statModifiers:
-        firePowerMultiplier: 0.95
-        bulletSpeedMultiplier: 1.2
-        fireRateMultiplier: 1.05
+        firePowerMultiplier: 1
+        bulletSpeedMultiplier: 1
+        fireRateMultiplier: 1
         rammingPowerMultiplier: 1
-        bulletRangeMultiplier: 1.15
+        bulletRangeMultiplier: 1
       abilities:
-      - type: 8
+      - type: 5
         magnitude: 1.18
         magnitudePerExtra: 0.03
         duration: 1
@@ -42,7 +42,7 @@ MonoBehaviour:
         energyDrain: 0.75
         energyDrainPerExtra: 0.12
         damageTarget: 0
-  - categoryName: Bullets
+  - categoryName: Cannons
     globalVisualScaleMultiplier: 1
     upgradeVisualScaleMultiplier: 1
     prefabs:
@@ -55,11 +55,11 @@ MonoBehaviour:
       statModifiers:
         firePowerMultiplier: 1
         bulletSpeedMultiplier: 1
-        fireRateMultiplier: 1.05
+        fireRateMultiplier: 1
         rammingPowerMultiplier: 1
         bulletRangeMultiplier: 1
       abilities:
-      - type: 5
+      - type: 6
         magnitude: 1.12
         magnitudePerExtra: 0.03
         duration: 1

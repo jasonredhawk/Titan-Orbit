@@ -35,6 +35,18 @@ namespace TitanOrbit.Simulation
         public static float SafeMul(float authored) => authored > 0f ? authored : 1f;
 
         /// <summary>
+        /// Flat fire-rate bonus for bank <paramref name="bankIndex"/> (1 when the row is missing).
+        /// Whatever the type authors — half speed, 10% faster — is used once.
+        /// Ship level does not change it.
+        /// </summary>
+        public static float SingularFireRateMultiplier(int bankIndex)
+        {
+            if (!TryGetProfile(bankIndex, out BulletBankProfile profile) || profile == null)
+                return 1f;
+            return SafeMul(profile.statModifiers.fireRateMultiplier);
+        }
+
+        /// <summary>
         /// Extra Level steps for bank abilities: <c>(shipLevel−1) + Fire Power purchases</c>.
         /// </summary>
         public static int CountFirePowerExtraLevels(int shipLevel, int firePowerAbilityLevel) =>
@@ -59,6 +71,7 @@ namespace TitanOrbit.Simulation
             BulletBankStatModifiers s = profile.statModifiers;
             damage *= SafeMul(s.firePowerMultiplier);
             speed *= SafeMul(s.bulletSpeedMultiplier);
+            // One flat bullet-type rate. Not multiplied by Fire Power extra levels.
             fireRate *= SafeMul(s.fireRateMultiplier);
 
             float rangeMul = SafeMul(s.bulletRangeMultiplier);

@@ -1077,7 +1077,10 @@ namespace TitanOrbit.UI
             return name;
         }
 
-        /// <summary>Sidebar "current ship" card — always shows your hull; debug mode still allows click-through.</summary>
+        /// <summary>
+        /// Sidebar "current ship" card — always shows your hull; debug mode still allows click-through.
+        /// The title on the art is the ship name only. The family caption already sits above the image.
+        /// </summary>
         void PopulateCurrentShipDisplayNode(ShipUpgradeTreeNodeUI view, ShipPowerBarStatMaxes maxes)
         {
             bool debugFree = IsDebugFreeShipUpgradeTree();
@@ -1089,8 +1092,11 @@ namespace TitanOrbit.UI
             else
                 view.SetLevelLabel("You");
             TryGetFlownChassisId(out string currentChassisId);
-            view.SetShipName(GetShipDisplayNameForSlot(ShipLevel, BranchIndex, currentChassisId));
-            view.SetFamilyName(GetFamilyDisplayNameForSlot(currentChassisId));
+            // "Astro Eagle Hawk" → "Hawk". Family is the caption above the silhouette.
+            string familyLabel = GetFamilyDisplayNameForSlot(currentChassisId);
+            view.SetShipName(DisplayNameFormatting.StripLeadingFamilyLabel(
+                GetShipDisplayNameForSlot(ShipLevel, BranchIndex, currentChassisId), familyLabel));
+            view.SetFamilyName(familyLabel);
             view.SetPrice(debugFree ? "Free" : "—");
             // Sidebar "You" card uses the MEGA pool when this hull is a catalog MEGA.
             view.ApplyPowerBreakdown(

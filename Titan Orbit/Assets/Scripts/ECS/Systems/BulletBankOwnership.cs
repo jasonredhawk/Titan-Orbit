@@ -286,9 +286,9 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Bank to ghost onto a weapon extra at purchase. Both worlds then read
-        /// <see cref="EquippedEquipmentElement.StampedBulletBankPlusOne"/> instead of
-        /// walking planets that the client may not have replicated.
+        /// Bank for an unstamped weapon id. New buys do not call this — they stamp
+        /// the docked moon in <c>TryAddShipComponentItem</c>. Kept for older gear
+        /// that still has to walk the family's planet.
         /// </summary>
         public static int ResolveBankForPurchasedComponent(
             EntityManager em,
@@ -332,9 +332,11 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Purchased inherit guns use the planet that rolled their source family,
-        /// not the current hull stamp. Buying a Cosmic Shark gun at a Fireballs world
-        /// while flying a Laserbolt home hull must add Fireballs to B-key.
+        /// Unstamped (older) inherit guns walk the first planet of that family.
+        /// New purchases do not use this — they stamp the docked moon's rolled gun
+        /// in <c>MoonOrbitStoreSystem</c> so a Ring dock cannot pick up a sibling
+        /// world's Fireballs. Buying a Cosmic Shark gun at a Fireballs world while
+        /// flying a Laserbolt home hull must add Fireballs to B-key.
         /// </summary>
         static int ResolvePurchasedWeaponBank(
             EntityManager em,

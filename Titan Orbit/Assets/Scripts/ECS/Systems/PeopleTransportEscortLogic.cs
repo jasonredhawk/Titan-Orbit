@@ -292,7 +292,6 @@ namespace TitanOrbit.ECS
             in LocalTransform transform,
             in PeopleEscortVitalElement vital,
             int shipNetworkId,
-            float3 shipVelocity,
             double timeSeconds,
             float mapW,
             float mapH,
@@ -301,7 +300,7 @@ namespace TitanOrbit.ECS
             GetEscortHullExtents(em, ship, transform.Scale, out float extX, out float extZ);
             return PeopleTransportMath.EvaluateEscortSwarmPose(
                 transform.Position, transform.Rotation, extX, extZ,
-                vital.SeatId, vital.Amount, shipNetworkId, shipVelocity,
+                vital.SeatId, vital.Amount, shipNetworkId,
                 timeSeconds, mapW, mapH, formationHeading);
         }
 
@@ -325,8 +324,8 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Seeded rear slot for this seat. Buzz and trail lag stay on the parked
-        /// presenter — the flight home is the stable slot so drones and troops share it.
+        /// Seeded rear slot for this seat. Buzz stays on the parked presenter —
+        /// the flight home is that same hull-locked slot drones orbit in.
         /// </summary>
         public static bool TryEvaluateTroopSlot(
             EntityManager em,
@@ -346,20 +345,15 @@ namespace TitanOrbit.ECS
                 return false;
 
             GetEscortHullExtents(em, ship, transform.Scale, out float extX, out float extZ);
-            float3 vel = float3.zero;
             float3 heading = float3.zero;
             if (em.HasComponent<ShipKinematics>(ship))
-            {
-                var kin = em.GetComponentData<ShipKinematics>(ship);
-                vel = kin.Velocity;
-                heading = kin.FormationHeading;
-            }
+                heading = em.GetComponentData<ShipKinematics>(ship).FormationHeading;
 
             // Same pose the parked presenter draws, so joining and rejoining
             // land on the orb the player already sees.
             slot = PeopleTransportMath.EvaluateEscortSwarmPose(
                 transform.Position, transform.Rotation, extX, extZ,
-                seatId, amount, shipNetworkId, vel, timeSeconds, mapW, mapH, heading);
+                seatId, amount, shipNetworkId, timeSeconds, mapW, mapH, heading);
             return true;
         }
 

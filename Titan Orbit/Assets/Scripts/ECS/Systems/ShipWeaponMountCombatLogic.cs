@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using TitanOrbit.Data;
 using TitanOrbit.ECS.Authoring;
 using Unity.Entities;
+using Unity.Mathematics;
 using UnityEngine;
 
 namespace TitanOrbit.ECS
@@ -10,10 +11,12 @@ namespace TitanOrbit.ECS
     /// <summary>
     /// Fills each <see cref="ShipWeaponMountElement"/> with Extra Level fire power / fire rate.
     /// <para>
-    /// [TITAN-ORBIT] Each barrel keeps its own catalog Base / PerExtra, already multiplied
-    /// by prefab start scale (average |X|+|Y| on fire power, 1/|Z| on fire rate), and
-    /// evaluates independently — weapons do <b>not</b> use the non-weapon <c>(N−1)</c>
-    /// stack term: <c>Base + PerExtra × (shipLevel + abilityLevel)</c>.
+    /// [TITAN-ORBIT] Each barrel keeps its own catalog fire power (Base + PerExtra ×
+    /// ship level), already multiplied by prefab start scale (average |X|+|Y|).
+    /// Fire rate does <b>not</b> grow with ship level or with how many barrels the
+    /// hull has. It is the catalog rate × one family bonus × prefab |Z|.
+    /// A Z of 0.9 fires slower than unit scale; a larger Z fires faster.
+    /// Every ready barrel then fires on that rate at the same time.
     /// </para>
     /// <para>
     /// Combat stats are read from a fresh Instantiates of the chassis prefab — never from the
@@ -42,10 +45,10 @@ namespace TitanOrbit.ECS
             /// <summary>Catalog firePowerPerExtraLevel × prefab average |X|+|Y|.</summary>
             public float FirePowerPerLevel;
 
-            /// <summary>Catalog fireRate × 1/|Z| (longer barrel = slower).</summary>
+            /// <summary>Catalog fireRate × |Z| (0.9 = slower than 1).</summary>
             public float FireRate;
 
-            /// <summary>Catalog fireRatePerExtraLevel × 1/|Z|.</summary>
+            /// <summary>Catalog fireRatePerExtraLevel × |Z|.</summary>
             public float FireRatePerLevel;
         }
 
@@ -106,6 +109,16 @@ namespace TitanOrbit.ECS
                     baseRate = combat.FireRate;
                     ratePer = combat.FireRatePerLevel;
                 }
+                else if (CombatScratch.Count > 0)
+                {
+                    // Another barrel's catalog rate — never the hull sum of every gun.
+                    baseRate = CombatScratch[0].FireRate;
+                }
+                else
+                {
+                    // Caller fallback is the summed hull rate. Split it back to one gun.
+                    baseRate = fallbackFireRate / Mathf.Max(1, mounts.Length);
+                }
 
                 // [TITAN-ORBIT] Weapons fire individually — componentCount ignored (false stack flag).
                 float leveledPower = ShipComponentExtraLevelMath.Evaluate(
@@ -115,18 +128,21 @@ namespace TitanOrbit.ECS
                     attrs.FirePower,
                     componentCount: 1,
                     includeExtraComponentLevels: false);
-                float leveledRate = ShipComponentExtraLevelMath.Evaluate(
-                    baseRate,
-                    ratePer,
-                    shipLevel,
-                    abilityLevel: 0,
-                    componentCount: 1,
-                    includeExtraComponentLevels: false);
+                // Fire rate is not an Extra Level stat. A level-6 hull does not
+                // shoot faster than level 1, and extra barrels do not add rate
+                // here — each barrel keeps this rate and they fire together.
+                // One family bonus (Light Fox 1.12, and so on), applied once.
+                float familyRateMul = 1f;
+                if (family != null && family.specialBonuses.fireRateMul > 0.01f)
+                    familyRateMul = family.specialBonuses.fireRateMul;
+                float leveledRate = math.max(0.1f, baseRate * familyRateMul);
+                _ = ratePer;
 
                 mount.FirePower = Mathf.Max(0.1f, leveledPower);
                 mount.FireRate = Mathf.Max(0.1f, leveledRate);
                 mount.ReferenceFirePower = Mathf.Max(0.1f, basePower);
-                mount.ReferenceFireRate = Mathf.Max(0.1f, baseRate);
+                // Same cadence as live fire. Reference is not a slower level-1 rate.
+                mount.ReferenceFireRate = mount.FireRate;
                 mount.FirePowerPerExtraLevel = Mathf.Max(0f, powerPer);
                 mounts[i] = mount;
 
@@ -210,7 +226,7 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Resolves family component stats for a weapon transform (catalog × XY / 1/Z scale).
+        /// Resolves family component stats for a weapon transform (catalog × XY / |Z| scale).
         /// </summary>
         static bool TryBuildCombatBase(
             ShipFamilyDefinition family,

@@ -36,22 +36,16 @@ namespace TitanOrbit.Entities
         static Material defaultBulletMat;
 
         /// <summary>
-        /// Final VFX size = factory baseline × per-shot fire-power scale ×
-        /// (bank Global × category Global). Category defaults to 1 (100%).
+        /// Final VFX size = factory baseline × fire-power scale × the one bank-wide
+        /// global. Bullet type (category) does not change size.
         /// </summary>
-        /// <param name="bankIndex">
-        /// Category index for the per-family global knob; negative skips category (bank only).
-        /// </param>
+        /// <param name="bankIndex">Unused. Kept so existing call sites still compile.</param>
         public static float GetBulletVisualScale(BulletVfxBank bank, float scaleMultiplier, int bankIndex = -1)
         {
-            // --- Bank-wide + optional per-category global ---
-            float globalScale;
-            if (bank == null)
-                globalScale = LegacyGlobalVisualScale;
-            else if (bankIndex >= 0)
-                globalScale = bank.GetCombinedGlobalVisualScaleMultiplier(bankIndex);
-            else
-                globalScale = bank.GlobalVisualScaleMultiplier;
+            _ = bankIndex;
+            float globalScale = bank == null
+                ? LegacyGlobalVisualScale
+                : bank.GlobalVisualScaleMultiplier;
 
             return DefaultBulletVisualScale * Mathf.Max(0.1f, scaleMultiplier) * globalScale;
         }

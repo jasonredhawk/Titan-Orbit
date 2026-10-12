@@ -15,7 +15,8 @@ namespace TitanOrbit.UI
     /// <summary>
     /// Narrow left Orbit Menu dock: SHIPS / GEAR / CARDS nav, current ship, family name,
     /// bank, and one LOADOUT list (cards + components + drones + rockets + mines share slots).
-    /// Glance cards stay compact; full ability text lives on the right-hand purchase tiles.
+    /// The WEAPONS plate under Your Ship names each owned bullet type and what that
+    /// shot does. Hover still opens the full ordnance tooltip.
     /// The CARDS nav button follows <see cref="GameManager.ShowOrbitMenuCardsPanel"/> (default off)
     /// so the dock can show only SHIPS and GEAR until that panel is turned back on.
     /// </summary>
@@ -419,9 +420,20 @@ namespace TitanOrbit.UI
                 _ordnanceBlock.SetActive(showWeapon);
             if (showWeapon && _ordnanceText != null)
             {
-                _ordnanceText.text = listedOwned
+                // Owned guns win once the ghost has hydrated. Before that, describe
+                // the family's live bank so the plate is never just a type name.
+                string body = listedOwned
                     ? ownedGlance
-                    : BulletBankHudCopy.FormatFamilyWeaponGlance(family, shipLevel, planetOrHullBankIndex);
+                    : BulletBankHudCopy.FormatDockWeaponDescription(
+                        BulletBankProfileUtility.ResolveBankIndexForFamily(family, planetOrHullBankIndex),
+                        shipLevel);
+                if (string.IsNullOrEmpty(body))
+                    body = bankName;
+                if (_ordnanceText.text != body)
+                {
+                    _ordnanceText.text = body;
+                    ApplyOrdnanceBlockHeight();
+                }
             }
             if (_ordnanceTip != null)
             {
@@ -514,10 +526,17 @@ namespace TitanOrbit.UI
         static readonly VisibleBankRow[] s_OwnedWeaponRows = new VisibleBankRow[16];
 
         /// <summary>
-        /// A Titan's original catalog gun, then the family fleet gun, plus each
-        /// purchased weapon type the local ship can B-key.
-        /// False when the ghost has not hydrated yet.
+        /// Builds the WEAPONS plate for guns the local ship can actually fire:
+        /// the hull's original type, plus each purchased B-key type.
+        /// Each block is the type name, a sentence per ability, and the combat
+        /// modifiers. The hull tag used to sit after the name; the ship card
+        /// above this plate already identifies the hull.
         /// </summary>
+        /// <param name="shipLevel">Hull level for Extra-Level ability numbers.</param>
+        /// <param name="glance">Rich-text body, or empty when nothing is owned.</param>
+        /// <param name="tip">Full hover tooltip, one WEAPONS section per owned type.</param>
+        /// <returns>False when the ghost has not hydrated yet, so the caller can
+        /// fall back to the family's live bank.</returns>
         static bool TryFormatOwnedWeaponsGlance(int shipLevel, out string glance, out string tip)
         {
             glance = string.Empty;
@@ -528,12 +547,14 @@ namespace TitanOrbit.UI
             if (!EcsGameBridge.TryGetLocalShipEntityOnWorld(world, out Entity ship) || ship == Entity.Null)
                 return false;
 
+            // --- Collect ---
+            // Reused buffer. CollectVisibleBankRows writes the hull gun first, then purchases.
             int count = BulletBankOwnership.CollectVisibleBankRows(
                 world.EntityManager, ship, s_OwnedWeaponRows);
             if (count <= 0)
                 return false;
 
-            var body = new StringBuilder(96);
+            var body = new StringBuilder(192);
             var tipSb = new StringBuilder(256);
             int listed = 0;
             for (int i = 0; i < count; i++)
@@ -541,14 +562,17 @@ namespace TitanOrbit.UI
                 VisibleBankRow row = s_OwnedWeaponRows[i];
                 if (!row.IsOwned)
                     continue;
-                string name = BulletBankProfileUtility.FormatBankCategoryName(row.BankIndex);
-                if (string.IsNullOrEmpty(name))
+
+                // --- Body ---
+                // Name + ability sentences + ≠1 fire-power / speed / rate / range / ram.
+                string block = BulletBankHudCopy.FormatDockWeaponDescription(row.BankIndex, shipLevel);
+                if (string.IsNullOrEmpty(block))
                     continue;
                 if (body.Length > 0)
-                    body.Append('\n');
-                body.Append(name);
-                if (row.IsHullDefault)
-                    body.Append("  · hull");
+                    body.Append("\n\n");
+                body.Append(block);
+
+                // Hover keeps the long breakdown (energy drain, per-extra scaling).
                 if (tipSb.Length > 0)
                     tipSb.Append("\n\n");
                 tipSb.Append(BulletBankHudCopy.BuildFamilyOrdnanceTooltip(null, shipLevel, row.BankIndex));
@@ -560,6 +584,41 @@ namespace TitanOrbit.UI
             glance = body.ToString();
             tip = tipSb.ToString();
             return true;
+        }
+
+        /// <summary>
+        /// Grows the WEAPONS plate to the description. A fixed 72px rail used to
+        /// clip everything after the type name. Called only when the body text changes.
+        /// </summary>
+        void ApplyOrdnanceBlockHeight()
+        {
+            if (_ordnanceBlock == null || _ordnanceText == null)
+                return;
+
+            var le = _ordnanceBlock.GetComponent<LayoutElement>();
+            if (le == null)
+                return;
+
+            // --- Measure ---
+            // [UNITY] preferredHeight needs a width. The scroll layout may not have
+            // run yet, so we stamp the dock's inner width before asking TMP.
+            float innerW = Mathf.Max(120f, PanelWidth - 48f);
+            _ordnanceText.rectTransform.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, innerW);
+            _ordnanceText.ForceMeshUpdate();
+            float bodyH = Mathf.Max(14f, _ordnanceText.preferredHeight);
+
+            var bodyLe = _ordnanceText.GetComponent<LayoutElement>();
+            if (bodyLe == null)
+                bodyLe = _ordnanceText.gameObject.AddComponent<LayoutElement>();
+            bodyLe.preferredHeight = bodyH;
+            bodyLe.minHeight = bodyH;
+            bodyLe.flexibleHeight = 0f;
+
+            // Caption (~16) + padding (8) + gap (1) + body. Cap so a long owned
+            // list scrolls with the dock instead of covering the whole menu.
+            float h = 25f + bodyH;
+            le.minHeight = 44f;
+            le.preferredHeight = Mathf.Clamp(h, 44f, 280f);
         }
 
         void CreateOrdnanceBlock(Transform parent)
@@ -596,9 +655,11 @@ namespace TitanOrbit.UI
             _ordnanceText = bodyGo.AddComponent<TextMeshProUGUI>();
             _ordnanceText.fontSize = 10f;
             _ordnanceText.color = new Color(0.88f, 0.92f, 0.98f, 1f);
+            _ordnanceText.richText = true;
             _ordnanceText.enableWordWrapping = true;
-            _ordnanceText.overflowMode = TextOverflowModes.Ellipsis;
-            _ordnanceText.maxVisibleLines = 8;
+            // Plate height follows the copy. Overflow keeps a wrapped last line
+            // from turning into "..." when the measure is a pixel short.
+            _ordnanceText.overflowMode = TextOverflowModes.Overflow;
             _ordnanceText.raycastTarget = false;
             ApplyFont(_ordnanceText);
 

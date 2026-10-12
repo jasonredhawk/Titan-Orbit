@@ -80,7 +80,7 @@ namespace TitanOrbit.Data
             if (string.IsNullOrWhiteSpace(type))
                 return "Other";
 
-            // [TITAN-ORBIT] Weapon Bullet / Weapon Cannon share one Weapon pool for Extra Level count.
+            // [TITAN-ORBIT] Every family weapon shares one Extra Level pool.
             if (ShipFamilyPartTypes.IsWeapon(type))
                 return "Weapon";
 

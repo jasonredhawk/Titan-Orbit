@@ -294,7 +294,9 @@ namespace TitanOrbit.Data
                     partType = ShipFamilyPartTypes.WeaponBullet;
                 }
 
-                Add(ref counts, partType, isLaser: false, 1);
+                // Family hulls have one weapon class. A part named Missile or Launcher
+                // still counts on the same gun line as Weapon / Gun.
+                Add(ref counts, ShipFamilyPartTypes.WeaponBullet, isLaser: false, 1);
             }
 
             return counts;

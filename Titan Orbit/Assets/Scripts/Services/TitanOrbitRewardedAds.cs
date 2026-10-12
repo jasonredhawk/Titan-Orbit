@@ -5,7 +5,7 @@ namespace TitanOrbit.Services
 {
     /// <summary>
     /// Client-only rewarded-ad facade. Gameplay UI calls <see cref="Show"/>; this type
-    /// picks Google IMA / VAST (WebGL), LevelPlay (Android/iOS), an Editor simulate, or "unavailable".
+    /// picks AdSense H5 rewarded (WebGL), LevelPlay (Android/iOS), an Editor simulate, or "unavailable".
     /// Dedicated server never creates this component.
     /// <para>
     /// [TITAN-ORBIT] Rewards that change sim state (keep loadout, extra slot) still go
@@ -35,10 +35,6 @@ namespace TitanOrbit.Services
         /// <summary>True while a video (or Editor simulate) is in flight. Buttons should disable.</summary>
         public static bool IsShowing { get; private set; }
 
-        [Header("Google IMA / VAST (WebGL)")]
-        [Tooltip("VAST tag for Cloudflare WebGL. Empty falls back to TitanOrbitRewardedAdsKeys.VastAdTagUrl (Google sample).")]
-        [SerializeField] string vastAdTagUrl;
-
         [Header("LevelPlay (Android / iOS)")]
         [Tooltip("LevelPlay Android app key. Used only in Android player builds.")]
         [SerializeField] string levelPlayAndroidAppKey;
@@ -55,6 +51,12 @@ namespace TitanOrbit.Services
         [Header("Editor")]
         [Tooltip("Play Mode cannot show a real IMA/LevelPlay video. When true, Show() completes so death/slot flows can be tested.")]
         [SerializeField] bool editorSimulateCompleted = true;
+
+        /// <summary>True while a rewarded ad has muted the listener. Restored when the ad ends.</summary>
+        bool _pausedForAd;
+
+        /// <summary>AudioListener.pause value from before this ad, so we do not unmute a menu that was already quiet.</summary>
+        bool _audioWasPaused;
 
         /// <summary>Pending UI callback. Invoked once on the main thread after the SDK (or simulate) finishes.</summary>
         Action<TitanOrbitRewardedAdResult> _pendingCallback;
@@ -85,8 +87,6 @@ namespace TitanOrbit.Services
         /// </summary>
         void ApplyKeyFallbacks()
         {
-            if (string.IsNullOrWhiteSpace(vastAdTagUrl))
-                vastAdTagUrl = TitanOrbitRewardedAdsKeys.VastAdTagUrl;
             if (string.IsNullOrWhiteSpace(levelPlayAndroidAppKey))
                 levelPlayAndroidAppKey = TitanOrbitRewardedAdsKeys.LevelPlayAndroidAppKey;
             if (string.IsNullOrWhiteSpace(levelPlayIosAppKey))
@@ -102,6 +102,7 @@ namespace TitanOrbit.Services
         {
             if (Instance == this)
             {
+                ResumeAfterAd();
                 Instance = null;
                 IsShowing = false;
             }
@@ -140,7 +141,7 @@ namespace TitanOrbit.Services
                 return false;
 #elif UNITY_WEBGL
                 return TitanOrbitEntitlements.IsRemoveAdsOwned
-                    || (Instance != null && !string.IsNullOrWhiteSpace(Instance.vastAdTagUrl));
+                    || !string.IsNullOrWhiteSpace(TitanOrbitRewardedAdsKeys.AdSenseClientId);
 #elif UNITY_ANDROID || UNITY_IOS
                 return TitanOrbitEntitlements.IsRemoveAdsOwned
                     || (Instance != null && Instance.HasLevelPlayKeys);
@@ -242,13 +243,7 @@ namespace TitanOrbit.Services
             _pendingPlacement = placementId;
 
 #if UNITY_WEBGL && !UNITY_EDITOR
-            if (string.IsNullOrWhiteSpace(vastAdTagUrl))
-            {
-                Finish(TitanOrbitRewardedAdResult.Unavailable);
-                return;
-            }
-
-            TitanOrbitImaBackend.Play(gameObject.name, nameof(OnImaStatus), vastAdTagUrl);
+            TitanOrbitImaBackend.Play(gameObject.name, nameof(OnImaStatus), placementId);
             return;
 #elif UNITY_ANDROID || UNITY_IOS
             if (!TitanOrbitLevelPlayBackend.TryShow(OnLevelPlayFinished))
@@ -260,11 +255,23 @@ namespace TitanOrbit.Services
         }
 
         /// <summary>
-        /// [HYBRID] IMA jslib calls this via SendMessage with a status string
-        /// ("complete", "skipped", "error", "sdk-not-loaded"). Grant only on complete.
+        /// [HYBRID] The WebGL page calls this via SendMessage.
+        /// "before" / "after" mute and restore audio. Grant only on "complete".
         /// </summary>
         public void OnImaStatus(string status)
         {
+            if (string.Equals(status, "before", StringComparison.OrdinalIgnoreCase))
+            {
+                PauseForAd();
+                return;
+            }
+
+            if (string.Equals(status, "after", StringComparison.OrdinalIgnoreCase))
+            {
+                ResumeAfterAd();
+                return;
+            }
+
             TitanOrbitRewardedAdResult result = TitanOrbitRewardedAdResult.Failed;
             if (string.Equals(status, "complete", StringComparison.OrdinalIgnoreCase))
                 result = TitanOrbitRewardedAdResult.Completed;
@@ -273,8 +280,27 @@ namespace TitanOrbit.Services
                      || string.Equals(status, "no-ad", StringComparison.OrdinalIgnoreCase))
                 result = TitanOrbitRewardedAdResult.Unavailable;
 
-            Debug.Log("[TitanOrbitRewardedAds] IMA status=" + status + " placement=" + _pendingPlacement);
+            Debug.Log("[TitanOrbitRewardedAds] Ad status=" + status + " placement=" + _pendingPlacement);
             Finish(result);
+        }
+
+        /// <summary>Mutes Unity audio for the AdSense overlay. Safe to call twice.</summary>
+        void PauseForAd()
+        {
+            if (_pausedForAd)
+                return;
+            _pausedForAd = true;
+            _audioWasPaused = AudioListener.pause;
+            AudioListener.pause = true;
+        }
+
+        /// <summary>Restores the mute flag from before the ad.</summary>
+        void ResumeAfterAd()
+        {
+            if (!_pausedForAd)
+                return;
+            _pausedForAd = false;
+            AudioListener.pause = _audioWasPaused;
         }
 
         /// <summary>LevelPlay rewarded callback — already on the Unity main thread.</summary>
@@ -286,6 +312,7 @@ namespace TitanOrbit.Services
         /// <summary>Clears in-flight state and delivers the UI callback once.</summary>
         void Finish(TitanOrbitRewardedAdResult result)
         {
+            ResumeAfterAd();
             IsShowing = false;
             Action<TitanOrbitRewardedAdResult> cb = _pendingCallback;
             _pendingCallback = null;

@@ -1,5 +1,6 @@
 using System;
 using TitanOrbit.Data;
+using TitanOrbit.Simulation;
 using Unity.Entities;
 using Unity.Mathematics;
 
@@ -10,15 +11,16 @@ namespace TitanOrbit.ECS
     /// <para>
     /// [TITAN-ORBIT] Energy Hybrid. When the hull pool can pay every armed
     /// projectile, the arsenal still fills left to right and every ready
-    /// barrel fires together. Three guns at 25 with a pool of 75 all fire.
-    /// When the pool is short, only the cursor square charges: that barrel
-    /// fires once, then the cursor steps to the next armed projectile and
-    /// wraps from the last square back to the first. A barrel still on its
-    /// fire-rate timer waits on that same square — the shot does not jump
-    /// back to the first gun.
+    /// barrel fires together. Four guns at the same rate all fire on that
+    /// tick. Each barrel keeps its own rate: ship level does not speed it up,
+    /// and extra barrels do not change that rate. When the pool is short, only
+    /// the cursor square charges: that barrel fires once, then the cursor steps
+    /// to the next armed projectile and wraps from the last square back to the
+    /// first. A barrel still on its fire-rate timer waits on that same square —
+    /// the shot does not jump back to the first gun.
     /// </para>
     /// Cannon lasers burn on their own and are not steps in the rotation.
-    /// After a paid shot the barrel waits <c>1 / fireRate</c> before it can
+    /// After a paid shot that barrel waits <c>1 / fireRate</c> before it can
     /// fire again. That delay blocks the barrel; it does not move the cursor.
     /// </summary>
     public static class ShipWeaponFireLogic
@@ -772,12 +774,31 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
+        /// Seconds until this barrel may fire again. <paramref name="bankFireRateMul"/>
+        /// is that bullet type's flat rate (0.5 = half speed, 1.1 = a bit faster).
+        /// Applied once to this barrel. Ship level and barrel count are not in the formula.
+        /// </summary>
+        public static float SingularProjectileInterval(
+            float mountFireRate,
+            float fallbackFireRate,
+            float bankFireRateMul)
+        {
+            float rate = mountFireRate > 0.01f ? mountFireRate : fallbackFireRate;
+            rate = math.max(0.1f, rate);
+            float mul = BulletBankCombatLogic.SafeMul(bankFireRateMul);
+            return 1f / (rate * mul);
+        }
+
+        /// <summary>
         /// Plans this tick's projectile shots and writes each fired barrel's
-        /// ready delay. A full pool uses <see cref="TryPlanReadyShots"/> and
-        /// parks the cursor on the first projectile. A short pool fires only
-        /// the cursor square, subtracts that shot, and steps the cursor.
+        /// ready delay. A full pool uses <see cref="TryPlanReadyShots"/> so every
+        /// ready barrel fires together, each on its own rate. A short pool fires
+        /// only the cursor square, subtracts that shot, and steps the cursor.
         /// Hull energy is the recharge — there is no second charge clock.
         /// </summary>
+        /// <param name="bankFireRateMul">
+        /// Bullet-type fire-rate bonus for these shots (1 = catalog cadence).
+        /// </param>
         /// <param name="nextMountIndexAfter">
         /// Cursor to store. Unchanged in meaning when the cursor is waiting on
         /// cooldown or energy; advanced only after a short-pool shot.
@@ -793,7 +814,8 @@ namespace TitanOrbit.ECS
             int queueMountIndex,
             MountShot[] shots,
             out int shotCount,
-            out int nextMountIndexAfter)
+            out int nextMountIndexAfter,
+            float bankFireRateMul = 1f)
         {
             shotCount = 0;
             nextMountIndexAfter = queueMountIndex;
@@ -811,7 +833,7 @@ namespace TitanOrbit.ECS
                 return TryPlanReadyShots(
                     ref currentEnergy, mounts, in arm, isMega,
                     fallbackDamage, fallbackFireRate, abilityEnergy,
-                    shots, out shotCount);
+                    shots, out shotCount, bankFireRateMul);
             }
 
             if (!gate.HasProjectile)
@@ -847,7 +869,7 @@ namespace TitanOrbit.ECS
             if (currentEnergy + 0.001f < cost)
                 return false;
 
-            float interval = 1f / math.max(0.1f, fireRate);
+            float interval = SingularProjectileInterval(fireRate, fallbackFireRate, bankFireRateMul);
             mount.FireCooldown = interval;
             mounts[i] = mount;
             currentEnergy = math.max(0f, currentEnergy - cost);
@@ -866,9 +888,10 @@ namespace TitanOrbit.ECS
         /// <summary>
         /// Walks the arsenal strip left to right. Each square that the pool
         /// can fill is reserved; a reserved square fires only when its ready
-        /// delay has finished. A partial square keeps the leftover crumbs and
-        /// later squares stay empty. Cannon lasers are left for the MEGA walk
-        /// so they sit between guns and missiles in the same bar.
+        /// delay has finished. Ready barrels fire together. Each one restarts
+        /// its own delay from its own fire rate. A partial square keeps the
+        /// leftover crumbs and later squares stay empty. Cannon lasers are left
+        /// for the MEGA walk so they sit between guns and missiles in the same bar.
         /// Used when the pool can pay every armed projectile. A short pool
         /// uses <see cref="TryPlanHybridShots"/> and does not pour from square 0.
         /// </summary>
@@ -881,7 +904,8 @@ namespace TitanOrbit.ECS
             float fallbackFireRate,
             float abilityEnergy,
             MountShot[] shots,
-            out int shotCount)
+            out int shotCount,
+            float bankFireRateMul = 1f)
         {
             shotCount = 0;
             if (!mounts.IsCreated || mounts.Length <= 0 || shots == null || shots.Length <= 0)
@@ -924,7 +948,7 @@ namespace TitanOrbit.ECS
                 if (mount.FireCooldown > 0.001f)
                     continue;
 
-                float interval = 1f / math.max(0.1f, fireRate);
+                float interval = SingularProjectileInterval(fireRate, fallbackFireRate, bankFireRateMul);
                 mount.FireCooldown = interval;
                 mounts[i] = mount;
                 spend -= cost;

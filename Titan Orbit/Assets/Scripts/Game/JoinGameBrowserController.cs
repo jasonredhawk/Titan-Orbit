@@ -852,7 +852,9 @@ namespace TitanOrbit.Game
             }
 
             // --- Empty-idle kill countdown (server IdleKillAt; hidden while anyone is in the match) ---
-            if (TryFormatEmptyIdleCountdown(summary, out string idleCountdown))
+            // GameManager.ShowJoinGameClosesIn (default off) hides this label without stopping the kill.
+            if (GameManager.IsShowJoinGameClosesInActive
+                && TryFormatEmptyIdleCountdown(summary, out string idleCountdown))
             {
                 if (wrote)
                     sb.Append("   <color=#5f738a>|</color>   ");
@@ -869,6 +871,7 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Builds the "closes in Xm" fragment only when the lobby reports zero players and a kill deadline.
+        /// Caller also requires <see cref="GameManager.IsShowJoinGameClosesInActive"/> (default off).
         /// </summary>
         /// <param name="summary">Lobby row from the last UGS query (cached locally).</param>
         /// <param name="richText">TMP fragment including color tags; empty when not shown.</param>

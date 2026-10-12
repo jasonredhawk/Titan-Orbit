@@ -124,6 +124,15 @@ namespace TitanOrbit.ECS
         /// <summary>[TITAN-ORBIT] Untaxed top speed (world units/s). Drive applies live mass tax.</summary>
         public float MaxSpeed;
 
+        /// <summary>
+        /// [TITAN-ORBIT] Untaxed top speed with Move Speed ability purchases at 0.
+        /// Ship level, parts, and cards still count. Ram damage divides closing speed by
+        /// this (after the same mass tax and territory as live cruise), so a stock
+        /// full-cruise ram is 2× the chip and Move Speed purchases push it higher.
+        /// Written by <see cref="ShipStatApplyLogic"/> next to <see cref="MaxSpeed"/>.
+        /// </summary>
+        public float BaseMaxSpeed;
+
         /// <summary>[TITAN-ORBIT] Untaxed turn rate (°/s) toward aim. Drive applies live mass tax.</summary>
         public float RotationSpeed;
 
@@ -436,8 +445,8 @@ namespace TitanOrbit.ECS
         public float3 Velocity;
 
         /// <summary>
-        /// Planar escort-formation heading (unit XZ, y unused). Ghosted so parked troop
-        /// orbs lag ship yaw the same on every peer. Zero = use the ship's nose this tick.
+        /// Planar formation heading (unit XZ, y unused) shared by parked troops and
+        /// equipment drones. Ghosted so a yaw lags the same on every peer. Zero = nose.
         /// </summary>
         [GhostField(Quantization = 1000)]
         public float3 FormationHeading;

@@ -173,8 +173,8 @@ namespace TitanOrbit.ECS
 
     /// <summary>
     /// Ghosted troop-escort seats on the starship (≤12). Pose is derived
-    /// (<c>EvaluateEscortSwarmPose</c> + lagged <c>ShipKinematics.FormationHeading</c>);
-    /// only HP / amount / in-flight travel on the wire.
+    /// (<c>EvaluateEscortSwarmPose</c> + lagged <c>ShipKinematics.FormationHeading</c>,
+    /// the same yaw frame equipment drones use); only HP / amount / in-flight travel on the wire.
     /// Sent to predicted owners too — otherwise the local ship never sees parked escorts
     /// after a load hop is consumed (Same as equipment / drones).
     /// </summary>

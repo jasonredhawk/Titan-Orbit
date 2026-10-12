@@ -1480,25 +1480,18 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Estimates asteroid impact at <paramref name="inboundSpeed"/> using the shared
-        /// grind-DPS × ram-speed helpers (<see cref="ShipRammingCollisionDamageSystem"/>).
-        /// Mass stays in the product: grindDps = rating × (totalMass / this hull's ComponentSize).
+        /// Estimates asteroid impact at <paramref name="inboundSpeed"/> using
+        /// chip × (1 + speed / stock cruise). Mass is not in the product.
         /// </summary>
         static void GetRamDamageEstimate(
-            in ShipState ship,
             in ShipMotorConfig motor,
             in ShipComponentAbilityStats effectiveStats,
             float inboundSpeed,
+            float baseCruise,
             out float asteroidDamage,
             out float selfDamage,
-            out float ramRating,
-            out float totalMass)
+            out float ramRating)
         {
-            float baseMass = motor.Mass > 0f ? motor.Mass : ShipMassLogic.DefaultBaseMass;
-            float componentSize = motor.HullMassReference > 0f
-                ? motor.HullMassReference
-                : Mathf.Max(ShipMassLogic.MinMass, baseMass * ShipMassLogic.HullMassScale);
-
             // Prefer motor.RammingPower (server-applied) when present; else rebuild from family stats.
             float familyRammingPower = motor.RammingPower > 0f
                 ? motor.RammingPower
@@ -1507,20 +1500,12 @@ namespace TitanOrbit.UI
                     : ShipFamilyDefaultFallbackStats.CreateBaseline().rammingPower);
             ramRating = ShipComponentRammingSuggestions.ComputeDamageRatingFromFamilyPower(familyRammingPower);
 
-            // [TITAN-ORBIT] Same totalMass + grind/ram helpers as the server — HUD cannot drift.
-            ShipMobilityResolution.TaxedMotorStats taxed = ShipMobilityResolution.ApplyMassTaxFromCargo(
-                motor.MaxSpeed,
-                motor.EngineThrust,
-                motor.RotationSpeed,
-                ship.CurrentGems,
-                ship.CurrentPeople,
-                componentSize);
-            totalMass = taxed.TotalMass;
-
+            // [TITAN-ORBIT] Same grind/ram helpers as the server — HUD cannot drift.
+            float stock = baseCruise > 0.01f ? baseCruise : Mathf.Max(0.01f, inboundSpeed);
             asteroidDamage = ShipComponentRammingSuggestions.ComputeImpactDamage(
-                ramRating, totalMass, inboundSpeed, componentSize);
+                ramRating, inboundSpeed, stock);
             selfDamage = ShipComponentRammingSuggestions.ComputeImpactSelfDamage(
-                ramRating, totalMass, inboundSpeed, componentSize);
+                ramRating, inboundSpeed, stock);
         }
 
         /// <summary>
@@ -1672,6 +1657,23 @@ namespace TitanOrbit.UI
             cruiseMax *= territoryMult;
             maxFwd *= territoryMult;
 
+            // Stock cruise: same tax and territory, Move Speed purchases removed.
+            // When that ability is 0 this matches cruiseMax, so a full ram previews at 2× the chip.
+            float untaxedStock = motor.BaseMaxSpeed > 0.01f ? motor.BaseMaxSpeed : chassisMove;
+            float baseCruise = cruiseMax;
+            if (Mathf.Abs(untaxedStock - chassisMove) > 0.01f)
+            {
+                ShipMobilityResolution.TaxedMotorStats taxedStock = ShipMobilityResolution.ResolveLiveMotorStats(
+                    untaxedStock,
+                    chassisAccel,
+                    chassisTurnDeg,
+                    ship.CurrentGems,
+                    ship.CurrentPeople,
+                    componentSize,
+                    skipMassTax: motor.SkipMassTax != 0);
+                baseCruise = taxedStock.MaxSpeed * territoryMult;
+            }
+
             // --- OVERDRIVE capacity (always) vs live burst (only while engaged) ---
             // [TITAN-ORBIT] Bar scale = cruise × baked OD mul so the faint OD zone is always visible.
             // Live cruise / "at max" / thrust use active overdrive only.
@@ -1742,14 +1744,13 @@ namespace TitanOrbit.UI
 
                 // Max ramming at full cruise — not current closing speed (avoids per-frame tip churn).
                 GetRamDamageEstimate(
-                    ship,
                     motor,
                     effectiveStats,
                     cruiseMax,
+                    baseCruise,
                     out float tipRamAst,
                     out float tipRamSelf,
-                    out float tipRamRating,
-                    out _);
+                    out float tipRamRating);
 
                 _liveTooltipContext = new ShipSpeedometerStatTooltips.LiveContext
                 {
@@ -1764,6 +1765,7 @@ namespace TitanOrbit.UI
                     TerritoryMult = territoryMult,
                     TotalMass = taxed.TotalMass,
                     ChassisMaxSpeed = chassisMove,
+                    BaseCruiseSpeed = baseCruise,
                     ChassisAccel = chassisAccel,
                     ChassisTurnDeg = chassisTurnDeg,
                     TaxedAccel = taxed.EngineThrust,

@@ -12,8 +12,12 @@ namespace TitanOrbit.Data
     /// <para>
     /// [TITAN-ORBIT] Formulas live in <see cref="ShipComponentRammingSuggestions"/> so the HUD
     /// and server <c>ShipRammingCollisionDamageSystem</c> cannot drift:
-    /// grind DPS = rating × (totalMass / this hull's ComponentSize);
-    /// ram burst = grind DPS × (1 + closingSpeed / RamClosingSpeedForDouble).
+    /// grind DPS = rating (the RAM chip);
+    /// ram burst = rating × (1 + currentSpeed / this ship's stock cruise).
+    /// Current speed is flight speed at the hit, including OVERDRIVE. Stock cruise is max
+    /// speed before Move Speed ability purchases. At that speed the hit is 2× the chip.
+    /// Going faster raises the ram.
+    /// Hull mass and cargo do not scale HP. They still change flight and bounce.
     /// </para>
     /// </summary>
     [CreateAssetMenu(
@@ -24,40 +28,16 @@ namespace TitanOrbit.Data
     {
         /// <summary>
         /// Scales summed family <c>rammingPower</c> into the combat rating.
-        /// 1 = the RAM chip number is the grind DPS at <see cref="MassReference"/>.
+        /// 1 = the RAM chip number is grind HP per second. A stock-cruise ram is 2× that chip.
         /// </summary>
         [Header("Overall strength")]
         [Tooltip(
             "Scales family rammingPower into the combat rating. " +
-            "1 = the RAM chip (e.g. 5.8) is grind DPS when totalMass equals MassReference. " +
+            "1 = the RAM chip (e.g. 5.8) is grind HP per second. " +
+            "A ram at this ship's stock cruise (before Move Speed purchases) is 2× the chip. " +
             "0.5 = half strength; raise to make all rams and grinds meaner. " +
-            "Not clamped — 0 disables ramming.")]
+            "Not clamped — 0 disables ramming. Hull mass does not scale this.")]
         public float GlobalDamageMultiplier = 1f;
-
-        /// <summary>
-        /// Fallback mass reference when a ship has no ComponentSize yet.
-        /// Live grind/ram uses that hull's <c>HullMassReference</c> as the 1× point so
-        /// larger high-level ships do not take 3–7× self-chip while empty.
-        /// Cargo above hull size still raises the factor.
-        /// </summary>
-        [Tooltip(
-            "Fallback only — used when HullMassReference is unset. Live damage uses this " +
-            "ship's ComponentSize as the 1× RAM chip (empty L6 is not 4× a starter). " +
-            "Cargo still scales above that. Must stay above 0.")]
-        [Min(0.01f)]
-        public float MassReference = 10f;
-
-        /// <summary>
-        /// Closing speed (world u/s) at which a ram burst is 2× that ship's grind DPS.
-        /// Formula: ramMul = 1 + closingSpeed / this.
-        /// </summary>
-        [Tooltip(
-            "Approach speed (world units/s) that doubles grind DPS into a ram burst. " +
-            "ram = grindDPS × (1 + closing / this). At 0 closing the multiplier is 1× " +
-            "(impact is still gated at 0.35 u/s). At this speed the hit is 2× grind; " +
-            "at 2× this speed it is 3×. Default 10.")]
-        [Min(0.01f)]
-        public float RamClosingSpeedForDouble = 10f;
 
         /// <summary>
         /// Self hull chip vs damage dealt on the same hit.
@@ -83,10 +63,7 @@ namespace TitanOrbit.Data
             // --- Sanitize designer fields ---
             // [TITAN-ORBIT] GlobalDamageMultiplier is intentional free-range — designers may set
             // 0 (off), very small, or very large without a floor/ceiling rewrite.
-            // MassReference and RamClosingSpeedForDouble are divisors — a 0 would explode damage.
             SelfToAsteroidDamageRatio = Mathf.Max(0f, SelfToAsteroidDamageRatio);
-            MassReference = Mathf.Max(0.01f, MassReference);
-            RamClosingSpeedForDouble = Mathf.Max(0.01f, RamClosingSpeedForDouble);
         }
 
         /// <summary>[UNITY] Inspector edit — keep authored values legal.</summary>

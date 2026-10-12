@@ -238,7 +238,9 @@ namespace TitanOrbit.ECS
 
                 Vector3 shipPos = (Vector3)transform.Position;
                 Quaternion shipRot = (Quaternion)transform.Rotation;
-                DroneSwarmPositioning.GetShipBasis(shipPos, shipRot, out shipPos, out Vector3 forward, out Vector3 right);
+                Vector3 formationHeading = (Vector3)kinematics.FormationHeading;
+                DroneSwarmPositioning.GetFormationBasis(
+                    shipPos, shipRot, formationHeading, out shipPos, out Vector3 forward, out Vector3 right);
                 float hullRadius = BodyCollisionMath.GetShipHullRadiusWorld(transform.Scale);
                 float orbitRadius = DroneSwarmPositioning.GetDroneOrbitRadiusFromHull(hullRadius);
                 float shieldOrbitRadius = DroneSwarmPositioning.GetShieldOrbitRadiusFromHull(hullRadius);

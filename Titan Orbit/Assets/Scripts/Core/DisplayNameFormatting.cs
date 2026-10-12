@@ -79,6 +79,44 @@ namespace TitanOrbit.Core
         }
 
         /// <summary>
+        /// Drops a leading family label from a hull title so the Your Ship card
+        /// can show only the ship name. The Orbit Menu left panel already prints
+        /// the family (ASTRO EAGLE) above the silhouette, so "Astro Eagle Hawk"
+        /// becomes "Hawk". Names that do not start with that family stay as-is
+        /// (Cosmic Shark's "Fin", a Titan's "Pyrestar"). If stripping would leave
+        /// nothing, the original title is kept so the card is never blank.
+        /// Client-only string formatting — no gameplay effect.
+        /// </summary>
+        /// <param name="title">Authored or prefab hull label. CamelCase is split first.</param>
+        /// <param name="familyLabel">Family the player already sees above the art (Astro Eagle).</param>
+        /// <returns>Hull name without the leading family, or the spaced title when there is no prefix to drop.</returns>
+        public static string StripLeadingFamilyLabel(string title, string familyLabel)
+        {
+            // --- Nothing to show ---
+            if (string.IsNullOrWhiteSpace(title))
+                return string.Empty;
+
+            // Same spacing the title widget uses, so "AstroEagle Hawk" matches "Astro Eagle".
+            string hull = SplitCamelCase(title).Trim();
+            if (string.IsNullOrWhiteSpace(familyLabel))
+                return hull;
+
+            string family = SplitCamelCase(familyLabel).Trim();
+            if (family.Length == 0 || hull.Length <= family.Length)
+                return hull;
+
+            // --- Prefix must be the family, then a word break ---
+            // [TITAN-ORBIT] "Star" must not eat "Starhide". Only a following space counts.
+            if (!hull.StartsWith(family, StringComparison.OrdinalIgnoreCase))
+                return hull;
+            if (!char.IsWhiteSpace(hull[family.Length]))
+                return hull;
+
+            string rest = hull.Substring(family.Length).Trim();
+            return string.IsNullOrEmpty(rest) ? hull : rest;
+        }
+
+        /// <summary>
         /// Player-facing part label from a family-prefixed component id.
         /// <c>SpaceExcalibur_Tiny_Thrusters</c> → Tiny Thrusters.
         /// Strips <paramref name="familyId"/> when provided; otherwise drops a leading

@@ -1258,7 +1258,7 @@ namespace TitanOrbit.UI
             sb.Append("<color=#5B7A94>").Append(FResult(live.Weapon.FireRate)).Append("/s</color>").AppendLine();
 
             // [TITAN-ORBIT] RAM Extra Level = shipLevel + Fire Power (same as EvaluatePool).
-            // The grid total is the chip (grind /s at 1× mass). It is not the asteroid floater.
+            // The grid total is the chip (grind /s). A stock-cruise ram is 2× that chip.
             AppendStatCalcGrid(
                 sb, in parts, in live, StatField.RammingPower, "chip",
                 firePowerAbilityLv, live.EffectiveStats.rammingPower);
@@ -1268,7 +1268,7 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// Full-cruise ram the player should compare with the first asteroid floater.
-        /// Chip × mass ratio × speed. Grind after that first hit is a separate line.
+        /// Chip × (1 + cruise / stock cruise). Stock cruise is before Move Speed purchases, so that speed is 2× the chip.
         /// </summary>
         static void AppendRamCruiseImpact(
             StringBuilder sb,
@@ -1282,35 +1282,27 @@ namespace TitanOrbit.UI
                 : ShipComponentRammingSuggestions.ComputeDamageRatingFromFamilyPower(
                     live.EffectiveStats.rammingPower);
             float impactSpeed = live.CruiseMaxSpeed > 0.01f ? live.CruiseMaxSpeed : live.ChassisMaxSpeed;
+            float stockSpeed = live.BaseCruiseSpeed > 0.01f ? live.BaseCruiseSpeed : impactSpeed;
             ShipComponentRammingSuggestions.RamCruiseImpactPreview hit =
-                ShipComponentRammingSuggestions.BuildCruiseImpactPreview(
-                    rating, live.TotalMass, impactSpeed, live.ComponentSize);
+                ShipComponentRammingSuggestions.BuildCruiseImpactPreview(rating, impactSpeed, stockSpeed);
 
             ShipStatTooltipChrome.AppendSectionBanner(sb, "FULL CRUISE IMPACT", "FFCC66");
-            AppendTint(sb, HexMute, "Chip is grind/s on an empty hull. First contact is chip x mass x speed.");
+            AppendTint(sb, HexMute, "Chip is grind/s. Hit is chip x (1 + current speed / stock). At stock cruise that is 2x. OVERDRIVE goes higher.");
             sb.AppendLine();
 
             sb.Append("Chip  ").Append(FResult(hit.Rating));
-            AppendTint(sb, HexMute, "   grind/s at 1x mass");
-            sb.AppendLine();
-
-            sb.Append("Mass  ").Append(FResult(hit.TotalMass))
-                .Append(" / ").Append(FResult(hit.HullReference))
-                .Append("  =  ");
-            AppendTint(sb, HexMass, FResult(hit.MassFactor) + "x");
-            if (hit.UsedMassReferenceFallback)
-                AppendTint(sb, HexMute, "  (hull size not ready)");
+            AppendTint(sb, HexMute, "   grind/s");
             sb.AppendLine();
 
             sb.Append("Grind  ").Append(FResult(hit.GrindDps)).Append("/s");
-            AppendTint(sb, HexMute, "   chip x mass, while held");
+            AppendTint(sb, HexMute, "   chip, while held");
             sb.AppendLine();
 
             sb.Append("Cruise  ").Append(FResult(hit.CruiseSpeed)).Append("/s");
-            sb.Append("    Speed  1 + ")
-                .Append(FResult(hit.CruiseSpeed)).Append("/")
-                .Append(FResult(hit.SpeedForDouble))
-                .Append("  =  ");
+            sb.Append("    Stock  ").Append(FResult(hit.BaseShipSpeed)).Append("/s");
+            sb.Append("    Speed  1 + current/")
+                .Append(FResult(hit.BaseShipSpeed))
+                .Append("  at cruise  ");
             AppendTint(sb, "FFCC66", FResult(hit.SpeedMultiplier) + "x");
             sb.AppendLine();
 

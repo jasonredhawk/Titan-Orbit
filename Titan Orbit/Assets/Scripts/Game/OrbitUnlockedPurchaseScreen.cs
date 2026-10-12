@@ -43,6 +43,10 @@ namespace TitanOrbit.Game
         TextMeshProUGUI _price;
         TextMeshProUGUI _buyLabel;
         Button _buyButton;
+#if UNITY_WEBGL && !UNITY_EDITOR
+        bool _checkoutInFlight;
+        int _priceRequest;
+#endif
 
         /// <summary>
         /// Finds or creates the overlay under <paramref name="canvasRoot"/> and shows it.
@@ -221,8 +225,8 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Repaints price / owned label from the live IAP manager and entitlements.
-        /// Called on show and whenever ownership flips.
+        /// Repaints price / owned label. WebGL reads the Stripe Price. Mobile
+        /// still uses the store catalog. Called on show and whenever ownership flips.
         /// </summary>
         public void Refresh()
         {
@@ -234,7 +238,11 @@ namespace TitanOrbit.Game
             string productId = iap != null
                 ? iap.OrbitUnlockedProductId
                 : TitanOrbitEntitlements.OrbitUnlockedProductIdDefault;
+#if UNITY_WEBGL && !UNITY_EDITOR
+            string price = "";
+#else
             string price = iap != null ? iap.GetLocalizedPriceString(productId) : "";
+#endif
 
             if (_price != null)
             {
@@ -243,6 +251,11 @@ namespace TitanOrbit.Game
                 else
                     _price.text = owned ? "OWNED" : (string.IsNullOrEmpty(price) ? "" : price);
             }
+
+#if UNITY_WEBGL && !UNITY_EDITOR
+            if (!owned && unityAccount)
+                _ = LoadStripePriceAsync(++_priceRequest);
+#endif
 
             if (_buyLabel != null)
             {
@@ -265,7 +278,9 @@ namespace TitanOrbit.Game
                 else if (!unityAccount)
                     _buyButton.interactable = true;
                 else
-#if UNITY_EDITOR
+#if UNITY_WEBGL && !UNITY_EDITOR
+                    _buyButton.interactable = !_checkoutInFlight;
+#elif UNITY_EDITOR
                     _buyButton.interactable = true;
 #else
                     _buyButton.interactable = iap != null && iap.CanInitiatePurchase(productId);
@@ -291,7 +306,9 @@ namespace TitanOrbit.Game
 
             if (iap == null || !iap.IsStoreReady)
             {
-#if UNITY_EDITOR
+#if UNITY_WEBGL && !UNITY_EDITOR
+                _status.text = "UNLOCK opens secure checkout for this account.";
+#elif UNITY_EDITOR
                 _status.text = "Store not ready. Editor: TitanOrbit → Economy → Grant Orbit Unlocked.";
 #else
                 _status.text = "Store not ready. Try Restore after the catalog loads.";
@@ -322,18 +339,21 @@ namespace TitanOrbit.Game
 
             if (!UnityGameServicesBootstrap.HasDurablePlayerAccount())
             {
-#if UNITY_WEBGL && !UNITY_EDITOR
                 UsernamePasswordSignInScreen.Open(transform.parent);
                 if (_status != null)
-                    _status.text = "Enter a username and password. This stays in the game.";
-#else
-                // Same click turn as the button so the Editor can open the Unity login page.
-                _ = UnityGameServicesBootstrap.SignInOrLinkUnityPlayerAccountUsingBrowserAsync();
-                if (_status != null)
-                    _status.text = "Opening Unity sign-in…";
-#endif
+                    _status.text = "Sign in with Google, or a username and password. The purchase stays on that account.";
                 return;
             }
+
+#if UNITY_WEBGL && !UNITY_EDITOR
+            if (_checkoutInFlight)
+                return;
+            _checkoutInFlight = true;
+            if (_status != null)
+                _status.text = "Opening checkout…";
+            _ = BeginWebCheckoutAsync();
+            return;
+#endif
 
             var iap = Object.FindFirstObjectByType<TitanOrbitIapManager>();
 #if UNITY_EDITOR
@@ -357,18 +377,49 @@ namespace TitanOrbit.Game
                 _status.text = "Opening store…";
         }
 
-        /// <summary>Apple restore on iOS; receipt re-read on other platforms.</summary>
+#if UNITY_WEBGL && !UNITY_EDITOR
+        /// <summary>WebGL only. Replaces the store placeholder with the Stripe Price.</summary>
+        async System.Threading.Tasks.Task LoadStripePriceAsync(int requestId)
+        {
+            string label = await TitanOrbit.Services.TitanOrbitWebCheckout.FetchDisplayPriceAsync();
+            if (requestId != _priceRequest || _price == null)
+                return;
+            if (TitanOrbitEntitlements.IsOrbitUnlockedOwned || string.IsNullOrEmpty(label))
+                return;
+            _price.text = label;
+        }
+
+        /// <summary>WebGL only. Opens Stripe Checkout for the signed-in account.</summary>
+        async System.Threading.Tasks.Task BeginWebCheckoutAsync()
+        {
+            // --- Web checkout ---
+            string error = await TitanOrbit.Services.TitanOrbitWebCheckout.BeginAsync();
+            _checkoutInFlight = false;
+            Refresh();
+            if (_status == null)
+                return;
+            if (!string.IsNullOrEmpty(error))
+                _status.text = error;
+        }
+#endif
+
+        /// <summary>Apple restore on iOS; Cloud Save re-read on WebGL.</summary>
         void OnRestoreClicked()
         {
             if (!UnityGameServicesBootstrap.HasDurablePlayerAccount())
             {
                 if (_status != null)
                     _status.text = "Sign in before restoring Orbit Unlocked.";
-#if UNITY_WEBGL && !UNITY_EDITOR
                 UsernamePasswordSignInScreen.Open(transform.parent);
-#endif
                 return;
             }
+
+#if UNITY_WEBGL && !UNITY_EDITOR
+            if (_status != null)
+                _status.text = "Checking this account…";
+            TitanOrbit.Services.TitanOrbitAccountEntitlementSync.RefreshForCurrentPlayerAsync();
+            return;
+#endif
 
             var iap = Object.FindFirstObjectByType<TitanOrbitIapManager>();
             if (iap == null)

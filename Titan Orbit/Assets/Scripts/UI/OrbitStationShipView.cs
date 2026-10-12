@@ -203,6 +203,7 @@ namespace TitanOrbit.Entities
                         componentId = e.ComponentId.ToString(),
                         remainingCharges = e.RemainingCharges,
                         itemLevel = e.ItemLevel,
+                        stampedBulletBankPlusOne = e.StampedBulletBankPlusOne,
                     });
                 }
             }

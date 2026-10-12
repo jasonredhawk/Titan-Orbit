@@ -1586,13 +1586,9 @@ namespace TitanOrbit.Editor
                         || ShipComponentAbilityStats.IsWeaponComponent(componentId))
                     {
                         // Fresh stats struct — seed Offense fields needed for Cap = firePower × fireRate.
-                        bool cannon = ShipFamilyPartTypes.IsWeaponCannonProfile(type);
-                        stats.firePower = cannon
-                            ? ShipComponentWeaponSuggestions.CannonFirePowerV1 * Mathf.Max(1, version)
-                            : ShipComponentWeaponSuggestions.GetSuggestedFirePower(version);
-                        stats.fireRate = cannon
-                            ? ShipComponentWeaponSuggestions.CannonFireRate
-                            : ShipComponentWeaponSuggestions.FireRate;
+                        // Gun, cannon, and missile components share the one family weapon profile.
+                        stats.firePower = ShipComponentWeaponSuggestions.GetSuggestedFirePower(version);
+                        stats.fireRate = ShipComponentWeaponSuggestions.FireRate;
                         ShipComponentWeaponSuggestions.ApplyWeaponBatteryCap(ref stats);
                         // Do not leave Offense fields on the Energy-only fragment.
                         stats.firePower = 0f;

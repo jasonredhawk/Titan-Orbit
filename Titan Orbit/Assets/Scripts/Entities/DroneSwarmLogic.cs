@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using TitanOrbit.Data;
 using TitanOrbit.Simulation;
+using Unity.Mathematics;
 using UnityEngine;
 
 namespace TitanOrbit.Entities
@@ -65,6 +66,13 @@ namespace TitanOrbit.Entities
 
         /// <summary>Buzz wobble frequency.</summary>
         public const float BuzzSpeed = 3.2f;
+
+        /// <summary>
+        /// Idle escort slerp rate (per second) toward formation forward.
+        /// Parked troops and idle fighter / mining drones share this so a ram
+        /// does not spin them — facing is the heading, not ship velocity.
+        /// </summary>
+        public const float IdleFacingTurnSpeed = 10f;
 
         /// <summary>Legacy ring-drift constant (unused — combat drones translate a formation offset).</summary>
         public const float DefaultOrbitSpeedDeg = 55f;
@@ -596,6 +604,8 @@ namespace TitanOrbit.Entities
 
         /// <summary>
         /// Builds ship basis on the FixedY plane (forward / right unit vectors).
+        /// Hull aim and covering boxes use this live nose. Escort slots use
+        /// <see cref="GetFormationBasis"/> so drones and troops share yaw lag.
         /// </summary>
         public static void GetShipBasis(
             Vector3 shipWorldPos,
@@ -615,6 +625,48 @@ namespace TitanOrbit.Entities
             if (right.sqrMagnitude < 0.01f)
                 right = Vector3.right;
             right.Normalize();
+        }
+
+        /// <summary>
+        /// Escort frame for equipment drones. Forward is the ghosted formation heading
+        /// (<see cref="PeopleTransportMath.ResolveFormationForward"/>), the same yaw lag
+        /// parked troops use. Falls back to the live nose until that heading is seeded.
+        /// </summary>
+        public static void GetFormationBasis(
+            Vector3 shipWorldPos,
+            Quaternion shipWorldRot,
+            Vector3 formationHeading,
+            out Vector3 shipPos,
+            out Vector3 forward,
+            out Vector3 right)
+        {
+            shipPos = shipWorldPos;
+            shipPos.y = DroneSwarmLogic.FixedY;
+            float3 lagged = PeopleTransportMath.ResolveFormationForward(
+                shipWorldRot,
+                new float3(formationHeading.x, 0f, formationHeading.z));
+            forward = new Vector3(lagged.x, 0f, lagged.z);
+            if (forward.sqrMagnitude < 0.01f)
+                forward = Vector3.forward;
+            forward.Normalize();
+            right = Vector3.Cross(Vector3.up, forward);
+            if (right.sqrMagnitude < 0.01f)
+                right = Vector3.right;
+            right.Normalize();
+        }
+
+        /// <summary>
+        /// Idle escort rotation. Slerps toward planar formation forward.
+        /// Closed-form target — velocity is not an input, so a collision cannot spin the mesh.
+        /// </summary>
+        public static Quaternion SlerpIdleFacing(Quaternion current, Vector3 planarForward, float dt)
+        {
+            planarForward.y = 0f;
+            if (planarForward.sqrMagnitude < 0.01f)
+                return current;
+            Quaternion target = Quaternion.LookRotation(planarForward.normalized, Vector3.up);
+            float t = Mathf.Clamp01(DroneSwarmLogic.IdleFacingTurnSpeed * Mathf.Max(0f, dt));
+            return Quaternion.Slerp(current, target, t);
         }
 
         /// <summary>Shared fighter / mining / shield buzz wobble (legacy feel).</summary>

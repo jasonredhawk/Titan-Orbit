@@ -59,7 +59,7 @@ namespace TitanOrbit.Data
         public float firePowerMultiplier;
         [Tooltip("Projectile speed. 1 = no change.")]
         public float bulletSpeedMultiplier;
-        [Tooltip("Shots per second. 1 = no change.")]
+        [Tooltip("Shots per second. 1 = no change. A flat per-type rate (0.5 = half speed, 1.1 = 10% faster). Applied once — it does not grow with ship level or barrel count.")]
         public float fireRateMultiplier;
         [Tooltip("Ramming offense rating. 1 = no change.")]
         public float rammingPowerMultiplier;

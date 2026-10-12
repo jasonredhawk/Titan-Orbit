@@ -7,21 +7,20 @@ using UnityEngine.UI;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// Main-menu account control: Sign in with Unity / Sign out. Client-only presentation.
-    /// Paired with <see cref="UnityGameServicesBootstrap"/> for UGS Authentication and
-    /// Unity Player Accounts browser OAuth.
+    /// Main-menu account control: Sign in / Sign out. Client-only presentation.
+    /// Sign in opens <see cref="UsernamePasswordSignInScreen"/>, which offers Google and
+    /// a username with a password.
     ///
     /// Intentionally shows only the action button — no "Guest · player id" detail text.
-    /// After a successful Unity link, Authentication keeps a session token so the next launch
-    /// restores the linked player via <see cref="UnityGameServicesBootstrap.EnsureGuestSessionForOnlineAsync"/>
-    /// (SignInAnonymously restores cached sessions, including Unity-linked ones).
+    /// After a successful sign-in, Authentication keeps a session token so the next launch
+    /// restores that player via <see cref="UnityGameServicesBootstrap.EnsureGuestSessionForOnlineAsync"/>.
     /// </summary>
     public class MainMenuAccountBar : MonoBehaviour
     {
         /// <summary>Optional status TMP (usually null — we hide Guest details by design).</summary>
         [SerializeField] TextMeshProUGUI statusLabel;
 
-        /// <summary>Primary action: Sign in with Unity, or Sign out when already linked.</summary>
+        /// <summary>Primary action: Sign in, or Sign out when a durable account is active.</summary>
         [SerializeField] Button actionButton;
 
         /// <summary>TMP label on <see cref="actionButton"/> (rewritten each refresh).</summary>
@@ -113,13 +112,7 @@ namespace TitanOrbit.Game
             bool unityLinked = UnityGameServicesBootstrap.IsUnityAccountActiveForUi();
 
             if (actionButtonLabel != null)
-            {
-#if UNITY_WEBGL && !UNITY_EDITOR
                 actionButtonLabel.text = unityLinked ? "Sign out" : "Sign in";
-#else
-                actionButtonLabel.text = unityLinked ? "Sign out" : "Sign in with Unity";
-#endif
-            }
 
             if (actionButton != null)
                 actionButton.interactable = !_busy;
@@ -161,32 +154,13 @@ namespace TitanOrbit.Game
                 return;
             }
 
-            // --- Sign in / link path ---
-#if UNITY_WEBGL && !UNITY_EDITOR
-            // Username and password stay on this page. player-login.unity.com rejects the site URL.
+            // --- Sign in path ---
+            // One card: Sign in with Google, or a username and password.
             var canvas = GetComponentInParent<Canvas>();
             if (canvas != null)
                 UsernamePasswordSignInScreen.Open(canvas.transform);
             else
                 Debug.LogWarning("[MainMenuAccountBar] Sign in form needs a Canvas parent.");
-            return;
-#endif
-            _busy = true;
-            RefreshUi();
-            if (actionButtonLabel != null)
-                actionButtonLabel.text = "Signing in…";
-
-            try
-            {
-                bool ok = await UnityGameServicesBootstrap.SignInOrLinkUnityPlayerAccountUsingBrowserAsync();
-                if (!ok && actionButtonLabel != null)
-                    actionButtonLabel.text = "Sign in failed — retry";
-            }
-            finally
-            {
-                _busy = false;
-                RefreshUi();
-            }
         }
     }
 }

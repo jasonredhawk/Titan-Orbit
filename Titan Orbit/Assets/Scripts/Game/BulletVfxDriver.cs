@@ -429,6 +429,7 @@ namespace TitanOrbit.Game
                 t.Go.transform.position = displayPos;
                 if (math.lengthsq(displayVel) > 0.0001f)
                     t.Go.transform.rotation = Quaternion.LookRotation(((Vector3)displayVel).normalized, Vector3.up);
+                ApplyTracerRootScale(in t);
 
                 if (t.Stretch != null)
                 {
@@ -1345,8 +1346,7 @@ namespace TitanOrbit.Game
             float visualScale = BulletVisualFactory.GetBulletVisualScale(_bank, scaleMul, bankIndex)
                                 * cameraScale;
             BulletVisualFactory.ApplyColorToVisual(visual, BulletVisualFactory.GetTeamBulletColor(team));
-            // Root scale is the ship's DPS size. Lock particles so the prefab cannot
-            // roll a new size or shrink the bolt while it flies.
+            // Root scale is the ship's fire power. Bullet type does not change it.
             VfxUrpCompat.ApplyImpactVisualScale(go, visualScale, lockUniformParticleSize: true);
             VfxUrpCompat.PrepareVfxInstance(go);
             BulletVisualFactory.SetAudioPitchInHierarchy(
@@ -1445,6 +1445,18 @@ namespace TitanOrbit.Game
             float t = math.saturate(traveled / dropDistance);
             t = t * t * (3f - 2f * t);
             return math.lerp(muzzleY, 0f, t);
+        }
+
+        /// <summary>Root scale is the fire-power size. Bullet type does not change it.</summary>
+        void ApplyTracerRootScale(in Tracer t)
+        {
+            if (t.Go == null)
+                return;
+            float scaleMul = t.ScaleMultiplier > 0f ? t.ScaleMultiplier : 1f;
+            int bankIndex = math.max(0, t.BankIndex);
+            float visual = BulletVisualFactory.GetBulletVisualScale(_bank, scaleMul, bankIndex)
+                * ResolveMegaCameraVisualScale();
+            t.Go.transform.localScale = Vector3.one * math.max(0.05f, visual);
         }
 
         /// <summary>

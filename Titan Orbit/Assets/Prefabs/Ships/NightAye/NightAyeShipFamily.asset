@@ -394,13 +394,13 @@ MonoBehaviour:
     displayName: Missile
     statCategories: 0000000002000000
     stats:
-      firePower: 12
-      firePowerPerExtraLevel: 3
-      bulletSpeed: 7
+      firePower: 3
+      firePowerPerExtraLevel: 0.75
+      bulletSpeed: 10
       bulletSpeedPerExtraLevel: 1
       bulletRange: 20
       bulletRangePerExtraLevel: 2
-      fireRate: 1
+      fireRate: 3
       fireRatePerExtraLevel: 0
       rammingPower: 0
       rammingPowerPerExtraLevel: 0
@@ -408,8 +408,8 @@ MonoBehaviour:
       healthCapPerExtraLevel: 0
       healthRegen: 0
       healthRegenPerExtraLevel: 0
-      energyCap: 60
-      energyCapPerExtraLevel: 15
+      energyCap: 18
+      energyCapPerExtraLevel: 9
       energyRegen: 0
       energyRegenPerExtraLevel: 0
       moveSpeed: 0

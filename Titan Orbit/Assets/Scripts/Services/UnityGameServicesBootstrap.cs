@@ -38,6 +38,12 @@ namespace TitanOrbit.Services
         /// </summary>
         const string UsernamePasswordPlayerIdPrefsKey = "TitanOrbit_UsernamePasswordPlayerId_v1";
 
+        /// <summary>
+        /// PlayerId from the last successful Google sign-in. Identities can lag one refresh
+        /// after <c>SignInWithGoogle</c>, the same way username is missing from Identities.
+        /// </summary>
+        const string GooglePlayerIdPrefsKey = "TitanOrbit_GooglePlayerId_v1";
+
         static bool _authEventsHooked;
         static bool _playerAccountHooksHooked;
         static TaskCompletionSource<bool> _pendingUnityAuthCompletion;
@@ -310,6 +316,8 @@ namespace TitanOrbit.Services
                 return true;
             if (UsernamePasswordRememberedForCurrentPlayer())
                 return true;
+            if (GoogleRememberedForCurrentPlayer())
+                return true;
 
             if (info?.Identities == null)
                 return false;
@@ -331,7 +339,17 @@ namespace TitanOrbit.Services
         /// </summary>
         static bool UsernamePasswordRememberedForCurrentPlayer()
         {
-            string remembered = PlayerPrefs.GetString(UsernamePasswordPlayerIdPrefsKey, "");
+            return RememberedPlayerIdMatches(UsernamePasswordPlayerIdPrefsKey);
+        }
+
+        static bool GoogleRememberedForCurrentPlayer()
+        {
+            return RememberedPlayerIdMatches(GooglePlayerIdPrefsKey);
+        }
+
+        static bool RememberedPlayerIdMatches(string prefsKey)
+        {
+            string remembered = PlayerPrefs.GetString(prefsKey, "");
             if (string.IsNullOrEmpty(remembered))
                 return false;
             return string.Equals(remembered, PlayerId, StringComparison.Ordinal);
@@ -402,12 +420,21 @@ namespace TitanOrbit.Services
             RememberUnityAccountLinked();
         }
 
+        /// <summary>Records the Google player before PlayerInfo refresh, so Sign out stays visible.</summary>
+        static void RememberGoogleAccount()
+        {
+            if (!string.IsNullOrEmpty(PlayerId))
+                PlayerPrefs.SetString(GooglePlayerIdPrefsKey, PlayerId);
+            RememberUnityAccountLinked();
+        }
+
         /// <summary>Clears the local remember-me flag (explicit Sign out only).</summary>
         static void ForgetUnityAccountLinked()
         {
             PlayerPrefs.DeleteKey(UnityAccountLinkedPrefsKey);
             PlayerPrefs.DeleteKey(UnityAccountLinkedPlayerIdPrefsKey);
             PlayerPrefs.DeleteKey(UsernamePasswordPlayerIdPrefsKey);
+            PlayerPrefs.DeleteKey(GooglePlayerIdPrefsKey);
             PlayerPrefs.Save();
         }
 
@@ -625,6 +652,87 @@ namespace TitanOrbit.Services
         }
 
         /// <summary>
+        /// Completes Authentication with a Google ID token from the Sign in with Google button.
+        /// Links the current guest when that Google account is new. If it already belongs to
+        /// another player, switches to that player so purchases stay on it.
+        /// </summary>
+        public static async Task<(bool ok, string message)> SignInWithGoogleIdTokenAsync(string idToken)
+        {
+            // --- SignInWithGoogleIdTokenAsync ---
+            if (string.IsNullOrEmpty(idToken))
+                return (false, "Google did not return a sign-in.");
+
+            await InitializeUnityServicesAsync();
+            var auth = AuthenticationService.Instance;
+
+            try
+            {
+                if (!auth.IsSignedIn)
+                    await EnsureGuestSessionForOnlineAsync();
+
+                if (auth.IsSignedIn)
+                {
+                    try
+                    {
+                        await auth.LinkWithGoogleAsync(idToken);
+                    }
+                    catch (AuthenticationException ex) when (
+                        ex.ErrorCode == AuthenticationErrorCodes.AccountAlreadyLinked ||
+                        ex.ErrorCode == AuthenticationErrorCodes.AccountLinkLimitExceeded)
+                    {
+                        Debug.LogWarning(
+                            "[UnityGameServicesBootstrap] Google account already linked to another player. Signing in with Google.");
+                        auth.SignOut(clearCredentials: true);
+                        await auth.SignInWithGoogleAsync(idToken);
+                    }
+                }
+                else
+                {
+                    await auth.SignInWithGoogleAsync(idToken);
+                }
+            }
+            catch (AuthenticationException ex)
+            {
+                Debug.LogWarning("[UnityGameServicesBootstrap] Google: " + ex.ErrorCode + " " + ex.Message);
+                if (!auth.IsSignedIn)
+                    await EnsureGuestSessionForOnlineAsync();
+                return (false, DescribeGoogleFailure(ex));
+            }
+            catch (RequestFailedException ex)
+            {
+                Debug.LogWarning("[UnityGameServicesBootstrap] Google request: " + ex.Message);
+                if (!auth.IsSignedIn)
+                    await EnsureGuestSessionForOnlineAsync();
+                return (false, DescribeGoogleFailure(ex));
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning("[UnityGameServicesBootstrap] Google: " + ex.Message);
+                if (!auth.IsSignedIn)
+                    await EnsureGuestSessionForOnlineAsync();
+                return (false, "Google sign-in failed. Try again.");
+            }
+
+            RememberGoogleAccount();
+            TitanOrbitFriendsCoordinator.ResetAfterAuthChange();
+            await TryFetchPlayerInfoForUiAsync(allowReplacePlayerInfo: true);
+            RememberGoogleAccount();
+            TitanOrbitEntitlements.LoadSessionForCurrentPlayer();
+            AuthStateChanged?.Invoke();
+            return (true, null);
+        }
+
+        static string DescribeGoogleFailure(Exception ex)
+        {
+            string msg = ex?.Message ?? "";
+            if (msg.IndexOf("token", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                msg.IndexOf("provider", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                msg.IndexOf("idp", StringComparison.OrdinalIgnoreCase) >= 0)
+                return "Google sign-in was rejected. Turn on the Google provider in Unity Authentication.";
+            return "Google sign-in failed. Try again.";
+        }
+
+        /// <summary>
         /// For players already in an anonymous UGS session, links Unity Player Accounts (keeps this player profile).
         /// Otherwise performs a full Unity sign-in.
         /// </summary>
@@ -827,6 +935,7 @@ namespace TitanOrbit.Services
             TitanOrbitEntitlements.LoadSessionForCurrentPlayer();
             AuthStateChanged?.Invoke();
             TitanOrbitAccountEntitlementSync.RefreshForCurrentPlayerAsync();
+            TitanOrbitAccountEntitlementSync.RefreshIfCheckoutReturn();
         }
 
         static void RegisterPlayerAccountHooksOnce()
@@ -842,6 +951,7 @@ namespace TitanOrbit.Services
         {
             TitanOrbitEntitlements.LoadSessionForCurrentPlayer();
             AuthStateChanged?.Invoke();
+            TitanOrbitAccountEntitlementSync.RefreshIfCheckoutReturn();
         }
 
         static void OnAuthenticationSignedOut()

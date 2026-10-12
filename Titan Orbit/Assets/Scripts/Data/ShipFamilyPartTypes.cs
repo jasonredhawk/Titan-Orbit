@@ -10,9 +10,10 @@ namespace TitanOrbit.Data
     /// engines own Move Speed + Energy Cap/Regen (power plant); thrusters own Acceleration + turn
     /// and set thrust energy drain. Runtime aggregation follows that split
     /// (<see cref="ShipPropulsionAggregation"/>). Only mounts with <c>enablePropulsionVfx</c> get jet
-    /// particles. Fin merges into <see cref="Tail"/>. Weapons split into rapid small-shot
-    /// <see cref="WeaponBullet"/> vs slow heavy <see cref="WeaponCannon"/> — offense plus
-    /// Energy Cap (extra storage); engines alone produce Regen.
+    /// particles. Fin merges into <see cref="Tail"/>. Every family weapon — gun, cannon,
+    /// missile, rocket, launcher — shares <see cref="WeaponBullet"/> (offense plus Energy
+    /// Cap). <see cref="WeaponCannon"/>, <see cref="WeaponMissile"/>, and <see cref="WeaponSniper"/>
+    /// stay MEGA combat classes and are not family Part Profiles. Engines alone produce Regen.
     /// Titan cargo / hold / storage parts use <see cref="Cargo"/>.
     /// Everything else maps to <see cref="Hull"/>.
     /// </para>
@@ -20,7 +21,9 @@ namespace TitanOrbit.Data
     public static class ShipFamilyPartTypes
     {
         public const string Cockpit = "Cockpit";
+        /// <summary>The only family weapon Part Profile. Gun, cannon, missile, and launcher names all use it.</summary>
         public const string WeaponBullet = "Weapon Bullet";
+        /// <summary>MEGA hitscan / cannon class. Family Normalize rewrites this label to <see cref="WeaponBullet"/>.</summary>
         public const string WeaponCannon = "Weapon Cannon";
         /// <summary>MEGA / heavy rockets — slow, high damage.</summary>
         public const string WeaponMissile = "Weapon Missile";
@@ -43,12 +46,11 @@ namespace TitanOrbit.Data
         public const string Unmapped = "Unmapped";
         public const string Ignore = "Ignore";
 
-        /// <summary>Ordered core profiles shown after Reset / Ensure (eight groups).</summary>
+        /// <summary>Ordered core profiles shown after Reset / Ensure (seven groups, one weapon).</summary>
         public static readonly string[] CoreProfiles =
         {
             Cockpit,
             WeaponBullet,
-            WeaponCannon,
             Wing,
             Engine,
             Thruster,
@@ -58,14 +60,13 @@ namespace TitanOrbit.Data
 
         /// <summary>
         /// Inspector popup for Name Mapping / suggestion Part Type:
-        /// Unmapped, eight core groups, Cargo, Ignore.
+        /// Unmapped, seven core groups, Cargo, Ignore.
         /// </summary>
         public static readonly string[] InspectorChoices =
         {
             Unmapped,
             Cockpit,
             WeaponBullet,
-            WeaponCannon,
             Wing,
             Cargo,
             Engine,
@@ -105,7 +106,7 @@ namespace TitanOrbit.Data
             return string.Equals(partType, Thruster, StringComparison.OrdinalIgnoreCase);
         }
 
-        /// <summary>True for either weapon subtype (and legacy Weapon).</summary>
+        /// <summary>True for the family weapon profile and MEGA cannon / missile / sniper labels.</summary>
         public static bool IsWeapon(string partType)
         {
             if (string.IsNullOrWhiteSpace(partType))
@@ -117,7 +118,7 @@ namespace TitanOrbit.Data
                 || string.Equals(partType, "Weapon", StringComparison.OrdinalIgnoreCase);
         }
 
-        /// <summary>True for the heavy Weapon Cannon Part Profile (and Missile aliases after Normalize).</summary>
+        /// <summary>True for the MEGA Weapon Cannon combat class (hitscan when <c>isLaser</c> is set).</summary>
         public static bool IsWeaponCannonProfile(string partType)
         {
             if (string.IsNullOrWhiteSpace(partType))
@@ -198,7 +199,7 @@ namespace TitanOrbit.Data
         /// Migrates legacy labels and resolves Engine vs Thruster from the part name when needed.
         /// </summary>
         /// <param name="partType">Current mapping / heuristic type.</param>
-        /// <param name="componentIdOrName">Discovered name used when splitting Engine/Thrust and weapons.</param>
+        /// <param name="componentIdOrName">Discovered name used when splitting Engine/Thrust.</param>
         public static string Normalize(string partType, string componentIdOrName = null)
         {
             if (string.IsNullOrWhiteSpace(partType))
@@ -209,6 +210,14 @@ namespace TitanOrbit.Data
                 return Unmapped;
             if (string.Equals(t, Ignore, StringComparison.OrdinalIgnoreCase))
                 return Ignore;
+
+            // Family weapons are one profile. MEGA combat still reads Weapon Cannon /
+            // Missile / Sniper without calling Normalize.
+            if (string.Equals(t, WeaponCannon, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(t, "WeaponCannon", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(t, "Weapon", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(t, "WeaponBullet", StringComparison.OrdinalIgnoreCase))
+                return WeaponBullet;
 
             // --- Already canonical ---
             for (int i = 0; i < CoreProfiles.Length; i++)
@@ -246,11 +255,6 @@ namespace TitanOrbit.Data
                 || string.Equals(t, "Spike", StringComparison.OrdinalIgnoreCase))
                 return Hull;
 
-            if (string.Equals(t, "Weapon", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(t, "WeaponBullet", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(t, "WeaponCannon", StringComparison.OrdinalIgnoreCase))
-                return ResolveWeaponSubtype(componentIdOrName);
-
             if (string.Equals(t, Cockpit, StringComparison.OrdinalIgnoreCase))
                 return Cockpit;
             if (string.Equals(t, Wing, StringComparison.OrdinalIgnoreCase))
@@ -275,20 +279,12 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Cannon / missile → heavy slow; gun / machinegun / generic weapon → rapid small.
+        /// Every family weapon name shares <see cref="WeaponBullet"/>.
+        /// Gun, cannon, missile, rocket, and launcher are the same Part Profile.
         /// </summary>
         public static string ResolveWeaponSubtype(string componentIdOrName)
         {
-            if (string.IsNullOrWhiteSpace(componentIdOrName))
-                return WeaponBullet;
-
-            string id = componentIdOrName.ToLowerInvariant();
-            if (id.IndexOf("cannon", StringComparison.Ordinal) >= 0
-                || id.IndexOf("missile", StringComparison.Ordinal) >= 0
-                || id.IndexOf("rocket", StringComparison.Ordinal) >= 0
-                || id.IndexOf("launcher", StringComparison.Ordinal) >= 0)
-                return WeaponCannon;
-
+            _ = componentIdOrName;
             return WeaponBullet;
         }
 
@@ -310,9 +306,8 @@ namespace TitanOrbit.Data
             if (id.IndexOf("cannon", StringComparison.Ordinal) >= 0
                 || id.IndexOf("missile", StringComparison.Ordinal) >= 0
                 || id.IndexOf("rocket", StringComparison.Ordinal) >= 0
-                || id.IndexOf("launcher", StringComparison.Ordinal) >= 0)
-                return WeaponCannon;
-            if (id.IndexOf("weapon", StringComparison.Ordinal) >= 0
+                || id.IndexOf("launcher", StringComparison.Ordinal) >= 0
+                || id.IndexOf("weapon", StringComparison.Ordinal) >= 0
                 || id.IndexOf("gun", StringComparison.Ordinal) >= 0
                 || id.IndexOf("barrel", StringComparison.Ordinal) >= 0
                 || id.IndexOf("turret", StringComparison.Ordinal) >= 0

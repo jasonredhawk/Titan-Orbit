@@ -612,7 +612,7 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// Copies ship ghost fields onto the minimap anchor for silhouette / cargo / badge rendering
-        /// (including <see cref="MinimapBlipAnchor.IsMega"/> so MEGAs get a troop-fill triangle).
+        /// (including <see cref="MinimapBlipAnchor.IsMega"/> so MEGAs get a solid team triangle).
         /// Controller reads anchors only — no ECS walks there.
         /// </summary>
         static void ApplyShipAnchorPresentation(
@@ -633,12 +633,12 @@ namespace TitanOrbit.UI
                                      em.IsComponentEnabled<GhostOwnerIsLocal>(entity)));
             anchor.BodySize = math.max(0.25f, lt.Scale);
 
-            // --- Chassis ladder (minimap scales the regular-ship X-in-square from ShipLevel; MEGA stays a triangle) ---
+            // --- Chassis ladder (minimap scales the regular-ship X from ShipLevel; MEGA stays a triangle) ---
             anchor.ShipLevel = ship.ShipLevel;
             anchor.BranchIndex = ship.BranchIndex;
             anchor.ShipFamilyConfigIndex = ship.ShipFamilyConfigIndex;
 
-            // --- MEGA hull flag (triangle vs X-in-square on the minimap) ---
+            // --- MEGA hull flag (solid triangle vs X on the minimap) ---
             // [NETCODE] MegaShipState is baked on StarshipGhost and ghosted, so late joiners
             // already see IsMega. Per-entity HasComponent matches ShipMatchStats below —
             // not a map-body gather, so this stays quarantine-safe.

@@ -87,6 +87,8 @@ namespace TitanOrbit.ECS.Authoring
                 {
                     EngineThrust = authoring.EngineThrust,
                     MaxSpeed = authoring.MaxSpeed,
+                    // Bake matches MaxSpeed until ShipStatApplyLogic writes the pre-ability cruise.
+                    BaseMaxSpeed = authoring.MaxSpeed,
                     RotationSpeed = authoring.RotationSpeed,
                     BrakeDeceleration = authoring.BrakeDeceleration,
                     Mass = authoring.Mass,

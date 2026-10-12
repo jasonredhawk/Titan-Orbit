@@ -65,7 +65,7 @@ namespace TitanOrbit.UI
             BulletBankStatModifiers m = profile.statModifiers;
             float fp = SafeMul(m.firePowerMultiplier);
             float spd = SafeMul(m.bulletSpeedMultiplier);
-            float rate = SafeMul(m.fireRateMultiplier);
+            float rate = BulletBankCombatLogic.SafeMul(m.fireRateMultiplier);
             float ram = SafeMul(m.rammingPowerMultiplier);
             float range = SafeMul(m.bulletRangeMultiplier);
             if (Mathf.Approximately(fp, 1f)
@@ -189,7 +189,7 @@ namespace TitanOrbit.UI
         {
             float fp = SafeMul(m.firePowerMultiplier);
             float spd = SafeMul(m.bulletSpeedMultiplier);
-            float rate = SafeMul(m.fireRateMultiplier);
+            float rate = BulletBankCombatLogic.SafeMul(m.fireRateMultiplier);
             float range = SafeMul(m.bulletRangeMultiplier);
             float ram = SafeMul(m.rammingPowerMultiplier);
 
@@ -411,6 +411,8 @@ namespace TitanOrbit.UI
         /// Glance line for the left dock: type name plus the specials that type actually does
         /// (stun, burn, pull, bonus dmg, …) at this ship level.
         /// Each special includes its live Extra-Level number so the rail is not just a label.
+        /// The Orbit Menu left plate uses <see cref="FormatDockWeaponDescription"/> instead,
+        /// which spells the same numbers out as short sentences.
         /// </summary>
         /// <param name="family">Planet / chassis family. May be null when
         /// <paramref name="planetOrHullBankIndex"/> is already resolved.</param>
@@ -428,6 +430,48 @@ namespace TitanOrbit.UI
 
             string specials = FormatFamilyWeaponSpecials(family, shipLevel, planetOrHullBankIndex);
             return string.IsNullOrEmpty(specials) ? typeName : typeName + "\n" + specials;
+        }
+
+        /// <summary>
+        /// Orbit Menu left-panel body for one bullet type: the name, then one sentence
+        /// per ability at this ship level, then the combat modifiers that are not 1×.
+        /// Presentation only. The ship card above this plate already names the hull,
+        /// so this copy does not add a hull tag.
+        /// </summary>
+        /// <param name="bankIndex">Resolved bullet-bank row (Ring, Fireballs, …).</param>
+        /// <param name="shipLevel">Hull level used for Extra-Level scaling. Fire Power
+        /// purchases are not included — this is a store / dock preview.</param>
+        /// <returns>Rich-text block, or empty when that bank has no display name.</returns>
+        public static string FormatDockWeaponDescription(int bankIndex, int shipLevel)
+        {
+            // --- Name ---
+            // Same category string the B-key HUD uses, so "Ring" here matches the chip.
+            string typeName = FormatFamilyTypeName(null, bankIndex);
+            if (string.IsNullOrEmpty(typeName))
+                return string.Empty;
+
+            var sb = new StringBuilder(192);
+            sb.Append("<b><color=#E8F4FF>").Append(typeName).Append("</color></b>");
+
+            // --- What the shot does ---
+            // Sentences carry the live Extra-Level numbers (pull radius, burn DPS, …).
+            string abilities = FormatBankAbilitySentences(bankIndex, shipLevel);
+            if (!string.IsNullOrEmpty(abilities))
+            {
+                sb.Append('\n');
+                sb.Append(abilities);
+            }
+
+            // Combat muls only. Vs-target bonuses are already a sentence above,
+            // so the stat rail does not repeat "VS AST +20%".
+            string stats = FormatFamilyWeaponStatLine(null, shipLevel, bankIndex, includeVsTargets: false);
+            if (!string.IsNullOrEmpty(stats))
+            {
+                sb.Append('\n');
+                sb.Append(stats);
+            }
+
+            return sb.ToString();
         }
 
         /// <summary>
@@ -487,10 +531,13 @@ namespace TitanOrbit.UI
         /// One rail of ≠1 bank combat muls and vs-target damage, e.g.
         /// <c>FP +15%  SPD −10%  VS SHIPS +20%</c>. Empty when everything is 1×.
         /// </summary>
+        /// <param name="includeVsTargets">False on the Orbit Menu dock, which already
+        /// describes those bonuses in sentences. True on the ship-tree identity rail.</param>
         public static string FormatFamilyWeaponStatLine(
             ShipFamilyDefinition family,
             int shipLevel,
-            int planetOrHullBankIndex = -1)
+            int planetOrHullBankIndex = -1,
+            bool includeVsTargets = true)
         {
             if (family == null && planetOrHullBankIndex < 0)
                 return string.Empty;
@@ -505,14 +552,85 @@ namespace TitanOrbit.UI
             BulletBankStatModifiers m = profile.statModifiers;
             AppendStatToken(sb, "FP", m.firePowerMultiplier);
             AppendStatToken(sb, "SPD", m.bulletSpeedMultiplier);
-            AppendStatToken(sb, "RATE", m.fireRateMultiplier);
+            AppendStatToken(sb, "RATE", BulletBankCombatLogic.SafeMul(m.fireRateMultiplier));
             AppendStatToken(sb, "RANGE", m.bulletRangeMultiplier);
             AppendStatToken(sb, "RAM", m.rammingPowerMultiplier);
-            AppendStatToken(sb, "VS AST", profile.GetDamageMultiplier(BulletBankDamageTarget.Asteroid, extras));
-            AppendStatToken(sb, "VS SHIPS", profile.GetDamageMultiplier(BulletBankDamageTarget.ShipOrDrone, extras));
-            AppendStatToken(sb, "VS MOONS", profile.GetDamageMultiplier(BulletBankDamageTarget.GemMoon, extras));
-            AppendStatToken(sb, "VS GEMS", profile.GetDamageMultiplier(BulletBankDamageTarget.Gem, extras));
+            // Identity rail keeps the compact VS tokens. The Orbit Menu dock spells
+            // those same multipliers out as sentences, so it passes false here.
+            if (includeVsTargets)
+            {
+                AppendStatToken(sb, "VS AST", profile.GetDamageMultiplier(BulletBankDamageTarget.Asteroid, extras));
+                AppendStatToken(sb, "VS SHIPS", profile.GetDamageMultiplier(BulletBankDamageTarget.ShipOrDrone, extras));
+                AppendStatToken(sb, "VS MOONS", profile.GetDamageMultiplier(BulletBankDamageTarget.GemMoon, extras));
+                AppendStatToken(sb, "VS GEMS", profile.GetDamageMultiplier(BulletBankDamageTarget.Gem, extras));
+            }
+
             return sb.ToString();
+        }
+
+        /// <summary>
+        /// One sentence per authored ability on this bank, at the ship's Extra Level.
+        /// Empty when the bank has no ability rows. Joined with newlines so the left
+        /// panel can wrap each behavior on its own line.
+        /// </summary>
+        static string FormatBankAbilitySentences(int bankIndex, int shipLevel)
+        {
+            var bank = BulletBankCombatLogic.Bank;
+            if (bank == null || !bank.TryGetProfile(bankIndex, out BulletBankProfile profile) || profile == null
+                || profile.abilities == null || profile.abilities.Count == 0)
+                return string.Empty;
+
+            // Store / dock preview: hull level only. Bought Fire Power is not in this plate.
+            int extras = BulletBankCombatLogic.CountFirePowerExtraLevels(Mathf.Max(1, shipLevel), 0);
+            var sb = new StringBuilder(160);
+            for (int i = 0; i < profile.abilities.Count; i++)
+            {
+                BulletBankAbility authored = profile.abilities[i];
+                if (authored == null)
+                    continue;
+                string sentence = FormatAbilitySentence(authored, extras);
+                if (string.IsNullOrEmpty(sentence))
+                    continue;
+                if (sb.Length > 0)
+                    sb.Append('\n');
+                sb.Append(sentence);
+            }
+
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// Player-facing sentence for one ability at the current Extra Level.
+        /// Numbers are the same resolved values combat uses. The ScriptableObject
+        /// row is not mutated — <see cref="BulletBankAbility.Resolved"/> returns a copy.
+        /// </summary>
+        static string FormatAbilitySentence(BulletBankAbility authored, int extras)
+        {
+            BulletBankAbility now = authored.Resolved(extras);
+            switch (authored.type)
+            {
+                case BulletBankAbilityType.ElectricShockDisable:
+                    return "Stuns the target for " + F(now.duration) + "s.";
+                case BulletBankAbilityType.BurnOverTime:
+                    return "Burns for " + F(now.magnitude) + "/s over " + F(now.duration) + "s.";
+                case BulletBankAbilityType.HealFriendly:
+                    return "Heals friendly ships for " + F(now.magnitude) + " per hit.";
+                case BulletBankAbilityType.ConcussivePush:
+                    return "Knocks targets back. Force " + F(now.magnitude) + ", blast " + F(now.radius) + ".";
+                case BulletBankAbilityType.GravityPull:
+                    return "Pulls nearby targets in. Radius " + F(now.radius)
+                        + ", force " + F(now.magnitude) + ", lasts " + F(now.duration) + "s.";
+                case BulletBankAbilityType.DamageMultiplier:
+                case BulletBankAbilityType.DamageMultiplierVsAsteroid:
+                case BulletBankAbilityType.DamageMultiplierVsShip:
+                case BulletBankAbilityType.DamageMultiplierVsGemMoon:
+                case BulletBankAbilityType.DamageMultiplierVsGem:
+                    return "Deals ×" + F(now.magnitude) + " damage vs " + DamageTargetLabel(authored) + ".";
+                case BulletBankAbilityType.StretchLengthInFlight:
+                    return "The shot stretches from " + F(now.radius) + " to " + F(now.magnitude) + " in flight.";
+                default:
+                    return DisplayNameFormatting.SplitCamelCase(authored.type.ToString()) + ".";
+            }
         }
 
         static void AppendStatToken(StringBuilder sb, string label, float mul)

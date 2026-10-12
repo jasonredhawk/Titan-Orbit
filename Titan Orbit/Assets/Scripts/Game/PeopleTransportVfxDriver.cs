@@ -430,7 +430,6 @@ namespace TitanOrbit.Game
                         f.SeatId,
                         f.Amount,
                         f.TargetShipNetworkId,
-                        frame.Velocity,
                         clock,
                         mapW,
                         mapH,

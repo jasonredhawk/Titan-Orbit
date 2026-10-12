@@ -91,7 +91,7 @@ namespace TitanOrbit.ECS
             // --- Tail: RotationSpeed → turnSpeed ---
             public float TailTurn;
 
-            // --- Weapon Bullet/Cannon: Offense + Energy Cap (battery; no Regen grow) ---
+            // --- Weapon: Offense + Energy Cap (battery; no Regen grow) ---
             public float WeaponFirePower;
             public float WeaponBulletSpeed;
             public float WeaponEnergyCap;
@@ -139,8 +139,8 @@ namespace TitanOrbit.ECS
             ShipComponentAbilityStats thruster = EvaluateOrDefault(profileSet, ShipFamilyPartTypes.Thruster);
             ShipComponentAbilityStats tail = EvaluateOrDefault(profileSet, ShipFamilyPartTypes.Tail);
             ShipComponentAbilityStats hull = EvaluateOrDefault(profileSet, ShipFamilyPartTypes.Hull);
+            // One family weapon profile. Cannon / missile names share these rates.
             ShipComponentAbilityStats weaponBullet = EvaluateOrDefault(profileSet, ShipFamilyPartTypes.WeaponBullet);
-            ShipComponentAbilityStats weaponCannon = EvaluateOrDefault(profileSet, ShipFamilyPartTypes.WeaponCannon);
 
             // Cockpit Offense uses rammingPower (FirePower is the bottom-bar stand-in).
             rates.CockpitOffense = PerLevelFraction(cockpit.rammingPower, cockpit.rammingPowerPerExtraLevel);
@@ -179,16 +179,10 @@ namespace TitanOrbit.ECS
 
             rates.TailTurn = PerLevelFraction(tail.turnSpeed, tail.turnSpeedPerExtraLevel);
 
-            rates.WeaponFirePower = AverageFraction(
-                PerLevelFraction(weaponBullet.firePower, weaponBullet.firePowerPerExtraLevel),
-                PerLevelFraction(weaponCannon.firePower, weaponCannon.firePowerPerExtraLevel));
-            rates.WeaponBulletSpeed = AverageFraction(
-                PerLevelFraction(weaponBullet.bulletSpeed, weaponBullet.bulletSpeedPerExtraLevel),
-                PerLevelFraction(weaponCannon.bulletSpeed, weaponCannon.bulletSpeedPerExtraLevel));
+            rates.WeaponFirePower = PerLevelFraction(weaponBullet.firePower, weaponBullet.firePowerPerExtraLevel);
+            rates.WeaponBulletSpeed = PerLevelFraction(weaponBullet.bulletSpeed, weaponBullet.bulletSpeedPerExtraLevel);
             // [TITAN-ORBIT] Weapons add Cap storage; EnergyCapacity upgrades grow gun meshes slightly.
-            rates.WeaponEnergyCap = AverageFraction(
-                PerLevelFraction(weaponBullet.energyCap, weaponBullet.energyCapPerExtraLevel),
-                PerLevelFraction(weaponCannon.energyCap, weaponCannon.energyCapPerExtraLevel));
+            rates.WeaponEnergyCap = PerLevelFraction(weaponBullet.energyCap, weaponBullet.energyCapPerExtraLevel);
 
             rates.HullHealth = PerLevelFraction(hull.healthCap, hull.healthCapPerExtraLevel);
             rates.HullHealthRegen = PerLevelFraction(hull.healthRegen, hull.healthRegenPerExtraLevel);
@@ -677,7 +671,7 @@ namespace TitanOrbit.ECS
                 attrs.GemCapacity * rates.WingGems,
                 attrs.PeopleCapacity * rates.WingPeople);
 
-            // --- Weapon Bullet/Cannon: Offense + Energy Cap (3 drivers) ---
+            // --- Weapon: Offense + Energy Cap (3 drivers) ---
             weaponScale = SharedAbilityScale(
                 3,
                 globalMul,

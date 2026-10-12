@@ -133,6 +133,11 @@ namespace TitanOrbit.Game
             // B-key only swaps guns. Restoring every stashed engine/cockpit and
             // rebinding jets was recapturing their already-grown scale each cycle.
             bool remapNonWeapons = equipmentChanged;
+            // Jets sample the nozzle once. Rebuilding them on a weapon purchase
+            // re-samples while BankPivot is still pitched from landing and the
+            // flame sticks on a corner of the thruster. Only rebuild when the
+            // thruster / engine mounts themselves were replaced.
+            int propulsionSig = PropulsionMountSignature();
             bool changed = ShipComponentVisualSwapLogic.ApplyFromShip(
                 transform,
                 em,
@@ -143,13 +148,14 @@ namespace TitanOrbit.Game
                 _stash,
                 stripColliders: true,
                 remapNonWeapons);
+            bool propulsionMountsChanged = propulsionSig != PropulsionMountSignature();
 
             // Discard restores the host mesh (stash / host prefab) then rebuilds
             // jets so leftover purchased flames do not stay on the original mount.
             if (!changed && !force && !equipmentChanged)
                 return;
 
-            RefreshDependents(weaponOnly: !remapNonWeapons);
+            RefreshDependents(remapNonWeapons, propulsionMountsChanged);
 
             // Part remaps replace sharedMaterials. Recapture the team base, then
             // re-apply paint. The owner uses local prefs so a late ghost does not
@@ -165,10 +171,10 @@ namespace TitanOrbit.Game
                 _team);
         }
 
-        void RefreshDependents(bool weaponOnly)
+        void RefreshDependents(bool remapNonWeapons, bool propulsionMountsChanged)
         {
             ShipWeaponMountCollector.EnsureWeaponMountsOnHierarchy(transform, _muzzleOffset);
-            if (!weaponOnly)
+            if (remapNonWeapons)
                 ShipWingTractorBeamCollector.EnsureWingTractorBeamsOnHierarchy(transform);
 
             if (_scaleApplier == null)
@@ -176,7 +182,7 @@ namespace TitanOrbit.Game
             if (_scaleApplier != null)
                 _scaleApplier.ForceRebuildAfterHierarchyChange();
 
-            if (!weaponOnly)
+            if (propulsionMountsChanged)
             {
                 if (_propulsion == null)
                     _propulsion = GetComponent<ShipPropulsionVisualApplier>();
@@ -186,6 +192,42 @@ namespace TitanOrbit.Game
 
             if (_networkId > 0)
                 ShipWeaponProxyRegistry.Register(_networkId, transform);
+        }
+
+        /// <summary>
+        /// Instance ids of the mounts that actually carry jet flames.
+        /// Weapon purchases change the equipment key without touching these,
+        /// so a matching signature means the live jets can stay put.
+        /// </summary>
+        int PropulsionMountSignature()
+        {
+            var stats = ChassisComponentStats.FromTransform(transform, _familyPrefix, _hostFamily);
+            unchecked
+            {
+                int hash = 17;
+                var jets = stats.thrusterVfxTransforms;
+                if (jets != null && jets.Count > 0)
+                {
+                    for (int i = 0; i < jets.Count; i++)
+                    {
+                        Transform t = jets[i];
+                        hash = hash * 31 + (t != null ? t.GetInstanceID() : 0);
+                    }
+
+                    return hash;
+                }
+
+                if (stats.engineTransforms == null)
+                    return hash;
+
+                for (int i = 0; i < stats.engineTransforms.Count; i++)
+                {
+                    Transform t = stats.engineTransforms[i];
+                    hash = hash * 31 + (t != null ? t.GetInstanceID() : 0);
+                }
+
+                return hash;
+            }
         }
 
         void EnsureStash()

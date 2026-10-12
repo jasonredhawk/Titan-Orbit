@@ -40,9 +40,6 @@ namespace TitanOrbit.Game
         /// <summary>Vertical share of buzz — cosmetic only (never fed to combat).</summary>
         const float BuzzVerticalFraction = 0.35f;
 
-        /// <summary>Facing turn speed for fighters / miners when idle (no target).</summary>
-        const float FighterFacingTurnSpeed = 10f;
-
         /// <summary>Facing turn speed for shields.</summary>
         const float ShieldFacingTurnSpeed = 14f;
 
@@ -386,8 +383,11 @@ namespace TitanOrbit.Game
                 }
 
                 ReadCoveringPresentation(em, shipEntity, out float coverEx, out float coverEz, out float coverCx, out float coverCz);
+                Vector3 formationHeading = Vector3.zero;
+                if (em.HasComponent<ShipKinematics>(shipEntity))
+                    formationHeading = (Vector3)em.GetComponentData<ShipKinematics>(shipEntity).FormationHeading;
                 UpdateGroupOrbit(
-                    group, buf, shipPos, shipRot, shipScale,
+                    group, buf, shipPos, shipRot, formationHeading, shipScale,
                     coverEx, coverEz, coverCx, coverCz,
                     shipState.Team, netId, timeSeconds, dt);
             }
@@ -779,6 +779,7 @@ namespace TitanOrbit.Game
             DynamicBuffer<EquippedEquipmentElement> equipment,
             Vector3 shipPos,
             Quaternion shipRot,
+            Vector3 formationHeading,
             float shipScale,
             float coveringExtentX,
             float coveringExtentZ,
@@ -795,7 +796,8 @@ namespace TitanOrbit.Game
             group.Hub.position = shipPos;
             group.Hub.rotation = Quaternion.identity;
 
-            DroneSwarmPositioning.GetShipBasis(shipPos, shipRot, out Vector3 basisPos, out Vector3 forward, out Vector3 right);
+            DroneSwarmPositioning.GetFormationBasis(
+                shipPos, shipRot, formationHeading, out Vector3 basisPos, out Vector3 forward, out Vector3 right);
             float hullRadius = BodyCollisionMath.GetShipHullRadiusWorld(shipScale);
             float orbitRadius = DroneSwarmPositioning.GetDroneOrbitRadiusFromHull(hullRadius);
             float shieldOrbitRadius = DroneSwarmPositioning.GetShieldOrbitRadiusFromHull(hullRadius);
@@ -1227,22 +1229,18 @@ namespace TitanOrbit.Game
                 hasTarget = lookDir.sqrMagnitude > 0.0001f;
             }
 
-            if (lookDir.sqrMagnitude < 0.01f)
-                return;
-
-            Quaternion targetRot = Quaternion.LookRotation(lookDir.normalized, Vector3.up);
             if (hasTarget)
             {
+                lookDir.y = 0f;
+                if (lookDir.sqrMagnitude < 0.01f)
+                    return;
                 // Snap toward fire direction so muzzle and mesh agree when shooting.
-                v.Instance.transform.rotation = targetRot;
+                v.Instance.transform.rotation = Quaternion.LookRotation(lookDir.normalized, Vector3.up);
+                return;
             }
-            else
-            {
-                v.Instance.transform.rotation = Quaternion.Slerp(
-                    v.Instance.transform.rotation,
-                    targetRot,
-                    Mathf.Clamp01(FighterFacingTurnSpeed * dt));
-            }
+
+            v.Instance.transform.rotation = DroneSwarmPositioning.SlerpIdleFacing(
+                v.Instance.transform.rotation, shipForward, dt);
         }
 
         static bool IsLiveMiningAsteroid(EntityManager em, Entity e)

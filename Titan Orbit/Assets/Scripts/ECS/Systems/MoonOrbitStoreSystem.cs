@@ -1406,11 +1406,15 @@ namespace TitanOrbit.ECS
             byte stampedBank = 0;
             if (!string.IsNullOrWhiteSpace(componentId))
             {
-                // [TITAN-ORBIT] Ghost the gun this purchase adds to B-key. Resolving it
-                // later from a planet query disagreed between client and server, so the
-                // toggle predicted for a moment and the snapshot put the hull gun back.
-                int bank = BulletBankOwnership.ResolveBankForPurchasedComponent(
-                    em, shipEntity, componentId);
+                // [TITAN-ORBIT] Ghost the gun this purchase adds to B-key.
+                // Inherit weapons take the moon you are buying at (Ring stays Ring).
+                // Walking "first planet of this family" stamped a sibling world's
+                // Fireballs onto a Ring dock — two planets can share a family and
+                // roll different guns. A unique authored bank still wins inside
+                // ResolveBankIndexForComponent.
+                ResolveDroneSource(em, shipEntity, out _, out byte dockBank);
+                int bank = BulletBankProfileUtility.ResolveBankIndexForComponent(
+                    componentId, null, dockBank);
                 stampedBank = BulletBankOwnership.ToStampedBulletBankPlusOne(bank);
             }
 

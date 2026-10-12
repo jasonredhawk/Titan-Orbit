@@ -149,8 +149,10 @@ namespace TitanOrbit.Game
             public bool[] authoredColEnabled;
             public Gradient[] authoredColGradients;
             /// <summary>
-            /// Rear nozzle in mount-local space (mesh AABB, not world AABB).
-            /// World <c>Renderer.bounds</c> is axis-aligned, so ClosestPoint jumped every yaw.
+            /// Rear nozzle in mount-local space: center of the mesh face that points aft.
+            /// World <c>Renderer.bounds</c> is axis-aligned, so a world ClosestPoint jumped every yaw.
+            /// A mount-local ClosestPoint still snaps to a corner once BankPivot pitch/roll
+            /// tilts ship-aft off the nozzle axis (planet landing, then a weapon purchase).
             /// </summary>
             public Vector3 mountLocalRear;
             public bool hasMountLocalRear;
@@ -1894,6 +1896,8 @@ namespace TitanOrbit.Game
         /// <summary>
         /// Rear of the mount mesh in mount-local space, along ship aft at bind time.
         /// Uses renderer local AABB corners so yaw does not pick a new world-AABB corner.
+        /// BankPivot roll/pitch is stripped first — sampling while the hull is leaned
+        /// (docked on a planet, or turning) must not bake a corner of the box as the nozzle.
         /// </summary>
         static bool TryComputeMountLocalRear(JetBind jet, Vector3 worldAft, out Vector3 localRear)
         {
@@ -1907,14 +1911,65 @@ namespace TitanOrbit.Game
             if (!TryEncapsulateMountLocalBounds(jet.mount, jet.mountRenderers, out Bounds localBounds))
                 return false;
 
-            Vector3 localAft = jet.mount.InverseTransformDirection(worldAft);
+            Vector3 localAft = UnbankedMountLocalDirection(jet.mount, worldAft);
             if (localAft.sqrMagnitude < 0.0001f)
                 localAft = Vector3.back;
-            localAft.Normalize();
+            else
+                localAft.Normalize();
 
-            localRear = localBounds.ClosestPoint(
-                localBounds.center + localAft * (localBounds.size.magnitude + 8f));
+            // Face center, not Bounds.ClosestPoint. ClosestPoint on a point far outside
+            // the box returns a corner whenever aft is even slightly off an axis.
+            localRear = RearFaceCenter(localBounds, localAft);
             return true;
+        }
+
+        /// <summary>
+        /// Ship-aft in the thruster's local axes as if <c>BankPivot</c> rotation were identity.
+        /// The pivot holds roll and pitch; the proxy root holds yaw. Leaving that lean in
+        /// the direction sends the nozzle sample to the upper corner of the mesh.
+        /// </summary>
+        static Vector3 UnbankedMountLocalDirection(Transform mount, Vector3 worldDirection)
+        {
+            if (mount == null)
+                return Vector3.back;
+
+            Quaternion mountWorld = mount.rotation;
+            Transform walk = mount.parent;
+            while (walk != null)
+            {
+                if (walk.name == "BankPivot")
+                {
+                    Quaternion localFromBank = Quaternion.Inverse(walk.rotation) * mount.rotation;
+                    Transform yawRoot = walk.parent;
+                    Quaternion yaw = yawRoot != null ? yawRoot.rotation : Quaternion.identity;
+                    mountWorld = yaw * localFromBank;
+                    break;
+                }
+
+                walk = walk.parent;
+            }
+
+            return Quaternion.Inverse(mountWorld) * worldDirection;
+        }
+
+        /// <summary>
+        /// Center of the AABB face whose normal is closest to <paramref name="localAft"/>.
+        /// Stays on the nozzle centerline when aft is not perfectly axis-aligned.
+        /// </summary>
+        static Vector3 RearFaceCenter(Bounds bounds, Vector3 localAft)
+        {
+            Vector3 center = bounds.center;
+            Vector3 ext = bounds.extents;
+            float ax = Mathf.Abs(localAft.x);
+            float ay = Mathf.Abs(localAft.y);
+            float az = Mathf.Abs(localAft.z);
+            if (ay >= ax && ay >= az)
+                center.y += localAft.y < 0f ? -ext.y : ext.y;
+            else if (ax >= az)
+                center.x += localAft.x < 0f ? -ext.x : ext.x;
+            else
+                center.z += localAft.z < 0f ? -ext.z : ext.z;
+            return center;
         }
 
         static bool TryEncapsulateMountLocalBounds(Transform mount, Renderer[] renderers, out Bounds localBounds)

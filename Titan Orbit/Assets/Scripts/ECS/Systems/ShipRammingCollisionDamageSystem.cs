@@ -16,11 +16,13 @@ namespace TitanOrbit.ECS
     /// PhysX collision-event pairs after movers wrap onto the canonical chart.
     /// No proximity skin — flying past an asteroid does not chip hull.
     /// <para>
-    /// [TITAN-ORBIT] The RAM chip is grind HP/s on an empty hull; mass stays in both products:
-    /// grindDps = rating × (totalMass / this hull's ComponentSize);
-    /// impact = grindDps × (1 + closingSpeed / RamClosingSpeedForDouble).
-    /// Empty high-level hulls stay at 1× the RAM chip — they do not take 3–7× self-chip
-    /// just because they are bigger than the starter MassReference.
+    /// [TITAN-ORBIT] The RAM chip is grind HP/s. Mass does not scale HP:
+    /// grindDps = rating;
+    /// impact = rating × (1 + currentSpeed / stockCruise).
+    /// Current speed is the ship's planar speed before the physics solve, so OVERDRIVE
+    /// counts. Stock cruise is max speed before Move Speed ability purchases, after the
+    /// same mass tax and territory. At stock cruise the hit is 2× the chip. Going faster
+    /// than that — upgrades or OVERDRIVE — raises the ram. A solver shove is not used.
     /// Grind pulses while in contact and thrusting or moving — nose into the rock is not required.
     /// Same helpers as the HUD (<see cref="ShipComponentRammingSuggestions"/>).
     /// Bounce / PhysX still use <see cref="ShipMassLogic.ComputeRammingMass"/> elsewhere.
@@ -167,10 +169,10 @@ namespace TitanOrbit.ECS
                 var input = state.EntityManager.GetComponentData<ShipInput>(shipEntity);
                 float3 shipPos = state.EntityManager.GetComponentData<LocalTransform>(shipEntity).Position;
 
-                // --- Mobility totalMass + after-tax accel (same tax as ShipPhysicsDriveLogic) ---
+                // --- Mobility totalMass + after-tax cruise (mass is bounce / gem spray only) ---
                 ResolveMobilityRamInputs(
-                    in ship, in motor, out float totalMass, out float taxedAccel, out float hullMassRef,
-                    out float taxedCruise);
+                    in ship, in motor, out float totalMass, out float taxedAccel,
+                    out _, out float taxedBaseCruise);
 
                 // [TITAN-ORBIT] Rating from ShipFamilyDefinition component rammingPower (summed +
                 // Extra Level in ShipStatApplyLogic → motor.RammingPower). Fire Power purchases
@@ -185,17 +187,15 @@ namespace TitanOrbit.ECS
                 familyRam *= BulletBankCombatLogic.GetRammingPowerMultiplier(ramBankIndex);
                 float ramRating = ShipComponentRammingSuggestions.ComputeDamageRatingFromFamilyPower(familyRam);
 
-                // Closing speed: measured approach preferred; impulse only as a clamped hint.
+                // Approach speed only decides whether this contact is a ram. The HP
+                // number uses the ship's own speed before the solve (OVERDRIVE included).
+                // A PhysX separation spike is not that speed.
                 float closing = ShipComponentRammingSuggestions.ResolveClosingSpeedForDamage(
                     pending.ClosingSpeed,
                     pending.EstimatedImpulse,
                     totalMass);
-
-                // Solver separation is not flight speed. A 25 u/s depenetration used to
-                // score grindDps × (1 + 25/10) — several times the stat-sheet cruise hit.
-                // LastAppliedMaxSpeed is often 0 on this tick, which skipped the old cap.
-                if (!otherIsShip)
-                    closing = CapAsteroidClosingToCruise(ref state, shipEntity, taxedCruise, closing);
+                float currentSpeed = ReadCurrentSpeed(ref state, shipEntity);
+                float baseCruise = ScaleStockCruise(ref state, shipEntity, taxedBaseCruise);
 
                 long key = PackKey(shipEntity, other);
                 hitThisTick.Add(key);
@@ -285,7 +285,7 @@ namespace TitanOrbit.ECS
                     continue;
                 }
 
-                // --- Impact on contact enter: grindDps × (1 + closing / ram-double speed) ---
+                // --- Impact on contact enter: chip × (1 + current speed / stock cruise) ---
                 // Rearm hold keeps the contact after a short separation so the next PhysX
                 // event is not a brand-new pair. impactedThisTick covers extra manifolds
                 // in this same step, before that contact write is visible.
@@ -297,16 +297,16 @@ namespace TitanOrbit.ECS
                     if (!otherIsShip)
                     {
                         float asteroidDamage = ShipComponentRammingSuggestions.ComputeImpactDamage(
-                            ramRating, totalMass, closing, hullMassRef);
+                            ramRating, currentSpeed, baseCruise);
                         // Self-chip is the ram formula, but never more than the rock still has.
                         // A size-1 asteroid must not punch the hull for a full cruise ram.
                         float selfDamage = ShipComponentRammingSuggestions.CapCollisionSelfDamageToAsteroidHealth(
                             ShipComponentRammingSuggestions.ComputeImpactSelfDamage(
-                                ramRating, totalMass, closing, hullMassRef),
+                                ramRating, currentSpeed, baseCruise),
                             ReadAsteroidHealth(ref state, other));
 
                         // Gem VFX intensity only — not part of the damage product.
-                        float impactForceN = (totalMass * closing) / math.max(1e-4f, fixedDt);
+                        float impactForceN = (totalMass * currentSpeed) / math.max(1e-4f, fixedDt);
                         float intensity = ShipComponentRammingSuggestions.ComputeRamImpactGemExpulsionIntensity(
                             impactForceN, selfDamage);
 
@@ -335,7 +335,7 @@ namespace TitanOrbit.ECS
                     {
                         // Enemy ship: reciprocal hull damage from each ship's ramming power.
                         ApplyShipVsShipImpact(
-                            ref state, shipEntity, other, closing, fixedDt,
+                            ref state, shipEntity, other, fixedDt,
                             gemPrefab, spawnServerTime, ecb, now);
                         contact.LastImpactTime = now;
                         ship = state.EntityManager.GetComponentData<ShipState>(shipEntity);
@@ -359,7 +359,7 @@ namespace TitanOrbit.ECS
                 {
                     TryPulseAsteroidGrind(
                         ref state, ref ship, shipEntity, other, normalShipFromOther,
-                        ramRating, totalMass, hullMassRef, taxedAccel,
+                        ramRating, taxedAccel,
                         shipPos, gemPrefab, spawnServerTime, ecb, now, ref contact);
                     state.EntityManager.SetComponentData(shipEntity, ship);
                 }
@@ -502,7 +502,6 @@ namespace TitanOrbit.ECS
             ref SystemState state,
             Entity shipA,
             Entity shipB,
-            float closing,
             float fixedDt,
             Entity gemPrefab,
             float spawnServerTime,
@@ -510,9 +509,9 @@ namespace TitanOrbit.ECS
             double now)
         {
             ApplyOneShipOffense(
-                ref state, shipA, shipB, closing, fixedDt, gemPrefab, spawnServerTime, ecb, now);
+                ref state, shipA, shipB, fixedDt, gemPrefab, spawnServerTime, ecb, now);
             ApplyOneShipOffense(
-                ref state, shipB, shipA, closing, fixedDt, gemPrefab, spawnServerTime, ecb, now);
+                ref state, shipB, shipA, fixedDt, gemPrefab, spawnServerTime, ecb, now);
         }
 
         /// <summary>Offender's ramming stats deal hull damage to the victim.</summary>
@@ -520,7 +519,6 @@ namespace TitanOrbit.ECS
             ref SystemState state,
             Entity offender,
             Entity victim,
-            float closing,
             float fixedDt,
             Entity gemPrefab,
             float spawnServerTime,
@@ -541,7 +539,7 @@ namespace TitanOrbit.ECS
             var vicShip = state.EntityManager.GetComponentData<ShipState>(victim);
 
             ResolveMobilityRamInputs(
-                in offShip, in offMotor, out float totalMass, out _, out float hullMassRef, out _);
+                in offShip, in offMotor, out float totalMass, out _, out _, out float taxedBaseCruise);
             float ramPower = offMotor.RammingPower;
             int ramBankIndex = 0;
             if (state.EntityManager.HasComponent<ShipLoadoutState>(offender))
@@ -550,10 +548,14 @@ namespace TitanOrbit.ECS
             ramPower *= BulletBankCombatLogic.GetRammingPowerMultiplier(ramBankIndex);
             float ramRating = ShipComponentRammingSuggestions.ComputeDamageRatingFromFamilyPower(ramPower);
 
+            // Each offender's hit uses their own speed before the solve, not the shared
+            // approach number and not a cruise cap. OVERDRIVE on the offender raises their ram.
+            float currentSpeed = ReadCurrentSpeed(ref state, offender);
+            float baseCruise = ScaleStockCruise(ref state, offender, taxedBaseCruise);
             float damage = ShipComponentRammingSuggestions.ComputeImpactDamage(
-                ramRating, totalMass, closing, hullMassRef);
+                ramRating, currentSpeed, baseCruise);
 
-            float impactForceN = (totalMass * closing) / math.max(1e-4f, fixedDt);
+            float impactForceN = (totalMass * currentSpeed) / math.max(1e-4f, fixedDt);
             float intensity = ShipComponentRammingSuggestions.ComputeRamImpactGemExpulsionIntensity(
                 impactForceN, damage);
 
@@ -594,25 +596,25 @@ namespace TitanOrbit.ECS
         /// </summary>
         /// <param name="ship">Current vitals (gems / people).</param>
         /// <param name="motor">Untaxed chassis baselines + HullMassReference (ComponentSize).</param>
-        /// <param name="totalMass">Gems×mG + people×mP + size×mCS. MEGA skip-tax reports 0 (plow ignores this).</param>
+        /// <param name="totalMass">Gems×mG + people×mP + size×mCS. Used for gem-spray intensity and the impulse speed hint, not HP.</param>
         /// <param name="taxedAccel">After-tax acceleration used only for the grind push gate.</param>
-        /// <param name="hullMassReference">ComponentSize used as the 1× ram mass reference.</param>
-        /// <param name="taxedCruise">After-tax MaxSpeed before territory. The stat-sheet cruise line.</param>
+        /// <param name="taxedCruise">After-tax MaxSpeed before territory. The live cruise cap, including Move Speed purchases.</param>
+        /// <param name="taxedBaseCruise">After-tax cruise with Move Speed purchases removed. The ram divisor before territory.</param>
         static void ResolveMobilityRamInputs(
             in ShipState ship,
             in ShipMotorConfig motor,
             out float totalMass,
             out float taxedAccel,
-            out float hullMassReference,
-            out float taxedCruise)
+            out float taxedCruise,
+            out float taxedBaseCruise)
         {
             float baseMass = motor.Mass > 0f ? motor.Mass : ShipMassLogic.DefaultBaseMass;
             float componentSize = motor.HullMassReference > 0f
                 ? motor.HullMassReference
                 : math.max(ShipMassLogic.MinMass, baseMass * ShipMassLogic.HullMassScale);
-            hullMassReference = componentSize;
 
             // [TITAN-ORBIT] Same live tax as drive / speedometer. MEGAs skip mobility tax.
+            // Component size still feeds totalMass for bounce-adjacent intensity. It does not scale HP.
             ShipMobilityResolution.TaxedMotorStats taxed = ShipMobilityResolution.ResolveLiveMotorStats(
                 motor.MaxSpeed,
                 motor.EngineThrust,
@@ -624,40 +626,60 @@ namespace TitanOrbit.ECS
             totalMass = taxed.TotalMass;
             taxedAccel = taxed.EngineThrust;
             taxedCruise = taxed.MaxSpeed;
+
+            // Stock cruise uses the same cargo tax so a full-speed ram with no Move Speed
+            // purchases lands on exactly 2×. Upgrades raise MaxSpeed above BaseMaxSpeed.
+            float untaxedBase = motor.BaseMaxSpeed > 0.01f ? motor.BaseMaxSpeed : motor.MaxSpeed;
+            if (math.abs(untaxedBase - motor.MaxSpeed) <= 0.01f)
+            {
+                taxedBaseCruise = taxedCruise;
+            }
+            else
+            {
+                ShipMobilityResolution.TaxedMotorStats taxedBase = ShipMobilityResolution.ResolveLiveMotorStats(
+                    untaxedBase,
+                    motor.EngineThrust,
+                    motor.RotationSpeed,
+                    ship.CurrentGems,
+                    ship.CurrentPeople,
+                    componentSize,
+                    skipMassTax: motor.SkipMassTax != 0);
+                taxedBaseCruise = taxedBase.MaxSpeed;
+            }
         }
 
         /// <summary>
-        /// Asteroid impact closing speed, never above the stat-sheet full-cruise line
-        /// (taxed MaxSpeed × friendly territory). A PhysX separation of 25 is not a ram.
-        /// When the contact number is that spike and kinematics still shows real flight,
-        /// use the ship's speed so a sub-cruise hull stays under the cruise self-chip.
+        /// Friendly-territory multiplier already applied to the live cruise cap.
+        /// Stock cruise gets the same scale so the ratio stays 2× at an un-upgraded max.
         /// </summary>
-        static float CapAsteroidClosingToCruise(
-            ref SystemState state,
-            Entity shipEntity,
-            float taxedCruise,
-            float measuredClosing)
+        static float ScaleStockCruise(ref SystemState state, Entity shipEntity, float taxedBaseCruise)
         {
-            float cruiseCap = math.max(ImpactMinClosingSpeed, taxedCruise);
+            float scaled = taxedBaseCruise;
             if (state.EntityManager.HasComponent<ShipTerritoryBoostLatch>(shipEntity))
             {
                 float territory = state.EntityManager.GetComponentData<ShipTerritoryBoostLatch>(shipEntity).LatchedMult;
                 if (territory > 1f)
-                    cruiseCap *= territory;
+                    scaled *= territory;
             }
 
-            float closing = measuredClosing;
-            if (closing > cruiseCap)
-                closing = cruiseCap;
+            return math.max(0.01f, scaled);
+        }
 
-            // Kinematics is post-bounce flight, not the solver's 25 u/s shove.
-            float flight = ReadPlanarSpeed(ref state, shipEntity);
-            if (measuredClosing > cruiseCap + 0.05f
-                && flight > ImpactMinClosingSpeed
-                && flight <= cruiseCap * 1.05f)
-                closing = flight;
+        /// <summary>
+        /// Planar speed the ship was actually flying before this tick's physics solve.
+        /// OVERDRIVE is already in that velocity. The contact normal's approach speed is
+        /// not used — a fast graze still counts as a fast ram. Falls back to kinematics
+        /// only when the pre-collision snapshot is missing.
+        /// </summary>
+        static float ReadCurrentSpeed(ref SystemState state, Entity shipEntity)
+        {
+            if (state.EntityManager.HasComponent<ShipPreCollisionVelocity>(shipEntity))
+            {
+                float3 pre = state.EntityManager.GetComponentData<ShipPreCollisionVelocity>(shipEntity).Linear;
+                return math.length(new float2(pre.x, pre.z));
+            }
 
-            return math.max(0f, closing);
+            return ReadPlanarSpeed(ref state, shipEntity);
         }
 
         /// <summary>Planar XZ speed from kinematics (solver may zero PhysicsVelocity on a jam).</summary>
@@ -749,8 +771,7 @@ namespace TitanOrbit.ECS
 
             var motor = state.EntityManager.GetComponentData<ShipMotorConfig>(shipEntity);
             ResolveMobilityRamInputs(
-                in ship, in motor, out float totalMass, out float taxedAccel, out float hullMassRef,
-                out _);
+                in ship, in motor, out _, out float taxedAccel, out _, out _);
             float familyRam = motor.RammingPower > 0.001f
                 ? motor.RammingPower
                 : ShipFamilyDefaultFallbackStats.CreateBaseline().rammingPower;
@@ -775,7 +796,7 @@ namespace TitanOrbit.ECS
 
             TryPulseAsteroidGrind(
                 ref state, ref ship, shipEntity, asteroid, normal,
-                ramRating, totalMass, hullMassRef, taxedAccel,
+                ramRating, taxedAccel,
                 shipPos, gemPrefab, spawnServerTime, ecb, now, ref contact);
             state.EntityManager.SetComponentData(shipEntity, ship);
         }
@@ -788,8 +809,6 @@ namespace TitanOrbit.ECS
             Entity asteroid,
             float3 normalShipFromOther,
             float ramRating,
-            float totalMass,
-            float hullMassRef,
             float taxedAccel,
             float3 shipPos,
             Entity gemPrefab,
@@ -803,12 +822,12 @@ namespace TitanOrbit.ECS
 
             float pulse = ShipComponentRammingSuggestions.GrindPulseIntervalSeconds;
             float asteroidPulse = ShipComponentRammingSuggestions.ComputeGrindDamagePerPulse(
-                ramRating, totalMass, pulse, hullMassRef);
+                ramRating, pulse);
             // Same cap as impact: a nearly-dead or tiny rock only chips the hull for
             // the Health it still has, not a full grind self-pulse.
             float selfPulse = ShipComponentRammingSuggestions.CapCollisionSelfDamageToAsteroidHealth(
                 ShipComponentRammingSuggestions.ComputeGrindSelfDamagePerPulse(
-                    ramRating, totalMass, pulse, hullMassRef),
+                    ramRating, pulse),
                 ReadAsteroidHealth(ref state, asteroid));
             float grindIntensity =
                 ShipComponentRammingSuggestions.ComputeRamGrindGemExpulsionIntensity(

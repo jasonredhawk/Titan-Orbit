@@ -9,14 +9,14 @@ namespace TitanOrbit.Game
     /// <summary>
     /// Profile-badge chip plus a cancelable full-grid overlay.
     /// Hosted on <see cref="ShipCustomizeScreen"/> — client presentation only.
-    /// Overlay sorting sits above the customize studio (540) so the grid is clickable.
+    /// The grid is the last child of that studio, so it paints over Customize Hull.
+    /// A second canvas on the grid sorts under the studio after the first close.
     /// </summary>
     public sealed class MainMenuBadgePicker : MonoBehaviour
     {
         public const string RootObjectName = "PlayerBadgePicker";
         public const string OverlayObjectName = "PlayerBadgeOverlay";
 
-        const int OverlaySortingOrder = 560;
         const int GridColumns = 8;
         const float TileSize = 88f;
         const float TileSpacing = 8f;
@@ -90,6 +90,66 @@ namespace TitanOrbit.Game
             EnsureGrid();
             HighlightCurrent();
             _overlayRoot.gameObject.SetActive(true);
+            // After activate: a leftover Canvas from the first open would otherwise
+            // draw behind Customize Hull on every later click.
+            PlaceAboveStudio();
+        }
+
+        void LateUpdate()
+        {
+            // Hull studio LateUpdate keeps itself in front of the Orbit Menu.
+            // Stay the studio's last child so that pass does not cover the grid.
+            if (_overlayRoot == null || !_overlayRoot.gameObject.activeSelf)
+                return;
+            PlaceAboveStudio();
+        }
+
+        /// <summary>
+        /// Parents the grid under Customize Hull and draws it after the hull chrome.
+        /// Strips any Canvas on the grid. That canvas is a separate batch, and Unity
+        /// paints it under the studio once the grid has been closed and opened again.
+        /// </summary>
+        void PlaceAboveStudio()
+        {
+            if (_overlayRoot == null)
+                return;
+
+            // [UNITY] DestroyImmediate so this click already uses the studio batch.
+            // Destroy() would leave the old canvas in front for the rest of the frame.
+            var ray = _overlayRoot.GetComponent<GraphicRaycaster>();
+            if (ray != null)
+                DestroyImmediate(ray);
+            var scaler = _overlayRoot.GetComponent<CanvasScaler>();
+            if (scaler != null)
+                DestroyImmediate(scaler);
+            var overlayCanvas = _overlayRoot.GetComponent<Canvas>();
+            if (overlayCanvas != null)
+                DestroyImmediate(overlayCanvas);
+
+            Transform host = OverlayHost();
+            bool reparented = _overlayRoot.parent != host;
+            if (reparented)
+                _overlayRoot.SetParent(host, false);
+
+            if (_overlayRoot.GetSiblingIndex() != host.childCount - 1)
+                _overlayRoot.SetAsLastSibling();
+
+            if (reparented)
+                StretchFull(_overlayRoot);
+        }
+
+        /// <summary>
+        /// Customize Hull when this chip lives in the studio; otherwise the menu canvas.
+        /// The grid must be inside the studio so it draws with that window, not behind it.
+        /// </summary>
+        Transform OverlayHost()
+        {
+            var screen = GetComponentInParent<ShipCustomizeScreen>(true);
+            if (screen != null)
+                return screen.transform;
+
+            var canvas = GetComponentInParent<Canvas>();
+            return canvas != null ? canvas.transform : transform.root;
         }
 
         /// <summary>Closes the overlay without changing the saved badge.</summary>
@@ -117,10 +177,16 @@ namespace TitanOrbit.Game
             if (_overlayRoot != null)
                 return;
 
-            var canvas = GetComponentInParent<Canvas>();
-            Transform canvasTf = canvas != null ? canvas.transform : transform.root;
+            Transform host = OverlayHost();
+            Transform existing = host.Find(OverlayObjectName);
+            if (existing == null)
+            {
+                // First version of this grid was parented to the dock canvas.
+                var canvas = GetComponentInParent<Canvas>();
+                if (canvas != null && canvas.transform != host)
+                    existing = canvas.transform.Find(OverlayObjectName);
+            }
 
-            var existing = canvasTf.Find(OverlayObjectName);
             if (existing != null)
             {
                 _overlayRoot = existing.GetComponent<RectTransform>();
@@ -128,20 +194,13 @@ namespace TitanOrbit.Game
                 return;
             }
 
-            var overlayGo = new GameObject(
-                OverlayObjectName,
-                typeof(RectTransform),
-                typeof(Canvas),
-                typeof(GraphicRaycaster));
+            // No Canvas. A nested canvas draws behind Customize Hull after the first close.
+            var overlayGo = new GameObject(OverlayObjectName, typeof(RectTransform));
             overlayGo.layer = gameObject.layer;
-            overlayGo.transform.SetParent(canvasTf, false);
+            overlayGo.transform.SetParent(host, false);
 
             _overlayRoot = overlayGo.GetComponent<RectTransform>();
             StretchFull(_overlayRoot);
-
-            var overlayCanvas = overlayGo.GetComponent<Canvas>();
-            overlayCanvas.overrideSorting = true;
-            overlayCanvas.sortingOrder = OverlaySortingOrder;
 
             // --- Dim backdrop (click = cancel) ---
             var backdropGo = CreateUi("Backdrop", _overlayRoot, typeof(Image), typeof(Button));

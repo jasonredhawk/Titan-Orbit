@@ -86,17 +86,20 @@ namespace TitanOrbit.Simulation
                 firePowerExtras);
             float fireRateMul = fireRate / math.max(0.1f, hullFireRate);
 
-            // Hull peak DPS when the caller summed every barrel. Otherwise this shot's
-            // damage (turret / legacy). Energy remaining is not an input.
+            // Fire power sizes the bullet. Bullet type does not: bank, category,
+            // and the prefab's authored scale are not inputs. Hit damage above still is.
+            _ = authoredBulletScale;
+            _ = categoryUpgradeScale;
+            _ = referenceSpeed;
             float scaleDamage = shipPeakDps > 0.01f ? shipPeakDps : damage;
             float scaleReference = shipReferenceDps > 0.01f ? shipReferenceDps : referenceDamage;
             float visualScale = BulletVisualScale.ComputePerShotScale(
-                authoredBulletScale,
+                1f,
                 scaleDamage,
-                bulletSpeed,
+                0f,
                 scaleReference,
-                referenceSpeed,
-                categoryUpgradeScale);
+                0f,
+                1f);
 
             fireForward.y = 0f;
             if (math.lengthsq(fireForward) < 0.0001f)

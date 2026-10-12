@@ -178,6 +178,8 @@ namespace TitanOrbit.ECS
 
                 var motor = em.GetComponentData<ShipMotorConfig>(shipEntity);
                 motor.MaxSpeed = moveVal;
+                // Titans have no Move Speed ability. Stock cruise is the live cruise.
+                motor.BaseMaxSpeed = moveVal;
                 motor.EngineThrust = accel;
                 motor.RotationSpeed = turnVal;
                 motor.BrakeDeceleration = ShipMassLogic.DefaultBrakeDeceleration;

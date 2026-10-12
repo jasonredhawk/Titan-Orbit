@@ -54,14 +54,9 @@ namespace TitanOrbit.ECS
 
             var xf = em.GetComponentData<LocalTransform>(shipEntity);
             int netId = em.GetComponentData<GhostOwner>(shipEntity).NetworkId;
-            float3 vel = float3.zero;
             float3 heading = float3.zero;
             if (em.HasComponent<ShipKinematics>(shipEntity))
-            {
-                var kin = em.GetComponentData<ShipKinematics>(shipEntity);
-                vel = kin.Velocity;
-                heading = kin.FormationHeading;
-            }
+                heading = em.GetComponentData<ShipKinematics>(shipEntity).FormationHeading;
 
             var buf = em.GetBuffer<PeopleEscortVitalElement>(shipEntity);
             bool hit = false;
@@ -73,7 +68,7 @@ namespace TitanOrbit.ECS
                     continue;
 
                 float3 center = PeopleTransportEscortLogic.EvaluateParkedPose(
-                    em, shipEntity, in xf, in vital, netId, vel, timeSeconds, mapW, mapH, heading);
+                    em, shipEntity, in xf, in vital, netId, timeSeconds, mapW, mapH, heading);
                 float radius = PeopleTransportMath.GetEscortHitRadius(vital.Amount) + pad;
                 if (!BulletCollision.SegmentHitsSphereToroidal(
                         from, to, center, radius, mapW, mapH, out float3 contact))
@@ -142,7 +137,7 @@ namespace TitanOrbit.ECS
                     continue;
 
                 float3 center = PeopleTransportEscortLogic.EvaluateParkedPose(
-                    em, shipEntity, in xf, in vital, netId, shipVel, timeSeconds, mapW, mapH, heading);
+                    em, shipEntity, in xf, in vital, netId, timeSeconds, mapW, mapH, heading);
                 float3 off = ToroidalMapEcs.ShortestOffsetXZ(from, center, mapW, mapH);
                 float distSq = math.lengthsq(new float3(off.x, 0f, off.z));
                 if (distSq >= best)

@@ -2,8 +2,25 @@
 <html lang="en-us">
   <head>
     <meta charset="utf-8">
+    <script>
+      // Stripe returns with ?orbit_unlock=success. Keep the signal for the game, then drop it from the address bar.
+      (function () {
+        try {
+          var params = new URLSearchParams(window.location.search);
+          var flag = params.get("orbit_unlock");
+          if (flag !== "success" && flag !== "cancel")
+            return;
+          sessionStorage.setItem("titanOrbitCheckoutReturn", flag);
+          params.delete("orbit_unlock");
+          var search = params.toString();
+          var clean = window.location.pathname + (search ? "?" + search : "") + window.location.hash;
+          history.replaceState(null, "", clean);
+        } catch (e) {}
+      })();
+    </script>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-    <title>Unity Web Player | {{{ PRODUCT_NAME }}}</title>
+    <title>Titan Orbit</title>
+    <meta name="description" content="Titan Orbit is a multiplayer space game played in the browser. Fly a ship, mine, and fight with other players.">
     <link rel="shortcut icon" href="TemplateData/favicon.ico">
     <link rel="stylesheet" href="TemplateData/style.css">
 #if SHOW_DIAGNOSTICS
@@ -13,175 +30,123 @@
 #if DEVELOPMENT_PLAYER
   <script src="<<<TemplateData/profiler.js>>>"></script>
 #endif
-    <!-- Google IMA — rewarded VAST on self-hosted Cloudflare WebGL (no 100k-user floor). -->
-    <script type="text/javascript" src="https://imasdk.googleapis.com/js/sdkloader/ima3.js"></script>
-    <style>
-      #titan-orbit-ima-overlay {
-        display: none;
-        position: fixed;
-        inset: 0;
-        z-index: 9999;
-        background: rgba(2, 4, 10, 0.92);
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-      }
-      #titan-orbit-ima-ad-container, #titan-orbit-ima-video {
-        width: min(960px, 96vw);
-        height: min(540px, 70vh);
-        background: #000;
-      }
-      #titan-orbit-ima-video { position: absolute; opacity: 0; pointer-events: none; width: 1px; height: 1px; }
-      #titan-orbit-ima-cancel {
-        margin-top: 16px;
-        padding: 8px 18px;
-        background: #1a2433;
-        color: #dce8f5;
-        border: 1px solid #3a4a60;
-        font: 13px/1 sans-serif;
-        letter-spacing: 0.08em;
-        cursor: pointer;
-      }
-    </style>
-  </head>
-  <body>
-    <div id="titan-orbit-ima-overlay">
-      <div id="titan-orbit-ima-ad-container"></div>
-      <video id="titan-orbit-ima-video" playsinline></video>
-      <button id="titan-orbit-ima-cancel" type="button">CANCEL — NO REWARD</button>
-    </div>
+    <!--
+      AdSense H5 Games Ads. adBreak must exist before adsbygoogle.js runs.
+      If the library boots first, Watch Ad pushes into a dead queue and no video starts.
+    -->
     <script>
-      // Google IMA player used by TitanOrbitImaBridge.jslib.
-      // Status strings: complete | skipped | error | sdk-not-loaded
-      // Cancel must tear the ad down fully. IMA's sample placeholder injects
-      // click-catcher iframes on document.body; if those survive, the planet
-      // picker is visible but every world click hits the leftover ad instead.
-      window.TitanOrbitImaPlay = function (adTagUrl, onStatus) {
-        var overlay = document.getElementById("titan-orbit-ima-overlay");
-        var adContainer = document.getElementById("titan-orbit-ima-ad-container");
-        var video = document.getElementById("titan-orbit-ima-video");
-        var cancel = document.getElementById("titan-orbit-ima-cancel");
-        var finished = false;
-        var adsManager = null;
-        var adDisplayContainer = null;
-        var adsLoader = null;
+      window.adsbygoogle = window.adsbygoogle || [];
+      window.adBreak = window.adConfig = function (o) { window.adsbygoogle.push(o); };
+      window.adConfig({
+        preloadAdBreaks: "on",
+        sound: "on",
+        onReady: function () { window.TitanOrbitH5AdsReady = true; }
+      });
 
-        function releasePointerToGame() {
-          // Pull the video out before wiping the slot. IMA sometimes reparents it
-          // into the ad container, and innerHTML = "" would delete that element.
-          if (video && overlay && video.parentNode !== overlay)
-            overlay.appendChild(video);
-          if (adContainer) adContainer.innerHTML = "";
-          if (video) {
-            try { video.pause(); } catch (e) {}
-            video.removeAttribute("src");
-            try { video.load(); } catch (e2) {}
-            video.style.width = "1px";
-            video.style.height = "1px";
-            video.style.opacity = "0";
-            video.style.pointerEvents = "none";
-            video.style.position = "absolute";
-          }
-          if (overlay) {
-            overlay.style.display = "none";
-            overlay.style.pointerEvents = "none";
-          }
+      function titanOrbitShowAdNote(text) {
+        var note = document.getElementById("titan-orbit-ad-note");
+        if (!note) {
+          note = document.createElement("div");
+          note.id = "titan-orbit-ad-note";
+          note.style.cssText = "position:fixed;left:50%;top:18%;transform:translateX(-50%);z-index:100001;padding:12px 18px;background:rgba(2,4,10,0.94);color:#dce8f5;border:1px solid #3a4a60;font:700 14px/1 sans-serif;letter-spacing:0.08em;pointer-events:none;";
+          if (!document.body) return;
+          document.body.appendChild(note);
+        }
+        note.textContent = text;
+        note.style.display = "block";
+        clearTimeout(note._hide);
+        note._hide = setTimeout(function () { note.style.display = "none"; }, 2500);
+      }
 
-          // Sample VAST creatives often leave a fixed iframe outside our overlay.
-          var stray = document.querySelectorAll(
-            "iframe[id*='google_ads'], iframe[name*='google_ads'], iframe[src*='doubleclick'], iframe[src*='googlesyndication'], iframe[src*='2mdn.net'], .videoAdUi, div[id^='googima']"
-          );
-          for (var i = 0; i < stray.length; i++) {
-            var node = stray[i];
-            if (!node || node === overlay) continue;
-            if (node.closest && node.closest("#unity-container")) continue;
-            if (overlay && overlay.contains(node)) continue;
-            try { node.parentNode.removeChild(node); } catch (e3) {}
-          }
+      function titanOrbitHideAdTap() {
+        var btn = document.getElementById("titan-orbit-ad-tap");
+        if (btn && btn.parentNode) btn.parentNode.removeChild(btn);
+      }
 
-          var canvas = document.getElementById("unity-canvas");
-          if (canvas) {
-            canvas.style.pointerEvents = "auto";
-            try { canvas.focus(); } catch (e4) {}
-          }
+      // Unity's click is no longer a browser gesture by the time this runs.
+      // A DOM button calls showAdFn directly so the rewarded video is allowed to play.
+      function titanOrbitShowAdTap(showAdFn, onFail) {
+        titanOrbitHideAdTap();
+        var btn = document.createElement("button");
+        btn.id = "titan-orbit-ad-tap";
+        btn.type = "button";
+        btn.textContent = "TAP TO START AD";
+        btn.style.cssText = "position:fixed;inset:0;z-index:100000;margin:0;border:0;background:rgba(2,4,10,0.88);color:#f2d56b;font:700 18px/1 sans-serif;letter-spacing:0.12em;cursor:pointer;";
+        btn.onclick = function (ev) {
+          if (ev && ev.preventDefault) ev.preventDefault();
+          if (ev && ev.stopPropagation) ev.stopPropagation();
+          titanOrbitHideAdTap();
+          try { showAdFn(); }
+          catch (e) { if (typeof onFail === "function") onFail(); }
+        };
+        document.body.appendChild(btn);
+      }
+
+      // Called from TitanOrbitImaBridge.jslib after the player taps Watch Ad.
+      // Status strings: before | after | complete | skipped | error | no-ad | sdk-not-loaded
+      // Grant only on complete.
+      window.TitanOrbitH5RewardedPlay = function (placementName, onStatus) {
+        if (typeof window.adBreak !== "function") {
+          if (typeof onStatus === "function") onStatus("sdk-not-loaded");
+          return;
         }
 
-        function destroyIma() {
-          try { if (adsManager) adsManager.destroy(); } catch (e) {}
-          adsManager = null;
-          // destroy() only. contentComplete() asks IMA for a post-roll and would
-          // put another click-catcher over the respawn map.
-          try { if (adsLoader && adsLoader.destroy) adsLoader.destroy(); } catch (e2) {}
-          adsLoader = null;
-          try { if (adDisplayContainer && adDisplayContainer.destroy) adDisplayContainer.destroy(); } catch (e4) {}
-          adDisplayContainer = null;
+        var finished = false;
+        var timer = setTimeout(function () { finish("no-ad"); }, 20000);
+
+        function arm(ms, status) {
+          clearTimeout(timer);
+          timer = setTimeout(function () { finish(status); }, ms);
         }
 
         function finish(status) {
           if (finished) return;
           finished = true;
-          destroyIma();
-          releasePointerToGame();
+          clearTimeout(timer);
+          titanOrbitHideAdTap();
+          if (status === "no-ad" || status === "error" || status === "sdk-not-loaded")
+            titanOrbitShowAdNote("NO AD AVAILABLE");
           if (typeof onStatus === "function") onStatus(status);
         }
 
-        if (typeof google === "undefined" || !google.ima) {
-          finish("sdk-not-loaded");
-          return;
+        try {
+          window.adBreak({
+            type: "reward",
+            name: placementName || "reward",
+            beforeReward: function (showAdFn) {
+              arm(120000, "error");
+              titanOrbitShowAdTap(showAdFn, function () { finish("error"); });
+            },
+            beforeAd: function () {
+              titanOrbitHideAdTap();
+              arm(120000, "error");
+              if (typeof onStatus === "function") onStatus("before");
+            },
+            afterAd: function () {
+              titanOrbitHideAdTap();
+              if (typeof onStatus === "function") onStatus("after");
+            },
+            adViewed: function () { finish("complete"); },
+            adDismissed: function () { finish("skipped"); },
+            adBreakDone: function (info) {
+              if (finished) return;
+              var status = info && info.breakStatus;
+              if (status === "viewed") finish("complete");
+              else if (status === "dismissed") finish("skipped");
+              else finish("no-ad");
+            }
+          });
+        } catch (e) {
+          finish("error");
         }
-
-        overlay.style.display = "flex";
-        overlay.style.pointerEvents = "auto";
-        // Defer teardown so this click's pointerup finishes before we delete the
-        // button. Destroying mid-click leaves the browser's pointer capture on a
-        // removed node and the next planet clicks never reach the Unity canvas.
-        cancel.onclick = function (ev) {
-          if (ev && ev.preventDefault) ev.preventDefault();
-          if (ev && ev.stopPropagation) ev.stopPropagation();
-          window.setTimeout(function () { finish("skipped"); }, 0);
-        };
-
-        adDisplayContainer = new google.ima.AdDisplayContainer(adContainer, video);
-        try { adDisplayContainer.initialize(); } catch (e) {}
-
-        adsLoader = new google.ima.AdsLoader(adDisplayContainer);
-        adsLoader.addEventListener(
-          google.ima.AdsManagerLoadedEvent.Type.ADS_MANAGER_LOADED,
-          function (event) {
-            // Player already hit CANCEL while the Google placeholder was loading.
-            // Starting now would cover the respawn map with an invisible ad slot.
-            if (finished) {
-              try { event.getAdsManager(video).destroy(); } catch (e) {}
-              releasePointerToGame();
-              return;
-            }
-
-            adsManager = event.getAdsManager(video);
-            adsManager.addEventListener(google.ima.AdEvent.Type.COMPLETE, function () { finish("complete"); });
-            adsManager.addEventListener(google.ima.AdEvent.Type.SKIPPED, function () { finish("skipped"); });
-            adsManager.addEventListener(google.ima.AdEvent.Type.ALL_ADS_COMPLETED, function () {
-              if (!finished) finish("complete");
-            });
-            adsManager.addEventListener(google.ima.AdErrorEvent.Type.AD_ERROR, function () { finish("error"); });
-            try {
-              var w = adContainer.clientWidth || window.innerWidth;
-              var h = adContainer.clientHeight || Math.floor(window.innerHeight * 0.7);
-              adsManager.init(w, h, google.ima.ViewMode.NORMAL);
-              adsManager.start();
-            } catch (err) {
-              finish("error");
-            }
-          }
-        );
-        adsLoader.addEventListener(google.ima.AdErrorEvent.Type.AD_ERROR, function () { finish("error"); });
-
-        var request = new google.ima.AdsRequest();
-        request.adTagUrl = adTagUrl;
-        request.linearAdSlotWidth = adContainer.clientWidth || window.innerWidth;
-        request.linearAdSlotHeight = adContainer.clientHeight || Math.floor(window.innerHeight * 0.7);
-        adsLoader.requestAds(request);
       };
     </script>
+    <!-- Live AdSense only. No sample/test placement. -->
+    <script async data-ad-client="ca-pub-6601000494638397" data-ad-frequency-hint="30s"
+      src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6601000494638397"
+      crossorigin="anonymous"></script>
+  </head>
+  <body>
     <div id="unity-container" class="unity-desktop">
       <canvas id="unity-canvas" width={{{ WIDTH }}} height={{{ HEIGHT }}} tabindex="-1"></canvas>
       <div id="unity-loading-bar">

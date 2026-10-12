@@ -1,0 +1,28 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "titanorbit-checkout",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-10",
+  "compatibility_flags": ["nodejs_compat"],
+  // CHECKOUT_MODE is the toggle: "sandbox" or "live". The next deploy copies this value.
+  "vars": {
+    "CHECKOUT_MODE": "live",
+    "STRIPE_PRICE_ID": "price_1UPAYIPKQWYSeF14WKeO8EUX",
+    "STRIPE_PRICE_ID_LIVE": "price_1UPAUeA2TEYBUE36j3TugK3W",
+    "UNITY_PROJECT_ID": "99d08853-6392-4ae9-9ea5-eb0097780216",
+    "SUCCESS_URL": "https://titanorbit.io/?orbit_unlock=success",
+    "CANCEL_URL": "https://titanorbit.io/?orbit_unlock=cancel",
+    "ALLOWED_ORIGINS": "https://titanorbit.io,https://www.titanorbit.io"
+  },
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "enabled": true,
+      "head_sampling_rate": 1
+    },
+    "traces": {
+      "enabled": true,
+      "head_sampling_rate": 1
+    }
+  }
+}

@@ -211,17 +211,12 @@ namespace TitanOrbit.Game
             group.Team = (byte)team;
 
             PeopleTransportEscortLogic.GetEscortHullExtents(em, ship, scale, out float extX, out float extZ);
-            float3 vel = float3.zero;
             float3 heading = float3.zero;
             if (em.HasComponent<ShipKinematics>(ship))
-            {
-                var kin = em.GetComponentData<ShipKinematics>(ship);
-                vel = kin.Velocity;
-                heading = kin.FormationHeading;
-            }
+                heading = em.GetComponentData<ShipKinematics>(ship).FormationHeading;
 
             if (group.LayoutFingerprint != fingerprint)
-                SyncVisuals(group, seats, fingerprint, team, vel, heading, rot);
+                SyncVisuals(group, seats, fingerprint, team, heading, rot);
 
             float3 shipPos = new float3(pos.x, 0f, pos.z);
             quaternion shipRot = rot;
@@ -237,7 +232,7 @@ namespace TitanOrbit.Game
                 // the planet while the camera is on the moon).
                 float3 home = PeopleTransportMath.EvaluateEscortSwarmPose(
                     shipPos, shipRot, extX, extZ, vis.SeatId, vis.Amount, netId,
-                    vel, timeSeconds, mapW, mapH, heading);
+                    timeSeconds, mapW, mapH, heading);
                 Vector3 offset = DroneSwarmLogic.ToroidalOffsetXZ(
                     new Vector3(shipPos.x, 0f, shipPos.z),
                     new Vector3(home.x, 0f, home.z),
@@ -245,7 +240,11 @@ namespace TitanOrbit.Game
                 Vector3 display = pos + offset;
                 display.y = pos.y + LiftY;
                 vis.Instance.transform.position = display;
-                PeopleTransportVisualApplier.ApplyTravelFacing(vis.Instance.transform, vel);
+                float3 face = PeopleTransportMath.ResolveFormationForward(shipRot, heading);
+                vis.Instance.transform.rotation = DroneSwarmPositioning.SlerpIdleFacing(
+                    vis.Instance.transform.rotation,
+                    new Vector3(face.x, 0f, face.z),
+                    Time.deltaTime);
                 float hp = ReadSeatHealth(seats, vis.SeatId);
                 PeopleTransportNameplate.Sync(vis.Instance, netId, vis.Amount, hp);
             }
@@ -358,13 +357,12 @@ namespace TitanOrbit.Game
             List<PackedSeat> seats,
             int fingerprint,
             TeamId team,
-            float3 shipVelocity,
             float3 formationHeading,
             Quaternion shipRot)
         {
             _visualsScratch.Clear();
             bool spawnedAll = true;
-            Quaternion seedFacing = SeedEscortFacing(shipVelocity, formationHeading, shipRot);
+            Quaternion seedFacing = SeedEscortFacing(formationHeading, shipRot);
 
             for (int i = 0; i < seats.Count; i++)
             {
@@ -433,27 +431,12 @@ namespace TitanOrbit.Game
             return -1;
         }
 
-        static Quaternion SeedEscortFacing(
-            float3 shipVelocity,
-            float3 formationHeading,
-            Quaternion shipRot)
+        static Quaternion SeedEscortFacing(float3 formationHeading, Quaternion shipRot)
         {
-            shipVelocity.y = 0f;
-            if (math.lengthsq(shipVelocity) >= 0.16f)
-            {
-                float3 dir = math.normalize(shipVelocity);
-                return Quaternion.LookRotation(new Vector3(dir.x, 0f, dir.z), Vector3.up);
-            }
-
-            if (PeopleTransportMath.TryGetEscortFormationHeading(formationHeading, out float3 heading))
-                return Quaternion.LookRotation(new Vector3(heading.x, 0f, heading.z), Vector3.up);
-
-            float3 nose = (float3)(shipRot * Vector3.forward);
-            nose.y = 0f;
-            if (math.lengthsq(nose) < 1e-4f)
+            float3 face = PeopleTransportMath.ResolveFormationForward(shipRot, formationHeading);
+            if (math.lengthsq(face) < 1e-4f)
                 return Quaternion.identity;
-            nose = math.normalize(nose);
-            return Quaternion.LookRotation(new Vector3(nose.x, 0f, nose.z), Vector3.up);
+            return Quaternion.LookRotation(new Vector3(face.x, 0f, face.z), Vector3.up);
         }
 
         static int Fingerprint(List<PackedSeat> seats)

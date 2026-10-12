@@ -471,43 +471,46 @@ namespace TitanOrbit.Game
             out float damage)
         {
             damage = 0f;
-            if (!TryResolveRamPower(em, ship, out float ramRating, out float totalMass, out _, out float hullMassRef))
+            if (!TryResolveRamPower(em, ship, out float ramRating, out float baseCruise))
                 return false;
-            // MEGA skip-tax reports totalMass 0 — still need a piano key (use the reference hull).
-            if (totalMass <= 0.01f)
-                totalMass = ShipComponentRammingSuggestions.MassReference;
 
             if (grindPulse)
             {
                 damage = ShipComponentRammingSuggestions.ComputeGrindDamagePerPulse(
-                    ramRating, totalMass, ShipComponentRammingSuggestions.GrindPulseIntervalSeconds,
-                    hullMassRef);
+                    ramRating, ShipComponentRammingSuggestions.GrindPulseIntervalSeconds);
             }
             else
             {
+                // Piano key uses the same current speed as the server hit (pre-solve flight).
+                float speed = closingSpeed;
+                if (em.HasComponent<ShipPreCollisionVelocity>(ship))
+                {
+                    float3 pre = em.GetComponentData<ShipPreCollisionVelocity>(ship).Linear;
+                    float planar = math.length(new float2(pre.x, pre.z));
+                    if (planar > 0.01f)
+                        speed = planar;
+                }
+
                 damage = ShipComponentRammingSuggestions.ComputeImpactDamage(
-                    ramRating, totalMass, closingSpeed, hullMassRef);
+                    ramRating, speed, baseCruise);
             }
 
             return damage > 0.0001f;
         }
 
         /// <summary>
-        /// Family rammingPower × bank mul × Global, plus mobility totalMass / taxed accel.
-        /// Mirrors server <c>ResolveMobilityRamInputs</c> + bank mul.
+        /// Family rammingPower × bank mul × Global, plus the stock cruise the ram divides by.
+        /// Stock cruise is max speed before Move Speed purchases, after the same mass tax
+        /// and territory as the server hit.
         /// </summary>
         static bool TryResolveRamPower(
             EntityManager em,
             Entity ship,
             out float ramRating,
-            out float totalMass,
-            out float taxedAccel,
-            out float hullMassReference)
+            out float baseCruise)
         {
             ramRating = 0f;
-            totalMass = 0f;
-            taxedAccel = 0f;
-            hullMassReference = 0f;
+            baseCruise = 0.01f;
             if (!em.Exists(ship) ||
                 !em.HasComponent<ShipState>(ship) ||
                 !em.HasComponent<ShipMotorConfig>(ship))
@@ -515,23 +518,6 @@ namespace TitanOrbit.Game
 
             var shipState = em.GetComponentData<ShipState>(ship);
             var motor = em.GetComponentData<ShipMotorConfig>(ship);
-
-            float baseMass = motor.Mass > 0f ? motor.Mass : ShipMassLogic.DefaultBaseMass;
-            float componentSize = motor.HullMassReference > 0f
-                ? motor.HullMassReference
-                : math.max(ShipMassLogic.MinMass, baseMass * ShipMassLogic.HullMassScale);
-            hullMassReference = componentSize;
-
-            ShipMobilityResolution.TaxedMotorStats taxed = ShipMobilityResolution.ResolveLiveMotorStats(
-                motor.MaxSpeed,
-                motor.EngineThrust,
-                motor.RotationSpeed,
-                shipState.CurrentGems,
-                shipState.CurrentPeople,
-                componentSize,
-                skipMassTax: motor.SkipMassTax != 0);
-            totalMass = taxed.TotalMass;
-            taxedAccel = taxed.EngineThrust;
 
             float familyRam = motor.RammingPower > 0.001f
                 ? motor.RammingPower
@@ -545,6 +531,29 @@ namespace TitanOrbit.Game
 
             familyRam *= BulletBankCombatLogic.GetRammingPowerMultiplier(ramBankIndex);
             ramRating = ShipComponentRammingSuggestions.ComputeDamageRatingFromFamilyPower(familyRam);
+
+            // Same divisor the server uses so the piano key tracks the HP number.
+            float componentSize = motor.HullMassReference > 0f
+                ? motor.HullMassReference
+                : ShipMassLogic.MinMass;
+            float untaxedBase = motor.BaseMaxSpeed > 0.01f ? motor.BaseMaxSpeed : motor.MaxSpeed;
+            ShipMobilityResolution.TaxedMotorStats taxed = ShipMobilityResolution.ResolveLiveMotorStats(
+                untaxedBase,
+                motor.EngineThrust,
+                motor.RotationSpeed,
+                shipState.CurrentGems,
+                shipState.CurrentPeople,
+                componentSize,
+                skipMassTax: motor.SkipMassTax != 0);
+            baseCruise = taxed.MaxSpeed;
+            if (em.HasComponent<ShipTerritoryBoostLatch>(ship))
+            {
+                float territory = em.GetComponentData<ShipTerritoryBoostLatch>(ship).LatchedMult;
+                if (territory > 1f)
+                    baseCruise *= territory;
+            }
+
+            baseCruise = math.max(0.01f, baseCruise);
             return ramRating > 0.0001f;
         }
 

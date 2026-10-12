@@ -1,22 +1,22 @@
 // TitanOrbitImaBridge.jslib
-// Unity WebGL → Google IMA HTML5 player in the FullscreenViewport template.
-// The template defines window.TitanOrbitImaPlay(adTagUrl, onStatus).
+// Unity WebGL → AdSense H5 rewarded placement in the FullscreenViewport template.
+// The template defines window.TitanOrbitH5RewardedPlay(placementName, onStatus).
 
 mergeInto(LibraryManager.library, {
-  TitanOrbitIma_PlayRewarded: function (callbackObjectNamePtr, callbackMethodNamePtr, adTagUrlPtr) {
+  TitanOrbitIma_PlayRewarded: function (callbackObjectNamePtr, callbackMethodNamePtr, placementPtr) {
     var callbackObjectName = UTF8ToString(callbackObjectNamePtr);
     var callbackMethodName = UTF8ToString(callbackMethodNamePtr);
-    var adTagUrl = UTF8ToString(adTagUrlPtr);
+    var placement = UTF8ToString(placementPtr);
 
     function send(status) {
       SendMessage(callbackObjectName, callbackMethodName, status);
     }
 
-    if (typeof TitanOrbitImaPlay !== "function") {
+    if (typeof TitanOrbitH5RewardedPlay !== "function") {
       send("sdk-not-loaded");
       return;
     }
 
-    TitanOrbitImaPlay(adTagUrl, send);
+    TitanOrbitH5RewardedPlay(placement, send);
   }
 });

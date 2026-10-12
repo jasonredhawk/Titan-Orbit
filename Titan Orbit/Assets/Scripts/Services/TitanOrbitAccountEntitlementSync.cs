@@ -22,6 +22,9 @@ namespace TitanOrbit.Services
         static string _pushedPlayerId;
         static bool _pushedValue;
         static bool _refreshInFlight;
+#if UNITY_WEBGL && !UNITY_EDITOR
+        static bool _returnRefreshStarted;
+#endif
 
         /// <summary>Saves <paramref name="owned"/> for <paramref name="playerId"/>. Failures stay local.</summary>
         public static void PushAsync(string playerId, bool owned)
@@ -30,6 +33,27 @@ namespace TitanOrbit.Services
             _pushedPlayerId = playerId;
             _pushedValue = owned;
             _ = PushAsyncInternal(playerId, owned);
+        }
+
+        /// <summary>
+        /// After Stripe sends the browser back, Cloud Save may land a moment later.
+        /// The page stores that return and removes it from the address bar. A few reads on that return only.
+        /// </summary>
+        public static void RefreshIfCheckoutReturn()
+        {
+            // --- Checkout return ---
+#if UNITY_WEBGL && !UNITY_EDITOR
+            if (_returnRefreshStarted)
+                return;
+            string flag = TitanOrbitWebCheckout.TakeReturnFlag();
+            string url = Application.absoluteURL ?? "";
+            bool success = string.Equals(flag, "success", StringComparison.OrdinalIgnoreCase)
+                || url.IndexOf("orbit_unlock=success", StringComparison.OrdinalIgnoreCase) >= 0;
+            if (!success)
+                return;
+            _returnRefreshStarted = true;
+            _ = RetryOwnedAfterCheckoutAsync();
+#endif
         }
 
         /// <summary>Loads Cloud Save for the current Unity player and grants when the cloud copy is owned.</summary>
@@ -67,6 +91,30 @@ namespace TitanOrbit.Services
                 }
             }
         }
+
+#if UNITY_WEBGL && !UNITY_EDITOR
+        static async Task RetryOwnedAfterCheckoutAsync()
+        {
+            // --- Retry Cloud Save after Checkout ---
+            for (int attempt = 0; attempt < 6; attempt++)
+            {
+                if (UnityGameServicesBootstrap.HasDurablePlayerAccount())
+                {
+                    string playerId = UnityGameServicesBootstrap.PlayerId;
+                    if (!string.IsNullOrEmpty(playerId))
+                    {
+                        while (_refreshInFlight)
+                            await Task.Yield();
+                        await RefreshAsyncInternal(playerId);
+                        if (TitanOrbitEntitlements.IsOrbitUnlockedOwned)
+                            return;
+                    }
+                }
+
+                await Task.Delay(2000);
+            }
+        }
+#endif
 
         static async Task RefreshAsyncInternal(string playerId)
         {

@@ -108,7 +108,7 @@ namespace TitanOrbit.Editor
                 "Two lists, different jobs:\n" +
                 "• Name Mappings = inventory of unique family-prefixed prefab part names (sorted A→Z).\n" +
                 "• Part Profiles = shared stats per group:\n" +
-                "  Cockpit, Weapon Bullet, Weapon Cannon, Wing, Engine, Thruster, Tail, Hull.\n\n" +
+                "  Cockpit, Weapon Bullet, Wing, Engine, Thruster, Tail, Hull.\n\n" +
                 "Attribute mesh grow: Global Upgrade Scale Multiplier (top of the asset, default 0.25) " +
                 "dampens ALL bottom-bar upgrade mesh growth on every component after per-part 1/N sharing. " +
                 "Presentation only — not combat stats.\n\n" +
@@ -545,7 +545,7 @@ namespace TitanOrbit.Editor
             md.AppendLine("## Mental model");
             md.AppendLine("- `partType` = **broad group** (shared Part Profile stats + attribute mesh-scale bucket).");
             md.AppendLine("- Allowed partType values ONLY:");
-            md.AppendLine("  `Cockpit`, `Weapon Bullet`, `Weapon Cannon`, `Wing`, `Engine`, `Thruster`, `Tail`, `Hull`, `Ignore`");
+            md.AppendLine("  `Cockpit`, `Weapon Bullet`, `Wing`, `Engine`, `Thruster`, `Tail`, `Hull`, `Ignore`");
             md.AppendLine("- `Cockpit` and `Cockpit_Base` both → `Cockpit` so Troop Cap scales together.");
             md.AppendLine("- Engine meshes → `Engine` (move/accel + Energy Cap/Regen). VFX **off**.");
             md.AppendLine("- Thruster / Exhaust mounts → `Thruster` (move/accel + turn). VFX **on**.");
@@ -554,8 +554,7 @@ namespace TitanOrbit.Editor
             md.AppendLine("  `contributesAbilityStats: false` and `enablePropulsionVfx: false`.");
             md.AppendLine();
             md.AppendLine("## Rules");
-            md.AppendLine("- Gun / Machinegun / Barrel → `Weapon Bullet` (rapid, smaller); VFX off; offense only");
-            md.AppendLine("- Cannon / Missile / Rocket → `Weapon Cannon` (slow, heavier); VFX off; offense only");
+            md.AppendLine("- Gun / Cannon / Missile / Rocket / Launcher / Machinegun / Barrel → `Weapon Bullet` (one weapon); VFX off; offense only");
             md.AppendLine("- Engine_* → `Engine`; stats true; VFX **off** (mesh only)");
             md.AppendLine("- Exhaust / Thrusters / Thrusters_Big / Tiny_Thrusters → `Thruster`; VFX on");
             md.AppendLine("- Thrusters_Big → VFX scale ≈ **1.5**; Tiny_Thrusters → ≈ **0.45**");

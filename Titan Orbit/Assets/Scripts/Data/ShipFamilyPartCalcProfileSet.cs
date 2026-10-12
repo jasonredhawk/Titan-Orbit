@@ -919,6 +919,7 @@ namespace TitanOrbit.Data
             }
             else if (string.Equals(type, ShipFamilyPartTypes.WeaponBullet, StringComparison.OrdinalIgnoreCase))
             {
+                // One family weapon profile: gun, cannon, missile, and launcher share these numbers.
                 // 3 shots/sec. Offense + Cap-only battery (Cap = firePower × fireRate = 1 sec of fire).
                 profile.baseAtVersion1 = new ShipComponentAbilityStats
                 {
@@ -941,33 +942,6 @@ namespace TitanOrbit.Data
                     fireRate = 0f,
                     fireRatePerExtraLevel = 0f,
                     // Cap scales linearly with firePower; v2 firePower = 2×v1 ⇒ Cap step = Cap(v1).
-                    energyCap = profile.baseAtVersion1.energyCap,
-                    energyCapPerExtraLevel = profile.baseAtVersion1.energyCapPerExtraLevel,
-                };
-            }
-            else if (string.Equals(type, ShipFamilyPartTypes.WeaponCannon, StringComparison.OrdinalIgnoreCase))
-            {
-                // 1 shot/sec, ~4× bullet fire power. Offense + Cap-only (Cap = firePower × fireRate).
-                profile.baseAtVersion1 = new ShipComponentAbilityStats
-                {
-                    firePower = ShipComponentWeaponSuggestions.CannonFirePowerV1,
-                    firePowerPerExtraLevel = ShipComponentWeaponSuggestions.GetSuggestedCannonFirePowerPerLevel(1),
-                    bulletSpeed = ShipComponentWeaponSuggestions.CannonBulletSpeedV1,
-                    bulletSpeedPerExtraLevel = ShipComponentWeaponSuggestions.GetSuggestedCannonBulletSpeedPerLevel(1),
-                    bulletRange = ShipComponentWeaponSuggestions.CannonBulletRangeV1,
-                    bulletRangePerExtraLevel = ShipComponentWeaponSuggestions.GetSuggestedCannonBulletRangePerLevel(1),
-                    fireRate = ShipComponentWeaponSuggestions.CannonFireRate,
-                    fireRatePerExtraLevel = 0f,
-                };
-                ShipComponentWeaponSuggestions.ApplyWeaponBatteryCap(ref profile.baseAtVersion1);
-
-                profile.perVersionIncrement = new ShipComponentAbilityStats
-                {
-                    firePower = ShipComponentWeaponSuggestions.CannonFirePowerV1,
-                    bulletSpeed = ShipComponentWeaponSuggestions.CannonBulletSpeedV1 * 0.25f,
-                    bulletRange = ShipComponentWeaponSuggestions.CannonBulletRangePerVersion,
-                    fireRate = 0f,
-                    fireRatePerExtraLevel = 0f,
                     energyCap = profile.baseAtVersion1.energyCap,
                     energyCapPerExtraLevel = profile.baseAtVersion1.energyCapPerExtraLevel,
                 };

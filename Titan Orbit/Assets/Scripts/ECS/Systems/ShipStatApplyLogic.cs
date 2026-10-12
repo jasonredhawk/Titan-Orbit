@@ -598,6 +598,42 @@ namespace TitanOrbit.ECS
                 // [TITAN-ORBIT] No ×10 EngineThrustVisibility — EngineThrust stores acceleration.
                 // No bake-time capacity tax — collecting gems/people updates Speed/Accel/Turn live.
                 float moveVal = Mathf.Max(0.1f, effective.moveSpeed);
+                // --- Stock cruise: same hull with Move Speed purchases removed ---
+                // [TITAN-ORBIT] Ram divides live closing by this. At stock max the hit is 2× the
+                // chip. Buying Move Speed raises MaxSpeed above this and the ram grows with it.
+                // Ship level, family bonuses, and cards stay in both numbers.
+                float baseMoveVal = moveVal;
+                if (abilityCounts.MovementSpeed > 0)
+                {
+                    ShipAbilityLevelCounts stockCounts = abilityCounts;
+                    stockCounts.MovementSpeed = 0;
+                    ShipComponentAbilityStats stock;
+                    if (partSum.MatchedComponentIds != null && partSum.MatchedComponentIds.Count > 0)
+                    {
+                        stock = ShipComponentExtraLevelMath.AggregateAndEvaluate(
+                            partSum.MatchedComponentIds,
+                            partSum.PerComponentStats,
+                            shipLevel,
+                            in stockCounts,
+                            partSum.StoreExtraStartIndex);
+                        stock = ShipComponentExtraLevelMath.ApplyMobilityPenalties(stock, shipLevel);
+                        if (TryResolveFamilyForChassisId(chassisId, out ShipFamilyDefinition stockFamily)
+                            && stockFamily != null)
+                        {
+                            stock = stockFamily.ApplyStatFallbacks(stock);
+                            stock = stockFamily.ApplySpecialBonuses(stock);
+                        }
+                    }
+                    else
+                    {
+                        stock = ShipComponentExtraLevelMath.EvaluatePool(
+                            summed, 1, shipLevel, in stockCounts, isWeaponPool: false);
+                        stock = ShipComponentExtraLevelMath.ApplyMobilityPenalties(stock, shipLevel);
+                    }
+
+                    TryAddEquippedCardStatModifiers(em, shipEntity, chassisId, ref stock);
+                    baseMoveVal = Mathf.Max(0.1f, stock.moveSpeed);
+                }
                 // [TITAN-ORBIT] turnSpeed is already degrees per second. Mass tax subtracts
                 // in the same unit — no hidden scale between the chassis number and yaw.
                 float turnVal = Mathf.Max(0f, effective.turnSpeed);
@@ -632,6 +668,7 @@ namespace TitanOrbit.ECS
 
                 var motor = em.GetComponentData<ShipMotorConfig>(shipEntity);
                 motor.MaxSpeed = moveVal;
+                motor.BaseMaxSpeed = baseMoveVal;
                 motor.EngineThrust = accel;
                 motor.RotationSpeed = turnVal;
                 motor.BrakeDeceleration = ShipMassLogic.DefaultBrakeDeceleration;
@@ -748,6 +785,7 @@ namespace TitanOrbit.ECS
                         hash = hash * 31 + e.ItemType;
                         hash = hash * 31 + e.RemainingCharges;
                         hash = hash * 31 + e.ItemLevel;
+                        hash = hash * 31 + e.StampedBulletBankPlusOne;
                         hash = hash * 31 + e.ComponentId.GetHashCode();
                     }
                 }

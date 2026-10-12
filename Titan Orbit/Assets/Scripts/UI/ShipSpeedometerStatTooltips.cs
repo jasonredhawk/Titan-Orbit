@@ -21,7 +21,7 @@ namespace TitanOrbit.UI
         Accel = 1,
         /// <summary>MASS on the ACC line — mobility totalMass (gems + people + ComponentSize).</summary>
         Mass = 2,
-        /// <summary>RAM line — grind DPS (rating × mass / MassReference); ram multiplies by closing speed.</summary>
+        /// <summary>RAM line — grind is the chip HP/s. A ram is chip × (1 + closing / stock cruise).</summary>
         Ram = 3,
         /// <summary>BUL line — hull-average firepower / rate from weapon parts.</summary>
         Bullets = 4
@@ -107,8 +107,13 @@ namespace TitanOrbit.UI
             public float TerritoryMult;
             /// <summary>totalMass = gems×mG + people×mP + componentSize×mCS (mobility tax).</summary>
             public float TotalMass;
-            /// <summary>Chassis MaxSpeed before mass tax (leveled + attrs).</summary>
+            /// <summary>Chassis MaxSpeed before mass tax (leveled + attrs, including Move Speed purchases).</summary>
             public float ChassisMaxSpeed;
+            /// <summary>
+            /// After-tax cruise before Move Speed ability purchases, including territory.
+            /// Ram divisor. Equal to <see cref="CruiseMaxSpeed"/> when that ability is 0, so a full ram is 2× the chip.
+            /// </summary>
+            public float BaseCruiseSpeed;
             /// <summary>Chassis Accel before mass tax (leveled + attrs).</summary>
             public float ChassisAccel;
             /// <summary>Chassis turn °/s before mass tax.</summary>
@@ -540,14 +545,15 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// RAM tip: parts, then the same full-cruise product as the Fire Power card.
-        /// Asteroid is the first-contact floater (chip × mass ratio × speed), not the chip alone.
+        /// Asteroid is the first-contact floater: chip × (1 + cruise / stock cruise).
+        /// Stock cruise is max speed before Move Speed purchases, so that speed is 2× the chip.
         /// </summary>
         static void AppendRamTooltip(StringBuilder sb, in PartCache parts, in LiveContext live)
         {
             AppendHeader(sb, "RAM — grind / impact");
             ShipStatTooltipChrome.AppendSectionBanner(sb, "PARTS", "FFAA66");
-            sb.AppendLine("<color=#5B7A94>Grind = rating x (totalMass / this hull's ComponentSize) HP/s. Empty hulls sit at 1x the RAM chip; cargo raises it.</color>");
-            sb.AppendLine("<color=#5B7A94>Ram = grind DPS x (1 + closing / ram-double speed) on first contact.</color>");
+            sb.AppendLine("<color=#5B7A94>Grind = the RAM chip HP/s. Hull mass and cargo do not change it.</color>");
+            sb.AppendLine("<color=#5B7A94>Ram = chip x (1 + current speed / stock cruise). At stock cruise that is 2x the chip. OVERDRIVE and extra speed raise it.</color>");
 
             int written = 0;
             float sumRam = 0f;
@@ -591,27 +597,22 @@ namespace TitanOrbit.UI
             sb.Append("Motor Ramming  ").Append(F1(familyRam)).AppendLine();
 
             // --- Same product the Fire Power card prints ---
-            // [TITAN-ORBIT] Chip × mass ratio × (1 + cruise / ram-double). The floater on
-            // first contact is Asteroid, not the motor chip.
+            // [TITAN-ORBIT] Chip × (1 + cruise / stock cruise). Stock is 2×.
+            // Move Speed purchases raise cruise above stock.
             float rating = live.RamRating > 0.001f
                 ? live.RamRating
                 : ShipComponentRammingSuggestions.ComputeDamageRatingFromFamilyPower(familyRam);
+            float stockCruise = live.BaseCruiseSpeed > 0.01f ? live.BaseCruiseSpeed : fullCruise;
             ShipComponentRammingSuggestions.RamCruiseImpactPreview hit =
-                ShipComponentRammingSuggestions.BuildCruiseImpactPreview(
-                    rating, live.TotalMass, fullCruise, live.ComponentSize);
+                ShipComponentRammingSuggestions.BuildCruiseImpactPreview(rating, fullCruise, stockCruise);
             sb.Append("Chip  ").Append(F1(hit.Rating));
-            sb.Append(" <color=#5B7A94>grind/s at 1x mass</color>").AppendLine();
-            sb.Append("Mass  ").Append(F1(hit.TotalMass)).Append(" / ").Append(F1(hit.HullReference));
-            sb.Append("  =  <color=#FF8A8A>").Append(F1(hit.MassFactor)).Append("x</color>");
-            if (hit.UsedMassReferenceFallback)
-                sb.Append(" <color=#5B7A94>(hull size not ready)</color>");
-            sb.AppendLine();
+            sb.Append(" <color=#5B7A94>grind/s</color>").AppendLine();
             sb.Append("Grind  ").Append(F1(hit.GrindDps)).Append("/s");
-            sb.Append(" <color=#5B7A94>chip x mass, while held</color>").AppendLine();
+            sb.Append(" <color=#5B7A94>chip, while held</color>").AppendLine();
             sb.Append("Cruise  ").Append(F1(hit.CruiseSpeed)).Append("/s");
-            sb.Append("   Speed  1 + ").Append(F1(hit.CruiseSpeed)).Append("/")
-                .Append(F1(hit.SpeedForDouble));
-            sb.Append("  =  <color=#FFCC66>").Append(F1(hit.SpeedMultiplier)).Append("x</color>").AppendLine();
+            sb.Append("   Stock  ").Append(F1(hit.BaseShipSpeed)).Append("/s");
+            sb.Append("   Speed  1 + current/").Append(F1(hit.BaseShipSpeed));
+            sb.Append("  at cruise  <color=#FFCC66>").Append(F1(hit.SpeedMultiplier)).Append("x</color>").AppendLine();
             sb.Append("Asteroid  <color=#FFAA66>").Append(F1(hit.AsteroidDamage)).Append("</color>");
             sb.Append(" <color=#5B7A94>first contact</color>").AppendLine();
             sb.Append("Hull  <color=#FF6666>").Append(F1(hit.SelfDamage)).Append("</color>");

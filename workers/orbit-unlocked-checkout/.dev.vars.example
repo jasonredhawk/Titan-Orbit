@@ -1,0 +1,9 @@
+# Copy to .dev.vars for `wrangler dev`. Never commit .dev.vars.
+# Use the Titan Orbit sandbox restricted key (rk_test_...), not the live key.
+STRIPE_RESTRICTED_KEY=
+STRIPE_WEBHOOK_SECRET=
+STRIPE_RESTRICTED_KEY_LIVE=
+STRIPE_WEBHOOK_SECRET_LIVE=
+UNITY_SERVICE_ACCOUNT_KEY_ID=
+UNITY_SERVICE_ACCOUNT_SECRET=
+UNITY_ENVIRONMENT_ID=
