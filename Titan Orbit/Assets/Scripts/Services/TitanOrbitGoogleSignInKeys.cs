@@ -8,6 +8,6 @@ namespace TitanOrbit.Services
     /// </summary>
     public static class TitanOrbitGoogleSignInKeys
     {
-        public const string WebClientId = "";
+        public const string WebClientId = "644526411656-vgqcj92hom1vl75hq0343m6q2lkm1rd2.apps.googleusercontent.com";
     }
 }

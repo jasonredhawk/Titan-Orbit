@@ -1074,9 +1074,9 @@ namespace TitanOrbit.UI
                 : default;
 
             // --- Reconstruct effective stats for ram display (read-only mirror of stat apply) ---
-            int branchIndex = 0;
-            if (em.HasComponent<ShipLoadoutState>(shipEntity))
-                branchIndex = em.GetComponentData<ShipLoadoutState>(shipEntity).BranchIndex;
+            // [TITAN-ORBIT] ShipState.BranchIndex is the flown hull. Loadout branch stayed 0
+            // on older ghosts, so using it here listed the starter chassis in ability tooltips.
+            int branchIndex = ship.BranchIndex;
 
             // --- Live chassis identity (no string alloc) ---
             // [TITAN-ORBIT] Buying a new ship / family often keeps ShipLevel + branch + attrs the same

@@ -63,7 +63,7 @@ namespace TitanOrbit.UI
             /// <summary>
             /// First index in <see cref="Ids"/> that is a moon-store extra (appended after prefab
             /// children). <see cref="int.MaxValue"/> when the hull has no store gear. Extra Level
-            /// / HUD use this so the newest purchase is the display primary.
+            /// / HUD score these rows with the chassis; the highest base of each type is primary.
             /// </summary>
             public int StoreExtraStartIndex;
 

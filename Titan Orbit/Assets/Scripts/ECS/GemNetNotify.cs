@@ -42,17 +42,34 @@ namespace TitanOrbit.ECS
             ViewInterestFanout.EmitPoint(ref ecb, rpc, origin, ViewInterestTuning.GemKeepMargin, 0);
         }
 
-        /// <summary>Tells viewers to hide a scooped or expired crystal.</summary>
-        public static void SendConsumed(ref EntityCommandBuffer ecb, int spawnId, float3 position)
+        /// <summary>
+        /// Tells viewers to hide a scooped or expired crystal.
+        /// <paramref name="alwaysNetworkId"/> is the ship that scooped it (0 for expiry) so that
+        /// hull still gets <see cref="GemConsumedRpc"/> when the crystal sits outside its camera rect.
+        /// A missed consume leaves a mesh the server no longer has, which cannot be scooped.
+        /// </summary>
+        public static void SendConsumed(
+            ref EntityCommandBuffer ecb,
+            int spawnId,
+            float3 position,
+            int alwaysNetworkId = 0)
         {
             if (spawnId == 0)
                 return;
 
             position.y = 0f;
-            ViewInterestFanout.EmitPoint(ref ecb, new GemConsumedRpc { SpawnId = spawnId }, position, ViewInterestTuning.GemKeepMargin, 0);
+            ViewInterestFanout.EmitPoint(
+                ref ecb,
+                new GemConsumedRpc { SpawnId = spawnId },
+                position,
+                ViewInterestTuning.GemKeepMargin,
+                alwaysNetworkId);
         }
 
-        /// <summary>Tells viewers the leftover value after a partial scoop.</summary>
+        /// <summary>
+        /// Legacy partial-scoop notice. Pickup destroys the crystal instead of shrinking it.
+        /// Still used if an older server build sends one.
+        /// </summary>
         public static void SendValueChanged(ref EntityCommandBuffer ecb, int spawnId, float remainingValue, float3 position)
         {
             if (spawnId == 0)

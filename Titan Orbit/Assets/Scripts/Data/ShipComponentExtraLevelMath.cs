@@ -163,22 +163,23 @@ namespace TitanOrbit.Data
             Mathf.Max(0, abilityLevel);
 
         /// <summary>
-        /// The single hull part whose turn Base is allowed on the ship.
-        /// Highest authored <c>turnSpeed</c> wins. A tie goes to the higher
-        /// <c>turnSpeedPerExtraLevel</c>, then the earlier list index.
-        /// Parts with no turn Base (only PerExtra) are never chosen.
-        /// Moon-store gear (indices at or after <paramref name="storeExtraStartIndex"/>)
-        /// is skipped — a purchased fin adds its PerExtra only, like an extra engine’s Move.
+        /// The single part whose turn Base is allowed on the ship.
+        /// Highest authored <c>turnSpeed</c> wins, including moon-store gear.
+        /// A tie goes to the higher <c>turnSpeedPerExtraLevel</c>, then the earlier list index
+        /// (a chassis part stays primary when a purchase has the same turn base).
+        /// Parts with no turn Base (only PerExtra) are never chosen. Everyone else
+        /// still adds turn PerExtra.
         /// </summary>
         /// <param name="storeExtraStartIndex">
-        /// First moon-store extra index. <see cref="int.MaxValue"/> when the hull has no gear.
+        /// Kept for callers. Purchase order does not exclude a part — only turn base does.
         /// </param>
-        /// <returns>Index into <paramref name="perComponentStats"/>, or -1 when no hull part authored a turn Base.</returns>
+        /// <returns>Index into <paramref name="perComponentStats"/>, or -1 when no part authored a turn Base.</returns>
         public static int PickBestTurnBaseIndex(
             IReadOnlyList<string> componentIds,
             IReadOnlyList<ShipComponentAbilityStats> perComponentStats,
             int storeExtraStartIndex = int.MaxValue)
         {
+            _ = storeExtraStartIndex;
             if (componentIds == null || perComponentStats == null)
                 return -1;
 
@@ -188,10 +189,6 @@ namespace TitanOrbit.Data
             float bestPer = float.NegativeInfinity;
             for (int i = 0; i < count; i++)
             {
-                // Purchased gear must not steal the hull Turn Base.
-                if (i >= storeExtraStartIndex)
-                    continue;
-
                 string id = componentIds[i];
                 if (string.IsNullOrWhiteSpace(id))
                     continue;
@@ -354,9 +351,10 @@ namespace TitanOrbit.Data
 
         /// <summary>
         /// Extra-Levels every matched part with <b>that part’s</b> PerExtra, then sums.
-        /// Non-weapon pools keep <b>only the primary Base</b>. Extras add PerExtra × levels.
+        /// Non-weapon pools keep <b>only the primary Base</b> (highest base of that type).
+        /// Extras add PerExtra × levels.
         /// Turn ignores pool primaries: only <see cref="PickBestTurnBaseIndex"/> keeps a Base.
-        /// Store gear is never that part — it adds Turn PerExtra × levels only.
+        /// A purchased fin with a higher turn base owns that Base; weaker turn parts add PerExtra only.
         /// Chassis weapons keep each barrel’s Base (they fire on their own).
         /// A moon-store weapon does not: it unlocks a bullet type and adds no damage or cadence.
         /// <para>
@@ -371,7 +369,7 @@ namespace TitanOrbit.Data
         /// Live shot damage still comes from per-mount apply after this hull block.
         /// </summary>
         /// <param name="storeExtraStartIndex">
-        /// First moon-store extra index so the newest purchase is the display primary.
+        /// First moon-store extra index. Primary is the highest base in the pool, not the newest buy.
         /// <see cref="int.MaxValue"/> when the hull has no store gear.
         /// </param>
         public static ShipComponentAbilityStats AggregateAndEvaluate(
@@ -413,7 +411,7 @@ namespace TitanOrbit.Data
                 list.Add(i);
             }
 
-            // One hull turn Base. Other hull parts and purchased gear add PerExtra only.
+            // One turn Base — the highest turnSpeed, chassis or purchased. Everyone else adds PerExtra only.
             int bestTurnIndex = PickBestTurnBaseIndex(
                 componentIds, perComponentStats, storeExtraStartIndex);
 

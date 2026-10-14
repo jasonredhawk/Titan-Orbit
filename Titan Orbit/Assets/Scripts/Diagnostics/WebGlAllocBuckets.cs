@@ -35,6 +35,67 @@ namespace TitanOrbit.Diagnostics
         /// <summary>Native growth from the end of Update through the end of LateUpdate (includes presentation).</summary>
         public static long LateAlloc;
 
+        /// <summary>Native growth across SimulationSystemGroup (end of Update until the first LateUpdate).</summary>
+        public static long SimAlloc;
+
+        /// <summary>Native growth across LateUpdates that run at execution order 32000 or earlier.</summary>
+        public static long LateUiAlloc;
+
+        /// <summary>Ghost receive / snapshot group inside the simulation tick.</summary>
+        public static long SimGhostAlloc;
+
+        /// <summary>Physics build, broadphase, contacts, and jacobians.</summary>
+        public static long SimPhysBuildAlloc;
+
+        /// <summary>Physics solve, integrate, and export.</summary>
+        public static long SimPhysSolveAlloc;
+
+        /// <summary>BuildPhysicsWorld / physics initialize.</summary>
+        public static long SimPhysInitAlloc;
+
+        /// <summary>Broadphase body-pair creation.</summary>
+        public static long SimPhysPairsAlloc;
+
+        /// <summary>Narrowphase contact creation.</summary>
+        public static long SimPhysContactsAlloc;
+
+        /// <summary>Jacobian build.</summary>
+        public static long SimPhysJacAlloc;
+
+        /// <summary>Solve and integrate only.</summary>
+        public static long SimPhysSolveOnlyAlloc;
+
+        /// <summary>Export and AfterPhysics.</summary>
+        public static long SimPhysAfterAlloc;
+
+        /// <summary>Predicted simulation outside the physics group.</summary>
+        public static long SimPredAlloc;
+
+        /// <summary>SimulationSystemGroup outside ghost receive and prediction.</summary>
+        public static long SimRestAlloc;
+
+        /// <summary>How many physics steps the probes observed.</summary>
+        public static int SimPhysSteps;
+
+        static long _simCursor;
+        static bool _simCursorOpen;
+
+        public static void SimCursorReset()
+        {
+            _simCursor = Profiler.GetTotalAllocatedMemoryLong();
+            _simCursorOpen = true;
+        }
+
+        public static void SimCursorAdd(ref long bucket)
+        {
+            long now = Profiler.GetTotalAllocatedMemoryLong();
+            if (_simCursorOpen)
+                bucket += now - _simCursor;
+
+            _simCursor = now;
+            _simCursorOpen = true;
+        }
+
         /// <summary>How many times end-of-frame was observed. Zero means the render split did not run.</summary>
         public static int EndOfFrameMarks;
 
@@ -74,10 +135,37 @@ namespace TitanOrbit.Diagnostics
             _phase = 3;
         }
 
-        public static void MarkLate()
+        /// <summary>First LateUpdate. Closes the simulation window opened by <see cref="MarkUpdateEnd"/>.</summary>
+        public static void MarkSimEnd()
         {
             long now = Profiler.GetTotalAllocatedMemoryLong();
             if (_phase == 3)
+            {
+                long d = now - _phaseMark;
+                if (d > 0L)
+                {
+                    SimAlloc += d;
+                    LateAlloc += d;
+                }
+            }
+
+            _phaseMark = now;
+            _phase = 5;
+        }
+
+        public static void MarkLate()
+        {
+            long now = Profiler.GetTotalAllocatedMemoryLong();
+            if (_phase == 5)
+            {
+                long d = now - _phaseMark;
+                if (d > 0L)
+                {
+                    LateUiAlloc += d;
+                    LateAlloc += d;
+                }
+            }
+            else if (_phase == 3)
             {
                 long d = now - _phaseMark;
                 if (d > 0L)
@@ -116,7 +204,21 @@ namespace TitanOrbit.Diagnostics
             out long early,
             out long update,
             out long late,
-            out int endOfFrameMarks)
+            out long sim,
+            out long lateUi,
+            out long simGhost,
+            out long simPhysBuild,
+            out long simPhysSolve,
+            out long simPred,
+            out long simRest,
+            out int simPhysSteps,
+            out int endOfFrameMarks,
+            out long physInit,
+            out long physPairs,
+            out long physContacts,
+            out long physJac,
+            out long physSolveOnly,
+            out long physAfter)
         {
             frames = Frames;
             Frames = 0;
@@ -124,11 +226,41 @@ namespace TitanOrbit.Diagnostics
             early = EarlyAlloc;
             update = UpdateAlloc;
             late = LateAlloc;
+            sim = SimAlloc;
+            lateUi = LateUiAlloc;
+            simGhost = SimGhostAlloc;
+            simPhysBuild = SimPhysBuildAlloc;
+            simPhysSolve = SimPhysSolveAlloc;
+            simPred = SimPredAlloc;
+            simRest = SimRestAlloc;
+            simPhysSteps = SimPhysSteps;
             endOfFrameMarks = EndOfFrameMarks;
+            physInit = SimPhysInitAlloc;
+            physPairs = SimPhysPairsAlloc;
+            physContacts = SimPhysContactsAlloc;
+            physJac = SimPhysJacAlloc;
+            physSolveOnly = SimPhysSolveOnlyAlloc;
+            physAfter = SimPhysAfterAlloc;
+            simPhysBuild = physInit + physPairs + physContacts + physJac;
+            simPhysSolve = physSolveOnly + physAfter;
+            SimPhysInitAlloc = 0L;
+            SimPhysPairsAlloc = 0L;
+            SimPhysContactsAlloc = 0L;
+            SimPhysJacAlloc = 0L;
+            SimPhysSolveOnlyAlloc = 0L;
+            SimPhysAfterAlloc = 0L;
+            SimGhostAlloc = 0L;
+            SimPhysBuildAlloc = 0L;
+            SimPhysSolveAlloc = 0L;
+            SimPredAlloc = 0L;
+            SimRestAlloc = 0L;
+            SimPhysSteps = 0;
             PostAlloc = 0L;
             EarlyAlloc = 0L;
             UpdateAlloc = 0L;
             LateAlloc = 0L;
+            SimAlloc = 0L;
+            LateUiAlloc = 0L;
             EndOfFrameMarks = 0;
             for (int i = 0; i < Count; i++)
             {

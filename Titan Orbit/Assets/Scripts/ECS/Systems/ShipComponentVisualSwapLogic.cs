@@ -13,10 +13,12 @@ namespace TitanOrbit.ECS
     /// keeping the host slot pose. Used by the hybrid proxy applier and by covering-collider
     /// bake so the unique silhouette matches what the player sees.
     /// <para>
-    /// Store extras remap cockpit / engine / wing / thruster / tail / hull. Weapons are
-    /// owned by B-key <see cref="ShipLoadoutState.RuntimeBulletIndex"/> so purchase and
-    /// cycle do not fight: every barrel restyles to the family that owns that bank
-    /// (purchased extra, else the planet that rolled it). Combat stats stay on Extra Level merge.
+    /// Store extras remap cockpit / engine / wing / thruster / tail / hull only when that
+    /// purchase has the highest base of its type. A weaker buy stays a PerExtra and leaves
+    /// the current mesh in place. Weapons stay on the B-key
+    /// <see cref="ShipLoadoutState.RuntimeBulletIndex"/> so purchase and cycle do not fight:
+    /// every barrel restyles to the family that owns that bank (purchased extra, else the
+    /// planet that rolled it). Combat stats stay on Extra Level merge.
     /// </para>
     /// <para>
     /// [TITAN-ORBIT] Original host parts are cloned under
@@ -41,6 +43,10 @@ namespace TitanOrbit.ECS
         static readonly List<Transform> RestoreScratch = new List<Transform>(8);
         static readonly List<Transform> StashEntryScratch = new List<Transform>(32);
         static readonly HashSet<string> KeepRemappedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        /// <summary>Store extras that own their pool Base. Weaker buys are not remapped.</summary>
+        static readonly List<string> PrimaryExtraScratch = new List<string>(8);
+        /// <summary>Copy of <see cref="PrimaryExtraScratch"/> for the in-progress apply. WouldRemap refills the scratch.</summary>
+        static readonly List<string> ApplyPrimaryExtras = new List<string>(8);
         static readonly HashSet<string> LiveSlotNames = new HashSet<string>(StringComparer.Ordinal);
         static readonly Dictionary<string, int> NameOrdinalScratch = new Dictionary<string, int>(32);
         static readonly Dictionary<int, int> OccurrenceByInstanceId = new Dictionary<int, int>(32);
@@ -129,13 +135,20 @@ namespace TitanOrbit.ECS
             Entity shipEntity)
         {
             // B-key weapon restyle is presentation-only. Covering colliders stay
-            // host + store extras so a bank cycle does not Instantiates/Destroy
-            // weapon children during the sim tick (that aborted B-key writes).
-            _ = hostFamily;
+            // host + the highest-base store extra of each type, so a weaker buy
+            // does not Instantiates/Destroy a mesh during the sim tick.
             _ = runtimeBulletIndex;
             _ = healingBullets;
-            _ = em;
-            _ = shipEntity;
+            int shipLevel = 1;
+            if (em != default && shipEntity != Entity.Null && em.Exists(shipEntity)
+                && em.HasComponent<ShipState>(shipEntity))
+            {
+                shipLevel = Mathf.Max(1, em.GetComponentData<ShipState>(shipEntity).ShipLevel);
+            }
+
+            if (TrySelectPrimaryStoreExtras(
+                    hostFamily, shipLevel, extraComponentIds, PrimaryExtraScratch, em, shipEntity))
+                return PrimaryExtraScratch.Count > 0;
             return HasNonWeaponExtra(extraComponentIds);
         }
 
@@ -167,12 +180,26 @@ namespace TitanOrbit.ECS
 
             bool changed = false;
 
-            // --- Which non-weapon hardpoints extras still cover ---
-            // [TITAN-ORBIT] Discard clears that id from the ghosted buffer. Slots not in
-            // this set go back to the host mesh instead of being destroyed and left empty.
+            // --- Which non-weapon hardpoints the best purchase of each type still covers ---
+            // [TITAN-ORBIT] A weaker buy does not replace the mesh. Slots not in this set
+            // go back to the host part. Discard still clears the id from the ghosted buffer.
             KeepRemappedNames.Clear();
+            IReadOnlyList<string> remapExtras = extraComponentIds;
             if (remapNonWeapons && extraComponentIds != null)
-                CollectRemappedHostNamesForExtras(root, hostFamilyPrefix, extraComponentIds, KeepRemappedNames);
+            {
+                // Copy winners out of the scratch list. Collider bake may call WouldRemap
+                // while this apply is still walking slots, and that refills the scratch.
+                if (TrySelectPrimaryStoreExtras(
+                        hostFamily, shipLevel, extraComponentIds, PrimaryExtraScratch, em, shipEntity))
+                {
+                    ApplyPrimaryExtras.Clear();
+                    for (int i = 0; i < PrimaryExtraScratch.Count; i++)
+                        ApplyPrimaryExtras.Add(PrimaryExtraScratch[i]);
+                    remapExtras = ApplyPrimaryExtras;
+                }
+
+                CollectRemappedHostNamesForExtras(root, hostFamilyPrefix, remapExtras, KeepRemappedNames);
+            }
 
             ShipFamilyDefinition bankFamily = null;
             bool resolvedFamily = !healingBullets
@@ -204,12 +231,12 @@ namespace TitanOrbit.ECS
 
             CollectHostSlots(root, hostFamilyPrefix, HostSlots);
 
-            if (remapNonWeapons && extraComponentIds != null)
+            if (remapNonWeapons && remapExtras != null)
             {
-                for (int i = 0; i < extraComponentIds.Count; i++)
+                for (int i = 0; i < remapExtras.Count; i++)
                     changed |= TryRemapStoreExtra(
                         root, hostFamilyPrefix, hostFamily, shipLevel, team,
-                        extraComponentIds[i], originalStash, stripColliders);
+                        remapExtras[i], originalStash, stripColliders);
             }
 
             if (foreignWeapons)
@@ -1000,6 +1027,112 @@ namespace TitanOrbit.ECS
                     return true;
             }
 
+            return false;
+        }
+
+        /// <summary>
+        /// Purchases that own their type’s Base, scored the same way as live Extra Level.
+        /// The ship’s chassis prefab (catalog × authored scale) and store rows compete together.
+        /// Returns false when that prefab cannot be resolved — callers then remap every extra.
+        /// </summary>
+        static bool TrySelectPrimaryStoreExtras(
+            ShipFamilyDefinition hostFamily,
+            int shipLevel,
+            IReadOnlyList<string> extraComponentIds,
+            List<string> into,
+            EntityManager em = default,
+            Entity shipEntity = default)
+        {
+            if (into == null)
+                return false;
+            into.Clear();
+            if (extraComponentIds == null || extraComponentIds.Count == 0)
+                return false;
+            if (!TryResolveChassisPrefab(hostFamily, shipLevel, em, shipEntity, out GameObject prefab, out ShipFamilyDefinition family))
+                return false;
+
+            ShipFamilyStatsCalculator.SumResult chassis = ShipFamilyStatsCalculator.SumFromPrefabHierarchy(
+                prefab, family, shipLevel: 1, applyPropulsionAndWeaponRules: false);
+            if (chassis.MatchedComponentIds == null || chassis.PerComponentStats == null)
+                return false;
+
+            // Store rows sit after chassis children — same split Extra Level uses.
+            int storeStart = chassis.MatchedComponentIds.Count;
+            for (int i = 0; i < extraComponentIds.Count; i++)
+            {
+                string componentId = extraComponentIds[i];
+                if (string.IsNullOrWhiteSpace(componentId))
+                    continue;
+                if (!ShipFamilyStatsCalculator.TryResolveComponentStats(
+                        family, componentId, out ShipComponentAbilityStats stats))
+                    continue;
+
+                chassis.MatchedComponentIds.Add(componentId);
+                chassis.PerComponentStats.Add(stats);
+            }
+
+            if (chassis.MatchedComponentIds.Count <= storeStart)
+                return true;
+
+            ShipComponentStackAggregation.CollectStoreExtrasThatOwnPoolBase(
+                chassis.MatchedComponentIds,
+                chassis.PerComponentStats,
+                storeStart,
+                into);
+            return true;
+        }
+
+        /// <summary>
+        /// Prefab whose child parts are the chassis side of the primary comparison.
+        /// Prefers the ladder chassis the motor already sums, then the family’s visual prefab for this level.
+        /// </summary>
+        static bool TryResolveChassisPrefab(
+            ShipFamilyDefinition hostFamily,
+            int shipLevel,
+            EntityManager em,
+            Entity shipEntity,
+            out GameObject prefab,
+            out ShipFamilyDefinition family)
+        {
+            prefab = null;
+            family = hostFamily;
+            if (em != default
+                && shipEntity != Entity.Null
+                && em.Exists(shipEntity)
+                && em.HasComponent<ShipState>(shipEntity))
+            {
+                ShipState state = em.GetComponentData<ShipState>(shipEntity);
+                if (ShipStatApplyLogic.TryResolveChassisId(
+                        em,
+                        shipEntity,
+                        state.Team,
+                        state.ShipLevel,
+                        state.BranchIndex,
+                        out string chassisId,
+                        allowFallback: true)
+                    && !string.IsNullOrEmpty(chassisId))
+                {
+                    PlanetShipFamilyConfig config = PlanetShipFamilyConfig.LoadDefault();
+                    ShipFamilyChassisTierEntry tier = config != null
+                        ? config.GetTierEntryForChassisId(chassisId)
+                        : null;
+                    if (tier?.prefab != null)
+                    {
+                        prefab = tier.prefab;
+                        if (ShipStatApplyLogic.TryResolveFamilyForChassisId(chassisId, out ShipFamilyDefinition resolved)
+                            && resolved != null)
+                            family = resolved;
+                        return family != null;
+                    }
+                }
+            }
+
+            if (family != null
+                && family.TryGetVisualPrefabForLevel(Mathf.Max(1, shipLevel), out prefab)
+                && prefab != null)
+                return true;
+
+            prefab = null;
             return false;
         }
 

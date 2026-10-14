@@ -1,6 +1,7 @@
 const CLOUD_SAVE_HOST = "https://cloud-save.services.api.unity.com";
 const TOKEN_EXCHANGE = "https://services.api.unity.com/auth/v1/token-exchange";
 const ENTITLEMENT_KEY = "orbit_unlocked";
+const SOURCE_KEY = "orbit_unlocked_source";
 
 export function isPlausiblePlayerId(playerId: string): boolean {
   return /^[A-Za-z0-9_-]{1,128}$/.test(playerId);
@@ -31,6 +32,59 @@ export async function assertUnityPlayer(env: Env, playerId: string, accessToken:
 /** Writes orbit_unlocked with a Unity service account. The browser cannot call this. */
 export async function grantOrbitUnlocked(env: Env, playerId: string): Promise<void> {
   const token = await exchangeServiceAccount(env);
+  await writeItem(env, token, playerId, ENTITLEMENT_KEY, true);
+}
+
+/**
+ * Admin gift. Reads the flag first so a purchase is not relabeled.
+ * When it is still locked, writes the same true flag Stripe uses, plus a source note.
+ */
+export async function grantOrbitUnlockedFromAdmin(
+  env: Env,
+  playerId: string,
+  grantedBy: string,
+): Promise<{ alreadyOwned: boolean }> {
+  const token = await exchangeServiceAccount(env);
+  if (await readOrbitUnlockedOwned(env, token, playerId))
+    return { alreadyOwned: true };
+
+  await writeItem(env, token, playerId, ENTITLEMENT_KEY, true);
+  try {
+    await writeItem(env, token, playerId, SOURCE_KEY, `admin:${grantedBy}`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "source write failed";
+    console.error(JSON.stringify({ level: "error", message: "admin_source_write_failed", detail: message }));
+  }
+  return { alreadyOwned: false };
+}
+
+async function readOrbitUnlockedOwned(env: Env, token: string, playerId: string): Promise<boolean> {
+  const url =
+    `${CLOUD_SAVE_HOST}/v1/data/projects/${env.UNITY_PROJECT_ID}/players/` +
+    `${encodeURIComponent(playerId)}/items?keys=${ENTITLEMENT_KEY}`;
+  const response = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      ProjectId: env.UNITY_PROJECT_ID,
+    },
+  });
+  if (response.status === 404)
+    return false;
+  if (!response.ok) {
+    const detail = (await response.text()).slice(0, 300);
+    throw new Error(`Cloud Save read failed: ${response.status} ${detail}`);
+  }
+  const json = await response.text();
+  return json.indexOf("\"value\":true") >= 0 || json.indexOf("\"value\": true") >= 0;
+}
+
+async function writeItem(
+  env: Env,
+  token: string,
+  playerId: string,
+  key: string,
+  value: boolean | string,
+): Promise<void> {
   const url =
     `${CLOUD_SAVE_HOST}/v1/data/projects/${env.UNITY_PROJECT_ID}/players/` +
     `${encodeURIComponent(playerId)}/items`;
@@ -41,7 +95,7 @@ export async function grantOrbitUnlocked(env: Env, playerId: string): Promise<vo
       "Content-Type": "application/json",
       ProjectId: env.UNITY_PROJECT_ID,
     },
-    body: JSON.stringify({ key: ENTITLEMENT_KEY, value: true }),
+    body: JSON.stringify({ key, value }),
   });
   if (!response.ok) {
     const detail = (await response.text()).slice(0, 300);

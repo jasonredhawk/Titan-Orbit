@@ -80,7 +80,12 @@ namespace TitanOrbit.ECS
             // Structural ship destroys happen after the RPC query so a recycled NetworkId
             // cannot keep the previous player's hull.
             for (int i = 0; i < networkIds.Length; i++)
+            {
                 ApplyBind(em, networkIds[i], playerIds[i]);
+                // The gift list uses this same id. If it is an admin who already
+                // said they are signed in, the gift button can appear now.
+                OrbitUnlockedGiftServerSystem.NotifyPlayerBound(em, networkIds[i]);
+            }
 
             networkIds.Dispose();
             playerIds.Dispose();

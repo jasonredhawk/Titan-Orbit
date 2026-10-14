@@ -7,7 +7,7 @@ namespace TitanOrbit.Editor.Build
     /// <summary>
     /// [EDITOR] Post-process step for WebGL production builds — copies Cloudflare Pages
     /// <c>_headers</c> (CSP, caching), <c>ads.txt</c> (Google Ad Manager / IAB), and the
-    /// public <c>/privacy</c> and <c>/terms</c> pages into the build output folder.
+    /// public <c>/home</c>, <c>/privacy</c>, and <c>/terms</c> pages into the build output folder.
     /// Required for browser security headers, rewarded-ad fill, and Google sign-in branding
     /// when deploying to Cloudflare Pages. Safe to skip if a source file is missing (logs warning).
     /// </summary>
@@ -42,6 +42,7 @@ namespace TitanOrbit.Editor.Build
                 File.Copy(source, Path.Combine(pathToBuiltProject, "_headers"), overwrite: true);
 
             CopyAdsTxt(pathToBuiltProject);
+            CopySitePage(pathToBuiltProject, "home");
             CopySitePage(pathToBuiltProject, "privacy");
             CopySitePage(pathToBuiltProject, "terms");
         }
@@ -62,8 +63,9 @@ namespace TitanOrbit.Editor.Build
         /// <summary>
         /// Writes <c>Assets/CloudflarePages/{page}/index.html</c> as a build-root file named
         /// <paramref name="page"/> with no extension. The public site is a GCS bucket behind
-        /// Cloudflare, and the URL path is the object name: <c>/privacy</c> is the object
-        /// <c>privacy</c>, not <c>privacy/index.html</c>.
+        /// Cloudflare, and the URL path is the object name: <c>/home</c> is the object
+        /// <c>home</c>, not <c>home/index.html</c>. Google’s OAuth homepage check requires
+        /// that exact URL to return HTML with no redirect.
         /// </summary>
         static void CopySitePage(string pathToBuiltProject, string page)
         {

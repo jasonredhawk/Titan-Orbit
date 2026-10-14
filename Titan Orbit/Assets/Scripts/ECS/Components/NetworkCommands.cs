@@ -1140,14 +1140,15 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
-    /// [NETCODE] Server → all clients: partial scoop — leftover value / size on the same SpawnId.
+    /// [NETCODE] Legacy partial-scoop notice. Pickup no longer emits this — a scoop destroys
+    /// the crystal and sends <see cref="GemConsumedRpc"/>. Kept so in-flight packets still decode.
     /// </summary>
     public struct GemValueChangedRpc : IRpcCommand
     {
         /// <summary>Recipe SpawnId.</summary>
         public int SpawnId;
 
-        /// <summary>Value remaining after the partial take.</summary>
+        /// <summary>Value remaining after the old partial take.</summary>
         public float RemainingValue;
     }
 
@@ -1180,7 +1181,7 @@ namespace TitanOrbit.ECS
 
     /// <summary>
     /// [NETCODE] Server → one joining connection: current snapshot of one live gem
-    /// (pose already integrated; value may be a leftover after a partial scoop).
+    /// (pose already integrated; value is whatever cargo is still in that crystal).
     /// </summary>
     public struct GemCatchUpRpc : IRpcCommand
     {
@@ -1512,4 +1513,82 @@ namespace TitanOrbit.ECS
         /// <summary>Burst VFX scale.</summary>
         public float ExplosionVfxScale;
     }
+
+    /// <summary>
+    /// [NETCODE] Client → server: this connection is a signed-in Unity account
+    /// (Google or username/password), not a guest guid. The connection itself is
+    /// the identity. Handled by <see cref="OrbitUnlockedGiftServerSystem"/>.
+    /// </summary>
+    public struct SessionDurableAccountCommand : IRpcCommand { }
+
+    /// <summary>
+    /// [NETCODE] Server → one client: this player's Unity id is on the admin gift list.
+    /// The gift button stays hidden until this arrives.
+    /// </summary>
+    public struct GiftAdminAccessRpc : IRpcCommand { }
+
+    /// <summary>
+    /// [NETCODE] Client → server: an admin opened the gift list and wants the
+    /// current match roster once. <see cref="RequestId"/> is echoed on each reply
+    /// so a second refresh does not mix with the first.
+    /// </summary>
+    public struct RequestGiftRosterCommand : IRpcCommand
+    {
+        /// <summary>Client-chosen id for this open or refresh. Not a player id.</summary>
+        public byte RequestId;
+    }
+
+    /// <summary>
+    /// [NETCODE] Server → the admin who asked: one person currently in the match.
+    /// <see cref="Count"/> 0 means the match has no connections to list.
+    /// </summary>
+    public struct GiftRosterEntryRpc : IRpcCommand
+    {
+        /// <summary>Same value as <see cref="RequestGiftRosterCommand.RequestId"/>.</summary>
+        public byte RequestId;
+
+        /// <summary>Index of this row, starting at 0.</summary>
+        public byte Index;
+
+        /// <summary>How many rows belong to this request. 0 when the match is empty.</summary>
+        public byte Count;
+
+        /// <summary>Connection network id the gift command should name.</summary>
+        public int NetworkId;
+
+        /// <summary>Nameplate name. Empty when that player has not sent one yet.</summary>
+        public FixedString64Bytes DisplayName;
+
+        /// <summary>1 when this connection has a signed-in Unity account. 0 for a guest.</summary>
+        public byte SignedIn;
+    }
+
+    /// <summary>
+    /// [NETCODE] Client → server: gift Orbit Unlocked to the connection with this network id.
+    /// The server resolves that id to a Unity player id. Clients never send the player id.
+    /// </summary>
+    public struct GiftOrbitUnlockedCommand : IRpcCommand
+    {
+        /// <summary>Network id from <see cref="GiftRosterEntryRpc"/>.</summary>
+        public int TargetNetworkId;
+    }
+
+    /// <summary>
+    /// [NETCODE] Server → the admin who clicked Gift.
+    /// Status 0 failed, 1 granted, 2 already unlocked, 3 another gift is still sending.
+    /// </summary>
+    public struct GiftOrbitUnlockedResultRpc : IRpcCommand
+    {
+        /// <summary>Network id that was gifted, or the one the click named.</summary>
+        public int TargetNetworkId;
+
+        /// <summary>0 failed, 1 granted, 2 already unlocked, 3 still sending.</summary>
+        public byte Status;
+    }
+
+    /// <summary>
+    /// [NETCODE] Server → the gifted player only. Their client reads Cloud Save
+    /// and turns on the same unlock a purchase would.
+    /// </summary>
+    public struct OrbitUnlockedGiftedRpc : IRpcCommand { }
 }

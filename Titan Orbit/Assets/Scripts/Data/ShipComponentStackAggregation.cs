@@ -12,8 +12,10 @@ namespace TitanOrbit.Data
     /// with that part’s own PerExtra and sums them (Engine PerExtra ≠ Thruster PerExtra).
     /// </para>
     /// <para>
-    /// Primary for display: the newest moon-store extra in the pool (purchased gear becomes
-    /// the main part). When the pool is chassis-only, we keep the highest-valued prefab part.
+    /// Primary for display and Base: the member with the highest base of that type
+    /// (chassis parts and moon-store purchases compete together). A level-2 engine
+    /// keeps the Move Base over a later level-1 buy. Every other member of the pool
+    /// is an extra — its PerExtra still adds, its Base does not.
     /// Engines and thrusters are <b>separate</b> pools: engines own Move + Energy,
     /// thrusters own Accel + Turn. <see cref="PropulsionPoolKey"/> is leftover for
     /// older HUD binders that still group both.
@@ -38,7 +40,7 @@ namespace TitanOrbit.Data
             /// <summary>Pool key (Weapon, Propulsion, Cockpit, …).</summary>
             public string PoolKey;
 
-            /// <summary>Stats from the display primary (newest store extra, else highest-valued).</summary>
+            /// <summary>Stats from the display primary (highest base in the pool).</summary>
             public ShipComponentAbilityStats PrimaryStats;
 
             /// <summary>Total members in the pool (including primary).</summary>
@@ -154,16 +156,15 @@ namespace TitanOrbit.Data
                 combinedPrimary.AddInPlace(contrib.PrimaryStats);
             }
 
-            // Turn Base is one hull part (highest turnSpeed), not one Base per pool.
-            // Purchased gear keeps only its PerExtra. Every part’s PerExtra still sums
-            // so a later Extra Level step stays honest.
+            // Turn Base is one part (highest turnSpeed), not one Base per pool.
+            // Every other part still adds its turn PerExtra.
             ApplySingleTurnBase(
                 componentIds, perComponentStats, ref combinedPrimary, storeExtraStartIndex);
         }
 
         /// <summary>
-        /// Replaces a summed turn Base with the single best hull part’s Base.
-        /// Gear does not own that Base. Every non-cosmetic part still contributes its turn PerExtra.
+        /// Replaces a summed turn Base with the single best part’s Base
+        /// (chassis or purchased). Every non-cosmetic part still contributes its turn PerExtra.
         /// </summary>
         static void ApplySingleTurnBase(
             IReadOnlyList<string> componentIds,
@@ -241,13 +242,14 @@ namespace TitanOrbit.Data
 
         /// <summary>
         /// Primary index within <paramref name="memberIndices"/> (local list index, not global).
-        /// Newest moon-store extra in the pool wins (Orbit Menu purchase becomes the main part).
-        /// Chassis-only pools: engines use highest moveSpeed; thrusters use highest accel;
-        /// others use the additive score.
+        /// Highest base in the pool wins, whether that part was on the chassis or bought
+        /// later. Engines use move speed (then energy); thrusters use acceleration (then turn);
+        /// other types use the additive base score. A tie keeps the earlier list index, so a
+        /// chassis part stays primary when a purchase has the same base.
         /// </summary>
         /// <param name="storeExtraStartIndex">
-        /// First list index that is a moon-store extra (<see cref="int.MaxValue"/> = none).
-        /// Store rows are appended after prefab children, so the last extra in the pool is newest.
+        /// Kept so callers can still pass the moon-store split. Purchase order does not
+        /// choose the primary — only base score does.
         /// </param>
         public static int PickPrimaryLocalIndex(
             string poolKey,
@@ -255,24 +257,9 @@ namespace TitanOrbit.Data
             IReadOnlyList<ShipComponentAbilityStats> perComponentStats,
             int storeExtraStartIndex = int.MaxValue)
         {
+            _ = storeExtraStartIndex;
             if (memberIndices == null || memberIndices.Count == 0)
                 return 0;
-
-            // --- Purchased gear becomes the display / visual primary ---
-            // [TITAN-ORBIT] Extras are appended after chassis parts. The last extra in this
-            // pool is the most recent Orbit Menu buy (second cockpit, foreign engine, …).
-            if (storeExtraStartIndex < int.MaxValue)
-            {
-                int lastExtraLocal = -1;
-                for (int m = 0; m < memberIndices.Count; m++)
-                {
-                    if (memberIndices[m] >= storeExtraStartIndex)
-                        lastExtraLocal = m;
-                }
-
-                if (lastExtraLocal >= 0)
-                    return lastExtraLocal;
-            }
 
             int bestLocal = 0;
             float bestScore = float.NegativeInfinity;
@@ -352,13 +339,83 @@ namespace TitanOrbit.Data
             return n;
         }
 
-        /// <summary>Engine chassis primary: cruise first, then energy plant size.</summary>
+        /// <summary>
+        /// Moon-store component ids that own their pool’s Base. Chassis parts and purchases
+        /// are scored together; only a buy with a strictly higher base than every other
+        /// member is returned. Weaker buys stay extras and must not replace the mesh.
+        /// Weapons are omitted — a bought gun unlocks a bullet type and does not take a barrel’s Base.
+        /// </summary>
+        public static void CollectStoreExtrasThatOwnPoolBase(
+            IReadOnlyList<string> componentIds,
+            IReadOnlyList<ShipComponentAbilityStats> perComponentStats,
+            int storeExtraStartIndex,
+            List<string> into)
+        {
+            if (into == null)
+                return;
+            into.Clear();
+            if (componentIds == null || perComponentStats == null)
+                return;
+            if (storeExtraStartIndex < 0 || storeExtraStartIndex >= componentIds.Count)
+                return;
+
+            int count = Mathf.Min(componentIds.Count, perComponentStats.Count);
+            var groups = new Dictionary<string, List<int>>(StringComparer.OrdinalIgnoreCase);
+            for (int i = 0; i < count; i++)
+            {
+                string id = componentIds[i];
+                if (string.IsNullOrWhiteSpace(id))
+                    continue;
+                if (ShipFamilyPartCalcProfileSet.IsCosmeticPartName(id))
+                    continue;
+
+                string key = ResolveStackPoolKey(id);
+                if (!groups.TryGetValue(key, out List<int> list))
+                {
+                    list = new List<int>(4);
+                    groups[key] = list;
+                }
+
+                list.Add(i);
+            }
+
+            foreach (KeyValuePair<string, List<int>> pair in groups)
+            {
+                if (IsWeaponPoolKey(pair.Key))
+                    continue;
+
+                int primaryLocal = PickPrimaryLocalIndex(
+                    pair.Key, pair.Value, perComponentStats, storeExtraStartIndex);
+                int primaryGlobal = pair.Value[primaryLocal];
+                if (primaryGlobal < storeExtraStartIndex)
+                    continue;
+
+                string winner = componentIds[primaryGlobal];
+                if (string.IsNullOrWhiteSpace(winner))
+                    continue;
+                if (!ContainsId(into, winner))
+                    into.Add(winner);
+            }
+        }
+
+        static bool ContainsId(List<string> ids, string id)
+        {
+            for (int i = 0; i < ids.Count; i++)
+            {
+                if (string.Equals(ids[i], id, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>Engine primary: cruise base first, then energy plant size.</summary>
         static float ScoreEnginePrimary(in ShipComponentAbilityStats s)
         {
             return s.moveSpeed * 1_000_000f + s.energyCap;
         }
 
-        /// <summary>Thruster chassis primary: thrust first, then turn.</summary>
+        /// <summary>Thruster primary: thrust base first, then turn.</summary>
         static float ScoreThrusterPrimary(in ShipComponentAbilityStats s)
         {
             return s.accelerationCap * 1_000_000f + s.turnSpeed * 1_000f;

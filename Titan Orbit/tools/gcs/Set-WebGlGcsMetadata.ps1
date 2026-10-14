@@ -56,8 +56,8 @@ foreach ($file in $files) {
     if ($name -like "*.data.unityweb" -or $name -like "*.data.br") {
         $contentType = "application/octet-stream"
     }
-    # GCS object name is the URL path. /privacy and /terms have no file extension.
-    if ($name -eq "privacy" -or $name -eq "terms") {
+    # GCS object name is the URL path. /home, /privacy, and /terms have no file extension.
+    if ($name -eq "home" -or $name -eq "privacy" -or $name -eq "terms") {
         $contentType = "text/html"
     }
 

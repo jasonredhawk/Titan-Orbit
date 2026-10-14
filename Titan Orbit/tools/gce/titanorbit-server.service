@@ -10,6 +10,9 @@ StartLimitBurst=5
 [Service]
 Type=simple
 User=jason
+# Unity player id allowed to gift Orbit Unlocked. Comma-separate more ids.
+# The grant secret stays out of git: set TITANORBIT_ADMIN_GRANT_SECRET on the VM.
+Environment=TITANORBIT_ADMIN_PLAYER_IDS=TjtA4TzX6u5qsezJT0hHQQeeMRMv
 WorkingDirectory=/home/jason/titanorbit-server/TitanOrbitLinux1
 StandardOutput=journal
 StandardError=journal

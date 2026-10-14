@@ -180,9 +180,6 @@ namespace TitanOrbit.UI
         /// Hidden on filled / normal-empty slots.
         /// </summary>
         private Button[] equipmentBonusAdButtons;
-        private GameObject equipmentRemoveConfirmRoot;
-        private TextMeshProUGUI equipmentRemoveConfirmBodyText;
-        private int _pendingRemoveEquipmentSlotIndex = -1;
         private Starship _equipmentUiWatchShip;
 
         private GameObject cardRemoveConfirmRoot;
@@ -1800,7 +1797,7 @@ namespace TitanOrbit.UI
                 CreateSlotBoxForGrid(equipmentGridRoot.transform, SlotCardWidth, SlotCardHeight, i, out equipmentBoxes[i], out equipmentBgImages[i], out equipmentBorderImages[i], out equipmentChargeTexts[i], out equipmentTitleTexts[i], out equipmentDescTexts[i], out equipmentDeleteButtons[i]);
                 int idx = i;
                 if (equipmentDeleteButtons[i] != null)
-                    equipmentDeleteButtons[i].onClick.AddListener(() => ShowEquipmentRemoveConfirm(idx));
+                    equipmentDeleteButtons[i].onClick.AddListener(() => RemoveEquippedGearImmediately(idx));
                 equipmentBonusAdButtons[i] = CreateEquipmentBonusAdButton(equipmentBoxes[i].transform);
             }
 
@@ -2845,7 +2842,7 @@ namespace TitanOrbit.UI
                 }
 
                 if (equipmentDeleteButtons[i] != null)
-                    equipmentDeleteButtons[i].onClick.AddListener(() => ShowEquipmentRemoveConfirm(idx));
+                    equipmentDeleteButtons[i].onClick.AddListener(() => RemoveEquippedGearImmediately(idx));
                 if (equipmentBoxes[i] != null)
                     equipmentBonusAdButtons[i] = CreateEquipmentBonusAdButton(equipmentBoxes[i].transform);
             }
@@ -2862,7 +2859,7 @@ namespace TitanOrbit.UI
         /// <param name="bgImage">Card background image.</param>
         /// <param name="titleText">Item name (or "Empty").</param>
         /// <param name="descText">Unused on compact cards — kept for array wiring compatibility (hidden).</param>
-        /// <param name="deleteButton">Remove-from-loadout control (top-left ×).</param>
+        /// <param name="deleteButton">Top-left ×. One click discards that gear row with no confirm dialog.</param>
         /// <param name="slotUi">Runtime refs for refresh / placement toggle.</param>
         private void CreateSidebarEquipmentSlotCard(
             Transform gridParent,
@@ -3114,7 +3111,7 @@ namespace TitanOrbit.UI
             slotUi.placementPanel.SetActive(false);
             slotUi.placementExpanded = false;
 
-            // --- Delete × (layout-ignored overlay) ---
+            // --- Delete × (layout-ignored overlay). Click discards the row immediately. ---
             var delGo = new GameObject("Delete");
             delGo.transform.SetParent(boxRoot.transform, false);
             var delRt = delGo.AddComponent<RectTransform>();
@@ -6310,144 +6307,23 @@ namespace TitanOrbit.UI
                 cardRemoveConfirmRoot.SetActive(false);
         }
 
-        private void EnsureEquipmentRemoveConfirmModal()
+        /// <summary>
+        /// Drops one piece of gear from the left Orbit Menu list the moment the player
+        /// taps that row's delete button. There is no confirm dialog — the click is the discard.
+        /// The dedicated server still owns the loadout; this only asks it to remove
+        /// that slot via <see cref="OrbitStationShipView.RemoveEquipmentServerRpc"/>.
+        /// </summary>
+        /// <param name="slotIndex">Index into the docked ship's equipped-gear list (filled rows only).</param>
+        private void RemoveEquippedGearImmediately(int slotIndex)
         {
-            if (equipmentRemoveConfirmRoot != null) return;
-            equipmentRemoveConfirmRoot = new GameObject("EquipmentRemoveConfirm");
-            equipmentRemoveConfirmRoot.transform.SetParent(transform, false);
-            var rootRt = equipmentRemoveConfirmRoot.AddComponent<RectTransform>();
-            rootRt.anchorMin = Vector2.zero;
-            rootRt.anchorMax = Vector2.one;
-            rootRt.offsetMin = rootRt.offsetMax = Vector2.zero;
-            var dim = equipmentRemoveConfirmRoot.AddComponent<Image>();
-            dim.color = new Color(0f, 0f, 0f, 0.55f);
-            dim.raycastTarget = true;
+            if (currentShip == null || slotIndex < 0)
+                return;
 
-            var box = new GameObject("Box");
-            box.transform.SetParent(equipmentRemoveConfirmRoot.transform, false);
-            var boxRt = box.AddComponent<RectTransform>();
-            boxRt.anchorMin = boxRt.anchorMax = new Vector2(0.5f, 0.5f);
-            boxRt.sizeDelta = new Vector2(340f, 140f);
-            var boxImg = box.AddComponent<Image>();
-            boxImg.color = new Color(0.1f, 0.12f, 0.18f, 0.98f);
-            if (panelBackgroundSprite != null) { boxImg.sprite = panelBackgroundSprite; boxImg.type = Image.Type.Sliced; }
-
-            var bodyGo = new GameObject("Body");
-            bodyGo.transform.SetParent(box.transform, false);
-            var bodyRt = bodyGo.AddComponent<RectTransform>();
-            bodyRt.anchorMin = new Vector2(0f, 0.35f);
-            bodyRt.anchorMax = new Vector2(1f, 1f);
-            bodyRt.offsetMin = new Vector2(16f, 8f);
-            bodyRt.offsetMax = new Vector2(-16f, -12f);
-            equipmentRemoveConfirmBodyText = bodyGo.AddComponent<TextMeshProUGUI>();
-            equipmentRemoveConfirmBodyText.text = "Remove equipment?";
-            equipmentRemoveConfirmBodyText.fontSize = 14;
-            equipmentRemoveConfirmBodyText.alignment = TextAlignmentOptions.Center;
-            equipmentRemoveConfirmBodyText.color = Color.white;
-            if (fontAsset != null) equipmentRemoveConfirmBodyText.font = fontAsset;
-
-            var row = new GameObject("Buttons");
-            row.transform.SetParent(box.transform, false);
-            var rowRt = row.AddComponent<RectTransform>();
-            rowRt.anchorMin = new Vector2(0f, 0f);
-            rowRt.anchorMax = new Vector2(1f, 0.35f);
-            rowRt.offsetMin = new Vector2(16f, 12f);
-            rowRt.offsetMax = new Vector2(-16f, -8f);
-            var rowH = row.AddComponent<HorizontalLayoutGroup>();
-            rowH.spacing = 12f;
-            rowH.childAlignment = TextAnchor.MiddleCenter;
-            rowH.childControlWidth = rowH.childControlHeight = true;
-            rowH.childForceExpandWidth = rowH.childForceExpandHeight = true;
-
-            var cancelBtn = CreateModalButton(row.transform, "Cancel", new Color(0.22f, 0.24f, 0.32f, 0.98f), OnEquipmentRemoveConfirmCancel);
-            var removeBtn = CreateModalButton(row.transform, "Remove", new Color(0.5f, 0.22f, 0.22f, 0.98f), OnEquipmentRemoveConfirmYes);
-            cancelBtn.name = "Cancel";
-            removeBtn.name = "Remove";
-
-            equipmentRemoveConfirmRoot.SetActive(false);
-        }
-
-        private Button CreateModalButton(Transform parent, string label, Color bgColor, UnityEngine.Events.UnityAction onClick)
-        {
-            var go = new GameObject("Btn_" + label);
-            go.transform.SetParent(parent, false);
-            var img = go.AddComponent<Image>();
-            img.color = bgColor;
-            if (buttonSprite != null) { img.sprite = buttonSprite; img.type = Image.Type.Sliced; }
-            var btn = go.AddComponent<Button>();
-            btn.onClick.AddListener(onClick);
-            var txtGo = new GameObject("Text");
-            txtGo.transform.SetParent(go.transform, false);
-            var tr = txtGo.AddComponent<RectTransform>();
-            tr.anchorMin = Vector2.zero;
-            tr.anchorMax = Vector2.one;
-            tr.offsetMin = new Vector2(8f, 4f);
-            tr.offsetMax = new Vector2(-8f, -4f);
-            var tmp = txtGo.AddComponent<TextMeshProUGUI>();
-            tmp.text = label;
-            tmp.fontSize = 14;
-            tmp.alignment = TextAlignmentOptions.Center;
-            tmp.color = Color.white;
-            if (fontAsset != null) tmp.font = fontAsset;
-            tmp.raycastTarget = false;
-            return btn;
-        }
-
-        private void ShowEquipmentRemoveConfirm(int slotIndex)
-        {
-            if (currentShip == null) return;
             var equipment = currentShip.EquippedEquipment;
-            if (equipment == null || slotIndex < 0 || slotIndex >= equipment.Count) return;
-            StoreItemType itemType = equipment[slotIndex].ItemType;
-            _pendingRemoveEquipmentSlotIndex = slotIndex;
-            EnsureEquipmentRemoveConfirmModal();
-            if (equipmentRemoveConfirmBodyText != null)
-            {
-                string itemLabel;
-                if (equipment[slotIndex].IsShipComponent)
-                {
-                    itemLabel = equipment[slotIndex].ComponentId;
-                    if (CardShopSystem.Instance != null &&
-                        TryResolveEquippedComponent(
-                            equipment[slotIndex].ComponentId,
-                            CardShopSystem.Instance.GetShipFamilyForShip(currentShip),
-                            out ShipFamilyComponentEntry componentEntry,
-                            out _))
-                    {
-                        itemLabel = ShipComponentStoreData.GetDisplayName(componentEntry);
-                    }
-                    else
-                    {
-                        itemLabel = ShipComponentStoreData.FormatComponentId(itemLabel);
-                    }
-                }
-                else
-                {
-                    itemLabel = StoreItemData.GetDisplayName(itemType);
-                }
-                equipmentRemoveConfirmBodyText.text = $"Remove \"{itemLabel}\" from equipment?";
-            }
-            equipmentRemoveConfirmRoot.SetActive(true);
-            equipmentRemoveConfirmRoot.transform.SetAsLastSibling();
-        }
+            if (equipment == null || slotIndex >= equipment.Count)
+                return;
 
-        private void OnEquipmentRemoveConfirmYes()
-        {
-            if (currentShip != null && _pendingRemoveEquipmentSlotIndex >= 0)
-                currentShip.RemoveEquipmentServerRpc(_pendingRemoveEquipmentSlotIndex);
-            HideEquipmentRemoveConfirm();
-        }
-
-        private void OnEquipmentRemoveConfirmCancel()
-        {
-            HideEquipmentRemoveConfirm();
-        }
-
-        private void HideEquipmentRemoveConfirm()
-        {
-            _pendingRemoveEquipmentSlotIndex = -1;
-            if (equipmentRemoveConfirmRoot != null)
-                equipmentRemoveConfirmRoot.SetActive(false);
+            currentShip.RemoveEquipmentServerRpc(slotIndex);
         }
 
         private void RefreshSlots()

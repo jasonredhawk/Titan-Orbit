@@ -557,6 +557,8 @@ namespace TitanOrbit.ECS
     /// Candidates come from <see cref="GemSpatialHash"/> around the hull, each wing, and gems
     /// already pinned to this ship's tractor (a lock on an outer wing sits outside a hull-only
     /// gather). Colour / <c>IsBonusGem</c> is ignored — yellow extra-yield gems scoop like red.
+    /// A scoop always destroys the whole crystal. Cargo only gains
+    /// <c>min(gem value, capacity left)</c>; the rest is wasted. Crystals are never split.
     /// Runs after <see cref="GemMotionSystem"/> so same-tick tractor pull can land in the zone.
     /// Skips only <c>IsDead</c> / team-select ships. A living 0-HP hull with cargo still aboard
     /// may scoop — dual-resource death is hull AND gems empty, not hull alone.
@@ -626,9 +628,10 @@ namespace TitanOrbit.ECS
                 state.EntityManager, SystemAPI.Time.ElapsedTime);
 
             // --- Snapshot gems once (no nested SystemAPI.Query) ---
-            // [ECS/DOTS] Copies stay valid while we iterate ships. Destroy/update goes through ECB
-            // so the arrays are not invalidated mid-tick. We write leftover value/size back into
-            // these copies (not `using var` — C# forbids mutating a using variable's indexer).
+            // [ECS/DOTS] Copies stay valid while we iterate ships. Destroy goes through ECB
+            // so the arrays are not invalidated mid-tick. Consumed slots are flagged in
+            // these copies (not `using var` — C# forbids mutating a using variable's indexer)
+            // so a later ship in the same tick cannot scoop a crystal already taken.
             int gemCount = _gemQuery.CalculateEntityCount();
             if (gemCount <= 0)
                 return;
@@ -755,36 +758,23 @@ namespace TitanOrbit.ECS
                     if (take <= 0.001f)
                         continue;
 
+                    // --- Whole crystal, even when cargo cannot hold it ---
+                    // [TITAN-ORBIT] A 20-gem crystal into 10 free cargo adds 10 and destroys
+                    // the gem. The other 10 is wasted. Leaving a shrunk remainder made the
+                    // client mesh stay large (missed value RPC, or cargo-full orphan hide)
+                    // while the server hit radius collapsed, so the crystal looked solid
+                    // and could not be scooped.
                     var ship = shipState.ValueRO;
-                    ship.CurrentGems += take;
+                    ship.CurrentGems = math.min(ship.GemCapacity, ship.CurrentGems + take);
                     shipState.ValueRW = ship;
-                    capacityLeft -= take;
+                    capacityLeft = ship.GemCapacity - ship.CurrentGems;
 
-                    float remainder = gemState.Value - take;
-                    if (remainder > 0.001f)
-                    {
-                        // --- Partial take (cargo filled mid-gem) ---
-                        gemState.Value = remainder;
-                        float scale = math.clamp(math.sqrt(remainder) * 0.2f, 0.2f, 0.5f);
-                        gemState.Size = scale;
-                        var leftoverXf = LocalTransform.FromPositionRotationScale(
-                            gemTransform.Position,
-                            gemTransform.Rotation,
-                            scale);
-                        gemStates[gi] = gemState;
-                        gemTransforms[gi] = leftoverXf;
-                        ecb.SetComponent(gemEntity, gemState);
-                        ecb.SetComponent(gemEntity, leftoverXf);
-                        GemNetNotify.SendValueChanged(ref ecb, gemState.SpawnId, remainder, gemTransform.Position);
-                    }
-                    else
-                    {
-                        gemConsumed[gi] = true;
-                        gemState.IsConsumed = true;
-                        gemStates[gi] = gemState;
-                        GemNetNotify.SendConsumed(ref ecb, gemState.SpawnId, gemTransform.Position);
-                        ecb.DestroyEntity(gemEntity);
-                    }
+                    gemConsumed[gi] = true;
+                    gemState.IsConsumed = true;
+                    gemStates[gi] = gemState;
+                    GemNetNotify.SendConsumed(
+                        ref ecb, gemState.SpawnId, gemTransform.Position, shipNetworkId);
+                    ecb.DestroyEntity(gemEntity);
 
                     if (capacityLeft <= 0.001f)
                         break;

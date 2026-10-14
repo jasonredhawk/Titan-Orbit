@@ -1,3 +1,4 @@
+using TitanOrbit.ECS;
 using TitanOrbit.NetCode;
 using TMPro;
 using UnityEngine;
@@ -30,6 +31,12 @@ namespace TitanOrbit.Game
         public static bool IsOpen { get; private set; }
 
         /// <summary>
+        /// Fired when an admin presses GIFT on this card. The roster lives in the
+        /// gift panel, which cannot be referenced from this assembly.
+        /// </summary>
+        public static event System.Action GiftChosen;
+
+        /// <summary>
         /// True after Awake succeeded on a client-presentation process.
         /// OrbitStationUI uses this to yield Escape instead of toggling the dock.
         /// </summary>
@@ -49,6 +56,15 @@ namespace TitanOrbit.Game
 
         /// <summary>Last frame we consumed Escape so we do not reopen on the same press that closed us.</summary>
         int _ignoreEscapeUntilFrame = -1;
+
+        /// <summary>Command card rect. Grows when the admin gift button is shown.</summary>
+        RectTransform _commandCard;
+
+        /// <summary>Admin-only third action. Inactive until the server marks this account.</summary>
+        GameObject _giftButton;
+
+        /// <summary>Last admin visibility applied to <see cref="_giftButton"/>.</summary>
+        bool _giftButtonVisible;
 
         // --- Palette: same void glass as DeathScreen / ShipStatTooltipChrome ---
         static readonly Color DimColor = new Color(0.01f, 0.015f, 0.03f, 0.55f);
@@ -122,6 +138,9 @@ namespace TitanOrbit.Game
                 return;
             }
 
+            if (IsOpen)
+                RefreshAdminGiftButton();
+
             if (!WasEscapePressedThisFrame())
                 return;
 
@@ -161,6 +180,7 @@ namespace TitanOrbit.Game
             if (overlayRoot != null)
                 overlayRoot.SetActive(true);
             IsOpen = true;
+            RefreshAdminGiftButton();
         }
 
         /// <summary>Hides the overlay and publishes <see cref="IsOpen"/> false.</summary>
@@ -215,6 +235,32 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// Opens the in-match gift roster. The button exists only after the server
+        /// says this signed-in account is an admin.
+        /// </summary>
+        void OnGiftClicked()
+        {
+            GiftChosen?.Invoke();
+        }
+
+        /// <summary>
+        /// Shows GIFT under Main Menu only for an allowlisted account, and lengthens
+        /// the card so the third button stays inside the frame.
+        /// </summary>
+        void RefreshAdminGiftButton()
+        {
+            bool admin = OrbitUnlockedGiftClientState.IsAdmin;
+            if (_giftButtonVisible == admin)
+                return;
+
+            _giftButtonVisible = admin;
+            if (_giftButton != null)
+                _giftButton.SetActive(admin);
+            if (_commandCard != null)
+                _commandCard.sizeDelta = new Vector2(360f, admin ? 292f : 236f);
+        }
+
+        /// <summary>
         /// Builds the centred command card once. Recreates if a hot-reload leftover is found.
         /// Screen Space Overlay + GraphicRaycaster so the two buttons receive clicks.
         /// </summary>
@@ -257,6 +303,7 @@ namespace TitanOrbit.Game
             var cardGo = new GameObject("CommandCard");
             cardGo.transform.SetParent(canvasGo.transform, false);
             var cardRt = cardGo.AddComponent<RectTransform>();
+            _commandCard = cardRt;
             cardRt.anchorMin = new Vector2(0.5f, 0.5f);
             cardRt.anchorMax = new Vector2(0.5f, 0.5f);
             cardRt.pivot = new Vector2(0.5f, 0.5f);
@@ -346,6 +393,9 @@ namespace TitanOrbit.Game
             // --- Actions ---
             CreateMenuButton(cardGo.transform, "ResumeButton", "RESUME", new Vector2(0f, -128f), OnResumeClicked);
             CreateMenuButton(cardGo.transform, "MainMenuButton", "MAIN MENU", new Vector2(0f, -184f), OnMainMenuClicked);
+            _giftButton = CreateMenuButton(cardGo.transform, "GiftButton", "GIFT", new Vector2(0f, -240f), OnGiftClicked);
+            _giftButton.SetActive(false);
+            _giftButtonVisible = false;
 
             const float bracket = 10f;
             const float thick = 1.4f;
@@ -368,7 +418,7 @@ namespace TitanOrbit.Game
         /// <param name="label">Uppercase caption the player reads.</param>
         /// <param name="anchoredPos">Centre-card offset (Y is negative downward).</param>
         /// <param name="onClick">Handler for the UGUI Button.</param>
-        static void CreateMenuButton(
+        static GameObject CreateMenuButton(
             Transform parent,
             string name,
             string label,
@@ -390,6 +440,7 @@ namespace TitanOrbit.Game
             var button = go.GetComponent<Button>();
             button.onClick.RemoveAllListeners();
             button.onClick.AddListener(onClick);
+            return go;
         }
 
         /// <summary>True on the frame the player presses Escape (new Input System, else legacy).</summary>

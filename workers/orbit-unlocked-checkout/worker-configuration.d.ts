@@ -20,6 +20,7 @@ declare namespace Cloudflare {
 		UNITY_SERVICE_ACCOUNT_KEY_ID: string;
 		UNITY_SERVICE_ACCOUNT_SECRET: string;
 		UNITY_ENVIRONMENT_ID: string;
+		ADMIN_GRANT_SECRET: string;
 	}
 }
 interface Env extends Cloudflare.Env {}
@@ -27,7 +28,7 @@ type StringifyValues<EnvType extends Record<string, unknown>> = {
 	[Binding in keyof EnvType]: EnvType[Binding] extends string ? EnvType[Binding] : string;
 };
 declare namespace NodeJS {
-	interface ProcessEnv extends StringifyValues<Pick<Cloudflare.Env, "CHECKOUT_MODE" | "STRIPE_PRICE_ID" | "STRIPE_PRICE_ID_LIVE" | "UNITY_PROJECT_ID" | "SUCCESS_URL" | "CANCEL_URL" | "ALLOWED_ORIGINS" | "STRIPE_RESTRICTED_KEY" | "STRIPE_WEBHOOK_SECRET" | "STRIPE_RESTRICTED_KEY_LIVE" | "STRIPE_WEBHOOK_SECRET_LIVE" | "UNITY_SERVICE_ACCOUNT_KEY_ID" | "UNITY_SERVICE_ACCOUNT_SECRET" | "UNITY_ENVIRONMENT_ID">> {}
+	interface ProcessEnv extends StringifyValues<Pick<Cloudflare.Env, "CHECKOUT_MODE" | "STRIPE_PRICE_ID" | "STRIPE_PRICE_ID_LIVE" | "UNITY_PROJECT_ID" | "SUCCESS_URL" | "CANCEL_URL" | "ALLOWED_ORIGINS" | "STRIPE_RESTRICTED_KEY" | "STRIPE_WEBHOOK_SECRET" | "STRIPE_RESTRICTED_KEY_LIVE" | "STRIPE_WEBHOOK_SECRET_LIVE" | "UNITY_SERVICE_ACCOUNT_KEY_ID" | "UNITY_SERVICE_ACCOUNT_SECRET" | "UNITY_ENVIRONMENT_ID" | "ADMIN_GRANT_SECRET">> {}
 }
 
 // Begin runtime types

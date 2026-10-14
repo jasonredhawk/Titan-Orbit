@@ -10,7 +10,7 @@ namespace TitanOrbit.Data
     /// [TITAN-ORBIT] Move Speed is engines only. Acceleration is thrusters only.
     /// Each part still uses <b>its own</b> Base and PerExtraLevel (an AstroEagle engine
     /// PerExtra is not reused on a CosmicShark thruster). Extra Level evaluates each
-    /// contributor then sums. Newest moon-store extra in that role is the display primary.
+    /// contributor then sums. The highest base in that role is the display primary.
     /// Thruster-only hulls (SpaceExcalibur) fall back: thrusters own Move. Engine-only
     /// hulls fall back: engines own Accel.
     /// </para>
@@ -530,7 +530,7 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Newest store extra (else highest role score) among parts that own Move or Accel.
+        /// Highest Move or Accel base among parts that own that role (chassis and purchases).
         /// </summary>
         static int PickRolePrimaryGlobalIndex(
             IReadOnlyList<string> componentIds,
@@ -574,7 +574,7 @@ namespace TitanOrbit.Data
         /// Ability purchases are 0 here — HUD/sim pass them via
         /// <see cref="ShipComponentExtraLevelMath.AggregateAndEvaluate"/>.
         /// </summary>
-        /// <param name="storeExtraStartIndex">First moon-store extra index (newest extra in that role becomes primary).</param>
+        /// <param name="storeExtraStartIndex">First moon-store extra index. Primary is the highest base, not the newest buy.</param>
         public static Result ComputeThrusterPropulsion(
             IReadOnlyList<string> componentIds,
             IReadOnlyList<ShipComponentAbilityStats> perComponentStats,

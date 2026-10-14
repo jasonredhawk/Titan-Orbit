@@ -28,8 +28,8 @@ namespace TitanOrbit.Data
             public List<Vector3> PerComponentLocalScales;
             /// <summary>
             /// First index in <see cref="MatchedComponentIds"/> that is a moon-store extra.
-            /// <see cref="int.MaxValue"/> when the hull has no store gear. Extra Level uses
-            /// this so the newest purchase is the primary (only that Base counts).
+            /// <see cref="int.MaxValue"/> when the hull has no store gear. Extra Level scores
+            /// these rows with the chassis; the highest base of each type is the primary.
             /// </summary>
             public int StoreExtraStartIndex;
         }
@@ -177,7 +177,7 @@ namespace TitanOrbit.Data
         /// Appends moon-store-purchased components onto a prefab sum, then re-runs shared aggregation.
         /// Each extra keeps <b>its catalog family’s</b> Base / PerExtra (a CosmicShark thruster
         /// does not borrow the hull family’s engine PerExtra). Store rows are appended after
-        /// prefab children so Extra Level / HUD can mark the newest buy as the display primary.
+        /// prefab children so Extra Level / HUD can score them against the chassis and keep the highest base as primary.
         /// </summary>
         public static SumResult AppendExtraComponentsAndAggregate(
             SumResult prefabSum,

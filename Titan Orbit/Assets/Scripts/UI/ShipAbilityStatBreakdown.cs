@@ -314,8 +314,8 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// Groups parts that contribute to <paramref name="field"/>, collapsing identical ids.
-        /// When <paramref name="useStackWeight"/> is true (legacy name), newest store extra
-        /// is PRIMARY; every instance still shows its own Base.
+        /// When <paramref name="useStackWeight"/> is true (legacy name), the highest base
+        /// of that type is PRIMARY; every other instance is an extra.
         /// </summary>
         public static void CollectGroupedRows(
             in ShipSpeedometerStatTooltips.PartCache parts,
@@ -369,8 +369,8 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Pool grouping for Extra Level: newest store extra is PRIMARY; every instance
-        /// still contributes its own Base + PerExtra (shown on both PRIMARY and EXTRAS lines).
+        /// Pool grouping for Extra Level: highest base of the type is PRIMARY; every other
+        /// instance contributes PerExtra (shown on the EXTRAS line).
         /// </summary>
         static void CollectStackedGroupedRows(
             in ShipSpeedometerStatTooltips.PartCache parts,
@@ -1009,7 +1009,7 @@ namespace TitanOrbit.UI
             if (!parts.Valid || parts.Ids == null || parts.Stats == null)
                 return;
 
-            // --- Group so we can mark the newest store extra as the display primary ---
+            // --- Group so the highest base of each type is the display primary ---
             ShipPropulsionAggregation.ClassifyPropulsionRoles(
                 parts.Ids, out bool hasEngines, out bool hasThrusters);
             var groups = new Dictionary<string, List<int>>(StringComparer.OrdinalIgnoreCase);
@@ -1044,8 +1044,8 @@ namespace TitanOrbit.UI
                 primaryGlobals.Add(pair.Value[primaryLocal]);
             }
 
-            // Turn Base is the best hull part, even when that part is not its pool primary.
-            // Purchased gear is not eligible — it adds Turn PerExtra only.
+            // Turn Base is the highest turnSpeed on the ship, even when that part is not its pool primary.
+            // A purchased fin can own it; every other turn part adds PerExtra only.
             int bestTurnIndex = field == StatField.TurnSpeed
                 ? ShipComponentExtraLevelMath.PickBestTurnBaseIndex(
                     parts.Ids, parts.Stats, parts.StoreExtraStartIndex)

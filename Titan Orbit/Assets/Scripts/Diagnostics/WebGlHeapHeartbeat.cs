@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.IO;
+using Unity.Collections;
 using UnityEngine;
 using UnityEngine.Profiling;
 using TitanOrbit;
@@ -24,6 +25,7 @@ namespace TitanOrbit.Diagnostics
             go.hideFlags = HideFlags.HideAndDontSave;
             go.AddComponent<PhaseEarly>();
             go.AddComponent<PhaseUpdateEnd>();
+            go.AddComponent<PhaseSimEnd>();
             go.AddComponent<PhaseLate>();
             go.AddComponent<PhaseEndOfFrame>();
             go.AddComponent<Runner>();
@@ -44,6 +46,19 @@ namespace TitanOrbit.Diagnostics
             void Update()
             {
                 WebGlAllocBuckets.MarkUpdateEnd();
+            }
+        }
+
+        /// <summary>
+        /// Runs before every other LateUpdate. SimulationSystemGroup is the last Update child,
+        /// so this mark is the first point after the client tick.
+        /// </summary>
+        [DefaultExecutionOrder(-32000)]
+        sealed class PhaseSimEnd : MonoBehaviour
+        {
+            void LateUpdate()
+            {
+                WebGlAllocBuckets.MarkSimEnd();
             }
         }
 
@@ -121,12 +136,24 @@ namespace TitanOrbit.Diagnostics
                 _prevStoreLabels = storeLabels;
                 _hasPrev = true;
                 WebGlAllocBuckets.CopyAndReset(
-                    _alloc, _mono, out int frames, out long post, out long early, out long updatePhase, out long latePhase, out int endOfFrameMarks);
+                    _alloc, _mono, out int frames, out long post, out long early, out long updatePhase, out long latePhase, out long simPhase, out long lateUiPhase, out long simGhost, out long simPhysBuild, out long simPhysSolve, out long simPred, out long simRest, out int simPhysSteps, out int endOfFrameMarks, out long physInit, out long physPairs, out long physContacts, out long physJac, out long physSolveOnly, out long physAfter);
+
+                long streamProbe = 0L;
+#if UNITY_WEBGL && !UNITY_EDITOR
+                long streamBefore = Profiler.GetTotalAllocatedMemoryLong();
+                var streamA = new NativeStream(1, Allocator.Persistent);
+                var streamB = new NativeStream(1, Allocator.Persistent);
+                var streamC = new NativeStream(1, Allocator.Persistent);
+                streamA.Dispose();
+                streamB.Dispose();
+                streamC.Dispose();
+                streamProbe = Profiler.GetTotalAllocatedMemoryLong() - streamBefore;
+#endif
 
                 // #region agent log
                 long nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
                 string json =
-                    "{\"sessionId\":\"caa453\",\"runId\":\"post-split\",\"hypothesisId\":\"H17\"," +
+                    "{\"sessionId\":\"b1f93a\",\"runId\":\"phys-net\",\"hypothesisId\":\"H22\"," +
                     "\"location\":\"WebGlHeapHeartbeat.cs:Update\",\"message\":\"slice\"," +
                     "\"timestamp\":" + nowMs +
                     ",\"data\":{\"allocatedMB\":" + (allocated / 1048576L) +
@@ -148,6 +175,21 @@ namespace TitanOrbit.Diagnostics
                     ",\"early\":" + (early / 1024L) +
                     ",\"upd\":" + (updatePhase / 1024L) +
                     ",\"late\":" + (latePhase / 1024L) +
+                    ",\"sim\":" + (simPhase / 1024L) +
+                    ",\"lateUi\":" + (lateUiPhase / 1024L) +
+                    ",\"ghost\":" + (simGhost / 1024L) +
+                    ",\"physB\":" + (simPhysBuild / 1024L) +
+                    ",\"physS\":" + (simPhysSolve / 1024L) +
+                    ",\"pred\":" + (simPred / 1024L) +
+                    ",\"simR\":" + (simRest / 1024L) +
+                    ",\"physN\":" + simPhysSteps +
+                    ",\"bld\":" + (physInit / 1024L) +
+                    ",\"brd\":" + (physPairs / 1024L) +
+                    ",\"con\":" + (physContacts / 1024L) +
+                    ",\"jac\":" + (physJac / 1024L) +
+                    ",\"sol\":" + (physSolveOnly / 1024L) +
+                    ",\"aft\":" + (physAfter / 1024L) +
+                    ",\"streamProbe\":" + streamProbe +
                     ",\"viz\":" + (_alloc[0] / 1024L) +
                     ",\"vizR\":" + (_alloc[1] / 1024L) +
                     ",\"bul\":" + (_alloc[2] / 1024L) +
@@ -168,17 +210,14 @@ namespace TitanOrbit.Diagnostics
                     ",\"dStoreLabels\":" + dStoreLabels +
                     "}}";
                 Debug.Log("[MemCheap] " + json);
-                if (Application.isEditor)
+                try
                 {
-                    try
-                    {
-                        File.AppendAllText(
-                            @"c:\Users\jason\Documents\repo\Titan-Orbit\debug-caa453.log",
-                            json + "\n");
-                    }
-                    catch (Exception)
-                    {
-                    }
+                    File.AppendAllText(
+                        @"c:\Users\jason\Documents\repo\Titan-Orbit\debug-b1f93a.log",
+                        json + "\n");
+                }
+                catch (Exception)
+                {
                 }
                 // #endregion
             }

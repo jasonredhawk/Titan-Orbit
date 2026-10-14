@@ -7,7 +7,7 @@
     "deploy": "wrangler deploy",
     "types": "wrangler types",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test src/fulfill.test.ts src/price.test.ts"
+    "test": "node --experimental-strip-types --test src/fulfill.test.ts src/price.test.ts src/adminGrant.test.ts"
   },
   "dependencies": {
     "stripe": "23.0.0"

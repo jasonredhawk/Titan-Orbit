@@ -401,7 +401,8 @@ namespace TitanOrbit.ECS
     /// Client: hide crystals the local hull has been overlapping long enough that a real
     /// server scoop would already have sent <see cref="GemConsumedRpc"/>. Leftover visuals
     /// (lost consume, burst-settings extra, clock-parked pose) stay on screen otherwise.
-    /// Cargo-full leftovers are left alone — those are still live server gems.
+    /// Cargo-full ships leave live gems alone — a full hold does not scoop, so those
+    /// crystals are still on the server. Pickup never splits a gem into a leftover.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]

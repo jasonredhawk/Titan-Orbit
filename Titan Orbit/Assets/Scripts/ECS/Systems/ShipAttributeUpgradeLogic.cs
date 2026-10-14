@@ -161,6 +161,31 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
+        /// Hull branch the ship is actually flying. <see cref="ShipState.BranchIndex"/> is the
+        /// ghosted source of truth. <see cref="ShipLoadoutState.BranchIndex"/> stayed 0 on older
+        /// ghosts and did not reliably replicate — passing that 0 into
+        /// <see cref="ShipStatApplyLogic.ApplyToShip"/> rewrote the flown branch, and the proxy
+        /// rebuilt as the other ladder slot (starter or sibling hull) on the next ability click.
+        /// Gear bought from another family does not change this branch; only a hull purchase does.
+        /// When the loadout copy has drifted, this writes it back so later readers stay on the hull.
+        /// </summary>
+        static int FlownBranch(EntityManager em, Entity shipEntity, in ShipState ship)
+        {
+            int branch = ship.BranchIndex;
+            if (!em.HasComponent<ShipLoadoutState>(shipEntity))
+                return branch;
+
+            var loadout = em.GetComponentData<ShipLoadoutState>(shipEntity);
+            if (loadout.BranchIndex == branch && loadout.ChassisIndex == branch)
+                return branch;
+
+            loadout.BranchIndex = branch;
+            loadout.ChassisIndex = branch;
+            em.SetComponentData(shipEntity, loadout);
+            return branch;
+        }
+
+        /// <summary>
         /// Server-side purchase: validates gems, cap, and ship eligibility; deducts cost, increments attribute,
         /// and re-applies stats via ShipStatApplyLogic.
         /// </summary>
@@ -211,12 +236,11 @@ namespace TitanOrbit.ECS
             if (ship.IsDead)
                 return true;
 
-            int branch = 0;
-            if (em.HasComponent<ShipLoadoutState>(shipEntity))
-                branch = em.GetComponentData<ShipLoadoutState>(shipEntity).BranchIndex;
-
             // [TITAN-ORBIT] Refresh motor/weapon/vitals from new effective stats.
-            ShipStatApplyLogic.ApplyToShip(em, shipEntity, ship.Team, ship.ShipLevel, branch);
+            // Branch stays the hull already on ShipState — a stale loadout branch
+            // must not swap the chassis (see FlownBranch).
+            ShipStatApplyLogic.ApplyToShip(
+                em, shipEntity, ship.Team, ship.ShipLevel, FlownBranch(em, shipEntity, ship));
             return true;
         }
 
@@ -273,11 +297,8 @@ namespace TitanOrbit.ECS
             ResetAttribute(ref attrs, attributeIndex);
             em.SetComponentData(shipEntity, attrs);
 
-            int branch = 0;
-            if (em.HasComponent<ShipLoadoutState>(shipEntity))
-                branch = em.GetComponentData<ShipLoadoutState>(shipEntity).BranchIndex;
-
-            ShipStatApplyLogic.ApplyToShip(em, shipEntity, ship.Team, ship.ShipLevel, branch);
+            ShipStatApplyLogic.ApplyToShip(
+                em, shipEntity, ship.Team, ship.ShipLevel, FlownBranch(em, shipEntity, ship));
             return true;
         }
 
