@@ -428,10 +428,10 @@ namespace TitanOrbit.ECS
             float3 targetPos = shipPos;
             float3 loadDir = ToroidalMapEcs.ToroidalDirection(spawnPos, targetPos, mapW, mapH);
             spawnPos += loadDir * 0.2f;
-            // New slot → reserved seat. Merge → the parked capsule that grows, so the
-            // sphere flies into that transport instead of an empty hash.
+            // Home on the parked capsule whose troop count goes up. A new seat is
+            // used only when no existing transport grows.
             PeopleTransportEscortLogic.ResolveLoadHomeSeat(
-                state.EntityManager, shipEntity, ship.CurrentPeople, (int)transfer.PeopleInTransit,
+                state.EntityManager, shipEntity, ship.CurrentPeople,
                 amount, combineChunk, out byte seatId, out bool ownsSeat);
 
             // --- One packed sphere for the whole batch ---

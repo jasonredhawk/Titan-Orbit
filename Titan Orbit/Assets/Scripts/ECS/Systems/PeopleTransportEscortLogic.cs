@@ -121,16 +121,15 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Home for a planet→ship hop. A new seat is reserved only when this batch
-        /// raises the parked escort count. Otherwise the sphere homes on the parked
-        /// capsule that will grow, so it flies into that transport instead of a
-        /// fresh hash that packing deletes on arrival.
+        /// Home for a planet→ship hop. The sphere flies to the parked capsule whose
+        /// troop count increases when this batch is added — the one the player sees
+        /// growing. A new seat is reserved only when no parked capsule gains troops,
+        /// so that new transport stays where the sphere arrives.
         /// </summary>
         public static void ResolveLoadHomeSeat(
             EntityManager em,
             Entity ship,
             int currentPeople,
-            int peopleInTransit,
             int incomingAmount,
             int chunk,
             out byte seatId,
@@ -140,49 +139,33 @@ namespace TitanOrbit.ECS
             ownsSeat = false;
             incomingAmount = math.max(0, incomingAmount);
             chunk = math.max(1, chunk);
-            int inbound = math.max(0, currentPeople) + math.max(0, peopleInTransit);
-            int after = inbound + incomingAmount;
-            int parked = CountParked(em, ship);
-            int wantAfter = PeopleTransportMath.GetEscortSlotCount(after, chunk);
+            int before = math.max(0, currentPeople);
+            int after = before + incomingAmount;
 
-            if (parked <= 0 || wantAfter > parked)
+            if (TryPickGrowingSeat(em, ship, before, after, chunk, out seatId))
+                return;
+
+            if (TryReserveLoadSeat(em, ship, math.max(1, incomingAmount), out seatId))
             {
-                if (TryReserveLoadSeat(em, ship, math.max(1, incomingAmount), out seatId))
-                {
-                    ownsSeat = true;
-                    return;
-                }
+                ownsSeat = true;
+                return;
             }
 
-            if (TryPickMergeSeat(em, ship, inbound, after, chunk, out seatId))
+            // Visual cap is full and packing did not flag a gain. Still join a
+            // parked capsule instead of an empty seat hash.
+            if (TryNthParkedSeat(em, ship, 0, out seatId))
                 return;
 
             seatId = 0;
         }
 
-        /// <summary>Parked escorts, skipping in-flight reservations. Same order as packing.</summary>
-        static int CountParked(EntityManager em, Entity ship)
-        {
-            if (!em.HasBuffer<PeopleEscortVitalElement>(ship))
-                return 0;
-
-            var buf = em.GetBuffer<PeopleEscortVitalElement>(ship);
-            int parked = 0;
-            for (int i = 0; i < buf.Length; i++)
-            {
-                if (buf[i].InFlight == 0)
-                    parked++;
-            }
-
-            return parked;
-        }
-
         /// <summary>
-        /// Parked seat index whose packed amount grows the most from
+        /// Parked capsule whose packed troop count grows the most from
         /// <paramref name="peopleBefore"/> to <paramref name="peopleAfter"/>.
+        /// False when every parked amount stays the same (this batch opens a new slot).
         /// Ties keep the earliest seat, matching how leftover people are spread.
         /// </summary>
-        static bool TryPickMergeSeat(
+        static bool TryPickGrowingSeat(
             EntityManager em,
             Entity ship,
             int peopleBefore,
@@ -206,14 +189,14 @@ namespace TitanOrbit.ECS
                 return false;
 
             chunk = math.max(1, chunk);
-            int bestSlot = 0;
-            int bestGain = int.MinValue;
+            int bestSlot = -1;
+            int bestGain = 0;
             int limit = math.min(parked, PeopleTransportMath.MaxEscortVisualSlots);
             for (int slot = 0; slot < limit; slot++)
             {
-                int before = PeopleTransportMath.GetEscortSlotAmount(peopleBefore, chunk, slot);
-                int after = PeopleTransportMath.GetEscortSlotAmount(peopleAfter, chunk, slot);
-                int gain = after - before;
+                int beforeAmt = PeopleTransportMath.GetEscortSlotAmount(peopleBefore, chunk, slot);
+                int afterAmt = PeopleTransportMath.GetEscortSlotAmount(peopleAfter, chunk, slot);
+                int gain = afterAmt - beforeAmt;
                 if (gain > bestGain)
                 {
                     bestGain = gain;
@@ -221,7 +204,21 @@ namespace TitanOrbit.ECS
                 }
             }
 
-            int index = FindNthParked(buf, bestSlot);
+            if (bestSlot < 0)
+                return false;
+
+            return TryNthParkedSeat(em, ship, bestSlot, out seatId);
+        }
+
+        /// <summary>Seat id of the nth parked escort (in-flight reservations skipped).</summary>
+        static bool TryNthParkedSeat(EntityManager em, Entity ship, int slot, out byte seatId)
+        {
+            seatId = 0;
+            if (!em.HasBuffer<PeopleEscortVitalElement>(ship))
+                return false;
+
+            var buf = em.GetBuffer<PeopleEscortVitalElement>(ship);
+            int index = FindNthParked(buf, slot);
             if (index < 0)
                 return false;
 
