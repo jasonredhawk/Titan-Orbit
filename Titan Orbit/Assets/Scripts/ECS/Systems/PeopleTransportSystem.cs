@@ -283,8 +283,8 @@ namespace TitanOrbit.ECS
                             int send = (int)math.min(loadChunk, math.min(space, surplus));
                             if (send > 0 && TryDispatchLoad(
                                     ref ecb, ref state, shipEntity, ref shipState.ValueRW, ref planetState,
-                                    ref transfer, send, shipNetworkId, planetState.PlanetId, shipState.ValueRO.Team,
-                                    shipPos, planetPos, planetSize, mapW, mapH, now, hopClock))
+                                    ref transfer, send, (int)loadChunk, shipNetworkId, planetState.PlanetId,
+                                    shipState.ValueRO.Team, shipPos, planetPos, planetSize, mapW, mapH, now, hopClock))
                             {
                                 transfer.LastLoadCombineMax = (int)loadChunk;
                                 transfer.LoadAccumulator = 0f;
@@ -397,6 +397,8 @@ namespace TitanOrbit.ECS
         /// <param name="amount">People packed into this single sphere (ideal size
         /// <c>shipLevel × planetLevel</c>; caller may pass a smaller partial when surplus
         /// or cargo space is tight).</param>
+        /// <param name="combineChunk">Pack size latched for escort slots on delivery.
+        /// Same value stored in <see cref="ShipPeopleTransferState.LastLoadCombineMax"/>.</param>
         static bool TryDispatchLoad(
             ref EntityCommandBuffer ecb,
             ref SystemState state,
@@ -405,6 +407,7 @@ namespace TitanOrbit.ECS
             ref PlanetState planet,
             ref ShipPeopleTransferState transfer,
             int amount,
+            int combineChunk,
             int shipNetworkId,
             int planetId,
             TeamId team,
@@ -416,7 +419,6 @@ namespace TitanOrbit.ECS
             float now,
             float hopClock)
         {
-            _ = ship;
             _ = now;
             if (amount <= 0)
                 return false;
@@ -426,15 +428,18 @@ namespace TitanOrbit.ECS
             float3 targetPos = shipPos;
             float3 loadDir = ToroidalMapEcs.ToroidalDirection(spawnPos, targetPos, mapW, mapH);
             spawnPos += loadDir * 0.2f;
-            PeopleTransportEscortLogic.TryReserveLoadSeat(
-                state.EntityManager, shipEntity, amount, out byte seatId);
+            // New slot → reserved seat. Merge → the parked capsule that grows, so the
+            // sphere flies into that transport instead of an empty hash.
+            PeopleTransportEscortLogic.ResolveLoadHomeSeat(
+                state.EntityManager, shipEntity, ship.CurrentPeople, (int)transfer.PeopleInTransit,
+                amount, combineChunk, out byte seatId, out bool ownsSeat);
 
             // --- One packed sphere for the whole batch ---
             // [TITAN-ORBIT] Amount drives visual scale, HP, and ±N floating text. One spawn/pose
             // RPC stream instead of N × +1 flights (less bandwidth + fewer client Instantiates).
-            // Target baked here is only a fallback — the live flight homes on the seeded slot.
+            // Target baked here is only a fallback — the live flight homes on the seat above.
             SpawnTransport(ref ecb, spawnPos, targetPos, amount, shipNetworkId, planetId, 0,
-                shipNetworkId, true, team, hopClock, mapW, mapH, seatId, -1f, 0);
+                shipNetworkId, true, team, hopClock, mapW, mapH, seatId, ownsSeat, -1f, 0);
 
             // [TITAN-ORBIT] Planet pays immediately; ship gains only on DeliverLoad (transitory vessel).
             planet.Population -= amount;
@@ -491,7 +496,7 @@ namespace TitanOrbit.ECS
                 planetPos, planetSize, spawnPos, mapW, mapH);
 
             SpawnTransport(ref ecb, spawnPos, targetPos, amount, 0, 0, planetId,
-                shipNetworkId, false, team, hopClock, mapW, mapH, seatId, peeledHealth,
+                shipNetworkId, false, team, hopClock, mapW, mapH, seatId, false, peeledHealth,
                 (byte)planetOwnership);
 
             ship.CurrentPeople = math.max(0, ship.CurrentPeople - amount);
@@ -518,6 +523,7 @@ namespace TitanOrbit.ECS
             float mapW,
             float mapH,
             byte seatId,
+            bool ownsSeat,
             float healthOverride = -1f,
             byte targetOwnerAtSpawn = 0)
         {
@@ -558,6 +564,7 @@ namespace TitanOrbit.ECS
                 IsLoad = isLoadByte,
                 Team = teamByte,
                 SeatId = seatId,
+                OwnsSeat = (byte)(ownsSeat ? 1 : 0),
                 TargetOwnerAtSpawn = targetOwnerAtSpawn,
                 Returning = 0,
             });
@@ -609,9 +616,11 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
-    /// Server authoritative simulation of people-transport spheres. They join a seeded
-    /// ship slot, sortie to a planet, and rejoin that slot with the same formation
-    /// step as fighter and mining drones. Runs after dispatch and bullets.
+    /// Server authoritative simulation of people-transport spheres. A load that opens
+    /// a new escort slot joins that seeded seat. A load that only tops up cargo homes
+    /// on the parked capsule that grows. Unload sorties leave a slot and rejoin it
+    /// with the same formation step as fighter and mining drones. Runs after dispatch
+    /// and bullets.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
@@ -747,7 +756,7 @@ namespace TitanOrbit.ECS
                             int sourceMax = EffectiveMaxPopulation(
                                 ref state, planetById[t.SourcePlanetId], sourcePlanetSize, sourcePlanet.PlanetLevel);
                             ReturnLoadToPlanet(
-                                ref state, ref sourcePlanet, shipEntity, t.Amount, sourceMax, t.SeatId);
+                                ref state, ref sourcePlanet, shipEntity, t.Amount, sourceMax, t.SeatId, t.OwnsSeat != 0);
                             planetStateById[t.SourcePlanetId] = sourcePlanet;
                             ecb.SetComponent(planetById[t.SourcePlanetId], sourcePlanet);
                             PeopleTransportNetNotify.EndAndDestroy(
@@ -1195,10 +1204,14 @@ namespace TitanOrbit.ECS
             Entity shipEntity,
             float amount,
             int maxPop,
-            byte seatId)
+            byte seatId,
+            bool ownsSeat)
         {
             planet.Population = math.min(planet.Population + (int)amount, maxPop);
-            PeopleTransportEscortLogic.RemoveSeat(state.EntityManager, shipEntity, seatId);
+            // Merge hops home on a parked capsule. Deleting that seat would erase
+            // the escort the sphere was flying into.
+            if (ownsSeat)
+                PeopleTransportEscortLogic.RemoveSeat(state.EntityManager, shipEntity, seatId);
             ClearPeopleInTransitOnShip(ref state, shipEntity, amount);
         }
 
@@ -1325,7 +1338,8 @@ namespace TitanOrbit.ECS
                         continue;
 
                     ClearPeopleInTransitOnShip(ref state, ships[i], transport.Amount);
-                    PeopleTransportEscortLogic.RemoveSeat(em, ships[i], transport.SeatId);
+                    if (transport.OwnsSeat != 0)
+                        PeopleTransportEscortLogic.RemoveSeat(em, ships[i], transport.SeatId);
                     break;
                 }
             }

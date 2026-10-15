@@ -12,8 +12,9 @@ namespace TitanOrbit.ECS
     /// <summary>
     /// Server bookkeeping for troop escort drones. Parked seats are a cheap skin on the
     /// ship ghost (<see cref="PeopleEscortVitalElement"/> + the same slot pose drones use).
-    /// Load hops join that slot. Unload hops leave it toward the planet with drone
-    /// formation accel, and a capture coasts them back onto the slot.
+    /// Load hops join that slot when the batch opens a new escort. A batch that only
+    /// tops up cargo homes on the parked capsule that grows. Unload hops leave a slot
+    /// toward the planet with drone formation accel, and a capture coasts them back.
     /// </summary>
     public static class PeopleTransportEscortLogic
     {
@@ -117,6 +118,115 @@ namespace TitanOrbit.ECS
 
             _ = inFlightCount;
             _ = shipNetworkId;
+        }
+
+        /// <summary>
+        /// Home for a planet→ship hop. A new seat is reserved only when this batch
+        /// raises the parked escort count. Otherwise the sphere homes on the parked
+        /// capsule that will grow, so it flies into that transport instead of a
+        /// fresh hash that packing deletes on arrival.
+        /// </summary>
+        public static void ResolveLoadHomeSeat(
+            EntityManager em,
+            Entity ship,
+            int currentPeople,
+            int peopleInTransit,
+            int incomingAmount,
+            int chunk,
+            out byte seatId,
+            out bool ownsSeat)
+        {
+            seatId = 0;
+            ownsSeat = false;
+            incomingAmount = math.max(0, incomingAmount);
+            chunk = math.max(1, chunk);
+            int inbound = math.max(0, currentPeople) + math.max(0, peopleInTransit);
+            int after = inbound + incomingAmount;
+            int parked = CountParked(em, ship);
+            int wantAfter = PeopleTransportMath.GetEscortSlotCount(after, chunk);
+
+            if (parked <= 0 || wantAfter > parked)
+            {
+                if (TryReserveLoadSeat(em, ship, math.max(1, incomingAmount), out seatId))
+                {
+                    ownsSeat = true;
+                    return;
+                }
+            }
+
+            if (TryPickMergeSeat(em, ship, inbound, after, chunk, out seatId))
+                return;
+
+            seatId = 0;
+        }
+
+        /// <summary>Parked escorts, skipping in-flight reservations. Same order as packing.</summary>
+        static int CountParked(EntityManager em, Entity ship)
+        {
+            if (!em.HasBuffer<PeopleEscortVitalElement>(ship))
+                return 0;
+
+            var buf = em.GetBuffer<PeopleEscortVitalElement>(ship);
+            int parked = 0;
+            for (int i = 0; i < buf.Length; i++)
+            {
+                if (buf[i].InFlight == 0)
+                    parked++;
+            }
+
+            return parked;
+        }
+
+        /// <summary>
+        /// Parked seat index whose packed amount grows the most from
+        /// <paramref name="peopleBefore"/> to <paramref name="peopleAfter"/>.
+        /// Ties keep the earliest seat, matching how leftover people are spread.
+        /// </summary>
+        static bool TryPickMergeSeat(
+            EntityManager em,
+            Entity ship,
+            int peopleBefore,
+            int peopleAfter,
+            int chunk,
+            out byte seatId)
+        {
+            seatId = 0;
+            if (!em.HasBuffer<PeopleEscortVitalElement>(ship))
+                return false;
+
+            var buf = em.GetBuffer<PeopleEscortVitalElement>(ship);
+            int parked = 0;
+            for (int i = 0; i < buf.Length; i++)
+            {
+                if (buf[i].InFlight == 0)
+                    parked++;
+            }
+
+            if (parked <= 0)
+                return false;
+
+            chunk = math.max(1, chunk);
+            int bestSlot = 0;
+            int bestGain = int.MinValue;
+            int limit = math.min(parked, PeopleTransportMath.MaxEscortVisualSlots);
+            for (int slot = 0; slot < limit; slot++)
+            {
+                int before = PeopleTransportMath.GetEscortSlotAmount(peopleBefore, chunk, slot);
+                int after = PeopleTransportMath.GetEscortSlotAmount(peopleAfter, chunk, slot);
+                int gain = after - before;
+                if (gain > bestGain)
+                {
+                    bestGain = gain;
+                    bestSlot = slot;
+                }
+            }
+
+            int index = FindNthParked(buf, bestSlot);
+            if (index < 0)
+                return false;
+
+            seatId = buf[index].SeatId;
+            return true;
         }
 
         /// <summary>Reserve a seat for a planet→ship hop. False when the 12-seat cap is full.</summary>

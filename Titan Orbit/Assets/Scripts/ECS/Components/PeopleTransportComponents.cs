@@ -65,10 +65,18 @@ namespace TitanOrbit.ECS
         public byte Team;
 
         /// <summary>
-        /// Reserved escort seat for this hop. Load hops park here on consume;
-        /// unload hops launch from this seat.
+        /// Escort seat this hop homes on. A new load parks here on consume.
+        /// A merge load homes on the parked capsule it joins and does not own the seat.
+        /// Unload hops launch from this seat.
         /// </summary>
         public byte SeatId;
+
+        /// <summary>
+        /// 1 when this load reserved a new in-flight seat. Abort and shot-down
+        /// must free that seat. 0 when the hop is joining a parked capsule —
+        /// removing <see cref="SeatId"/> would delete the escort it is flying into.
+        /// </summary>
+        public byte OwnsSeat;
 
         /// <summary>
         /// Planet <see cref="PlanetState.Ownership"/> when this unload launched.

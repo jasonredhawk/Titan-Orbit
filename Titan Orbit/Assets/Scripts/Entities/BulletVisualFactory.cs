@@ -69,7 +69,6 @@ namespace TitanOrbit.Entities
         {
             // [TITAN-ORBIT] bankIndex also selects per-category Global Visual Scale (default 1).
             float scale = GetBulletVisualScale(bank, scaleMultiplier, bankIndex);
-            Color color = GetTeamBulletColor(team);
 
             GameObject visualPrefab = null;
             if (!Application.isMobilePlatform && bank != null)
@@ -78,9 +77,9 @@ namespace TitanOrbit.Entities
             GameObject visual;
             if (visualPrefab != null)
             {
+                // Prefab is already the team's colour for this bullet type. Do not restamp it.
                 visual = Object.Instantiate(visualPrefab, parent);
                 VfxUrpCompat.FixAllIn1MaterialsForUrp(visual);
-                ApplyColorToVisual(visual, color);
                 VfxUrpCompat.ApplyImpactVisualScale(visual, scale);
                 VfxUrpCompat.PlayParticleSystemsInHierarchy(visual);
                 if (noTrail)
@@ -95,7 +94,8 @@ namespace TitanOrbit.Entities
             }
             else
             {
-                visual = CreateCustomizableVfxStyle(shape, scale, bulletSpeed, noTrail, color);
+                visual = CreateCustomizableVfxStyle(
+                    shape, scale, bulletSpeed, noTrail, GetTeamBulletColor(team));
                 visual.transform.SetParent(parent, false);
             }
 
@@ -195,6 +195,10 @@ namespace TitanOrbit.Entities
                 AudioManager.Instance?.PlayBulletImpactSound(pitch, hear);
         }
 
+        /// <summary>
+        /// Flat colour for the procedural sphere used when no bank prefab exists.
+        /// Bank projectiles, muzzles, and impacts keep their authored team colours.
+        /// </summary>
         public static void ApplyColorToVisual(GameObject root, Color color)
         {
             // --- Apply changes ---

@@ -159,15 +159,33 @@ namespace TitanOrbit.Core
             }
         }
 
-        /// <summary>Clears and plays all particle systems (helps mobile when Play On Awake is unreliable).</summary>
+        /// <summary>
+        /// Clears and plays every particle system in the hierarchy.
+        /// <c>Play(withChildren)</c> is not used: the parent call starts the child, the
+        /// child's later <c>Clear(withChildren)</c> wipes it, and <c>Play</c> then no-ops
+        /// because that child is already playing. BulletRed's stretch child was dropped
+        /// on some shots, leaving only the small root glow.
+        /// </summary>
         public static void PlayParticleSystemsInHierarchy(GameObject root)
         {
-            if (root == null) return;
-            foreach (ParticleSystem ps in root.GetComponentsInChildren<ParticleSystem>(true))
+            if (root == null)
+                return;
+
+            ParticleSystem[] systems = root.GetComponentsInChildren<ParticleSystem>(true);
+            for (int i = systems.Length - 1; i >= 0; i--)
             {
-                if (ps == null) continue;
-                ps.Clear(true);
-                ps.Play(true);
+                ParticleSystem ps = systems[i];
+                if (ps == null || !ps.gameObject.activeInHierarchy)
+                    continue;
+                ps.Stop(false, ParticleSystemStopBehavior.StopEmittingAndClear);
+            }
+
+            for (int i = 0; i < systems.Length; i++)
+            {
+                ParticleSystem ps = systems[i];
+                if (ps == null || !ps.gameObject.activeInHierarchy)
+                    continue;
+                ps.Play(false);
             }
         }
 
@@ -634,10 +652,10 @@ namespace TitanOrbit.Core
 
         /// <summary>
         /// Bumped when tracer shells must be rebuilt from the projectile prefab.
-        /// Older shells had particle start size and speed rewritten, which turned
-        /// BulletRed's small glow into a disc stuck on the streak.
+        /// Rev 1: start size and speed had been rewritten (BulletRed glow became a disc).
+        /// Rev 2: team-colour restamp overwrote authored particle and material colours.
         /// </summary>
-        const int AuthoredProjectileRevision = 1;
+        const int AuthoredProjectileRevision = 2;
 
         sealed class ProjectileVisualRevision : MonoBehaviour
         {

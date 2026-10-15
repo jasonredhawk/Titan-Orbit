@@ -1333,8 +1333,8 @@ namespace TitanOrbit.Game
             }
             else if (projectilePrefab != null)
             {
-                // Shells rented before this session had their particle modules rewritten
-                // (glow speed pinned, start size flattened). Put BulletRed back.
+                // Rebuild shells whose particles were rewritten (glow size/speed, or a
+                // team-colour restamp over the authored prefab).
                 VfxUrpCompat.EnsureAuthoredProjectileVisual(go, projectilePrefab);
             }
 
@@ -1343,15 +1343,17 @@ namespace TitanOrbit.Game
                 : Quaternion.identity;
             go.transform.SetPositionAndRotation(spawnDisplay, rot);
 
-            // Refresh tint / scale / particles on a recycled shell.
             // Scale the tracer ROOT (same as muzzle/impact). Scaling only the visual child
             // left World-space particles and trail widths at ship size.
+            // Bank prefabs are already coloured per team. Only the procedural sphere
+            // (mobile / missing prefab) gets a flat team colour.
             GameObject visual = go.transform.childCount > 0
                 ? go.transform.GetChild(0).gameObject
                 : go;
             float visualScale = BulletVisualFactory.GetBulletVisualScale(_bank, scaleMul, bankIndex)
                                 * cameraScale;
-            BulletVisualFactory.ApplyColorToVisual(visual, BulletVisualFactory.GetTeamBulletColor(team));
+            if (projectilePrefab == null)
+                BulletVisualFactory.ApplyColorToVisual(visual, BulletVisualFactory.GetTeamBulletColor(team));
             // Root scale is the ship's fire power. Bullet type does not change it.
             VfxUrpCompat.ApplyImpactVisualScale(go, visualScale, lockUniformParticleSize: true);
             VfxUrpCompat.PrepareVfxInstance(go);

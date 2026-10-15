@@ -21,9 +21,11 @@ namespace TitanOrbit.Game
     /// deliver people. This driver Instantiates cosmetic spheres from
     /// <see cref="PeopleTransportSpawnRpc"/> and end poses (Consumed / Destroyed / Returned).
     /// Load / unload hops use the same drone formation step as the server
-    /// (<c>PeopleTransportEscortLogic.StepTroopDrone</c>). A load joins its seeded
-    /// slot. An unload then advances from that slot to the enemy planet. If that
-    /// planet is captured, the offset returns to zero and the sphere rejoins the slot.
+    /// (<c>PeopleTransportEscortLogic.StepTroopDrone</c>). A load that opens a new
+    /// escort slot joins that seeded seat. A load that only tops up cargo homes on
+    /// the parked capsule it is joining. An unload then advances from its slot to
+    /// the enemy planet. If that planet is captured, the offset returns to zero
+    /// and the sphere rejoins the slot.
     /// </para>
     /// <para>
     /// On <see cref="PeopleTransportPoseStatus.Consumed"/> we play the people transfer one-shot
@@ -372,8 +374,9 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Match the server: join the seeded slot, then sortie to the planet with
-        /// drone formation accel. Capture sets desired offset back to zero.
+        /// Match the server: a new escort slot is joined in place. A top-up homes on
+        /// the parked capsule that grows, then an unload sorties from its slot to the
+        /// planet. Capture sets desired offset back to zero.
         /// </summary>
         void IntegrateFlightLikeDrone(ref Flight f, float clock, float mapW, float mapH)
         {
