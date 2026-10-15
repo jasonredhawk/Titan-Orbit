@@ -34,6 +34,13 @@ namespace TitanOrbit.Entities
         public float localRotY;
         public float localRotZ;
 
+        /// <summary>
+        /// Index in the ship's equipment buffer. The orbit menu hides destroyed drones,
+        /// so this is not the row number on screen. Delete uses it so the server
+        /// removes the same item the player clicked.
+        /// </summary>
+        public int bufferIndex;
+
         public StoreItemType ItemType => (StoreItemType)itemType;
         public bool IsShipComponent => ItemType == StoreItemType.ShipComponent;
         public string ComponentId => componentId ?? string.Empty;

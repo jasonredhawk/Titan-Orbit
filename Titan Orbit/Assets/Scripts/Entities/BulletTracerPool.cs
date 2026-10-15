@@ -200,6 +200,7 @@ namespace TitanOrbit.Entities
             // Prefab size, before any shot scale. Later rents restore this so a
             // reused shell cannot stay at a shrunk copy of the same bolt.
             VfxUrpCompat.CaptureTracerPrefabScale(root);
+            VfxUrpCompat.StampAuthoredProjectile(root);
 
             s_owned.Add(root);
             s_keyByInstance[root] = key;

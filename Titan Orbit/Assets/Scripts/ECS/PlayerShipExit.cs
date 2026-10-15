@@ -8,7 +8,7 @@ namespace TitanOrbit.ECS
     /// <summary>
     /// Destroys a player's hull the moment they leave, and frees a titan (MEGA) bay the same
     /// way death does. The match snapshot in <see cref="MatchPlayerShipStore"/> keeps their
-    /// ship, gear, and cargo until a new game. NetCode does not despawn owned ghosts on
+    /// ship and gear until a new game. Resume clears gem cargo and troops. NetCode does not despawn owned ghosts on
     /// disconnect, and the local host parks ServerWorld before the next sim tick, so the
     /// exit path has to destroy the hull itself.
     /// </summary>

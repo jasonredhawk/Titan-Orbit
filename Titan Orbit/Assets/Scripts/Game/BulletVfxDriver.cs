@@ -1331,6 +1331,12 @@ namespace TitanOrbit.Game
                     go.transform, _bank, bankIndex, team, BulletShape.Sphere,
                     scaleMul, bulletSpeed, req.Damage, noTrail: false);
             }
+            else if (projectilePrefab != null)
+            {
+                // Shells rented before this session had their particle modules rewritten
+                // (glow speed pinned, start size flattened). Put BulletRed back.
+                VfxUrpCompat.EnsureAuthoredProjectileVisual(go, projectilePrefab);
+            }
 
             Quaternion rot = math.lengthsq(req.Velocity) > 0.0001f
                 ? Quaternion.LookRotation(((Vector3)req.Velocity).normalized, Vector3.up)

@@ -15,7 +15,8 @@ namespace TitanOrbit.ECS
     /// so NetCode routes input to the correct ghost. On resume, the ship is teleported to a
     /// random point inside the team's home planet rings (same helper as new spawn / death
     /// respawn, outside the moon dock disc) with cleared velocity so reconnect never continues
-    /// from the disconnect location. Eliminated ships cannot resume. Runs after TeamManagementSystem.
+    /// from the disconnect location. Gem cargo and surrounding troops are cleared. Gear stays.
+    /// Eliminated ships cannot resume. Runs after TeamManagementSystem.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
@@ -133,6 +134,10 @@ namespace TitanOrbit.ECS
                 ecb.SetComponent(ship, orbit);
             }
 
+            // Live hulls still carry the pre-disconnect hold and escort orbs. The snapshot
+            // path already writes zeros; this covers a hull that was still in the world.
+            ClearDisconnectCargo(em, ship);
+
             // [NETCODE] CommandTarget tells NetCode which ghost receives this connection's input.
             var commandTarget = new CommandTarget { targetEntity = ship };
             if (em.HasComponent<CommandTarget>(connection))
@@ -145,7 +150,7 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Spawns a home-ring hull from the match snapshot and writes gear, cargo, and upgrades onto it.
+        /// Spawns a home-ring hull from the match snapshot and writes gear and upgrades onto it.
         /// </summary>
         bool TrySpawnSavedShip(
             ref SystemState state,
@@ -248,6 +253,35 @@ namespace TitanOrbit.ECS
             ClearCommandTarget(em, ecb, connection);
             SendResult(ecb, connection, networkId, success: true, choice: 2, team: TeamId.None, default, default, false);
             LogAbandon(networkId, shipState.Team);
+        }
+
+        /// <summary>
+        /// Gem hold and surrounding troops do not survive a resume. Gear, hull, and energy stay.
+        /// Closing the client just before death must not put that cargo back on the ship.
+        /// </summary>
+        static void ClearDisconnectCargo(EntityManager em, Entity ship)
+        {
+            if (!em.Exists(ship))
+                return;
+
+            if (em.HasComponent<ShipState>(ship))
+            {
+                var shipState = em.GetComponentData<ShipState>(ship);
+                shipState.CurrentGems = 0f;
+                shipState.CurrentPeople = 0;
+                em.SetComponentData(ship, shipState);
+            }
+
+            if (em.HasComponent<ShipPeopleTransferState>(ship))
+            {
+                var transfer = em.GetComponentData<ShipPeopleTransferState>(ship);
+                transfer.PeopleInTransit = 0f;
+                transfer.LoadAccumulator = 0f;
+                transfer.TransferDirection = PeopleTransferDirection.None;
+                em.SetComponentData(ship, transfer);
+            }
+
+            PeopleTransportEscortLogic.ClearAll(em, ship);
         }
 
         /// <summary>Reads <see cref="NetworkId"/> from the NetCode connection entity that sent the RPC.</summary>

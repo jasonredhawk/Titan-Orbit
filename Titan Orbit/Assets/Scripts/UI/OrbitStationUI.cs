@@ -3293,7 +3293,7 @@ namespace TitanOrbit.UI
             Vector3 rot = EquippedComponentPlacementUtility.SnapEulerAngles(entry.LocalEulerAngles + deltaEuler);
 
             currentShip.UpdateEquippedComponentPlacementServerRpc(
-                slotIndex,
+                entry.bufferIndex,
                 pos.x, pos.y, pos.z,
                 rot.x, rot.y, rot.z);
         }
@@ -6323,7 +6323,8 @@ namespace TitanOrbit.UI
             if (equipment == null || slotIndex >= equipment.Count)
                 return;
 
-            currentShip.RemoveEquipmentServerRpc(slotIndex);
+            // Display row is not the buffer index once destroyed drones are hidden.
+            currentShip.RemoveEquipmentServerRpc(equipment[slotIndex].bufferIndex);
         }
 
         private void RefreshSlots()

@@ -39,6 +39,10 @@ namespace TitanOrbit.Entities
         public int SlotCount => ShipLoadoutCapacity.GetCap(ShipLevel, LoadoutBonusSlots);
         public int EquipmentSlotCount => SlotCount;
         /// <summary>Cards + gear share one LOADOUT pool capped at ship level.</summary>
+        /// <summary>
+        /// Cards plus living gear. Destroyed drones (0 HP) are omitted from
+        /// <see cref="EquippedEquipment"/>, so an empty menu row is a free slot.
+        /// </summary>
         public int LoadoutUsedCount =>
             (EquippedCards != null ? EquippedCards.Count : 0)
             + (EquippedEquipment != null ? EquippedEquipment.Count : 0);
@@ -197,6 +201,12 @@ namespace TitanOrbit.Entities
                 for (int i = 0; i < buffer.Length; i++)
                 {
                     var e = buffer[i];
+                    // [TITAN-ORBIT] A fighter killed by turrets stays in the ghost buffer at
+                    // 0 HP until the server strips it. The swarm already hides that mesh.
+                    // Counting it here kept the store buy button off while the slot read Empty.
+                    if (StoreItemData.IsDrone((StoreItemType)e.ItemType) && e.RemainingCharges <= 0)
+                        continue;
+
                     EquippedEquipment.Add(new EquippedEquipmentEntry
                     {
                         itemType = e.ItemType,
@@ -204,6 +214,7 @@ namespace TitanOrbit.Entities
                         remainingCharges = e.RemainingCharges,
                         itemLevel = e.ItemLevel,
                         stampedBulletBankPlusOne = e.StampedBulletBankPlusOne,
+                        bufferIndex = i,
                     });
                 }
             }

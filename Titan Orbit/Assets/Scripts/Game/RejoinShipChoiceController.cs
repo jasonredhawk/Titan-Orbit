@@ -9,7 +9,8 @@ namespace TitanOrbit.Game
 {
     /// <summary>
     /// Full-screen UI for dedicated-server rejoin flow: shows saved ship summary (team, level, HP,
-    /// gems, energy) and lets the player resume that ship or abandon it and pick a new team.
+    /// energy) and lets the player resume that ship or abandon it and pick a new team.
+    /// Gem cargo and troops are not part of the resume — the server clears both.
     /// Calls TitanOrbitSessionManager.RequestResumeExistingShip / RequestAbandonShipForRejoin.
     /// Shown by session bootstrap when RejoinShipManagementSystem finds a persisted ship for the client.
     /// </summary>
@@ -44,11 +45,12 @@ namespace TitanOrbit.Game
                 _shipSummaryText.text =
                     $"Team {teamLabel}\n" +
                     $"Level {shipState.ShipLevel}  ·  HP {shipState.Health:0}/{shipState.MaxHealth:0}\n" +
-                    $"Gems {shipState.CurrentGems:0}/{shipState.GemCapacity:0}  ·  Energy {shipState.CurrentEnergy:0}/{shipState.MaxEnergy:0}";
+                    $"Energy {shipState.CurrentEnergy:0}/{shipState.MaxEnergy:0}\n" +
+                    "Gems and troops reset if you continue.";
             }
 
             if (_statusText != null)
-                _statusText.text = "Welcome back. Continue where you left off, or start fresh on a new team.";
+                _statusText.text = "Welcome back. Your gear stays on this ship. Gems and troops start at zero.";
 
             _screenRoot.SetActive(true);
             _screenRoot.transform.SetAsLastSibling();

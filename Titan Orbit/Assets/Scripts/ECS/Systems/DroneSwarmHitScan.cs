@@ -316,9 +316,9 @@ namespace TitanOrbit.ECS
             }
 
             // --- Destroyed: free the gear slot ---
-            // [TITAN-ORBIT] Leaving ItemType with 0 HP used to skip combat/visuals but still
-            // counted as a filled LOADOUT row (HasEmptyLoadoutSlot uses buffer.Length).
-            // RemoveAt matches MoonOrbitStoreSystem discard so the player can rebuy.
+            // [TITAN-ORBIT] Leaving the row at 0 HP hid the mesh but the store still
+            // counted it, so a buy into a visibly empty slot was rejected.
+            // RemoveAt matches a player discard. The store strips any leftover before it counts.
             buf.RemoveAt(slotIndex);
             InvalidateAndShiftLiveTargets(liveTargets, ship, slotIndex);
         }
@@ -327,6 +327,8 @@ namespace TitanOrbit.ECS
         /// Strips leftover 0-HP drone rows from one ship's equipment buffer.
         /// Walks high-to-low so each <c>RemoveAt</c> does not skip a neighbor.
         /// Safe to call every tick — the buffer is only a handful of loadout rows.
+        /// Store purchases call this too, so a wreck left after turret fire cannot
+        /// block a buy while the orbit menu already shows that slot as empty.
         /// </summary>
         /// <returns>How many drone rows were removed.</returns>
         public static int CompactDestroyedDroneSlots(EntityManager em, Entity ship)

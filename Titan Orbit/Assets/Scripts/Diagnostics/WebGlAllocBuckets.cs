@@ -53,6 +53,29 @@ namespace TitanOrbit.Diagnostics
         /// <summary>BuildPhysicsWorld / physics initialize.</summary>
         public static long SimPhysInitAlloc;
 
+        /// <summary>Physics initialize before BuildPhysicsWorld.</summary>
+        public static long SimPhysPreBuildAlloc;
+
+        /// <summary>BuildPhysicsWorld.OnUpdate only.</summary>
+        public static long SimPhysWorldAlloc;
+
+        public static long PhysResetAlloc;
+        public static long PhysMidAlloc;
+        public static long PhysStreamAlloc;
+        public static long PhysCopyAlloc;
+        public static long PhysTreeAlloc;
+        public static long PhysHeadAlloc;
+        public static long PhysDataAlloc;
+        public static long PhysCountAlloc;
+        public static long PhysCohereAlloc;
+        public static long PhysCohereDynAlloc;
+        public static long PhysCohereStaAlloc;
+        public static long PhysCohereCombineAlloc;
+        public static long PhysDisposeAlloc;
+        public static long PhysEpilogueAlloc;
+        public static long PhysListDisposeAlloc;
+        public static long PhysSingletonAlloc;
+
         /// <summary>Broadphase body-pair creation.</summary>
         public static long SimPhysPairsAlloc;
 
@@ -218,7 +241,8 @@ namespace TitanOrbit.Diagnostics
             out long physContacts,
             out long physJac,
             out long physSolveOnly,
-            out long physAfter)
+            out long physAfter,
+            out long physPreBuild)
         {
             frames = Frames;
             Frames = 0;
@@ -241,6 +265,7 @@ namespace TitanOrbit.Diagnostics
             physJac = SimPhysJacAlloc;
             physSolveOnly = SimPhysSolveOnlyAlloc;
             physAfter = SimPhysAfterAlloc;
+            physPreBuild = SimPhysPreBuildAlloc;
             simPhysBuild = physInit + physPairs + physContacts + physJac;
             simPhysSolve = physSolveOnly + physAfter;
             SimPhysInitAlloc = 0L;
@@ -249,6 +274,7 @@ namespace TitanOrbit.Diagnostics
             SimPhysJacAlloc = 0L;
             SimPhysSolveOnlyAlloc = 0L;
             SimPhysAfterAlloc = 0L;
+            SimPhysPreBuildAlloc = 0L;
             SimGhostAlloc = 0L;
             SimPhysBuildAlloc = 0L;
             SimPhysSolveAlloc = 0L;

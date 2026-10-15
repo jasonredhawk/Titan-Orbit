@@ -136,10 +136,57 @@ namespace TitanOrbit.Diagnostics
                 _prevStoreLabels = storeLabels;
                 _hasPrev = true;
                 WebGlAllocBuckets.CopyAndReset(
-                    _alloc, _mono, out int frames, out long post, out long early, out long updatePhase, out long latePhase, out long simPhase, out long lateUiPhase, out long simGhost, out long simPhysBuild, out long simPhysSolve, out long simPred, out long simRest, out int simPhysSteps, out int endOfFrameMarks, out long physInit, out long physPairs, out long physContacts, out long physJac, out long physSolveOnly, out long physAfter);
+                    _alloc, _mono, out int frames, out long post, out long early, out long updatePhase, out long latePhase, out long simPhase, out long lateUiPhase, out long simGhost, out long simPhysBuild, out long simPhysSolve, out long simPred, out long simRest, out int simPhysSteps, out int endOfFrameMarks, out long physInit, out long physPairs, out long physContacts, out long physJac, out long physSolveOnly, out long physAfter, out long physPreBuild);
 
                 long streamProbe = 0L;
+                long oneStream = 0L;
+                long oneArray = 0L;
+                long worldAlloc = WebGlAllocBuckets.SimPhysWorldAlloc;
+                long physReset = WebGlAllocBuckets.PhysResetAlloc;
+                long physMid = WebGlAllocBuckets.PhysMidAlloc;
+                long physStream = WebGlAllocBuckets.PhysStreamAlloc;
+                long physCopy = WebGlAllocBuckets.PhysCopyAlloc;
+                long physTree = WebGlAllocBuckets.PhysTreeAlloc;
+                long physHead = WebGlAllocBuckets.PhysHeadAlloc;
+                long physData = WebGlAllocBuckets.PhysDataAlloc;
+                long physCount = WebGlAllocBuckets.PhysCountAlloc;
+                long physCohere = WebGlAllocBuckets.PhysCohereAlloc;
+                long physCohereDyn = WebGlAllocBuckets.PhysCohereDynAlloc;
+                long physCohereSta = WebGlAllocBuckets.PhysCohereStaAlloc;
+                long physCohereCombine = WebGlAllocBuckets.PhysCohereCombineAlloc;
+                long physDispose = WebGlAllocBuckets.PhysDisposeAlloc;
+                long physEpilogue = WebGlAllocBuckets.PhysEpilogueAlloc;
+                long physList = WebGlAllocBuckets.PhysListDisposeAlloc;
+                long physSingleton = WebGlAllocBuckets.PhysSingletonAlloc;
+                long accounted = physHead + physData + physCount + physReset + physMid + physStream + physCopy + physTree
+                    + physCohere + physDispose + physEpilogue + physList + physSingleton;
+                long gap = worldAlloc - accounted;
+                WebGlAllocBuckets.SimPhysWorldAlloc = 0L;
+                WebGlAllocBuckets.PhysResetAlloc = 0L;
+                WebGlAllocBuckets.PhysMidAlloc = 0L;
+                WebGlAllocBuckets.PhysStreamAlloc = 0L;
+                WebGlAllocBuckets.PhysCopyAlloc = 0L;
+                WebGlAllocBuckets.PhysTreeAlloc = 0L;
+                WebGlAllocBuckets.PhysHeadAlloc = 0L;
+                WebGlAllocBuckets.PhysDataAlloc = 0L;
+                WebGlAllocBuckets.PhysCountAlloc = 0L;
+                WebGlAllocBuckets.PhysCohereAlloc = 0L;
+                WebGlAllocBuckets.PhysCohereDynAlloc = 0L;
+                WebGlAllocBuckets.PhysCohereStaAlloc = 0L;
+                WebGlAllocBuckets.PhysCohereCombineAlloc = 0L;
+                WebGlAllocBuckets.PhysDisposeAlloc = 0L;
+                WebGlAllocBuckets.PhysEpilogueAlloc = 0L;
+                WebGlAllocBuckets.PhysListDisposeAlloc = 0L;
+                WebGlAllocBuckets.PhysSingletonAlloc = 0L;
 #if UNITY_WEBGL && !UNITY_EDITOR
+                long sizeBefore = Profiler.GetTotalAllocatedMemoryLong();
+                var sizedStream = new NativeStream(1, Allocator.Persistent);
+                oneStream = Profiler.GetTotalAllocatedMemoryLong() - sizeBefore;
+                sizedStream.Dispose();
+                long arrayBefore = Profiler.GetTotalAllocatedMemoryLong();
+                var sizedArray = new NativeArray<int>(1, Allocator.Persistent);
+                oneArray = Profiler.GetTotalAllocatedMemoryLong() - arrayBefore;
+                sizedArray.Dispose();
                 long streamBefore = Profiler.GetTotalAllocatedMemoryLong();
                 var streamA = new NativeStream(1, Allocator.Persistent);
                 var streamB = new NativeStream(1, Allocator.Persistent);
@@ -153,7 +200,7 @@ namespace TitanOrbit.Diagnostics
                 // #region agent log
                 long nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
                 string json =
-                    "{\"sessionId\":\"b1f93a\",\"runId\":\"phys-net\",\"hypothesisId\":\"H22\"," +
+                    "{\"sessionId\":\"b1f93a\",\"runId\":\"post-fix\",\"hypothesisId\":\"H27\"," +
                     "\"location\":\"WebGlHeapHeartbeat.cs:Update\",\"message\":\"slice\"," +
                     "\"timestamp\":" + nowMs +
                     ",\"data\":{\"allocatedMB\":" + (allocated / 1048576L) +
@@ -183,6 +230,25 @@ namespace TitanOrbit.Diagnostics
                     ",\"pred\":" + (simPred / 1024L) +
                     ",\"simR\":" + (simRest / 1024L) +
                     ",\"physN\":" + simPhysSteps +
+                    ",\"pre\":" + (physPreBuild / 1024L) +
+                    ",\"wld\":" + (worldAlloc / 1024L) +
+                    ",\"rst\":" + (physReset / 1024L) +
+                    ",\"mid\":" + (physMid / 1024L) +
+                    ",\"strm\":" + (physStream / 1024L) +
+                    ",\"cpy\":" + (physCopy / 1024L) +
+                    ",\"tree\":" + (physTree / 1024L) +
+                    ",\"head\":" + (physHead / 1024L) +
+                    ",\"dat\":" + (physData / 1024L) +
+                    ",\"cnt\":" + (physCount / 1024L) +
+                    ",\"coh\":" + (physCohere / 1024L) +
+                    ",\"dyn\":" + (physCohereDyn / 1024L) +
+                    ",\"sta\":" + (physCohereSta / 1024L) +
+                    ",\"cmb\":" + (physCohereCombine / 1024L) +
+                    ",\"dsp\":" + (physDispose / 1024L) +
+                    ",\"epi\":" + (physEpilogue / 1024L) +
+                    ",\"lst\":" + (physList / 1024L) +
+                    ",\"sng\":" + (physSingleton / 1024L) +
+                    ",\"gap\":" + (gap / 1024L) +
                     ",\"bld\":" + (physInit / 1024L) +
                     ",\"brd\":" + (physPairs / 1024L) +
                     ",\"con\":" + (physContacts / 1024L) +
@@ -190,6 +256,8 @@ namespace TitanOrbit.Diagnostics
                     ",\"sol\":" + (physSolveOnly / 1024L) +
                     ",\"aft\":" + (physAfter / 1024L) +
                     ",\"streamProbe\":" + streamProbe +
+                    ",\"oneStream\":" + oneStream +
+                    ",\"oneArray\":" + oneArray +
                     ",\"viz\":" + (_alloc[0] / 1024L) +
                     ",\"vizR\":" + (_alloc[1] / 1024L) +
                     ",\"bul\":" + (_alloc[2] / 1024L) +

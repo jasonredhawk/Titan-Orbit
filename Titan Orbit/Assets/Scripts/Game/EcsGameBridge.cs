@@ -1071,9 +1071,28 @@ namespace TitanOrbit.Game
                 return false;
 
             if (em.HasBuffer<EquippedCardElement>(shipEntity))
-                used += em.GetBuffer<EquippedCardElement>(shipEntity).Length;
+            {
+                var cards = em.GetBuffer<EquippedCardElement>(shipEntity);
+                for (int i = 0; i < cards.Length; i++)
+                {
+                    if (!cards[i].CardId.IsEmpty)
+                        used++;
+                }
+            }
+
             if (em.HasBuffer<EquippedEquipmentElement>(shipEntity))
-                used += em.GetBuffer<EquippedEquipmentElement>(shipEntity).Length;
+            {
+                var gear = em.GetBuffer<EquippedEquipmentElement>(shipEntity);
+                for (int i = 0; i < gear.Length; i++)
+                {
+                    var e = gear[i];
+                    // Destroyed drones do not occupy a loadout slot (store buy uses the same rule).
+                    if (StoreItemData.IsDrone((StoreItemType)e.ItemType) && e.RemainingCharges <= 0)
+                        continue;
+                    used++;
+                }
+            }
+
             return true;
         }
 

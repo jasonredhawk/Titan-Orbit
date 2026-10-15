@@ -63,16 +63,14 @@ namespace TitanOrbit.Core
         }
 
         /// <summary>
-        /// Prefab-local scales and particle start sizes, captured once at identity
-        /// before any shot scale. A reused tracer restores these so one barrel
-        /// cannot keep a uniformly smaller copy of the same bolt.
+        /// Prefab-local scales, captured once at identity before any shot scale.
+        /// A reused tracer restores these so one barrel cannot keep a scaled copy
+        /// of the bolt. Particle modules stay as the projectile prefab authored them.
         /// </summary>
         public sealed class TracerPrefabScaleSnapshot : MonoBehaviour
         {
             public Transform[] Nodes;
             public Vector3[] LocalScales;
-            public ParticleSystem[] Systems;
-            public float[] StartSizes;
         }
 
         /// <summary>
@@ -526,7 +524,7 @@ namespace TitanOrbit.Core
         /// One-shot flashes do not move, so Local matches the authored look and then shrinks.
         /// </summary>
         /// <summary>
-        /// Records prefab scales and start sizes while the shell is still at identity.
+        /// Records prefab-local scales while the shell is still at identity.
         /// Call once, before <see cref="ApplyImpactVisualScale"/>.
         /// </summary>
         public static void CaptureTracerPrefabScale(GameObject root)
@@ -546,30 +544,11 @@ namespace TitanOrbit.Core
             snap.LocalScales = new Vector3[nodes.Length];
             for (int i = 0; i < nodes.Length; i++)
                 snap.LocalScales[i] = nodes[i] != null ? nodes[i].localScale : Vector3.one;
-
-            ParticleSystem[] systems = root.GetComponentsInChildren<ParticleSystem>(true);
-            snap.Systems = systems;
-            snap.StartSizes = new float[systems.Length];
-            for (int i = 0; i < systems.Length; i++)
-            {
-                if (systems[i] == null)
-                {
-                    snap.StartSizes[i] = 1f;
-                    continue;
-                }
-
-                var main = systems[i].main;
-                var curve = main.startSize3D ? main.startSizeX : main.startSize;
-                float size = curve.Evaluate(0f, 1f);
-                if (size < 0.001f)
-                    size = Mathf.Max(curve.constant, curve.constantMax, curve.constantMin);
-                snap.StartSizes[i] = Mathf.Max(0.001f, size);
-            }
         }
 
         /// <summary>
-        /// Puts a rented tracer back on the prefab size captured by
-        /// <see cref="CaptureTracerPrefabScale"/> before the shot scale is applied.
+        /// Puts a rented tracer back on the prefab-local scales captured by
+        /// <see cref="CaptureTracerPrefabScale"/> before the shot's root scale is applied.
         /// </summary>
         public static void RestoreTracerPrefabScale(GameObject root)
         {
@@ -598,35 +577,13 @@ namespace TitanOrbit.Core
                 if (snap.Nodes[i] != null && snap.LocalScales != null && i < snap.LocalScales.Length)
                     snap.Nodes[i].localScale = snap.LocalScales[i];
             }
-
-            if (snap.Systems == null || snap.StartSizes == null)
-                return;
-
-            int count = snap.Systems.Length;
-            for (int i = 0; i < count; i++)
-            {
-                ParticleSystem ps = snap.Systems[i];
-                if (ps == null || i >= snap.StartSizes.Length)
-                    continue;
-                float size = Mathf.Max(0.001f, snap.StartSizes[i]);
-                var main = ps.main;
-                var constant = new ParticleSystem.MinMaxCurve(size);
-                if (main.startSize3D)
-                {
-                    main.startSizeX = constant;
-                    main.startSizeY = constant;
-                    main.startSizeZ = constant;
-                }
-                else
-                {
-                    main.startSize = constant;
-                }
-            }
         }
 
         /// <param name="lockUniformParticleSize">
-        /// Tracers: root scale is the fire-power size. The prefab must not
-        /// shrink that over the shot's life. Muzzle and impact leave this off.
+        /// Tracers pass true: fire-power is root scale only. Projectile particle
+        /// modules stay as the Sci-Fi Arsenal prefab authored them (BulletRed's
+        /// glow speed, stretch length, sizes). Muzzle and impact pass false and
+        /// switch to Local so a one-shot flash still follows transform scale.
         /// </param>
         public static void ApplyImpactVisualScale(GameObject root, float scale, bool lockUniformParticleSize = false)
         {
@@ -634,15 +591,11 @@ namespace TitanOrbit.Core
                 return;
 
             float s = Mathf.Max(0.05f, scale);
-            // Tracers: undo a previous shot's shrink before writing this shot's scale.
+            // Tracers: undo a previous shot's root shrink before this shot's scale.
             if (lockUniformParticleSize)
                 RestoreTracerPrefabScale(root);
 
-            // Tracers: every particle uses this size. No authored roll, no tiny twin sprite.
-            if (lockUniformParticleSize)
-                FitTracerParticlesToScale(root, s);
-            else
-                root.transform.localScale = Vector3.one * s;
+            root.transform.localScale = Vector3.one * s;
 
             var marker = root.GetComponent<VfxPreparedMarker>();
             if (!lockUniformParticleSize)
@@ -680,97 +633,63 @@ namespace TitanOrbit.Core
         }
 
         /// <summary>
-        /// Every particle in the tracer is <paramref name="firepowerScale"/> world units.
-        /// The prefab's random range and its smaller extra sprites are removed.
+        /// Bumped when tracer shells must be rebuilt from the projectile prefab.
+        /// Older shells had particle start size and speed rewritten, which turned
+        /// BulletRed's small glow into a disc stuck on the streak.
         /// </summary>
-        static void FitTracerParticlesToScale(GameObject root, float firepowerScale)
+        const int AuthoredProjectileRevision = 1;
+
+        sealed class ProjectileVisualRevision : MonoBehaviour
         {
-            ParticleSystem[] systems = root.GetComponentsInChildren<ParticleSystem>(true);
-            for (int i = 0; i < systems.Length; i++)
-            {
-                ParticleSystem ps = systems[i];
-                if (ps == null)
-                    continue;
-                // Module writes while playing are ignored. Stop, then freeze.
-                if (ps.isPlaying)
-                    ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
-
-                float mesh = ParticleMeshExtent(ps);
-                float child = RelativeMaxScale(ps.transform, root.transform);
-                float start = 1f / Mathf.Max(0.05f, mesh * child);
-
-                var main = ps.main;
-                main.simulationSpace = ParticleSystemSimulationSpace.Local;
-                main.scalingMode = ParticleSystemScalingMode.Hierarchy;
-                main.startSize3D = false;
-                main.startSize = new ParticleSystem.MinMaxCurve(start);
-                FreezeStartRotation(main);
-
-                var overLife = ps.sizeOverLifetime;
-                overLife.enabled = false;
-                var bySpeed = ps.sizeBySpeed;
-                bySpeed.enabled = false;
-                var inherit = ps.inheritVelocity;
-                inherit.enabled = false;
-
-                var renderer = ps.GetComponent<ParticleSystemRenderer>();
-                if (renderer != null && renderer.renderMode == ParticleSystemRenderMode.Stretch)
-                {
-                    renderer.velocityScale = 0f;
-                    renderer.cameraVelocityScale = 0f;
-                }
-            }
-
-            root.transform.localScale = Vector3.one * firepowerScale;
+            public int Revision;
         }
 
-        /// <summary>Longest axis of a mesh particle. Billboards are 1.</summary>
-        static float ParticleMeshExtent(ParticleSystem ps)
+        /// <summary>Marks a shell whose visual child is still a straight prefab instance.</summary>
+        public static void StampAuthoredProjectile(GameObject root)
         {
-            var renderer = ps.GetComponent<ParticleSystemRenderer>();
-            if (renderer == null)
-                return 1f;
-            if (renderer.renderMode == ParticleSystemRenderMode.Stretch)
-                return Mathf.Max(1f, renderer.lengthScale);
-            if (renderer.renderMode != ParticleSystemRenderMode.Mesh || renderer.mesh == null)
-                return 1f;
-            Vector3 size = renderer.mesh.bounds.size;
-            return Mathf.Max(0.05f, Mathf.Max(size.x, size.y, size.z));
-        }
-
-        static float RelativeMaxScale(Transform node, Transform root)
-        {
-            float scale = 1f;
-            while (node != null && node != root)
-            {
-                Vector3 local = node.localScale;
-                scale *= Mathf.Max(0.001f, Mathf.Max(local.x, Mathf.Max(local.y, local.z)));
-                node = node.parent;
-            }
-
-            return scale;
-        }
-
-        /// <summary>Keeps the authored facing. A random spin reads as a smaller bolt from above.</summary>
-        static void FreezeStartRotation(ParticleSystem.MainModule main)
-        {
-            if (main.startRotation3D)
-            {
-                main.startRotationX = SignedConstant(main.startRotationX);
-                main.startRotationY = SignedConstant(main.startRotationY);
-                main.startRotationZ = SignedConstant(main.startRotationZ);
+            if (root == null)
                 return;
-            }
-
-            main.startRotation = SignedConstant(main.startRotation);
+            var rev = root.GetComponent<ProjectileVisualRevision>();
+            if (rev == null)
+                rev = root.AddComponent<ProjectileVisualRevision>();
+            rev.Revision = AuthoredProjectileRevision;
         }
 
-        static ParticleSystem.MinMaxCurve SignedConstant(ParticleSystem.MinMaxCurve curve)
+        /// <summary>
+        /// Replaces a pooled projectile visual that was mutated away from
+        /// <paramref name="projectilePrefab"/>. One rebuild per shell.
+        /// </summary>
+        public static void EnsureAuthoredProjectileVisual(GameObject root, GameObject projectilePrefab)
         {
-            float value = curve.mode == ParticleSystemCurveMode.Constant
-                ? curve.constant
-                : curve.Evaluate(0f, 1f);
-            return new ParticleSystem.MinMaxCurve(value);
+            if (root == null || projectilePrefab == null)
+                return;
+
+            var rev = root.GetComponent<ProjectileVisualRevision>();
+            if (rev != null && rev.Revision == AuthoredProjectileRevision)
+                return;
+
+            for (int i = root.transform.childCount - 1; i >= 0; i--)
+                UnityEngine.Object.DestroyImmediate(root.transform.GetChild(i).gameObject);
+
+            var snap = root.GetComponent<TracerPrefabScaleSnapshot>();
+            if (snap != null)
+                UnityEngine.Object.DestroyImmediate(snap);
+
+            GameObject visual = UnityEngine.Object.Instantiate(projectilePrefab, root.transform);
+            visual.name = "ProjectileVisual";
+            visual.transform.localPosition = Vector3.zero;
+            visual.transform.localRotation = Quaternion.identity;
+            FixAllIn1MaterialsForUrp(visual);
+            CaptureTracerPrefabScale(root);
+
+            var marker = root.GetComponent<VfxPreparedMarker>();
+            if (marker != null)
+            {
+                marker.TrailBaseWidths = null;
+                marker.HierarchyScaleReady = false;
+            }
+
+            StampAuthoredProjectile(root);
         }
 
         /// <summary>Weapon fire: compact cone burst using URP Particles Unlit only (mobile; no AllIn1 prefabs).</summary>

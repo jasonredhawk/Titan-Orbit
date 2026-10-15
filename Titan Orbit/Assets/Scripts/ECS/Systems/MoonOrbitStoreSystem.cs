@@ -234,7 +234,12 @@ namespace TitanOrbit.ECS
             return em.GetComponentData<NetworkId>(connection).Value;
         }
 
-        /// <summary>Finds the ship ghost owned by this client's <see cref="GhostOwner.NetworkId"/>.</summary>
+        /// <summary>
+        /// Finds the ship ghost owned by this client's <see cref="GhostOwner.NetworkId"/>.
+        /// When a reconnect left two hulls on the same id, this is the newest one —
+        /// the hull the orbit menu reads — so a purchase cannot land on an older
+        /// ghost that still has a full drone loadout.
+        /// </summary>
         static bool TryGetOwnedShip(EntityManager em, int networkId, out Entity shipEntity)
         {
             shipEntity = Entity.Null;
@@ -244,15 +249,12 @@ namespace TitanOrbit.ECS
             using var query = em.CreateEntityQuery(typeof(ShipTag), typeof(GhostOwner));
             using var owners = query.ToComponentDataArray<GhostOwner>(Allocator.Temp);
             using var entities = query.ToEntityArray(Allocator.Temp);
-            for (int i = 0; i < owners.Length; i++)
-            {
-                if (owners[i].NetworkId != networkId)
-                    continue;
-                shipEntity = entities[i];
-                return true;
-            }
+            int newest = ShipGhostAge.IndexOfNewest(em, entities, owners, networkId);
+            if (newest < 0)
+                return false;
 
-            return false;
+            shipEntity = entities[newest];
+            return true;
         }
 
         /// <summary>Locates the home planet entity for a team (store purchases debit its contributed gems).</summary>
@@ -1230,20 +1232,47 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Cards and gear share one LOADOUT pool: used = card buffer + equipment buffer,
-        /// cap = ship level + optional rewarded bonus (<see cref="ShipLoadoutCapacity"/>).
+        /// Cards and gear share one LOADOUT pool. Cap is ship level plus an optional
+        /// rewarded bonus (<see cref="ShipLoadoutCapacity"/>).
+        /// A fighter that died to turret fire used to stay in the equipment buffer at 0 HP:
+        /// the swarm mesh hid, the menu drew an Empty row, and this check still counted
+        /// the wreck. Strip those rows first, then count only living drones and real cards.
         /// </summary>
         static bool HasEmptyLoadoutSlot(EntityManager em, Entity shipEntity, int shipLevel)
         {
+            // [TITAN-ORBIT] Purchase, spin, and take-card all come through here, including
+            // while the ship is moon-docked (combat compact still runs, this covers a
+            // wreck that has not been stripped yet this tick).
+            DroneSwarmHitScan.CompactDestroyedDroneSlots(em, shipEntity);
+
             int bonus = 0;
             if (em.HasComponent<ShipLoadoutState>(shipEntity))
                 bonus = em.GetComponentData<ShipLoadoutState>(shipEntity).LoadoutBonusSlots;
             int cap = ShipLoadoutCapacity.GetCap(shipLevel, bonus);
             int used = 0;
             if (em.HasBuffer<EquippedCardElement>(shipEntity))
-                used += em.GetBuffer<EquippedCardElement>(shipEntity).Length;
+            {
+                var cards = em.GetBuffer<EquippedCardElement>(shipEntity);
+                for (int i = 0; i < cards.Length; i++)
+                {
+                    if (!cards[i].CardId.IsEmpty)
+                        used++;
+                }
+            }
+
             if (em.HasBuffer<EquippedEquipmentElement>(shipEntity))
-                used += em.GetBuffer<EquippedEquipmentElement>(shipEntity).Length;
+            {
+                var gear = em.GetBuffer<EquippedEquipmentElement>(shipEntity);
+                for (int i = 0; i < gear.Length; i++)
+                {
+                    var e = gear[i];
+                    // 0 HP drones do not own a slot even if RemoveAt has not replicated yet.
+                    if (StoreItemData.IsDrone((StoreItemType)e.ItemType) && e.RemainingCharges <= 0)
+                        continue;
+                    used++;
+                }
+            }
+
             return used < cap;
         }
 
@@ -1339,13 +1368,16 @@ namespace TitanOrbit.ECS
             if (!em.HasBuffer<EquippedEquipmentElement>(shipEntity))
                 em.AddBuffer<EquippedEquipmentElement>(shipEntity);
 
-            var buffer = em.GetBuffer<EquippedEquipmentElement>(shipEntity);
             // [TITAN-ORBIT] Cards and gear share one LOADOUT pool capped at ship level.
+            // Check before taking a buffer handle: the check strips dead drones, and a
+            // handle taken earlier would point at freed buffer memory after RemoveAt.
             if (!HasEmptyLoadoutSlot(em, shipEntity, shipLevel))
             {
                 message = "No empty loadout slot.";
                 return false;
             }
+
+            var buffer = em.GetBuffer<EquippedEquipmentElement>(shipEntity);
 
             int lockedLevel = math.max(1, purchaseLevel);
             int charges = StoreItemData.IsDrone(itemType)
@@ -1396,12 +1428,14 @@ namespace TitanOrbit.ECS
             if (!em.HasBuffer<EquippedEquipmentElement>(shipEntity))
                 em.AddBuffer<EquippedEquipmentElement>(shipEntity);
 
-            var buffer = em.GetBuffer<EquippedEquipmentElement>(shipEntity);
+            // Same dead-drone strip as support-item buys. Re-fetch the buffer after.
             if (!HasEmptyLoadoutSlot(em, shipEntity, shipLevel))
             {
                 message = "No empty loadout slot.";
                 return false;
             }
+
+            var buffer = em.GetBuffer<EquippedEquipmentElement>(shipEntity);
 
             byte stampedBank = 0;
             if (!string.IsNullOrWhiteSpace(componentId))
@@ -1442,12 +1476,14 @@ namespace TitanOrbit.ECS
             if (!em.HasBuffer<EquippedCardElement>(shipEntity))
                 em.AddBuffer<EquippedCardElement>(shipEntity);
 
-            var buffer = em.GetBuffer<EquippedCardElement>(shipEntity);
+            // Dead drones share this pool. Strip them before the card is appended.
             if (!HasEmptyLoadoutSlot(em, shipEntity, shipLevel))
             {
                 message = "No empty loadout slot.";
                 return false;
             }
+
+            var buffer = em.GetBuffer<EquippedCardElement>(shipEntity);
 
             buffer.Add(new EquippedCardElement { CardId = cardId });
             return true;

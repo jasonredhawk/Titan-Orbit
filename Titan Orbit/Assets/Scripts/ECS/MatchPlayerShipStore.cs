@@ -10,8 +10,9 @@ using UnityEngine;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// One player's ship, gear, cargo, and upgrades for the current match.
+    /// One player's ship, gear, and upgrades for the current match.
     /// Written once when their hull is removed. Not a ghost and not a per-tick copy.
+    /// Gem cargo and troop count are cleared when the hull is restored.
     /// </summary>
     public sealed class MatchPlayerShipSnapshot
     {
@@ -201,8 +202,9 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Writes the snapshot onto a hull that <see cref="PlayerShipSpawn"/> just created,
-        /// then recomputes chassis stats. Cargo and gear are stamped again after that
-        /// recompute so caps update without wiping rockets, cards, or gem hold.
+        /// then recomputes chassis stats. Gear is stamped again after that recompute so
+        /// caps update without wiping rockets or cards. Gem cargo and troops are not
+        /// restored — a disconnect must not bank them.
         /// </summary>
         public static void ApplyToSpawnedShip(
             EntityManager em,
@@ -216,6 +218,8 @@ namespace TitanOrbit.ECS
             var saved = snapshot.Ship;
             saved.AwaitingTeamSelection = false;
             saved.OverdriveLockout = false;
+            saved.CurrentGems = 0f;
+            saved.CurrentPeople = 0;
             em.SetComponentData(ship, saved);
             WriteLoadoutGearAndStats(em, ship, snapshot);
 
@@ -354,8 +358,10 @@ namespace TitanOrbit.ECS
                 shipState.ShipFamilyConfigIndex = saved.ShipFamilyConfigIndex;
                 shipState.HullBulletBankIndex = saved.HullBulletBankIndex;
             }
-            shipState.CurrentGems = math.min(saved.CurrentGems, math.max(0f, shipState.GemCapacity));
-            shipState.CurrentPeople = math.min(saved.CurrentPeople, math.max(0, shipState.PeopleCapacity));
+            // Disconnect return keeps the hull and gear. Cargo gems and troops start
+            // at zero so closing the browser cannot save a hold or an escort swarm.
+            shipState.CurrentGems = 0f;
+            shipState.CurrentPeople = 0;
             shipState.CurrentEnergy = math.min(saved.CurrentEnergy, math.max(0f, shipState.MaxEnergy));
             if (saved.IsDead)
             {
