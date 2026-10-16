@@ -178,6 +178,8 @@ namespace TitanOrbit.Game
             VfxUrpCompat.ApplyImpactVisualScale(go, worldScale / parentLossy);
 
             MuteAudio(go);
+            if (!go.activeSelf)
+                go.SetActive(true);
             VfxUrpCompat.SetParticleSystemsLooping(go, true);
 
             slot.Instance = go;

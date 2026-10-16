@@ -151,10 +151,6 @@ namespace SpaceGraphicsToolkit
 		[System.NonSerialized]
 		private bool webGlDrawMaterialReady;
 
-		// #region agent log
-		public static int DebugWebGlMaterialCreates;
-		// #endregion
-
 		private static Dictionary<Mesh, int> sharedGeneratedUsers = new Dictionary<Mesh, int>();
 
 		private static Dictionary<Mesh, Geom> meshToGeom = new Dictionary<Mesh, Geom>();
@@ -660,9 +656,6 @@ namespace SpaceGraphicsToolkit
 
 			var instance = new Material(material);
 			instance.name = material.name + " (WebGL)";
-			// #region agent log
-			DebugWebGlMaterialCreates++;
-			// #endregion
 			material = instance;
 			webGlDrawMaterialReady = true;
 		}

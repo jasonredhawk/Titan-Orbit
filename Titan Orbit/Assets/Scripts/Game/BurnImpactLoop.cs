@@ -161,6 +161,8 @@ namespace TitanOrbit.Game
             if (parent != null)
                 go.transform.SetParent(parent, true);
             MuteAudio(go);
+            if (!go.activeSelf)
+                go.SetActive(true);
             VfxUrpCompat.SetParticleSystemsLooping(go, true);
             return true;
         }

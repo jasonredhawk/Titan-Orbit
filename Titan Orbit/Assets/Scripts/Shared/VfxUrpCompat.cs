@@ -49,6 +49,14 @@ namespace TitanOrbit.Core
         static readonly Dictionary<int, Material> s_WebGlParticleMaterials = new Dictionary<int, Material>(16);
 
         /// <summary>
+        /// Marks the inactive <c>BulletOneShotVfxPool</c> root so a shell parked there is not
+        /// treated as a flash buried under a hidden ship or rock.
+        /// </summary>
+        public sealed class VfxPoolRootMarker : MonoBehaviour
+        {
+        }
+
+        /// <summary>
         /// Marks a pooled muzzle/impact shell that already paid FixAllIn1 + light strip +
         /// Hierarchy scale setup. Session 74383c kill frames hit <c>hitMs:21</c> while the pool
         /// was still Instantiates-growing and re-running GrabPass material walks every Rent.
@@ -60,6 +68,71 @@ namespace TitanOrbit.Core
 
             /// <summary>Authored <see cref="TrailRenderer.widthMultiplier"/> captured on first scale.</summary>
             public float[] TrailBaseWidths;
+
+            /// <summary>
+            /// A kill hides the rock or hull this flash is parented to. That deactivates
+            /// children, so the burst vanishes with the body. Queue a same-frame detach.
+            /// Pool Return deactivates us while the parent is still active, and the pool
+            /// root carries <see cref="VfxPoolRootMarker"/> — those must stay parked.
+            /// </summary>
+            void OnDisable()
+            {
+                Transform parent = transform.parent;
+                if (parent == null || parent.GetComponent<VfxPoolRootMarker>() != null)
+                    return;
+                if (parent.gameObject.activeInHierarchy)
+                    return;
+                QueueImpactHiddenWithParent(gameObject);
+            }
+        }
+
+        /// <summary>Flashes deactivated because their follow-parent was hidden this frame.</summary>
+        static readonly List<GameObject> s_hiddenWithParent = new List<GameObject>(8);
+
+        /// <summary>
+        /// WebGL ignores particle Play on the same frame a shell is enabled. These
+        /// wait one presentation frame, then emit if the burst is still empty.
+        /// </summary>
+        static readonly List<GameObject> s_webGlDeferredPlay = new List<GameObject>(32);
+
+        static void QueueImpactHiddenWithParent(GameObject go)
+        {
+            if (go == null)
+                return;
+            for (int i = 0; i < s_hiddenWithParent.Count; i++)
+            {
+                if (s_hiddenWithParent[i] == go)
+                    return;
+            }
+
+            s_hiddenWithParent.Add(go);
+        }
+
+        /// <summary>
+        /// Detaches impacts whose ship / rock / moon was deactivated, then turns them
+        /// back on at the world pose they already had. Call once per presentation frame
+        /// after spawns and after proxy hides.
+        /// </summary>
+        public static void RescueImpactsHiddenWithParent()
+        {
+            for (int i = s_hiddenWithParent.Count - 1; i >= 0; i--)
+            {
+                GameObject go = s_hiddenWithParent[i];
+                if (go == null)
+                    continue;
+
+                Transform parent = go.transform.parent;
+                if (parent == null || parent.GetComponent<VfxPoolRootMarker>() != null)
+                    continue;
+                if (parent.gameObject.activeInHierarchy)
+                    continue;
+
+                go.transform.SetParent(null, true);
+                if (!go.activeSelf)
+                    go.SetActive(true);
+            }
+
+            s_hiddenWithParent.Clear();
         }
 
         /// <summary>
@@ -117,9 +190,6 @@ namespace TitanOrbit.Core
 
                     // Clone once per unique shared material slot we must mutate — not Renderer.materials.
                     Material edit = new Material(mat);
-                    // #region agent log
-                    TitanOrbit.MaterialCloneProbe.NoteFixClone(edit);
-                    // #endregion
                     if (isGrab)
                     {
                         Shader replacement;
@@ -160,33 +230,169 @@ namespace TitanOrbit.Core
         }
 
         /// <summary>
-        /// Clears and plays every particle system in the hierarchy.
-        /// <c>Play(withChildren)</c> is not used: the parent call starts the child, the
-        /// child's later <c>Clear(withChildren)</c> wipes it, and <c>Play</c> then no-ops
-        /// because that child is already playing. BulletRed's stretch child was dropped
-        /// on some shots, leaving only the small root glow.
+        /// Starts every muzzle, trail, and impact particle system under
+        /// <paramref name="root"/>, including systems nested several children deep.
+        /// Call after the shell is at its final pose, while the shell is still inactive.
+        /// <para>
+        /// Recycling used to enable the shell, then <c>Stop</c> / <c>Simulate</c> /
+        /// <c>Play</c> it in the same frame. One shot usually emits. A volley runs
+        /// that restart on many systems before Unity's particle update, and those
+        /// calls do not emit — so simultaneous fire goes blank while slow fire looks
+        /// fine. This turns the shell on once, at the shot pose, and lets
+        /// <c>playOnAwake</c> start each child. No <c>Simulate</c>.
+        /// </para>
         /// </summary>
         public static void PlayParticleSystemsInHierarchy(GameObject root)
         {
             if (root == null)
                 return;
 
-            ParticleSystem[] systems = root.GetComponentsInChildren<ParticleSystem>(true);
-            for (int i = systems.Length - 1; i >= 0; i--)
+            // Already active this frame (fallback shell). Do not toggle off/on —
+            // that skips OnEnable for every system in the volley.
+            if (root.activeSelf)
             {
-                ParticleSystem ps = systems[i];
-                if (ps == null || !ps.gameObject.activeInHierarchy)
-                    continue;
-                ps.Stop(false, ParticleSystemStopBehavior.StopEmittingAndClear);
+                RestartAlreadyActiveRecursive(root.transform);
+                return;
             }
 
-            for (int i = 0; i < systems.Length; i++)
+            ArmInactiveShotVfxRecursive(root.transform);
+            root.SetActive(true);
+            EmitIfBurstMissedRecursive(root.transform, forceBody: false);
+            QueueWebGlDeferredPlay(root);
+        }
+
+        /// <summary>
+        /// Depth-first so nested Glow / Fire / LaserBolt children are armed, not only the root.
+        /// </summary>
+        static void ArmInactiveShotVfxRecursive(Transform node)
+        {
+            int childCount = node.childCount;
+            for (int i = 0; i < childCount; i++)
+                ArmInactiveShotVfxRecursive(node.GetChild(i));
+
+            ParticleSystem ps = node.GetComponent<ParticleSystem>();
+            if (ps != null)
             {
-                ParticleSystem ps = systems[i];
-                if (ps == null || !ps.gameObject.activeInHierarchy)
-                    continue;
-                ps.Play(false);
+                ParticleSystem.MainModule main = ps.main;
+                main.cullingMode = ParticleSystemCullingMode.AlwaysSimulate;
+                main.stopAction = ParticleSystemStopAction.None;
+                main.playOnAwake = true;
+                ParticleSystem.EmissionModule emission = ps.emission;
+                emission.enabled = true;
             }
+
+            TrailRenderer trail = node.GetComponent<TrailRenderer>();
+            if (trail == null)
+                return;
+
+            trail.Clear();
+            trail.emitting = true;
+            trail.enabled = true;
+        }
+
+        /// <summary>
+        /// <c>playOnAwake</c> already ran on enable. If a one-shot still has no particles,
+        /// emit its burst. <paramref name="forceBody"/> also emits a short body for a
+        /// looping bolt whose rate has not ticked yet (WebGL enable frame).
+        /// </summary>
+        static void EmitIfBurstMissedRecursive(Transform node, bool forceBody)
+        {
+            int childCount = node.childCount;
+            for (int i = 0; i < childCount; i++)
+                EmitIfBurstMissedRecursive(node.GetChild(i), forceBody);
+
+            ParticleSystem ps = node.GetComponent<ParticleSystem>();
+            if (ps == null || !ps.gameObject.activeInHierarchy || ps.particleCount > 0)
+                return;
+
+            if (!ps.isPlaying)
+                ps.Play(false);
+
+            int burst = SumBurstCount(ps);
+            if (burst > 0)
+                ps.Emit(burst);
+            else if (forceBody)
+                ps.Emit(8);
+        }
+
+        /// <summary>
+        /// Shell was already enabled (procedural fallback). Rewind each system in place.
+        /// </summary>
+        static void RestartAlreadyActiveRecursive(Transform node)
+        {
+            int childCount = node.childCount;
+            for (int i = 0; i < childCount; i++)
+                RestartAlreadyActiveRecursive(node.GetChild(i));
+
+            TrailRenderer trail = node.GetComponent<TrailRenderer>();
+            if (trail != null)
+            {
+                trail.Clear();
+                trail.emitting = true;
+                trail.enabled = true;
+            }
+
+            ParticleSystem ps = node.GetComponent<ParticleSystem>();
+            if (ps == null || !ps.gameObject.activeInHierarchy)
+                return;
+
+            ParticleSystem.MainModule main = ps.main;
+            main.cullingMode = ParticleSystemCullingMode.AlwaysSimulate;
+            main.stopAction = ParticleSystemStopAction.None;
+            ParticleSystem.EmissionModule emission = ps.emission;
+            emission.enabled = true;
+
+            ps.Stop(false, ParticleSystemStopBehavior.StopEmittingAndClear);
+            ps.Clear(false);
+            if (!ps.isPlaying)
+                ps.Play(false);
+            else
+                ps.time = 0f;
+
+            int burst = SumBurstCount(ps);
+            if (burst > 0 && ps.particleCount == 0)
+                ps.Emit(burst);
+
+            QueueWebGlDeferredPlay(ps.gameObject);
+        }
+
+        /// <summary>
+        /// WebGL often drops the burst that <c>playOnAwake</c> scheduled during enable.
+        /// The next presentation frame emits it if the system is still empty.
+        /// </summary>
+        static void QueueWebGlDeferredPlay(GameObject root)
+        {
+            if (root == null || Application.platform != RuntimePlatform.WebGLPlayer)
+                return;
+
+            for (int i = 0; i < s_webGlDeferredPlay.Count; i++)
+            {
+                if (s_webGlDeferredPlay[i] == root)
+                    return;
+            }
+
+            s_webGlDeferredPlay.Add(root);
+        }
+
+        /// <summary>
+        /// Call once per presentation frame before new shots spawn. Replays any muzzle,
+        /// trail, or impact whose enable-frame burst WebGL swallowed.
+        /// </summary>
+        public static void TickWebGlDeferredShotPlay()
+        {
+            int count = s_webGlDeferredPlay.Count;
+            if (count == 0)
+                return;
+
+            for (int i = 0; i < count; i++)
+            {
+                GameObject go = s_webGlDeferredPlay[i];
+                if (go == null || !go.activeInHierarchy)
+                    continue;
+                EmitIfBurstMissedRecursive(go.transform, forceBody: true);
+            }
+
+            s_webGlDeferredPlay.Clear();
         }
 
         /// <summary>
@@ -281,18 +487,11 @@ namespace TitanOrbit.Core
             var marker = root.GetComponent<VfxPreparedMarker>();
             if (marker == null)
             {
-                // #region agent log
-                TitanOrbit.MaterialCloneProbe.PrepareCold++;
-                // #endregion
                 FixAllIn1MaterialsForUrp(root);
                 RetargetBuiltInParticlesForWebGl(root);
                 StripSceneFlashLights(root);
                 marker = root.AddComponent<VfxPreparedMarker>();
             }
-            // #region agent log
-            else
-                TitanOrbit.MaterialCloneProbe.PrepareWarm++;
-            // #endregion
 
             if (playParticles)
                 PlayParticleSystemsInHierarchy(root);
@@ -325,9 +524,6 @@ namespace TitanOrbit.Core
                 if (renderer is ParticleSystemRenderer particles)
                 {
                     Material trail = particles.trailMaterial;
-                    // #region agent log
-                    TitanOrbit.MaterialCloneProbe.NoteTrailMaterial(trail);
-                    // #endregion
                     if (trail != null && NeedsWebGlParticleRetarget(trail))
                     {
                         particles.trailMaterial = GetOrCreateUrpParticleMaterial(trail);

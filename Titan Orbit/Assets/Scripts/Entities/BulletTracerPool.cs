@@ -21,10 +21,13 @@ namespace TitanOrbit.Entities
         const int ProceduralKey = 1;
 
         /// <summary>
-        /// WebGL particle shells stay in the heap after Destroy. Cap how many this
-        /// session may create; further shots reuse an idle shell or draw nothing.
+        /// WebGL warmup creates a handful of bolts, then a global cap of 64 blocked
+        /// every extra tracer in a volley. Combat may add this many more, and one
+        /// projectile prefab may have this many shells in the air.
         /// </summary>
-        const int WebGlHardMaxCreated = 64;
+        const int WebGlCombatCreateBudget = 128;
+
+        const int WebGlPerPrefabCap = 48;
 
         static readonly Dictionary<int, Stack<GameObject>> s_available =
             new Dictionary<int, Stack<GameObject>>(16);
@@ -34,6 +37,8 @@ namespace TitanOrbit.Entities
 
         static Transform s_root;
         static int s_createdTotal;
+        static int s_combatCreated;
+        static readonly Dictionary<int, int> s_countByPrefab = new Dictionary<int, int>(16);
 
         /// <summary>How many tracer shells this pool Instantiates this session.</summary>
         public static int CreatedTotal => s_createdTotal;
@@ -47,6 +52,8 @@ namespace TitanOrbit.Entities
             s_keyByInstance.Clear();
             s_root = null;
             s_createdTotal = 0;
+            s_combatCreated = 0;
+            s_countByPrefab.Clear();
         }
 
         static void EnsureRoot()
@@ -107,19 +114,23 @@ namespace TitanOrbit.Entities
             }
             else
             {
-                if (Application.platform == RuntimePlatform.WebGLPlayer &&
-                    s_createdTotal >= WebGlHardMaxCreated)
+                if (!CanCreateForCombat(key))
                     return false;
 
                 root = CreateShell(projectilePrefab, key);
+                s_combatCreated++;
                 grew = true;
             }
 
             if (root == null)
                 return false;
 
+            // Stay inactive until BulletVfxDriver poses the shot and Prepare enables it.
+            // Activating here plays the trail at the pool; a same-frame volley then
+            // restarts every bolt together and most of them emit nothing.
             root.transform.SetParent(null, false);
-            root.SetActive(true);
+            if (root.activeSelf)
+                root.SetActive(false);
             return true;
         }
 
@@ -138,14 +149,8 @@ namespace TitanOrbit.Entities
                 return;
             }
 
-            // --- Stop particles / clear trails so the next Rent starts clean ---
-            var systems = root.GetComponentsInChildren<ParticleSystem>(true);
-            for (int i = 0; i < systems.Length; i++)
-            {
-                if (systems[i] != null)
-                    systems[i].Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
-            }
-
+            // Disable only. Stop+Clear here blanks the next shot when a volley
+            // reuses the shell in the same frame. The next enable plays from the muzzle.
             var trails = root.GetComponentsInChildren<TrailRenderer>(true);
             for (int i = 0; i < trails.Length; i++)
             {
@@ -177,6 +182,8 @@ namespace TitanOrbit.Entities
         static GameObject CreateShell(GameObject projectilePrefab, int key)
         {
             var root = new GameObject("BulletTracer_Pooled");
+            // Inactive before the visual exists, so playOnAwake waits for the muzzle pose.
+            root.SetActive(false);
             if (projectilePrefab != null)
             {
                 var visual = Object.Instantiate(projectilePrefab, root.transform);
@@ -205,10 +212,20 @@ namespace TitanOrbit.Entities
             s_owned.Add(root);
             s_keyByInstance[root] = key;
             s_createdTotal++;
-            // #region agent log
-            TitanOrbit.MaterialCloneProbe.TracerShells = s_createdTotal;
-            // #endregion
+            s_countByPrefab.TryGetValue(key, out int n);
+            s_countByPrefab[key] = n + 1;
             return root;
+        }
+
+        static bool CanCreateForCombat(int key)
+        {
+            if (Application.platform != RuntimePlatform.WebGLPlayer)
+                return true;
+
+            s_countByPrefab.TryGetValue(key, out int have);
+            if (have >= WebGlPerPrefabCap)
+                return false;
+            return s_combatCreated < WebGlCombatCreateBudget;
         }
 
         /// <summary>

@@ -706,6 +706,8 @@ namespace TitanOrbit.Game
             }
 
             shell.transform.position = WarmupOrigin;
+            if (!shell.activeSelf)
+                shell.SetActive(true);
             SetLayerRecurse(shell, WarmupLayer);
             s_Camera.Render();
             // [UNITY] Combat cameras render the Default layer — put the shell back before Return.

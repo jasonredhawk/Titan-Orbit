@@ -497,7 +497,6 @@ namespace TitanOrbit.Game
         /// </summary>
         void LateUpdate()
         {
-            using var _memName = WebGlAllocBuckets.Measure(WebGlAllocBuckets.Nameplates);
             if (!_ready || _labelRoot == null || !_cachedVisible)
                 return;
 

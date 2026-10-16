@@ -116,7 +116,6 @@ namespace TitanOrbit.UI
         /// <summary>Per-frame minimap blip sync — rebuild or position-only update.</summary>
         void LateUpdate()
         {
-            using var _memMap = WebGlAllocBuckets.Measure(WebGlAllocBuckets.Minimap);
             // A new play session (main menu, then join) must not keep blips from the hull you left.
             if (ClientTeamFlowState.PlaySessionGeneration != _seenPlaySessionGeneration)
             {

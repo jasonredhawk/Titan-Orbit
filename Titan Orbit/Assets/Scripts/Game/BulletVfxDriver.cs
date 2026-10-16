@@ -153,11 +153,12 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Cosmetic Instantiates per frame (not GhostSpawn). Kept modest so fire-while-flying
-        /// does not Instantiates a whole volley of tracer meshes in one LateUpdate
-        /// (session 74383c: spawnMs ~16 ms at MaxSpawnsPerFrame=8 before muzzle pool warm).
+        /// Cosmetic spawns drained per presentation frame. Shells are pooled, so this is
+        /// activate-and-play, not Instantiates. A volley must flash in the same frame as
+        /// the shots — a cap of 3 left later barrels without a muzzle until the queue
+        /// caught up, which read as a missing flash.
         /// </summary>
-        const int MaxSpawnsPerFrame = 3;
+        const int MaxSpawnsPerFrame = 24;
 
         /// <summary>How long a predicted Sequence suppresses a duplicate HitRpc impact.</summary>
         const float PredictedHitTtlSeconds = 2f;
@@ -262,7 +263,6 @@ namespace TitanOrbit.Game
         /// </summary>
         void LateUpdate()
         {
-            using var _memBul = WebGlAllocBuckets.Measure(WebGlAllocBuckets.Bullets);
             if (_lastTickFrame == Time.frameCount)
                 return;
             _lastTickFrame = Time.frameCount;
@@ -273,6 +273,10 @@ namespace TitanOrbit.Game
             // [TITAN-ORBIT] Skip Instantiates during join Instantiates storm / post–Join Team backlog.
             // TransformQuarantine stays on for the session — that alone must NOT block bullets.
             bool blockInstantiates = ClientJoinSettleCache.ShouldSkipShipEntityQueries;
+
+            // WebGL drops the burst from the frame a shell was enabled. Replay those
+            // before this frame's new shots, after the particle update has run.
+            VfxUrpCompat.TickWebGlDeferredShotPlay();
 
             PrunePredictedReconcileState();
 
@@ -294,6 +298,8 @@ namespace TitanOrbit.Game
 
             // Return expired muzzle/impact shells so the next shot can Rent without Instantiates.
             BulletOneShotVfxPool.TickReturns();
+            // HitRpc flashes parented onto a rock the visualizer already hid this frame.
+            VfxUrpCompat.RescueImpactsHiddenWithParent();
 
             if (_tracers.Count == 0)
                 return;
@@ -439,6 +445,9 @@ namespace TitanOrbit.Game
 
                 _tracers[i] = t;
             }
+
+            // Predicted hits can parent onto a body hidden earlier this frame.
+            VfxUrpCompat.RescueImpactsHiddenWithParent();
         }
 
         /// <summary>
@@ -1236,40 +1245,6 @@ namespace TitanOrbit.Game
             return index >= 0;
         }
 
-        /// <summary>
-        /// True when this spawn dies on the first half-unit of flight (nose-touch /
-        /// spawned-inside). Those collisions should play the impact animation only —
-        /// <see cref="BulletVisualFactory.PlayMuzzleVfx"/> at the barrel stacked a gun
-        /// flash on top of the hit. Uses last frame's cosmetic cache — no extra
-        /// <see cref="BulletCosmeticHitQuery.TryRefresh"/> (volley FPS).
-        /// </summary>
-        static bool IsImmediateCollisionSpawn(in BulletVfxBridge.SpawnRequest req)
-        {
-            float3 from = req.SpawnPosition;
-            float3 vel = req.Velocity;
-            vel.y = 0f;
-            float speedSq = math.lengthsq(vel);
-            if (speedSq < 1e-6f)
-                return false;
-
-            float3 dir = vel * math.rsqrt(speedSq);
-            float3 to = from + dir * 0.5f;
-            return BulletCosmeticHitQuery.TryHitSegment(
-                from,
-                to,
-                req.OwnerTeam,
-                req.OwnerNetworkId,
-                req.IsDisplaySpace,
-                out _,
-                out _,
-                out _,
-                out _,
-                out _,
-                req.DamageFilter,
-                req.ScaleMultiplier,
-                req.BankIndex);
-        }
-
         void CreateTracer(in BulletVfxBridge.SpawnRequest req)
         {
             EnsureBank();
@@ -1287,25 +1262,20 @@ namespace TitanOrbit.Game
             spawnDisplay.y = mountY;
 
             // --- Muzzle flash at fire origin ---
-            // Skip the flash when the bolt dies at the barrel (nose-touch / spawned
-            // inside) so hull collision shows the impact only. Fire SFX still plays —
-            // Fireballs V1 has no muzzle prefab/audio, and MEGA cannons were silent
-            // whenever this probe hit nearby world geometry.
+            // Every shot plays it, including nose-touch. Skipping when a 0.5u probe
+            // hit nearby geometry dropped the flash on a lot of barrels.
             float cameraScale = ResolveMegaCameraVisualScale();
             float pianoLive = req.FirePowerLive > 0.01f ? req.FirePowerLive : req.Damage;
-            if (!IsImmediateCollisionSpawn(in req))
-            {
-                BulletVisualFactory.PlayMuzzleVfx(
-                    spawnDisplay,
-                    req.Velocity,
-                    _bank,
-                    bankIndex,
-                    team,
-                    scaleMul * cameraScale,
-                    pianoLive,
-                    req.FirePowerBase,
-                    req.FirePowerPerExtra);
-            }
+            BulletVisualFactory.PlayMuzzleVfx(
+                spawnDisplay,
+                req.Velocity,
+                _bank,
+                bankIndex,
+                team,
+                scaleMul * cameraScale,
+                pianoLive,
+                req.FirePowerBase,
+                req.FirePowerPerExtra);
 
             // --- Fire start one-shot ---
             // [TITAN-ORBIT] Shared AudioManager clip. Not the Sci-Fi muzzle prefab —
@@ -1753,13 +1723,20 @@ namespace TitanOrbit.Game
                 });
             }
 
-            _recentPredictedImpacts.Add(new RecentPredictedImpact
+            // Spatial match is only for anticipation (Sequence still 0). A sequenced
+            // hit is deduped by _clientPredictedHitSequences. Leaving a 14u zone here
+            // swallowed the next HitRpc that prediction missed — incoming fire on the
+            // local hull, or a cosmetic miss — so that shot never played an impact.
+            if (t.Sequence == 0)
             {
-                DisplayPos = hitDisplay,
-                OwnerTeam = t.OwnerTeam,
-                OwnerNetworkId = t.OwnerNetworkId,
-                ExpireTime = now + PredictedHitTtlSeconds,
-            });
+                _recentPredictedImpacts.Add(new RecentPredictedImpact
+                {
+                    DisplayPos = hitDisplay,
+                    OwnerTeam = t.OwnerTeam,
+                    OwnerNetworkId = t.OwnerNetworkId,
+                    ExpireTime = now + PredictedHitTtlSeconds,
+                });
+            }
 
             DestroyTracerGo(t);
             RemoveAtSwap(tracerIndex);

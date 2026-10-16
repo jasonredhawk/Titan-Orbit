@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using TitanOrbit.Core;
 using UnityEngine;
 
 namespace TitanOrbit.Entities
@@ -26,6 +27,9 @@ namespace TitanOrbit.Entities
         /// <summary>Every GO this pool created — Return rejects foreign objects.</summary>
         static readonly HashSet<GameObject> s_owned = new HashSet<GameObject>();
 
+        /// <summary>Instances currently sitting on an idle stack. Blocks a second push of the same shell.</summary>
+        static readonly HashSet<GameObject> s_idle = new HashSet<GameObject>();
+
         /// <summary>Prefab InstanceID for each owned instance (needed on Return).</summary>
         static readonly Dictionary<GameObject, int> s_prefabKeyByInstance =
             new Dictionary<GameObject, int>(64);
@@ -39,15 +43,28 @@ namespace TitanOrbit.Entities
         /// <summary>Total Instantiates performed by this pool (grows under heavy fire).</summary>
         static int s_createdTotal;
 
+        /// <summary>Instantiates from Rent, not join prewarm. WebGL budgets this separately.</summary>
+        static int s_combatCreated;
+
+        /// <summary>Shells created per prefab InstanceID (prewarm + combat).</summary>
+        static readonly Dictionary<int, int> s_countByPrefab = new Dictionary<int, int>(32);
+
         /// <summary>Soft cap before we log once that combat is Instantiates-growing again.</summary>
         /// Raised: budgeted prewarm intentionally creates hundreds of prepared shells.
         const int SoftMaxCreated = 2500;
 
         /// <summary>
-        /// WebGL cannot return particle-buffer pages to the browser. Stop Instantiates
-        /// past this many shells and skip the flash instead of growing until OOM.
+        /// WebGL cannot return particle-buffer pages to the browser. Join warmup already
+        /// creates one small stack per muzzle and impact (hundreds of shells). A global
+        /// cap of 64 was spent before the first shot, so a volley could not grow a new
+        /// shell and those shots drew nothing. Slow fire still worked: it reused the
+        /// three prewarmed muzzles. Combat may add this many more, and each prefab may
+        /// hold enough live shells for one burst.
         /// </summary>
-        const int WebGlHardMaxCreated = 64;
+        const int WebGlCombatCreateBudget = 160;
+
+        /// <summary>Muzzles or impacts of one prefab that may exist at once on WebGL.</summary>
+        const int WebGlPerPrefabCap = 24;
 
         static bool s_loggedSoftCap;
 
@@ -98,11 +115,14 @@ namespace TitanOrbit.Entities
             s_available.Clear();
             s_owned.Clear();
             s_prefabKeyByInstance.Clear();
+            s_idle.Clear();
             s_pending.Clear();
             s_prewarmQueue.Clear();
             s_prewarmQueueIndex = 0;
+            s_countByPrefab.Clear();
             s_root = null;
             s_createdTotal = 0;
+            s_combatCreated = 0;
             s_loggedSoftCap = false;
         }
 
@@ -115,6 +135,7 @@ namespace TitanOrbit.Entities
                 return;
 
             var go = new GameObject("BulletOneShotVfxPool");
+            go.AddComponent<VfxUrpCompat.VfxPoolRootMarker>();
             Object.DontDestroyOnLoad(go);
             go.SetActive(false);
             s_root = go.transform;
@@ -208,21 +229,17 @@ namespace TitanOrbit.Entities
 
             while (stack.Count < count)
             {
-                var instance = Object.Instantiate(prefab);
+                // Parent is inactive, so playOnAwake does not run at the origin.
+                var instance = Object.Instantiate(prefab, s_root, false);
                 instance.name = prefab.name + "_Pooled";
-                // Pay FixAllIn1 / light strip / Hierarchy scale now — not on the first kill frame.
-                instance.SetActive(true);
-                TitanOrbit.Core.VfxUrpCompat.PrepareVfxInstance(instance);
-                TitanOrbit.Core.VfxUrpCompat.ApplyImpactVisualScale(instance, 1f);
                 instance.SetActive(false);
-                instance.transform.SetParent(s_root, false);
+                TitanOrbit.Core.VfxUrpCompat.PrepareVfxInstance(instance, playParticles: false);
+                TitanOrbit.Core.VfxUrpCompat.ApplyImpactVisualScale(instance, 1f);
                 s_owned.Add(instance);
                 s_prefabKeyByInstance[instance] = key;
-                s_createdTotal++;
-                // #region agent log
-                TitanOrbit.MaterialCloneProbe.OneShotShells = s_createdTotal;
-                // #endregion
+                NoteCreated(key, combat: false);
                 stack.Push(instance);
+                s_idle.Add(instance);
             }
         }
 
@@ -233,10 +250,12 @@ namespace TitanOrbit.Entities
 
         /// <summary>
         /// Rents an inactive instance of <paramref name="prefab"/>, or Instantiates one if the
-        /// stack is empty. Caller must place/scale/replay particles (PrepareVfxInstance).
+        /// stack is empty. Caller places it, then <see cref="TitanOrbit.Core.VfxUrpCompat.PrepareVfxInstance"/>
+        /// turns it on at that pose. Enabling here plays the burst at the pool, and a volley
+        /// of same-frame restarts then emits nothing.
         /// </summary>
         /// <param name="prefab">Impact or muzzle prefab from BulletVfxBank.</param>
-        /// <param name="instance">Active GO ready for pose + PrepareVfxInstance.</param>
+        /// <param name="instance">Inactive GO ready for pose + PrepareVfxInstance.</param>
         /// <param name="grew">True when this Rent paid Instantiates (cold path).</param>
         /// <returns>True when a usable instance was produced.</returns>
         public static bool TryRent(GameObject prefab, out GameObject instance, out bool grew)
@@ -249,29 +268,37 @@ namespace TitanOrbit.Entities
             EnsureRoot();
             int key = prefab.GetInstanceID();
 
-            if (s_available.TryGetValue(key, out var stack) && stack.Count > 0)
+            if (s_available.TryGetValue(key, out var stack))
             {
-                instance = stack.Pop();
+                while (stack.Count > 0 && instance == null)
+                {
+                    instance = stack.Pop();
+                    if (instance != null)
+                        s_idle.Remove(instance);
+                }
             }
-            else
-            {
-                if (Application.platform == RuntimePlatform.WebGLPlayer &&
-                    s_createdTotal >= WebGlHardMaxCreated)
-                    return false;
 
+            if (instance == null)
+            {
+                if (!CanCreateForCombat(key))
+                {
+                    // Volley is larger than this prefab's stack. Reuse the oldest live
+                    // flash of the same prefab instead of dropping the shot.
+                    if (!TryReclaimPending(key, out instance))
+                        return false;
+                }
+                else
+                {
                 // --- Cold path: Instantiates once, then reuse forever for this prefab ---
-                instance = Object.Instantiate(prefab);
+                // Inactive parent so playOnAwake waits for the shot pose, even in a volley.
+                instance = Object.Instantiate(prefab, s_root, false);
                 instance.name = prefab.name + "_Pooled";
-                // Pay URP prepare now so the caller's PrepareVfxInstance is particle-restart only.
-                instance.SetActive(true);
-                TitanOrbit.Core.VfxUrpCompat.PrepareVfxInstance(instance);
+                instance.SetActive(false);
+                TitanOrbit.Core.VfxUrpCompat.PrepareVfxInstance(instance, playParticles: false);
                 TitanOrbit.Core.VfxUrpCompat.ApplyImpactVisualScale(instance, 1f);
                 s_owned.Add(instance);
                 s_prefabKeyByInstance[instance] = key;
-                s_createdTotal++;
-                // #region agent log
-                TitanOrbit.MaterialCloneProbe.OneShotShells = s_createdTotal;
-                // #endregion
+                NoteCreated(key, combat: true);
                 grew = true;
 
                 if (s_createdTotal > SoftMaxCreated && !s_loggedSoftCap)
@@ -282,14 +309,17 @@ namespace TitanOrbit.Entities
                         " one-shot VFX shells (soft cap " + SoftMaxCreated +
                         "). Fire-rate / kill density is Instantiates-growing the pool.");
                 }
+                }
             }
 
             if (instance == null)
                 return false;
 
-            // Detach from pool root and activate for this flash.
+            // Deactivate before unparent. Unparenting an active child of the inactive
+            // pool would enable it at the origin and the shot's Play would no-op.
+            if (instance.activeSelf)
+                instance.SetActive(false);
             instance.transform.SetParent(null, false);
-            instance.SetActive(true);
             return true;
         }
 
@@ -335,10 +365,23 @@ namespace TitanOrbit.Entities
                 return;
             }
 
+            float returnAt = Time.unscaledTime + Mathf.Max(0.05f, durationSeconds);
+            for (int i = 0; i < s_pending.Count; i++)
+            {
+                if (s_pending[i].Go != instance)
+                    continue;
+
+                // One timer per shell. A second schedule used to fire mid-volley and park the live flash.
+                PendingReturn updated = s_pending[i];
+                updated.ReturnAt = returnAt;
+                s_pending[i] = updated;
+                return;
+            }
+
             s_pending.Add(new PendingReturn
             {
                 Go = instance,
-                ReturnAt = Time.unscaledTime + Mathf.Max(0.05f, durationSeconds),
+                ReturnAt = returnAt,
             });
         }
 
@@ -364,8 +407,8 @@ namespace TitanOrbit.Entities
         }
 
         /// <summary>
-        /// Immediately deactivates and stacks a rented instance. Stops particles so the next
-        /// Rent starts clean. Public so looping status VFX can return when burn / shock ends.
+        /// Immediately deactivates and stacks a rented instance. The next rent enables it
+        /// at the new shot. Public so looping status VFX can return when burn / shock ends.
         /// </summary>
         public static void ReturnNow(GameObject instance)
         {
@@ -379,21 +422,14 @@ namespace TitanOrbit.Entities
                 return;
             }
 
-            // --- Stop particles / trails so reuse does not leave mid-burst state ---
-            var systems = instance.GetComponentsInChildren<ParticleSystem>(true);
-            for (int i = 0; i < systems.Length; i++)
+            for (int i = s_pending.Count - 1; i >= 0; i--)
             {
-                if (systems[i] != null)
-                    systems[i].Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+                if (s_pending[i].Go == instance)
+                    s_pending.RemoveAt(i);
             }
 
-            var trails = instance.GetComponentsInChildren<TrailRenderer>(true);
-            for (int i = 0; i < trails.Length; i++)
-            {
-                if (trails[i] != null)
-                    trails[i].Clear();
-            }
-
+            // Disable only. Stop+Clear in the same frame as the next rent's Play
+            // is what blanks a volley. The next enable starts playOnAwake clean.
             EnsureRoot();
             instance.SetActive(false);
             instance.transform.SetParent(s_root, false);
@@ -404,7 +440,65 @@ namespace TitanOrbit.Entities
                 s_available[key] = stack;
             }
 
-            stack.Push(instance);
+            if (s_idle.Add(instance))
+                stack.Push(instance);
+        }
+
+        static void NoteCreated(int key, bool combat)
+        {
+            s_createdTotal++;
+            if (combat)
+                s_combatCreated++;
+            s_countByPrefab.TryGetValue(key, out int n);
+            s_countByPrefab[key] = n + 1;
+        }
+
+        /// <summary>
+        /// Desktop always creates. WebGL creates until this prefab can cover a burst,
+        /// and until combat (not warmup) has added <see cref="WebGlCombatCreateBudget"/> shells.
+        /// </summary>
+        static bool CanCreateForCombat(int key)
+        {
+            if (Application.platform != RuntimePlatform.WebGLPlayer)
+                return true;
+
+            s_countByPrefab.TryGetValue(key, out int have);
+            if (have >= WebGlPerPrefabCap)
+                return false;
+            return s_combatCreated < WebGlCombatCreateBudget;
+        }
+
+        /// <summary>
+        /// Hands back the oldest in-flight shell of <paramref name="key"/> so a shot
+        /// still plays when WebGL will not allocate another.
+        /// </summary>
+        static bool TryReclaimPending(int key, out GameObject instance)
+        {
+            instance = null;
+            int index = -1;
+            float oldest = float.MaxValue;
+            for (int i = 0; i < s_pending.Count; i++)
+            {
+                GameObject go = s_pending[i].Go;
+                if (go == null)
+                    continue;
+                if (!s_prefabKeyByInstance.TryGetValue(go, out int pendingKey) || pendingKey != key)
+                    continue;
+                if (s_pending[i].ReturnAt >= oldest)
+                    continue;
+                oldest = s_pending[i].ReturnAt;
+                index = i;
+            }
+
+            if (index < 0)
+                return false;
+
+            instance = s_pending[index].Go;
+            s_pending.RemoveAt(index);
+            if (instance.activeSelf)
+                instance.SetActive(false);
+            instance.transform.SetParent(null, false);
+            return instance != null;
         }
     }
 }

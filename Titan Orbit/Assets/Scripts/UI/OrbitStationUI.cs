@@ -3063,9 +3063,6 @@ namespace TitanOrbit.UI
             toggleLabelRt.offsetMax = new Vector2(-4f, 0f);
             slotUi.placementToggleLabel = toggleLabelGo.AddComponent<TextMeshProUGUI>();
             slotUi.placementToggleLabel.text = "Adjust mount >";
-            // #region agent log
-            TitanOrbit.MaterialCloneProbe.StoreLabelSets++;
-            // #endregion
             slotUi.placementToggleLabel.fontSize = 8f;
             slotUi.placementToggleLabel.fontStyle = FontStyles.Bold;
             slotUi.placementToggleLabel.alignment = TextAlignmentOptions.Center;
@@ -6536,9 +6533,6 @@ namespace TitanOrbit.UI
         private void RefreshEquipmentSlots()
         {
             if (currentShip == null || equipmentBoxes == null) return;
-            // #region agent log
-            TitanOrbit.MaterialCloneProbe.StoreRefreshes++;
-            // #endregion
 
             int cap = currentShip.SlotCount;
             int cardCount = currentShip.EquippedCards != null ? currentShip.EquippedCards.Count : 0;
@@ -7074,9 +7068,6 @@ namespace TitanOrbit.UI
                 if (slotUi.placementToggleLabel != null)
                 {
                     slotUi.placementToggleLabel.text = showPlacement ? "Hide mount v" : "Adjust mount >";
-                    // #region agent log
-                    TitanOrbit.MaterialCloneProbe.StoreLabelSets++;
-                    // #endregion
                 }
             }
             if (slotUi?.placementPanel != null)

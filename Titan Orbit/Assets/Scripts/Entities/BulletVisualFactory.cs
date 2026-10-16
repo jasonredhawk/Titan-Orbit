@@ -140,8 +140,10 @@ namespace TitanOrbit.Entities
 
                     muzzle.transform.SetPositionAndRotation(position, Quaternion.LookRotation(-dir));
                     VfxUrpCompat.ApplyImpactVisualScale(muzzle, visualScale);
-                    VfxUrpCompat.PrepareVfxInstance(muzzle);
                     SetAudioPitchInHierarchy(muzzle, pitch, position);
+                    // Shell is still inactive. Prepare enables it once so this barrel's
+                    // flash plays here, including when several guns fire on the same frame.
+                    VfxUrpCompat.PrepareVfxInstance(muzzle);
                     BulletOneShotVfxPool.ScheduleReturn(muzzle, 1.5f);
                     return;
                 }
@@ -208,11 +210,7 @@ namespace TitanOrbit.Entities
                 if (sharedBefore == null) continue;
                 for (int i = 0; i < sharedBefore.Length; i++)
                 {
-                    Material before = sharedBefore[i];
                     Material mat = r.materials[i];
-                    // #region agent log
-                    MaterialCloneProbe.NoteApplyColor(before, mat);
-                    // #endregion
                     if (mat == null) continue;
                     mat.color = color;
                     if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", color);
@@ -367,12 +365,15 @@ namespace TitanOrbit.Entities
             SetAudioPitchInHierarchy(go, pitch, position);
             if (replayAudio)
                 ReplayAudioInHierarchy(go);
+            // worldPositionStays — flash stays on the surface and rides a moving hull / moon / rock.
+            // Skip a parent that is already hidden (kill parked the proxy this frame). Parenting
+            // there deactivates the burst before it draws. Restart particles AFTER the reparent
+            // so the time-0 burst emits at the final pose, not at the pool origin.
+            if (attachParent != null && attachParent.gameObject.activeInHierarchy)
+                go.transform.SetParent(attachParent, true);
             // [UNITY] PrepareVfxInstance restarts ParticleSystems — required after pool Return cleared them.
             // Cold Instantiates also pays FixAllIn1 / light strip here once (marker after).
             VfxUrpCompat.PrepareVfxInstance(go);
-            // worldPositionStays — flash stays on the surface and rides a moving hull / moon / rock.
-            if (attachParent != null)
-                go.transform.SetParent(attachParent, true);
             BulletOneShotVfxPool.ScheduleReturn(go, duration);
         }
 

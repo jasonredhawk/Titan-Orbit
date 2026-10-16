@@ -1820,14 +1820,16 @@ namespace TitanOrbit.UI
                     }
                 }
                 
-                // Keep raycastTarget enabled so death-picker / comms Here pings still hit this disc.
+                // Death-picker and comms Here clicks use Input System bounds in
+                // HandleMinimapClicks, not these Images. The background still catches
+                // empty-disc rays so the pointer does not fall through to the game view.
                 Image minimapBg = GetComponent<Image>();
                 if (minimapBg != null)
                 {
                     minimapBg.raycastTarget = true;
                 }
-                
-                // Keep raycast enabled on content and border
+
+                // Content is the mask under the blips, so its raycast does not cover HoverHit.
                 if (minimapContent != null)
                 {
                     Image contentImg = minimapContent.GetComponent<Image>();
@@ -1836,10 +1838,15 @@ namespace TitanOrbit.UI
                         contentImg.raycastTarget = true;
                     }
                 }
-                
+
+                // The border is the next sibling after MinimapContent, so it paints — and
+                // raycasts — above every planet disc. Its rect fills the whole circle
+                // (only the pixels are a ring). Leaving raycastTarget on swallows
+                // MinimapPlanetHoverTip while the map is expanded. Collapsed already
+                // leaves this off, which is why the name card only failed full-screen.
                 if (borderImage != null)
                 {
-                    borderImage.raycastTarget = true;
+                    borderImage.raycastTarget = false;
                 }
                 
                 // Hide edge markers when expanded (showing full map)

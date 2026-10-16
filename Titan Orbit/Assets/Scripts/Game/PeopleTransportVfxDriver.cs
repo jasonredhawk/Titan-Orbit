@@ -292,7 +292,6 @@ namespace TitanOrbit.Game
         /// </summary>
         void LateUpdate()
         {
-            using var _memTr = WebGlAllocBuckets.Measure(WebGlAllocBuckets.Transport);
             if (_lastTickFrame == Time.frameCount)
                 return;
             _lastTickFrame = Time.frameCount;
