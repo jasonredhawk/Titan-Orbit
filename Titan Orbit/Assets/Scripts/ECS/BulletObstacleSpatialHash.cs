@@ -167,6 +167,8 @@ namespace TitanOrbit.ECS
                 });
             }
 
+            // In-flight hops only. Parked seats live in EscortHitTarget — they sit
+            // outside the hull, so stamping the ship center does not cover them.
             for (int i = 0; i < transports.Length; i++)
             {
                 var t = transportStates[i];

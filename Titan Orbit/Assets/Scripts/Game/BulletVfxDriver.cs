@@ -277,6 +277,7 @@ namespace TitanOrbit.Game
             // WebGL drops the burst from the frame a shell was enabled. Replay those
             // before this frame's new shots, after the particle update has run.
             VfxUrpCompat.TickWebGlDeferredShotPlay();
+            BulletVisualFactory.TickDeferredAudioReplay();
 
             PrunePredictedReconcileState();
 

@@ -164,6 +164,12 @@ namespace TitanOrbit.Game
         TeamId _lastAsteroidTintViewerTeam = TeamId.None;
 
         /// <summary>
+        /// <see cref="PlanetConnectionPresentationTriangles.RebuildStamp"/> last used to drop
+        /// latched rock tints. Vertex resolves can change the drawn set without a graph republish.
+        /// </summary>
+        int _lastAsteroidTintPresentationStamp = int.MinValue;
+
+        /// <summary>
         /// Last asteroid walked by the territory-tint budget. The next sync continues after
         /// this entity so unlatched rocks are not stuck behind the same first slice.
         /// </summary>
@@ -571,6 +577,7 @@ namespace TitanOrbit.Game
             // Force full asteroid tint recompute next enable (viewer team / graph may change).
             _lastAsteroidTintGraphRevision = int.MinValue;
             _lastAsteroidTintViewerTeam = TeamId.None;
+            _lastAsteroidTintPresentationStamp = int.MinValue;
             _asteroidTintResume = Entity.Null;
             DisposeVisualizerQueries();
         }
@@ -1320,11 +1327,17 @@ namespace TitanOrbit.Game
             }
 
             int graphRevision = PlanetConnectionGraphCache.ClientPublishRevision;
+            // Refresh before the stamp compare — a vertex resolve this call must drop latched tints
+            // in the same sync, otherwise rocks keep a team colour after the fill is gone.
+            PlanetConnectionPresentationTriangles.GetRuntimeNative();
+            int presentationStamp = PlanetConnectionPresentationTriangles.RebuildStamp;
             if (graphRevision != _lastAsteroidTintGraphRevision ||
-                viewerTeam != _lastAsteroidTintViewerTeam)
+                viewerTeam != _lastAsteroidTintViewerTeam ||
+                presentationStamp != _lastAsteroidTintPresentationStamp)
             {
                 _lastAsteroidTintGraphRevision = graphRevision;
                 _lastAsteroidTintViewerTeam = viewerTeam;
+                _lastAsteroidTintPresentationStamp = presentationStamp;
                 // Invalidate applied tints so rocks re-enter the budgeted uncached queue.
                 _proxyAsteroidTerritory.Clear();
                 _asteroidTintResume = Entity.Null;
@@ -1550,11 +1563,10 @@ namespace TitanOrbit.Game
             TeamId displayTeam = PlanetConnectionGraphLogic.ResolveAsteroidTintTeam(
                 mask, primary, viewerTeam);
 
-            // Partial vertex resolve still returns mask 0 for triangles that are not built yet.
-            // Painting None now would clear a real tint, and latching it would stick after
-            // the fill shows up (graph revision does not bump again).
-            if (!authoritative && displayTeam == TeamId.None)
-                return;
+            // Outside every resolved triangle the rock is neutral, including while some
+            // other triangle's vertices are still missing — those faces are not drawn.
+            // Do not latch None until the set is complete: map size or planet proxies
+            // can show up without another graph publish, and a latched None would stick.
 
             // --- Skip before GetComponentInChildren / material writes ---
             if (_proxyAsteroidTerritory.TryGetValue(entity, out var applied) && applied == displayTeam)
@@ -1562,8 +1574,9 @@ namespace TitanOrbit.Game
 
             // [TITAN-ORBIT] Only latch when SgtPlanet actually applied — missing material
             // used to freeze "applied" forever and leave the rock untinted.
-            // Latch only once the triangle set matches the published graph.
-            if (WorldBodyVisualApplier.ApplyAsteroidTerritoryTint(go, displayTeam) && authoritative)
+            if (!WorldBodyVisualApplier.ApplyAsteroidTerritoryTint(go, displayTeam))
+                return;
+            if (authoritative || displayTeam != TeamId.None)
                 _proxyAsteroidTerritory[entity] = displayTeam;
         }
 

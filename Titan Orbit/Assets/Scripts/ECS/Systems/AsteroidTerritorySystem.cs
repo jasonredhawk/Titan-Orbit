@@ -101,10 +101,29 @@ namespace TitanOrbit.ECS
                 moonElapsed,
                 Allocator.Temp);
 
-            // Triangles exist but this tick's vertex bake was empty. Writing mask 0 here
-            // cleared team ownership and stopped yellow bonus gems until the next good bake.
+            // Triangles exist but this tick's vertex bake was empty. Wiping every mask
+            // here stopped yellow bonus gems until the next good bake. Teams that no
+            // longer have any published triangle still drop — otherwise rocks keep a
+            // faction colour after that triangle is gone.
             if (runtime.Length == 0 && PlanetConnectionGraphCache.ServerTriangles.Count > 0)
+            {
+                byte allowed = TeamsWithPublishedTriangles();
+                foreach (var asteroid in SystemAPI.Query<RefRW<AsteroidState>>().WithAll<AsteroidTag>())
+                {
+                    byte mask = (byte)(asteroid.ValueRO.TerritoryTeamsMask & allowed);
+                    TeamId primary = asteroid.ValueRO.TerritoryTeam;
+                    if (!PlanetConnectionGraphLogic.TeamMaskContains(mask, primary))
+                        primary = FirstTeamInMask(mask);
+                    if (asteroid.ValueRO.TerritoryTeam != primary ||
+                        asteroid.ValueRO.TerritoryTeamsMask != mask)
+                    {
+                        asteroid.ValueRW.TerritoryTeam = primary;
+                        asteroid.ValueRW.TerritoryTeamsMask = mask;
+                    }
+                }
+
                 return;
+            }
 
             // --- Point-in-triangle ownership per asteroid ---
             foreach (var (asteroid, transform) in SystemAPI
@@ -133,6 +152,29 @@ namespace TitanOrbit.ECS
                     asteroid.ValueRW.TerritoryTeamsMask = mask;
                 }
             }
+        }
+
+        /// <summary>OR of every team that still has a published server triangle.</summary>
+        static byte TeamsWithPublishedTriangles()
+        {
+            byte allowed = 0;
+            var triangles = PlanetConnectionGraphCache.ServerTriangles;
+            for (int i = 0; i < triangles.Count; i++)
+                allowed |= PlanetConnectionGraphLogic.TeamToMaskBit(triangles[i].Team);
+            return allowed;
+        }
+
+        /// <summary>Lowest TeamA–TeamE bit still set, or None.</summary>
+        static TeamId FirstTeamInMask(byte mask)
+        {
+            for (byte t = (byte)TeamId.TeamA; t <= (byte)TeamId.TeamE; t++)
+            {
+                var candidate = (TeamId)t;
+                if (PlanetConnectionGraphLogic.TeamMaskContains(mask, candidate))
+                    return candidate;
+            }
+
+            return TeamId.None;
         }
     }
 }

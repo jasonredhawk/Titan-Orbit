@@ -298,6 +298,9 @@ namespace TitanOrbit.ECS
                         mapW,
                         mapH);
                     a.TerritoryTeamsMask = territoryMask;
+                    if (a.TerritoryTeam != TeamId.None &&
+                        !PlanetConnectionGraphLogic.TeamMaskContains(territoryMask, a.TerritoryTeam))
+                        a.TerritoryTeam = TeamId.None;
                     int homeLevel = PlanetConnectionGraphLogic.GetHomePlanetLevel(
                         shipState.ValueRO.Team, homeLevels);
                     float gemMult = PlanetConnectionGraphLogic.FriendlyTerritoryGemMultiplier(

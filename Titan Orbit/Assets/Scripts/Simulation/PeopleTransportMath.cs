@@ -791,6 +791,16 @@ namespace TitanOrbit.Simulation
                 right = math.normalize(right);
         }
 
+        /// <summary>
+        /// True when this hop has left a ship and is still flying toward a planet.
+        /// Seated escorts and planet→ship loads are not turret locks. A recalled unload
+        /// (<paramref name="returning"/> = 1) is going back to the ship, so it is not either.
+        /// </summary>
+        public static bool IsPlanetBoundLanding(byte isLoad, byte returning)
+        {
+            return isLoad == 0 && returning == 0;
+        }
+
         /// <summary>World hit-sphere radius for a packed escort amount (matches visual scale).</summary>
         public static float GetEscortHitRadius(float peopleAmount)
         {

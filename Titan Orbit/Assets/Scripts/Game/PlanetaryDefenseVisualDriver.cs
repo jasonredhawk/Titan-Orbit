@@ -37,8 +37,9 @@ namespace TitanOrbit.Game
     /// bank-scaled <c>bulletSpeed</c> / engage range from
     /// <see cref="PlanetaryDefenseConfig.GetCombatLevelStats"/>, and
     /// <see cref="PlanetaryDefenseAimMath.ShipVelocityLeadScale"/>) so barrels point where
-    /// bullets go (ships via <see cref="ShipKinematics"/>, people transports via
-    /// <see cref="PeopleTransportVfxDriver.CopyAimFlights"/>).
+    /// bullets go (ships via <see cref="ShipKinematics"/>, planet-bound troop landings via
+    /// <see cref="PeopleTransportVfxDriver.CopyAimFlights"/>). Seated transports and drones
+    /// are not aim locks.
     /// </para>
     /// <para>
     /// [HYBRID] Turret meshes use the same GenericSpaceships team materials as people transports
@@ -301,7 +302,8 @@ namespace TitanOrbit.Game
         bool _occupantAimQueryCreated;
 
         /// <summary>
-        /// Scratch for people-transport VFX aim samples (no ECS gather — VFX driver list walk).
+        /// Scratch for planet-bound landing flights (no ECS gather — VFX driver list walk).
+        /// Seated escorts are not in this list.
         /// </summary>
         readonly List<PeopleTransportVfxDriver.AimFlightSample> _transportAimScratch =
             new List<PeopleTransportVfxDriver.AimFlightSample>(32);
@@ -2028,16 +2030,14 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Nearest enemy ship or people-transport VFX flight within
-        /// <paramref name="engageRange"/> of the turret pad (<paramref name="muzzleDisplay"/>),
-        /// for cosmetic lead aim only. Ships fully landed on a gem moon are skipped so barrels
-        /// match server acquisition. Returns planar velocity so
+        /// Nearest enemy ship, or enemy troop transport that has left a ship and is still
+        /// flying toward a planet, within <paramref name="engageRange"/> of the turret pad.
+        /// Ships fully landed on a gem moon are skipped so barrels match server acquisition.
+        /// Seated escorts and drones are not locks. Returns planar velocity so
         /// <see cref="PlanetaryDefenseAimMath"/> can match server fire direction.
         /// <para>
-        /// Ships: presentation cache + ghosted <see cref="ShipKinematics"/> (dictionary walk —
-        /// already gated by <see cref="ClientJoinSettleCache.ShouldSkipShipEntityQueries"/> at
-        /// the call site). Transports: <see cref="PeopleTransportVfxDriver.CopyAimFlights"/>
-        /// (no ECS transport archetype gather).
+        /// Ships: presentation cache + ghosted <see cref="ShipKinematics"/>. Landings:
+        /// <see cref="PeopleTransportVfxDriver.CopyAimFlights"/> (no ECS transport gather).
         /// </para>
         /// </summary>
         /// <param name="em">Client world entity manager.</param>
@@ -2102,8 +2102,8 @@ namespace TitanOrbit.Game
                 found = true;
             }
 
-            // --- Enemy people transports (VFX flights — descending / landing pods) ---
-            // [HYBRID] No PeopleTransportTag ToEntityArray — transports are not ghosts on client.
+            // Planet-bound landings only. CopyAimFlights already drops seated seats,
+            // planet→ship loads, and recalled unloads.
             var vfx = PeopleTransportVfxDriver.Active;
             if (vfx != null)
             {
@@ -2128,10 +2128,6 @@ namespace TitanOrbit.Game
                     targetVel.y = 0f;
                     found = true;
                 }
-            }
-            else
-            {
-                _transportAimScratch.Clear();
             }
 
             return found;

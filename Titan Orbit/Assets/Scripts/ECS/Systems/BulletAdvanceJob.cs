@@ -46,6 +46,12 @@ namespace TitanOrbit.ECS
         [ReadOnly] public NativeArray<DroneHitTarget> Drones;
 
         /// <summary>
+        /// Parked troop seats this tick. They orbit outside the hull, so the ship
+        /// hash cell does not cover them — a segment can cross a seat and miss the hull.
+        /// </summary>
+        [ReadOnly] public NativeArray<EscortHitTarget> Escorts;
+
+        /// <summary>
         /// 1 when debug self-harm rockets are enabled. Homing rockets past
         /// <see cref="SelfHarmArmDelay"/> may then collide with the shooter / same team —
         /// otherwise this Burst sweep skips those hulls and never hands the segment to
@@ -218,6 +224,28 @@ namespace TitanOrbit.ECS
                 }
             }
 
+            // Seated troop transports. In-flight hops are already hash Kind.Transport.
+            if (AllowsTransport(b.DamageFilter))
+            {
+                float pad = math.clamp(b.ScaleMultiplier * 0.18f, 0f, 0.85f);
+                for (int e = 0; e < Escorts.Length; e++)
+                {
+                    var escort = Escorts[e];
+                    if (escort.Radius <= 0f)
+                        continue;
+                    if (escort.Team == b.OwnerTeam)
+                        continue;
+                    if (b.OwnerNetworkId > 0 && escort.OwnerNetworkId == b.OwnerNetworkId)
+                        continue;
+                    if (!BulletCollision.SegmentHitsSphereToroidal(
+                            from, to, escort.Position, escort.Radius + pad, MapW, MapH, out float3 hp))
+                        continue;
+                    if (!KeepNearest(from, to, hp, ref bestT, ref bestHit))
+                        continue;
+                    any = true;
+                }
+            }
+
             if (!any)
                 return false;
             hitPoint = bestHit;
@@ -260,6 +288,13 @@ namespace TitanOrbit.ECS
         {
             // Cross-fire: every bolt can clip a drone. Aim / acquire stays elsewhere.
             return true;
+        }
+
+        static bool AllowsTransport(BulletDamageFilter filter)
+        {
+            // Mining and fighter bolts pass through transports. Ship guns and turrets do not.
+            return filter != BulletDamageFilter.AsteroidsOnly &&
+                   filter != BulletDamageFilter.ShipsOnly;
         }
     }
 

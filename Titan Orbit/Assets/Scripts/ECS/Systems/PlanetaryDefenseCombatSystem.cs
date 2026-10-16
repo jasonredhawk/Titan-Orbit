@@ -16,21 +16,22 @@ namespace TitanOrbit.ECS
     /// <summary>
     /// Server-authoritative planetary defense fire. Active turrets aim at the nearest enemy ship
     /// (skipping hulls fully landed on a gem moon — same gate as bullet / ram immunity)
-    /// or people transport within absolute engage range (world units from the pad; Level 1→6
+    /// within absolute engage range (world units from the pad; Level 1→6
     /// from <see cref="PlanetaryDefenseConfig"/>, default 20 at Lv1 then +4/level) and append
     /// <see cref="BulletElement"/> shots with <see cref="BulletDamageFilter.ShipsAndTransports"/>
-    /// (aim: ships and transports; collision also stops on asteroids and drones in the beam).
+    /// (aim: enemy ships, plus troop transports that have left a ship and are still
+    /// flying toward a planet). Seated transports and drones are passive interceptors —
+    /// they take a hit when a shot crosses them, they are not locks. Planet→ship loads
+    /// and recalled unloads are not locks either.
     /// <para>
     /// [TITAN-ORBIT] No turret ghosts — muzzle pose is derived from planet transform + slot index
     /// (same formula as client visuals / hit spheres). OwnerNetworkId is 0; OwnerTeam is planet
     /// ownership so friendly-fire rules still work. Fire direction uses
     /// <see cref="PlanetaryDefenseAimMath"/> lead targeting (quadratic intercept from target
-    /// position + velocity + <b>per-level</b> bullet speed) so moving ships and descending
-    /// people transports are not under-shot. Ship velocity comes from
-    /// <see cref="ShipKinematics"/> (post-physics linear, same units as bullet sim);
-    /// transport velocity from <see cref="PeopleTransportState.Velocity"/>.
-    /// Lead uses <see cref="PlanetaryDefenseAimMath.ShipVelocityLeadScale"/> (1 — no accel bias)
-    /// for ships and transports so constant-velocity strafe matches the quadratic.
+    /// position + velocity + <b>per-level</b> bullet speed) so moving ships are not under-shot.
+    /// Ship velocity comes from <see cref="ShipKinematics"/> (post-physics linear, same units
+    /// as bullet sim). Lead uses <see cref="PlanetaryDefenseAimMath.ShipVelocityLeadScale"/>
+    /// (1 — no accel bias) so constant-velocity strafe matches the quadratic.
     /// <see cref="BulletVisualScale"/> grows tracers with fire power. Bullet bank is the
     /// recipe's inherit / pinned category (default: this planet's rolled
     /// <c>PlanetState.BulletBankIndex</c>, then Laserbolt). Combat stats come from
@@ -97,8 +98,8 @@ namespace TitanOrbit.ECS
 
             EnsureWarmed();
 
-            // Empty lobby: no hulls or transports to shoot. Skip 25-planet aim (main never
-            // paid MEGA-era lead / bank work here). Turret regen waits until a target exists.
+            // Empty lobby: no hulls and no hops. Landing transports must still wake aim
+            // when every ship is gone. Seated escorts are not in this query.
             if (_enemyShipQuery.IsEmptyIgnoreFilter && _transportQuery.IsEmptyIgnoreFilter)
                 return;
 
@@ -211,7 +212,7 @@ namespace TitanOrbit.ECS
 
                     if (!TryFindNearestHostile(
                             muzzle, (TeamId)ownerTeam, engageRangeSq, mapW, mapH,
-                            enemyShips, transports, SystemAPI.Time.ElapsedTime,
+                            enemyShips, transports,
                             out float3 targetPos, out float3 targetVel))
                         continue;
 
@@ -241,7 +242,7 @@ namespace TitanOrbit.ECS
                     // --- Flight budget ≥ lead intercept ---
                     // [TITAN-ORBIT] Acquisition still uses engageRange, but fleeing/crossing ships
                     // need a longer Euclidean MaxDistance or BulletSimulation culls the shot
-                    // before the intercept (transports inbound rarely hit this). Lifetime = 0
+                    // before the intercept. Lifetime = 0
                     // disables the age timer so slow bullets can use the full flight budget.
                     // Last-step travel is clamped to remaining MaxDistance (BulletFlight) so a
                     // long client frame cannot visually reach a hull the server already expired.
@@ -260,7 +261,8 @@ namespace TitanOrbit.ECS
                         Sequence = sequence,
                         BankIndex = math.max(0, bankIndex),
                         ScaleMultiplier = math.max(0.1f, visualScale),
-                        // Aim stays ships/transports; drones in the beam still take a hit.
+                        // Aim is ships and planet-bound landings. Seated transports and drones
+                        // still stop a bolt that crosses them (ShipsAndTransports).
                         DamageFilter = BulletDamageFilter.ShipsAndTransports,
                         SourceGhostId = planetGhostId,
                         SourceKind = (byte)DeathVfxSourceKind.Turret,
@@ -293,16 +295,15 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Nearest living enemy ship or people transport within engage range of the turret muzzle
-        /// (toroidal). Prefers the closest hostile to that muzzle. Ships fully landed on a gem
-        /// moon are skipped (they are combat-immune and must not waste turret cadence).
+        /// Nearest living enemy ship, or enemy troop transport that has left a ship and
+        /// is still flying toward a planet, within engage range of the turret muzzle.
+        /// Ships fully landed on a gem moon are skipped. Seated escorts, drones, planet→ship
+        /// loads, and recalled unloads are not candidates — a shot still damages a seat or
+        /// drone only when its path crosses that hit sphere.
         /// Also returns planar velocity for <see cref="PlanetaryDefenseAimMath"/> lead aiming.
         /// <para>
-        /// Ships: <see cref="ShipKinematics.Velocity"/> — server mirror of
-        /// <c>PhysicsVelocity.Linear</c> after physics (world units/sec on XZ), same space
-        /// bullet sim integrates. Not angular rate; not a presentation/interpolated pose.
-        /// People transports: <see cref="PeopleTransportState.Velocity"/> written each tick by
-        /// the magnet-steer step.
+        /// Ships: <see cref="ShipKinematics.Velocity"/>. Planet-bound hops:
+        /// <see cref="PeopleTransportState.Velocity"/>.
         /// </para>
         /// </summary>
         /// <param name="muzzle">Turret pad world position.</param>
@@ -311,7 +312,7 @@ namespace TitanOrbit.ECS
         /// <param name="mapW">Toroidal map width.</param>
         /// <param name="mapH">Toroidal map height.</param>
         /// <param name="enemyShips">Living ship entities (filtered further inside).</param>
-        /// <param name="transports">People-transport entities.</param>
+        /// <param name="transports">In-flight people-transport entities. Only planet-bound landings qualify.</param>
         /// <param name="targetPos">Chosen target position (Y forced to FixedY).</param>
         /// <param name="targetVel">Planar velocity for lead math.</param>
         /// <returns>True when at least one hostile is inside engage range.</returns>
@@ -323,7 +324,6 @@ namespace TitanOrbit.ECS
             float mapH,
             NativeArray<Entity> enemyShips,
             NativeArray<Entity> transports,
-            double timeSeconds,
             out float3 targetPos,
             out float3 targetVel)
         {
@@ -332,7 +332,7 @@ namespace TitanOrbit.ECS
             float bestMuzzleDistSq = float.MaxValue;
             bool found = false;
 
-            // --- Enemy ships + that ship's troop orbs (ship-local, not a map-wide list) ---
+            // --- Enemy ships only. Seated troop seats are not locks. ---
             for (int i = 0; i < enemyShips.Length; i++)
             {
                 Entity e = enemyShips[i];
@@ -366,28 +366,15 @@ namespace TitanOrbit.ECS
 
                     found = true;
                 }
-
-                if (PeopleTransportEscortHitScan.TryFindNearestEscortOnShip(
-                        EntityManager, e, muzzle, bestMuzzleDistSq, mapW, mapH, timeSeconds,
-                        out float3 escortPos, out float3 escortVel))
-                {
-                    float3 fromMuzzleEscort = ToroidalMapEcs.ShortestOffsetXZ(muzzle, escortPos, mapW, mapH);
-                    float escortDistSq = math.lengthsq(new float3(fromMuzzleEscort.x, 0f, fromMuzzleEscort.z));
-                    if (escortDistSq <= engageRangeSq && escortDistSq < bestMuzzleDistSq)
-                    {
-                        bestMuzzleDistSq = escortDistSq;
-                        targetPos = escortPos;
-                        targetVel = escortVel;
-                        found = true;
-                    }
-                }
             }
 
-            // --- Enemy people transports (planet→ship load hops) ---
+            // --- Unloads that left a ship and are still flying toward a planet ---
             for (int i = 0; i < transports.Length; i++)
             {
                 Entity e = transports[i];
                 var t = EntityManager.GetComponentData<PeopleTransportState>(e);
+                if (!PeopleTransportMath.IsPlanetBoundLanding(t.IsLoad, t.Returning))
+                    continue;
                 if (t.Amount <= 0f || t.Health <= 0f)
                     continue;
                 var team = (TeamId)t.Team;

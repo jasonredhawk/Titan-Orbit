@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using TitanOrbit;
 using TitanOrbit.Audio;
 using TitanOrbit.Core;
@@ -34,6 +35,19 @@ namespace TitanOrbit.Entities
 
         static Material trailMat;
         static Material defaultBulletMat;
+
+        /// <summary>
+        /// WebGL cannot <c>Play</c> an <see cref="AudioSource"/> on the frame its shell
+        /// was enabled — that logs "Can not play a disabled audio source". These wait
+        /// until the next presentation frame.
+        /// </summary>
+        struct DeferredAudioReplay
+        {
+            public GameObject Root;
+            public int Frame;
+        }
+
+        static readonly List<DeferredAudioReplay> s_deferredAudioReplay = new List<DeferredAudioReplay>(8);
 
         /// <summary>
         /// Final VFX size = factory baseline × fire-power scale × the one bank-wide
@@ -258,10 +272,45 @@ namespace TitanOrbit.Entities
         }
 
         /// <summary>
-        /// Stops and plays every <see cref="AudioSource"/> so PlayOnAwake (pool SetActive)
-        /// does not keep the first samples at the prefab pitch after a size retune.
+        /// Stops and plays every live <see cref="AudioSource"/> so a size retune is
+        /// heard from the first sample. Skips inactive sources — WebGL logs
+        /// "Can not play a disabled audio source" and drops the clip.
         /// </summary>
         public static void ReplayAudioInHierarchy(GameObject root)
+        {
+            // playOnAwake was held off so enable would not start the prefab pitch.
+            // Turn it back on so the next pool rent still auto-plays.
+            PlayRetunedAudio(root, restorePlayOnAwake: true);
+        }
+
+        /// <summary>
+        /// Plays blasts queued by <see cref="QueueDeferredAudioReplay"/>. Call once per
+        /// presentation frame. A replay stays queued through the frame the shell was
+        /// enabled, because WebGL still treats that source as disabled.
+        /// </summary>
+        public static void TickDeferredAudioReplay()
+        {
+            int count = s_deferredAudioReplay.Count;
+            if (count == 0)
+                return;
+
+            int frame = Time.frameCount;
+            for (int i = count - 1; i >= 0; i--)
+            {
+                DeferredAudioReplay entry = s_deferredAudioReplay[i];
+                if (entry.Frame >= frame)
+                    continue;
+
+                s_deferredAudioReplay.RemoveAt(i);
+                PlayRetunedAudio(entry.Root, restorePlayOnAwake: true);
+            }
+        }
+
+        /// <summary>
+        /// Keeps <c>playOnAwake</c> from starting the clip when the pooled shell enables.
+        /// The deferred replay turns it back on so the next rent still auto-plays.
+        /// </summary>
+        static void HoldPlayOnAwake(GameObject root)
         {
             if (root == null)
                 return;
@@ -269,12 +318,56 @@ namespace TitanOrbit.Entities
             AudioSource[] sources = root.GetComponentsInChildren<AudioSource>(true);
             for (int i = 0; i < sources.Length; i++)
             {
+                if (sources[i] != null)
+                    sources[i].playOnAwake = false;
+            }
+        }
+
+        static void QueueDeferredAudioReplay(GameObject root)
+        {
+            int frame = Time.frameCount;
+            for (int i = 0; i < s_deferredAudioReplay.Count; i++)
+            {
+                if (s_deferredAudioReplay[i].Root != root)
+                    continue;
+
+                DeferredAudioReplay updated = s_deferredAudioReplay[i];
+                updated.Frame = frame;
+                s_deferredAudioReplay[i] = updated;
+                return;
+            }
+
+            s_deferredAudioReplay.Add(new DeferredAudioReplay
+            {
+                Root = root,
+                Frame = frame,
+            });
+        }
+
+        static void PlayRetunedAudio(GameObject root, bool restorePlayOnAwake)
+        {
+            if (root == null)
+                return;
+
+            AudioSource[] sources = root.GetComponentsInChildren<AudioSource>(true);
+            bool live = root.activeInHierarchy;
+            for (int i = 0; i < sources.Length; i++)
+            {
+                AudioSource source = sources[i];
+                if (source == null)
+                    continue;
+
+                if (restorePlayOnAwake)
+                    source.playOnAwake = true;
+
                 // Muted sources were ducked by hear range — replaying them would
                 // spend a voice on a blast the local ship should not hear.
-                if (sources[i] == null || sources[i].mute)
+                // Inactive sources are the WebGL "disabled audio source" warning.
+                if (!live || !source.isActiveAndEnabled || source.mute)
                     continue;
-                sources[i].Stop();
-                sources[i].Play();
+
+                source.Stop();
+                source.Play();
             }
         }
 
@@ -363,8 +456,13 @@ namespace TitanOrbit.Entities
             go.transform.SetPositionAndRotation(position, rot);
             VfxUrpCompat.ApplyImpactVisualScale(go, scale);
             SetAudioPitchInHierarchy(go, pitch, position);
+            // The rented shell is still inactive. Play() here is a no-op, and WebGL
+            // logs "Can not play a disabled audio source". Hold playOnAwake so enable
+            // does not start the prefab pitch, then play once the source is live.
+            // WebGL also rejects Play on the enable frame, so that path waits one frame.
+            bool webGlReplay = replayAudio && Application.platform == RuntimePlatform.WebGLPlayer;
             if (replayAudio)
-                ReplayAudioInHierarchy(go);
+                HoldPlayOnAwake(go);
             // worldPositionStays — flash stays on the surface and rides a moving hull / moon / rock.
             // Skip a parent that is already hidden (kill parked the proxy this frame). Parenting
             // there deactivates the burst before it draws. Restart particles AFTER the reparent
@@ -374,6 +472,10 @@ namespace TitanOrbit.Entities
             // [UNITY] PrepareVfxInstance restarts ParticleSystems — required after pool Return cleared them.
             // Cold Instantiates also pays FixAllIn1 / light strip here once (marker after).
             VfxUrpCompat.PrepareVfxInstance(go);
+            if (webGlReplay)
+                QueueDeferredAudioReplay(go);
+            else if (replayAudio)
+                ReplayAudioInHierarchy(go);
             BulletOneShotVfxPool.ScheduleReturn(go, duration);
         }
 

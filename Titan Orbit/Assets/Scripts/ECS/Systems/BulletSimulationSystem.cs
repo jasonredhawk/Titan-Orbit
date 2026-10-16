@@ -65,6 +65,12 @@ namespace TitanOrbit.ECS
         /// </summary>
         static readonly List<DroneHitTarget> s_DroneHitTargets = new List<DroneHitTarget>(64);
 
+        /// <summary>
+        /// Parked troop-transport spheres this tick. Rebuilt every tick from hull pose + seat id
+        /// so a bolt that crosses a seat stops even when it has not reached the hull yet.
+        /// </summary>
+        static readonly List<EscortHitTarget> s_EscortHitTargets = new List<EscortHitTarget>(64);
+
         static readonly List<int> s_DroneRearScratch = new List<int>(8);
         static readonly List<int> s_DroneShieldScratch = new List<int>(8);
         static readonly List<int> s_DroneEnemyIdsScratch = new List<int>(16);
@@ -275,6 +281,17 @@ namespace TitanOrbit.ECS
             else if (!needDroneHits)
             {
                 s_DroneHitTargets.Clear();
+            }
+
+            // --- Parked troop seats (every tick — they ride the hull) ---
+            // [TITAN-ORBIT] In-flight hops are hash entries. Seated orbs are not: they sit
+            // outside the hull, and BulletAdvanceJob used to fly through them until the
+            // hull sphere scored. Pose is EvaluateEscortSwarmPose, same as the meshes.
+            // Built even with an empty magazine so a same-frame spawn can clip a seat.
+            {
+                using var escortShips = _allShipQuery.ToEntityArray(Allocator.Temp);
+                PeopleTransportEscortHitScan.RebuildSeatedTargets(
+                    state.EntityManager, escortShips, droneTime, mapW, mapH, s_EscortHitTargets);
             }
 
             // --- Phase A: homing steer (managed), then Burst sweep ---
@@ -1081,6 +1098,7 @@ namespace TitanOrbit.ECS
             var planets = new NativeList<BulletJobPlanet>(16, Allocator.TempJob);
             NativeArray<PlanetaryDefenseHitTarget> defense = default;
             NativeArray<DroneHitTarget> drones = default;
+            NativeArray<EscortHitTarget> escorts = default;
             try
             {
                 for (int i = 0; i < n; i++)
@@ -1117,6 +1135,10 @@ namespace TitanOrbit.ECS
                 for (int i = 0; i < s_DroneHitTargets.Count; i++)
                     drones[i] = s_DroneHitTargets[i];
 
+                escorts = new NativeArray<EscortHitTarget>(s_EscortHitTargets.Count, Allocator.TempJob);
+                for (int i = 0; i < s_EscortHitTargets.Count; i++)
+                    escorts[i] = s_EscortHitTargets[i];
+
                 var job = new BulletAdvanceJob
                 {
                     Dt = dt,
@@ -1134,6 +1156,7 @@ namespace TitanOrbit.ECS
                     Planets = planets.AsArray(),
                     Defense = defense,
                     Drones = drones,
+                    Escorts = escorts,
                     AllowSelfHarmHits = TitanOrbitDebugFlags.SelfHarmRocketsAndMines ? (byte)1 : (byte)0,
                     SelfHarmArmDelay = TitanOrbitDebugFlags.SelfHarmArmDelaySeconds,
                 };
@@ -1205,6 +1228,8 @@ namespace TitanOrbit.ECS
                     defense.Dispose();
                 if (drones.IsCreated)
                     drones.Dispose();
+                if (escorts.IsCreated)
+                    escorts.Dispose();
             }
         }
 
@@ -1407,6 +1432,23 @@ namespace TitanOrbit.ECS
                             break;
                     }
                 }
+            }
+
+            // --- Parked troop transports (deterministic seat on the hull) ---
+            // [TITAN-ORBIT] Not gated on the ship hash. A seat outside the hull must win
+            // when the segment crosses it before the hull, asteroid, or another body.
+            if (AllowsHitKind(b.DamageFilter, BulletHitKind.Transport) &&
+                PeopleTransportEscortHitScan.TryKeepNearestSeatedHit(
+                    in b, from, to, mapW, mapH, s_EscortHitTargets,
+                    ref bestT, ref bestHit, out int escortIdx))
+            {
+                EscortHitTarget hitEscort = s_EscortHitTargets[escortIdx];
+                bestKind = BulletHitKind.Transport;
+                bestEntity = hitEscort.ShipEntity;
+                s_TroopShipNetworkId = hitEscort.OwnerNetworkId;
+                s_TroopSeatId = hitEscort.SeatId;
+                s_TroopHealthAfter = -1f;
+                s_TroopSequence = 0;
             }
 
             // --- Derived drones (shield wall / escort bodies) ---
@@ -1707,12 +1749,16 @@ namespace TitanOrbit.ECS
                             state.EntityManager.SetComponentData(bestEntity, t);
                         }
                     }
-                    else if (s_TroopShipNetworkId > 0)
+                    else
                     {
+                        // Seated seat on the owning ship. Seat id 0 is a real slot.
                         float after = PeopleTransportEscortLogic.ApplyDamage(
                             state.EntityManager, bestEntity, s_TroopSeatId, hitDamage);
                         s_TroopHealthAfter = after;
                         s_TroopSequence = 0;
+                        if (after <= 0.01f)
+                            PeopleTransportEscortHitScan.DisableSeatedTarget(
+                                s_EscortHitTargets, bestEntity, s_TroopSeatId);
                     }
 
                     TrySpawnWell(ref state, hitPoint, profile, serverElapsed, mapW, mapH, in b, ecb, gemPrefab, hitDamage, bestEntity);

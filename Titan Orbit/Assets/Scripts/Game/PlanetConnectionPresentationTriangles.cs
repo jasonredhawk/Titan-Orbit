@@ -29,6 +29,13 @@ namespace TitanOrbit.Game
 
         static NativeArray<PlanetConnectionGraphLogic.RuntimeTriangle> s_Native;
         static int s_LastGraphRevision = -1;
+        static int s_ContentSignature = int.MinValue;
+
+        /// <summary>
+        /// Bumps when the resolved triangle set (ids, team, or vertex positions) changes.
+        /// Graph revision alone misses a later vertex resolve that does not republish topology.
+        /// </summary>
+        public static int RebuildStamp { get; private set; }
 
         /// <summary>
         /// Ensures the presentation runtime array is fresh, then returns a Persistent
@@ -96,6 +103,8 @@ namespace TitanOrbit.Game
             s_Managed.Clear();
             DisposeNative();
             s_LastGraphRevision = -1;
+            s_ContentSignature = int.MinValue;
+            RebuildStamp++;
         }
 
         /// <summary>
@@ -180,6 +189,36 @@ namespace TitanOrbit.Game
                 n, Allocator.Persistent);
             for (int i = 0; i < n; i++)
                 s_Native[i] = s_Managed[i];
+            NoteContentSignature();
+        }
+
+        /// <summary>
+        /// Bumps <see cref="RebuildStamp"/> when the resolved set actually changes.
+        /// An incomplete retry that resolves the same verts must not invalidate every rock tint.
+        /// </summary>
+        static void NoteContentSignature()
+        {
+            int sig = 17;
+            sig = unchecked(sig * 31 + s_Managed.Count);
+            for (int i = 0; i < s_Managed.Count; i++)
+            {
+                PlanetConnectionGraphLogic.RuntimeTriangle t = s_Managed[i];
+                sig = unchecked(sig * 31 + t.PlanetIdA);
+                sig = unchecked(sig * 31 + t.PlanetIdB);
+                sig = unchecked(sig * 31 + t.PlanetIdC);
+                sig = unchecked(sig * 31 + (int)t.Team);
+                sig = unchecked(sig * 31 + (int)math.round(t.VertexA.x));
+                sig = unchecked(sig * 31 + (int)math.round(t.VertexA.z));
+                sig = unchecked(sig * 31 + (int)math.round(t.VertexB.x));
+                sig = unchecked(sig * 31 + (int)math.round(t.VertexB.z));
+                sig = unchecked(sig * 31 + (int)math.round(t.VertexC.x));
+                sig = unchecked(sig * 31 + (int)math.round(t.VertexC.z));
+            }
+
+            if (sig == s_ContentSignature)
+                return;
+            s_ContentSignature = sig;
+            RebuildStamp++;
         }
 
         /// <summary>Frees Persistent native if allocated.</summary>

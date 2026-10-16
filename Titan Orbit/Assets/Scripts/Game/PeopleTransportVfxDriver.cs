@@ -33,29 +33,23 @@ namespace TitanOrbit.Game
     /// matching the legacy NGO ClientRpc timing that fired on delivery — not on spawn.
     /// </para>
     /// <para>
-    /// [HYBRID] <see cref="CopyAimFlights"/> lets <see cref="PlanetaryDefenseVisualDriver"/>
-    /// lead-aim cosmetic turrets at the same display pose + server velocity the spheres use —
-    /// Dictionary/list walk only (no map-body ECS gathers).
-    /// </para>
-    /// <para>
     /// Windows-safe: no map-body <c>ToEntityArray</c>, Instantiates 1/frame after settle.
+    /// Cosmetic turret barrels read planet-bound landings from <see cref="CopyAimFlights"/>.
     /// </para>
     /// </summary>
     [DefaultExecutionOrder(66200)]
     public class PeopleTransportVfxDriver : MonoBehaviour
     {
         /// <summary>
-        /// One in-flight transport sample for cosmetic turret lead aim (presentation only).
+        /// One planet-bound landing flight for cosmetic turret lead aim.
+        /// Seated escorts and planet→ship loads are not included.
         /// </summary>
         public struct AimFlightSample
         {
-            /// <summary>Display-space world position of the VFX sphere (flattened to Y=0 for aim).</summary>
+            /// <summary>Display-space world position of the VFX sphere.</summary>
             public float3 DisplayPos;
 
-            /// <summary>
-            /// Last server planar velocity (world units/sec) — same vector used for dead-reckon
-            /// and for <see cref="PlanetaryDefenseAimMath"/> lead on the client.
-            /// </summary>
+            /// <summary>Last server planar velocity (world units/sec) for lead aim.</summary>
             public float3 Velocity;
 
             /// <summary>Owning team as byte (cast to <see cref="TeamId"/>).</summary>
@@ -241,7 +235,7 @@ namespace TitanOrbit.Game
             go.AddComponent<PeopleTransportVfxDriver>();
         }
 
-        /// <summary>[UNITY] Publish singleton so turret aim can find flights without a scene scan.</summary>
+        /// <summary>[UNITY] Publish singleton so flight VFX can be found without a scene scan.</summary>
         void OnEnable()
         {
             s_Instance = this;
@@ -258,10 +252,9 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Copies active VFX flights for cosmetic planetary-defense lead aim.
-        /// [HYBRID] List walk only — never queries ECS transport archetypes (Windows join-safe).
+        /// Copies unloads that left a ship and are still flying toward a planet.
+        /// Seated seats are not flights. Loads and recalled unloads are skipped.
         /// </summary>
-        /// <param name="dst">Cleared and filled with display pose + velocity + team.</param>
         public void CopyAimFlights(List<AimFlightSample> dst)
         {
             if (dst == null)
@@ -272,8 +265,9 @@ namespace TitanOrbit.Game
                 var f = _flights[i];
                 if (f.Go == null)
                     continue;
+                if (!PeopleTransportMath.IsPlanetBoundLanding(f.IsLoad, f.Returning ? (byte)1 : (byte)0))
+                    continue;
 
-                // Prefer the GO display position (already unwraped for the local camera tile).
                 float3 display = (float3)f.Go.transform.position;
                 display.y = 0f;
                 float3 vel = f.Velocity;

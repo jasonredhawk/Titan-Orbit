@@ -79,6 +79,9 @@ namespace TitanOrbit.Game
         /// <summary>Drains queued destroy bursts after sim has applied the RPC this frame.</summary>
         void LateUpdate()
         {
+            // Last frame's blasts. Playing on the enable frame is the WebGL warning.
+            BulletVisualFactory.TickDeferredAudioReplay();
+
             if (TitanOrbitDebugFlags.IsolateDisableImpactVfx)
             {
                 while (AsteroidDeathVfxBridge.TryDequeue(out _))

@@ -637,12 +637,11 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Mining / destroy yellow extras. Unions every ownership source so a rock the
-        /// player sees as team-colored still pays the bonus when one bake is late:
-        /// stored mask, stored primary team, live server PIT, and the client presentation
-        /// bake (empty on a dedicated server — no-op there).
-        /// A live mask used to replace the stored mask, so a stale non-zero bake could
-        /// drop the owning team and skip yellow gems.
+        /// Mining / destroy yellow extras. A successful live point-in-triangle replaces
+        /// the stored mask: outside every current triangle is mask 0, even if the rock
+        /// used to sit in one. Stored bits are kept only when neither side has a runtime
+        /// bake yet (dedicated server has no client bake — server alone is enough).
+        /// Host ORs the client bake so a fill the player sees still pays the bonus.
         /// </summary>
         public static byte ResolveAsteroidTerritoryMask(
             byte storedMask,
@@ -662,26 +661,114 @@ namespace TitanOrbit.ECS
             float mapW,
             float mapH)
         {
-            byte mask = storedMask;
+            bool anyLive = false;
+            byte mask = 0;
+            if (TryGetPublishedOwnershipAtPosition(
+                    PlanetConnectionGraphSide.Server, worldPos, mapW, mapH, out byte serverMask, out _))
+            {
+                anyLive = true;
+                mask |= serverMask;
+            }
+
+            // Host paints rocks from the client bake. Dedicated servers never publish that side.
+            if (TryGetPublishedOwnershipAtPosition(
+                    PlanetConnectionGraphSide.Client, worldPos, mapW, mapH, out byte clientMask, out _))
+            {
+                anyLive = true;
+                mask |= clientMask;
+            }
+
+            if (anyLive)
+                return mask;
+
+            mask = storedMask;
             if (storedTeam != TeamId.None)
                 mask |= PlanetConnectionGraphLogic.TeamToMaskBit(storedTeam);
-
-            mask |= ReadLiveTerritoryMask(PlanetConnectionGraphSide.Server, worldPos, mapW, mapH);
-            // Host paints rocks from the client bake. Dedicated servers never publish that side.
-            mask |= ReadLiveTerritoryMask(PlanetConnectionGraphSide.Client, worldPos, mapW, mapH);
             return mask;
         }
 
-        /// <summary>Live point-in-triangle mask, or 0 when that side has no published verts.</summary>
-        static byte ReadLiveTerritoryMask(
-            PlanetConnectionGraphSide side,
-            float3 worldPos,
-            float mapW,
-            float mapH)
+        /// <summary>
+        /// True when the kept runtime array is exactly the current published triangle set.
+        /// Same count is not enough — a removed faction can leave the same number of faces.
+        /// </summary>
+        static bool RuntimeMatchesPublishedTriangles(Side side)
         {
-            if (!TryGetPublishedOwnershipAtPosition(side, worldPos, mapW, mapH, out byte liveMask, out _))
-                return 0;
-            return liveMask;
+            if (!side.RuntimeNative.IsCreated || side.RuntimeNative.Length != side.Triangles.Count)
+                return false;
+
+            for (int i = 0; i < side.RuntimeNative.Length; i++)
+            {
+                var rt = side.RuntimeNative[i];
+                if (!SideContainsTriangle(side, rt.Team, rt.PlanetIdA, rt.PlanetIdB, rt.PlanetIdC))
+                    return false;
+            }
+
+            for (int i = 0; i < side.Triangles.Count; i++)
+            {
+                var t = side.Triangles[i];
+                if (!NativeContainsTriangle(side, t.Team, t.PlanetIdA, t.PlanetIdB, t.PlanetIdC))
+                    return false;
+            }
+
+            return true;
+        }
+
+        static bool SideContainsTriangle(Side side, TeamId team, int a, int b, int c)
+        {
+            Sort3(ref a, ref b, ref c);
+            for (int i = 0; i < side.Triangles.Count; i++)
+            {
+                var t = side.Triangles[i];
+                if (t.Team != team)
+                    continue;
+                int x = t.PlanetIdA, y = t.PlanetIdB, z = t.PlanetIdC;
+                Sort3(ref x, ref y, ref z);
+                if (x == a && y == b && z == c)
+                    return true;
+            }
+
+            return false;
+        }
+
+        static bool NativeContainsTriangle(Side side, TeamId team, int a, int b, int c)
+        {
+            Sort3(ref a, ref b, ref c);
+            for (int i = 0; i < side.RuntimeNative.Length; i++)
+            {
+                var t = side.RuntimeNative[i];
+                if (t.Team != team)
+                    continue;
+                int x = t.PlanetIdA, y = t.PlanetIdB, z = t.PlanetIdC;
+                Sort3(ref x, ref y, ref z);
+                if (x == a && y == b && z == c)
+                    return true;
+            }
+
+            return false;
+        }
+
+        static void Sort3(ref int a, ref int b, ref int c)
+        {
+            if (a > b)
+            {
+                int swap = a;
+                a = b;
+                b = swap;
+            }
+
+            if (b > c)
+            {
+                int swap = b;
+                b = c;
+                c = swap;
+            }
+
+            if (a > b)
+            {
+                int swap = a;
+                a = b;
+                b = swap;
+            }
         }
 
         /// <summary>
@@ -787,10 +874,14 @@ namespace TitanOrbit.ECS
                 RebuildRuntimeCache(side, planets);
                 // An empty planet snapshot used to sync a 0-length native over a good bake.
                 // AsteroidTerritorySystem then wrote mask 0 and yellow territory gems stopped.
+                // Keep the last good verts only when they are the same triangles.
+                // A removed faction's old triangle used to stay in the native array and
+                // keep tagging rocks after the fill was gone.
                 bool keepLastBake =
                     side.RuntimeCache.Count == 0 &&
                     side.Triangles.Count > 0 &&
-                    prevNative > 0;
+                    prevNative > 0 &&
+                    RuntimeMatchesPublishedTriangles(side);
                 if (!keepLastBake &&
                     (side.RuntimeCache.Count != prevResolved ||
                      !side.RuntimeNative.IsCreated ||
