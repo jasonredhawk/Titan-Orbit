@@ -63,6 +63,49 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
+        /// Tell clients an in-flight load changed escort seats. Pose layout stays the
+        /// same: <see cref="PeopleTransportPoseStatus.SeatRetargetVelocityY"/> marks the
+        /// packet, and <c>Position.y</c> is <c>seatId + 1</c>. XZ is the ship so view
+        /// interest still reaches the orbiting player. The sphere does not snap.
+        /// </summary>
+        public static void SendSeatRetarget(
+            ref EntityCommandBuffer ecb,
+            uint sequence,
+            byte seatId,
+            float3 shipPosition,
+            int shipNetworkId)
+        {
+            if (sequence == 0)
+                return;
+
+            float3 position = shipPosition;
+            position.y = seatId + 1f;
+            float3 velocity = new float3(0f, PeopleTransportPoseStatus.SeatRetargetVelocityY, 0f);
+
+            if (ClientServerBootstrap.ClientWorld != null && ClientServerBootstrap.ClientWorld.IsCreated)
+            {
+                PeopleTransportVfxBridge.EnqueuePose(new PeopleTransportVfxBridge.PoseUpdate
+                {
+                    Sequence = sequence,
+                    Position = position,
+                    Velocity = velocity,
+                    Status = PeopleTransportPoseStatus.Active,
+                    Health = -1f,
+                });
+            }
+
+            var rpc = new PeopleTransportPoseRpc
+            {
+                Sequence = sequence,
+                Position = position,
+                Velocity = velocity,
+                Status = PeopleTransportPoseStatus.Active,
+                Health = -1f,
+            };
+            ViewInterestFanout.EmitPoint(ref ecb, rpc, shipPosition, 32f, shipNetworkId);
+        }
+
+        /// <summary>
         /// End-of-life notify + destroy via ECB (delivery, return, abort).
         /// </summary>
         public static void EndAndDestroy(

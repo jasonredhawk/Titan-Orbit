@@ -11,8 +11,9 @@ namespace TitanOrbit.Simulation
     /// <para>
     /// [TITAN-ORBIT] <see cref="GetOrbitRingSpeed"/> is the single tangential speed for a planet's
     /// ring — ships (passive motor) and gem moons (analytic offset) both use it so they co-orbit.
-    /// The passive motor also applies a radial spring toward the ring centerline (stronger at the
-    /// inner/outer lips) so coasting hulls stay in the zone; thrust still cancels the motor.
+    /// Coasting hulls ease onto the centerline by position. Orbit velocity stays tangential so a
+    /// radial spring cannot fling the hull out of the annulus and a later correction cannot snap
+    /// it back. Thrust still cancels the motor.
     /// </para>
     /// </summary>
     public static class PlanetOrbitMath
@@ -30,28 +31,21 @@ namespace TitanOrbit.Simulation
         /// <summary>Scale of the ship/moon orbit ring radius from planet center (1 = sit just outside max-level bands).</summary>
         const float OrbitRingRadiusFromPlanetCenterScale = 1.1f;
         /// <summary>
-        /// Radial spring toward the orbit-ring centerline (world units/s per world-unit of radius error).
-        /// [TITAN-ORBIT] Stronger than the old Starship.orbitRadiusPullStrength (2.5) so a coasting
-        /// hull cannot drift through the thin annulus before the lerp captures it. Thrust still
-        /// cancels the whole orbit motor — this only holds ships that are already riding the ring.
+        /// How quickly a coasting hull eases toward the ring centerline (world units/s).
+        /// One tick never crosses the centerline. The step cap stops a long frame from
+        /// sliding the hull across the annulus.
         /// </summary>
-        const float OrbitRadiusPullStrength = 5f;
+        const float OrbitCenterlineEaseSpeed = 1.6f;
+        /// <summary>Largest centerline ease applied in one tick while already inside the ring.</summary>
+        const float OrbitCenterlineEaseMaxStep = 0.06f;
         /// <summary>
-        /// Extra radial-spring scale at the inner/outer lips (1 at centerline, this value at the edge).
-        /// Squared with normalized |radiusError| so the middle of the band stays smooth and the
-        /// lips yank harder — that is what actually keeps ships from slipping out of the zone.
-        /// </summary>
-        const float OrbitEdgePullMultiplier = 2.25f;
-        /// <summary>
-        /// How quickly velocity steers toward ideal orbit (1/s before gravity / mass).
-        /// [TITAN-ORBIT] Stronger than the old orbitCaptureResponsiveness (3.5) so the radial
-        /// spring actually applies within a few ticks instead of leaking outward first.
+        /// How quickly velocity steers toward ideal tangential orbit (1/s before gravity / mass).
         /// Still a continuous lerp (Starblast pillar 3) — not a one-frame snap onto the rail.
         /// </summary>
         const float OrbitCaptureResponsiveness = 5f;
         /// <summary>
-        /// Extra align-rate scale at the inner/outer lips (1 at centerline). Dumps leftover
-        /// inbound/outbound speed before the hull crosses the visual ring.
+        /// Extra align-rate scale at the inner/outer lips (1 at centerline). Matches
+        /// tangential ring speed sooner near the edge. Radius is held separately.
         /// </summary>
         const float OrbitEdgeCaptureMultiplier = 1.6f;
         /// <summary>
@@ -278,8 +272,9 @@ namespace TitanOrbit.Simulation
         /// Builds desired tangential velocity and alignment rate for the passive ship orbit motor
         /// when the ship pivot is inside a planet orbit ring. Called from shared
         /// <see cref="TitanOrbit.ECS.ShipPhysicsDriveLogic"/> before Unity Physics integrates position.
-        /// Radial spring is stronger near the inner/outer lips so coasting ships stay in the zone;
-        /// thrust still cancels this motor entirely (player can always leave).
+        /// Desired velocity is tangential only. Radius is held by
+        /// <see cref="StabilizeOrbitRail"/> after the solver, so a radial speed target cannot
+        /// shove the hull out of the ring. Thrust still cancels this motor entirely.
         /// </summary>
         /// <param name="shipPos">Ship world position (canonical wrap; still use toroidal range).</param>
         /// <param name="planetPos">Planet logical world position.</param>
@@ -288,7 +283,7 @@ namespace TitanOrbit.Simulation
         /// <param name="shipMass">Movement mass — heavier ships settle into orbit slower.</param>
         /// <param name="mapWidth">Toroidal map width from <c>MapStateSingleton</c>.</param>
         /// <param name="mapHeight">Toroidal map height from <c>MapStateSingleton</c>.</param>
-        /// <param name="desiredVelocity">Clockwise tangential velocity plus radial spring toward ring centerline (stronger at the lips).</param>
+        /// <param name="desiredVelocity">Clockwise tangential velocity at <see cref="GetOrbitRingSpeed"/>. No radial component.</param>
         /// <param name="alignRate">Lerp rate toward desired velocity (1/s), scaled by gravity, edge capture, and 1/sqrt(mass).</param>
         public static void BuildOrbitMotorParams(
             float3 shipPos,
@@ -326,31 +321,103 @@ namespace TitanOrbit.Simulation
             // Do not scale by position-in-band or territory — that made ships drift vs the moon.
             float targetSpeed = GetOrbitRingSpeed(planetSize);
 
-            // --- Radial spring toward ring centerline ---
-            // [TITAN-ORBIT] desiredVelocity is a target, not an instant shove. ShipPhysicsDriveLogic
-            // lerps current velocity toward this each tick (alignRate). The spring is stronger near
-            // the inner/outer lips so leftover inbound speed cannot coast the hull out of the zone.
-            // Tangential ring speed is unchanged — only the radial (in/out) component is corrected.
-            float radiusError = dist - centerWorld;
-            float halfThickness = math.max(0.01f, (outerWorld - innerWorld) * 0.5f);
-            // 0 on the centerline, 1 at either lip of the visual annulus.
-            float edgeT = math.saturate(math.abs(radiusError) / halfThickness);
-            float edgeTSq = edgeT * edgeT;
-            float pullScale = math.lerp(1f, OrbitEdgePullMultiplier, edgeTSq);
-
-            float3 radialCorrection = float3.zero;
-            if (math.abs(radiusError) > 0.02f)
-                radialCorrection = -radial * radiusError * OrbitRadiusPullStrength * pullScale;
-
-            desiredVelocity = tangent * targetSpeed + radialCorrection;
+            desiredVelocity = tangent * targetSpeed;
 
             // --- Align rate: gravity / mass, then extra capture at the lips ---
             // GetGravityFactor is still stronger on large planets and inner orbits (legacy curve).
-            // Edge capture is separate so the *outer* lip — historically the weakest — also holds.
+            // Edge capture is separate so the outer lip matches tangential speed quickly.
+            // Radius itself is not a velocity — see StabilizeOrbitRail.
+            float halfThickness = math.max(0.01f, (outerWorld - innerWorld) * 0.5f);
+            float edgeT = math.saturate(math.abs(dist - centerWorld) / halfThickness);
             float gravityFactor = GetGravityFactor(planetSize, dist, innerWorld, outerWorld, centerWorld);
             float massFactor = math.sqrt(math.max(0.5f, shipMass));
             float captureScale = math.lerp(1f, OrbitEdgeCaptureMultiplier, edgeT);
             alignRate = (OrbitCaptureResponsiveness * gravityFactor * captureScale) / massFactor;
+        }
+
+        /// <summary>
+        /// Drop the planet-radial part of <paramref name="planarVelocity"/> so leftover
+        /// inbound or outbound speed cannot carry a coasting hull out of the ring.
+        /// Tangential velocity is unchanged. Y is left to the caller.
+        /// </summary>
+        public static void RemoveOrbitRadialVelocity(
+            ref float3 planarVelocity,
+            float3 shipPos,
+            float3 planetPos,
+            float mapWidth,
+            float mapHeight)
+        {
+            if (!TryOrbitRadial(shipPos, planetPos, mapWidth, mapHeight, out float3 radial, out _))
+                return;
+
+            float radialSpeed = math.dot(planarVelocity, radial);
+            planarVelocity -= radial * radialSpeed;
+            planarVelocity.y = 0f;
+        }
+
+        /// <summary>
+        /// Keep a coasting hull on the orbit centerline. Inside the annulus the pivot
+        /// eases inward or outward without crossing the centerline. A solver shove that
+        /// lands outside the ring is placed back on the centerline before presentation,
+        /// so the hull does not fly out and then snap back.
+        /// </summary>
+        public static void StabilizeOrbitRail(
+            ref float3 shipPos,
+            ref float3 planarVelocity,
+            float3 planetPos,
+            float planetSize,
+            int planetLevel,
+            float mapWidth,
+            float mapHeight,
+            float dt)
+        {
+            RemoveOrbitRadialVelocity(ref planarVelocity, shipPos, planetPos, mapWidth, mapHeight);
+            if (!TryOrbitRadial(shipPos, planetPos, mapWidth, mapHeight, out float3 radial, out float dist))
+                return;
+
+            GetRingRadiiWorld(planetSize, planetLevel, out float innerWorld, out float outerWorld, out float centerWorld);
+            float newDist;
+            if (dist < innerWorld || dist > outerWorld)
+            {
+                // Solver shove left the annulus. Put the pivot back on the centerline
+                // before presentation so the outward pop is not shown and the next
+                // tick has nothing to snap back from.
+                newDist = centerWorld;
+            }
+            else
+            {
+                float error = dist - centerWorld;
+                float step = math.min(math.abs(error), OrbitCenterlineEaseSpeed * math.max(0f, dt));
+                step = math.min(step, OrbitCenterlineEaseMaxStep);
+                newDist = dist - math.sign(error) * step;
+            }
+
+            if (math.abs(newDist - dist) < 1e-5f)
+                return;
+
+            float3 newPos = planetPos + radial * newDist;
+            newPos.y = 0f;
+            if (ToroidalMapEcs.IsValidMapSize(mapWidth, mapHeight))
+                newPos = ToroidalMapEcs.Wrap(newPos, mapWidth, mapHeight);
+            shipPos = newPos;
+        }
+
+        static bool TryOrbitRadial(
+            float3 shipPos,
+            float3 planetPos,
+            float mapWidth,
+            float mapHeight,
+            out float3 radial,
+            out float dist)
+        {
+            radial = new float3(0f, 0f, 1f);
+            dist = ToroidalMapEcs.ToroidalDistance(shipPos, planetPos, mapWidth, mapHeight);
+            if (dist < 0.01f)
+                return false;
+
+            float3 toShip = ToroidalMapEcs.ShortestOffsetXZ(planetPos, shipPos, mapWidth, mapHeight);
+            radial = math.normalize(new float3(toShip.x, 0f, toShip.z));
+            return math.lengthsq(radial) > 1e-8f;
         }
 
         /// <summary>

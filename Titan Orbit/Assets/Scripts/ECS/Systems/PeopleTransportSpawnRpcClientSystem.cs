@@ -31,10 +31,10 @@ namespace TitanOrbit.ECS
                          .WithEntityAccess())
             {
                 var r = rpc.ValueRO;
+                // Y is the escort seat (seatId + 1). The VFX driver reads it, then flattens.
+                // Zeroing here sent every WebGL load to the ship center.
                 float3 spawn = r.SpawnPosition;
-                spawn.y = 0f;
                 float3 target = r.TargetPosition;
-                target.y = 0f;
 
                 PeopleTransportVfxBridge.TryEnqueue(new PeopleTransportVfxBridge.SpawnRequest
                 {

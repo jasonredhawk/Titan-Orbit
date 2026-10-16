@@ -26,9 +26,16 @@ namespace TitanOrbit.ECS
             {
                 var r = rpc.ValueRO;
                 float3 pos = r.Position;
-                pos.y = 0f;
                 float3 vel = r.Velocity;
-                vel.y = 0f;
+                // Seat retarget keeps Position.y (seatId + 1) and the velocity sentinel.
+                // End poses and real Active snaps stay planar.
+                bool seatRetarget = r.Status == PeopleTransportPoseStatus.Active &&
+                                    vel.y <= PeopleTransportPoseStatus.SeatRetargetVelocityY + 0.01f;
+                if (!seatRetarget)
+                {
+                    pos.y = 0f;
+                    vel.y = 0f;
+                }
 
                 PeopleTransportVfxBridge.EnqueuePose(new PeopleTransportVfxBridge.PoseUpdate
                 {

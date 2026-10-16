@@ -201,7 +201,7 @@ namespace TitanOrbit.Game
             float mapW,
             float mapH)
         {
-            CollectParkedSeats(em, ship, out var seats, out int fingerprint);
+            CollectParkedSeats(em, ship, netId, out var seats, out int fingerprint);
             if (!_groups.TryGetValue(netId, out var group))
             {
                 group = new ShipEscortGroup { NetworkId = netId };
@@ -299,11 +299,22 @@ namespace TitanOrbit.Game
         void CollectParkedSeats(
             EntityManager em,
             Entity ship,
+            int networkId,
             out List<PackedSeat> seats,
             out int fingerprint)
         {
             _seatsScratch.Clear();
             seats = _seatsScratch;
+
+            int people = 0;
+            int chunk = 1;
+            bool haveShip = em.HasComponent<ShipState>(ship);
+            if (haveShip)
+            {
+                var shipState = em.GetComponentData<ShipState>(ship);
+                people = shipState.CurrentPeople;
+                chunk = ResolveDisplayChunk(em, ship, in shipState, networkId);
+            }
 
             if (em.HasBuffer<PeopleEscortVitalElement>(ship))
             {
@@ -322,14 +333,30 @@ namespace TitanOrbit.Game
                 }
             }
 
+            // Ghost Amount can lag CurrentPeople on a dedicated client. When the parked
+            // count still matches the pack, raise a stale amount so the orb grows as
+            // people land. Never shrink a seat the server already packed larger.
+            if (haveShip && _seatsScratch.Count > 0)
+            {
+                int expect = PeopleTransportMath.GetEscortSlotCount(people, chunk);
+                if (expect == _seatsScratch.Count)
+                {
+                    for (int i = 0; i < _seatsScratch.Count; i++)
+                    {
+                        var seat = _seatsScratch[i];
+                        int amount = PeopleTransportMath.GetEscortSlotAmount(people, chunk, i);
+                        if (amount <= seat.Amount)
+                            continue;
+                        seat.Amount = amount;
+                        _seatsScratch[i] = seat;
+                    }
+                }
+            }
+
             // Predicted local ships used to omit escort vitals. CurrentPeople is always
             // ghosted — pack the same ≤12 growing orbs so cargo still shows.
-            if (_seatsScratch.Count == 0 &&
-                em.HasComponent<ShipState>(ship))
+            if (_seatsScratch.Count == 0 && haveShip && people > 0)
             {
-                var shipState = em.GetComponentData<ShipState>(ship);
-                int people = shipState.CurrentPeople;
-                int chunk = math.max(1, shipState.ShipLevel);
                 int count = PeopleTransportMath.GetEscortSlotCount(people, chunk);
                 for (int i = 0; i < count; i++)
                 {
@@ -346,6 +373,32 @@ namespace TitanOrbit.Game
             }
 
             fingerprint = Fingerprint(_seatsScratch);
+        }
+
+        /// <summary>
+        /// Pack size the parked orbs should grow toward. Server latches
+        /// <c>shipLevel × planetLevel</c> (troop-commander bonus included). Clients
+        /// recompute that from the orbit planet because the latch is not ghosted.
+        /// </summary>
+        static int ResolveDisplayChunk(
+            EntityManager em,
+            Entity ship,
+            in ShipState shipState,
+            int networkId)
+        {
+            int shipLevel = math.max(1, shipState.ShipLevel);
+            int planetLevel = 1;
+            if (em.HasComponent<ShipOrbitState>(ship))
+            {
+                int planetId = em.GetComponentData<ShipOrbitState>(ship).OrbitPlanetId;
+                if (planetId != 0 &&
+                    EcsGameBridge.TryGetPlanetPoseByPlanetId(planetId, out _, out _, out var planet))
+                    planetLevel = math.max(1, planet.PlanetLevel);
+            }
+
+            int raw = PeopleTransportMath.GetTransferChunk(shipLevel, planetLevel);
+            bool topTroop = ShipTopOfTeamRoles.IsTransporter(shipState.Team, networkId);
+            return TeamCommandRoleRules.ScaleTransferChunk(raw, topTroop);
         }
 
         /// <summary>

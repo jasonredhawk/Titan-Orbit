@@ -82,7 +82,7 @@ namespace TitanOrbit.ECS
 
                     pos.y = s.SeatId + 1f;
                     float3 target = xf[t].Position + s.Velocity;
-                    target.y = 0f;
+                    target.y = s.Health;
 
                     Entity rpcEntity = ecb.CreateEntity();
                     ecb.AddComponent(rpcEntity, new PeopleTransportSpawnRpc

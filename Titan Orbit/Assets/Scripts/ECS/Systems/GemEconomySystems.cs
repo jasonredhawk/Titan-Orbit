@@ -773,7 +773,12 @@ namespace TitanOrbit.ECS
                     gemState.IsConsumed = true;
                     gemStates[gi] = gemState;
                     GemNetNotify.SendConsumed(
-                        ref ecb, gemState.SpawnId, gemTransform.Position, shipNetworkId);
+                        ref ecb,
+                        gemState.SpawnId,
+                        gemTransform.Position,
+                        shipNetworkId,
+                        gemState.Tint,
+                        take);
                     ecb.DestroyEntity(gemEntity);
 
                     if (capacityLeft <= 0.001f)

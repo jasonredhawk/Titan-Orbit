@@ -123,6 +123,13 @@ namespace TitanOrbit.ECS
         /// <summary>Unused for voyage orbs. Load hops magnet locally; do not stream Active poses.</summary>
         public const byte Active = 0;
 
+        /// <summary>
+        /// Active pose with <c>Velocity.y</c> set to this value is a seat change, not a
+        /// position snap. <c>Position.y</c> is <c>seatId + 1</c>. Clients must not flatten
+        /// that Y before the VFX driver reads it.
+        /// </summary>
+        public const float SeatRetargetVelocityY = -2f;
+
         /// <summary>Delivered to the intended target (ship for load, planet for unload).</summary>
         public const byte Consumed = 1;
 

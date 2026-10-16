@@ -47,12 +47,16 @@ namespace TitanOrbit.ECS
         /// <paramref name="alwaysNetworkId"/> is the ship that scooped it (0 for expiry) so that
         /// hull still gets <see cref="GemConsumedRpc"/> when the crystal sits outside its camera rect.
         /// A missed consume leaves a mesh the server no longer has, which cannot be scooped.
+        /// <paramref name="tint"/> and <paramref name="collectedAmount"/> are presentation-only:
+        /// the client plays a different collect clip per colour. Expiry leaves the collector at 0.
         /// </summary>
         public static void SendConsumed(
             ref EntityCommandBuffer ecb,
             int spawnId,
             float3 position,
-            int alwaysNetworkId = 0)
+            int alwaysNetworkId = 0,
+            GemVisualTint tint = GemVisualTint.Standard,
+            float collectedAmount = 0f)
         {
             if (spawnId == 0)
                 return;
@@ -60,7 +64,13 @@ namespace TitanOrbit.ECS
             position.y = 0f;
             ViewInterestFanout.EmitPoint(
                 ref ecb,
-                new GemConsumedRpc { SpawnId = spawnId },
+                new GemConsumedRpc
+                {
+                    SpawnId = spawnId,
+                    CollectorNetworkId = alwaysNetworkId,
+                    Tint = (byte)tint,
+                    Amount = alwaysNetworkId != 0 ? collectedAmount : 0f,
+                },
                 position,
                 ViewInterestTuning.GemKeepMargin,
                 alwaysNetworkId);

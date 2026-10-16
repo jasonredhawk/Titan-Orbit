@@ -1,3 +1,6 @@
+using TitanOrbit.Generation;
+using TitanOrbit.Simulation;
+using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.NetCode;
@@ -33,6 +36,27 @@ namespace TitanOrbit.ECS
             var inputLookup = SystemAPI.GetComponentLookup<ShipInput>(true);
             var latchLookup = SystemAPI.GetComponentLookup<ShipTerritoryBoostLatch>(true);
             var moonLookup = SystemAPI.GetComponentLookup<ShipMoonDockState>(true);
+            var orbitLookup = SystemAPI.GetComponentLookup<ShipOrbitState>(true);
+            float dt = SystemAPI.Time.DeltaTime;
+            bool hasMap = ToroidalMapEcs.TryGetMapSize(out float mapW, out float mapH);
+
+            // One pass over planets — orbit rail hold must not scan the planet query per ship.
+            var anchors = new NativeList<OrbitRailAnchor>(16, state.WorldUpdateAllocator);
+            if (hasMap)
+            {
+                foreach (var (planet, transform) in SystemAPI
+                             .Query<RefRO<PlanetState>, RefRO<LocalTransform>>()
+                             .WithAll<PlanetTag>())
+                {
+                    anchors.Add(new OrbitRailAnchor
+                    {
+                        PlanetId = planet.ValueRO.PlanetId,
+                        Position = transform.ValueRO.Position,
+                        Scale = transform.ValueRO.Scale,
+                        Level = planet.ValueRO.PlanetLevel,
+                    });
+                }
+            }
 
             if (state.World.IsClient())
             {
@@ -40,7 +64,11 @@ namespace TitanOrbit.ECS
                              .Query<RefRW<LocalTransform>, RefRW<PhysicsVelocity>, RefRO<ShipState>>()
                              .WithAll<ShipTag, Simulate, PredictedGhost>()
                              .WithEntityAccess())
+                {
                     ApplyPlanar(transform, velocity, shipState, entity, inputLookup, latchLookup, moonLookup);
+                    if (hasMap)
+                        HoldOrbitRail(transform, velocity, entity, orbitLookup, moonLookup, anchors, mapW, mapH, dt);
+                }
             }
             else
             {
@@ -48,7 +76,73 @@ namespace TitanOrbit.ECS
                              .Query<RefRW<LocalTransform>, RefRW<PhysicsVelocity>, RefRO<ShipState>>()
                              .WithAll<ShipTag, Simulate>()
                              .WithEntityAccess())
+                {
                     ApplyPlanar(transform, velocity, shipState, entity, inputLookup, latchLookup, moonLookup);
+                    if (hasMap)
+                        HoldOrbitRail(transform, velocity, entity, orbitLookup, moonLookup, anchors, mapW, mapH, dt);
+                }
+            }
+        }
+
+        struct OrbitRailAnchor
+        {
+            public int PlanetId;
+            public float3 Position;
+            public float Scale;
+            public int Level;
+        }
+
+        /// <summary>
+        /// After the solver: drop radial speed and ease the pivot onto the ring centerline.
+        /// Runs on server and predicted client with the same planet pose the motor used,
+        /// so a depenetration shove cannot leave the annulus and reconciliation cannot
+        /// snap the hull back in.
+        /// </summary>
+        static void HoldOrbitRail(
+            RefRW<LocalTransform> transform,
+            RefRW<PhysicsVelocity> velocity,
+            Entity entity,
+            ComponentLookup<ShipOrbitState> orbitLookup,
+            ComponentLookup<ShipMoonDockState> moonLookup,
+            NativeList<OrbitRailAnchor> anchors,
+            float mapW,
+            float mapH,
+            float dt)
+        {
+            if (!orbitLookup.HasComponent(entity) || !orbitLookup[entity].UsingOrbitMotor)
+                return;
+            if (moonLookup.HasComponent(entity))
+            {
+                var dock = moonLookup[entity];
+                if (dock.IsTakingOff || dock.IsFullyLanded)
+                    return;
+            }
+
+            int planetId = orbitLookup[entity].OrbitPlanetId;
+            if (planetId == 0)
+                return;
+
+            for (int i = 0; i < anchors.Length; i++)
+            {
+                if (anchors[i].PlanetId != planetId)
+                    continue;
+
+                float3 pos = transform.ValueRO.Position;
+                float3 linear = velocity.ValueRO.Linear;
+                PlanetOrbitMath.StabilizeOrbitRail(
+                    ref pos,
+                    ref linear,
+                    anchors[i].Position,
+                    math.max(0.25f, anchors[i].Scale),
+                    anchors[i].Level,
+                    mapW,
+                    mapH,
+                    dt);
+                pos.y = 0f;
+                linear.y = 0f;
+                transform.ValueRW.Position = pos;
+                velocity.ValueRW.Linear = linear;
+                return;
             }
         }
 

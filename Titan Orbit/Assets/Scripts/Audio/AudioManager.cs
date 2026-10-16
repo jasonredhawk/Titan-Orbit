@@ -67,8 +67,12 @@ namespace TitanOrbit.Audio
         [SerializeField] private AudioClip asteroidCollisionSound;
         [Tooltip("Ship-to-ship collision impact. Falls back to Impact Sound when unassigned.")]
         [SerializeField] private AudioClip shipCollisionSound;
-        [Tooltip("Gem pickup. Assign magic_03 from ShootingSound folder.")]
+        [Tooltip("Regular gem pickup (red crystals). Team and commander clips fall back to this when unassigned.")]
         [SerializeField] private AudioClip gemCollectSound;
+        [Tooltip("Team gem pickup (yellow territory bonus).")]
+        [SerializeField] private AudioClip gemTeamCollectSound;
+        [Tooltip("Commander top-miner gem pickup (blue crystals).")]
+        [SerializeField] private AudioClip gemCommanderCollectSound;
         [Tooltip("Troop transfer SFX used for both loading and unloading.")]
         [SerializeField] private AudioClip peopleTransferSound;
         [SerializeField] private AudioClip miningSound;
@@ -367,6 +371,36 @@ namespace TitanOrbit.Audio
         /// </param>
         public void PlayGemCollectSound(float amount, float volumeScale = 1f)
         {
+            PlayGemCollectClip(gemCollectSound, amount, volumeScale);
+        }
+
+        /// <summary>
+        /// Collect sting for one gem colour. Same piano / chord rules as
+        /// <see cref="PlayGemCollectSound(float, float)"/>.
+        /// Tint bytes match <c>GemVisualTint</c>: 0 regular, 1 team, 2 commander.
+        /// Unassigned team or commander clips fall back to the regular pickup.
+        /// </summary>
+        public void PlayGemCollectSound(float amount, byte tint, float volumeScale = 1f)
+        {
+            PlayGemCollectClip(ResolveGemCollectClip(tint), amount, volumeScale);
+        }
+
+        /// <summary>Regular, team, or commander clip. Missing bonus clips use the regular pickup.</summary>
+        AudioClip ResolveGemCollectClip(byte tint)
+        {
+            switch (tint)
+            {
+                case 1:
+                    return gemTeamCollectSound != null ? gemTeamCollectSound : gemCollectSound;
+                case 2:
+                    return gemCommanderCollectSound != null ? gemCommanderCollectSound : gemCollectSound;
+                default:
+                    return gemCollectSound;
+            }
+        }
+
+        void PlayGemCollectClip(AudioClip clip, float amount, float volumeScale)
+        {
             if (volumeScale <= 0.001f)
                 return;
 
@@ -377,7 +411,7 @@ namespace TitanOrbit.Audio
             int voices = GemChordValues.VoiceCountForCollect(amount, GemChordValues.DefaultMaxUnitValue);
             if (voices <= 1)
             {
-                PlayGemMusicalSFX(gemCollectSound, amount, gemVolume, volumeScale);
+                PlayGemMusicalSFX(clip, amount, gemVolume, volumeScale);
                 return;
             }
 
@@ -390,7 +424,7 @@ namespace TitanOrbit.Audio
             {
                 if (chordValues[i] < 0.001f)
                     continue;
-                PlayGemMusicalSFX(gemCollectSound, chordValues[i], gemVolume, voiceVolumeScale);
+                PlayGemMusicalSFX(clip, chordValues[i], gemVolume, voiceVolumeScale);
             }
         }
 

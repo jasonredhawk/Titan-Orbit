@@ -90,6 +90,17 @@ namespace TitanOrbit.Game
         readonly HashSet<Entity> _asteroidSeenScratch = new HashSet<Entity>();
         /// <summary>Stale asteroid keys to remove — reused (was <c>new List</c> on prune).</summary>
         readonly List<Entity> _asteroidStaleScratch = new List<Entity>(64);
+        /// <summary>Scooped crystals this frame — reused so collect SFX does not allocate.</summary>
+        readonly List<GemCollectSfxBuffer.Event> _gemSfxScratch = new List<GemCollectSfxBuffer.Event>(16);
+        /// <summary>Same ship + tint scoops summed into one sting.</summary>
+        readonly List<GemCollectSfxBucket> _gemSfxBuckets = new List<GemCollectSfxBucket>(8);
+
+        struct GemCollectSfxBucket
+        {
+            public int NetworkId;
+            public byte Tint;
+            public float Amount;
+        }
         /// <summary>Skip delta popups on first frame after connect — avoids spurious +N from baseline.</summary>
         bool _primed;
 
@@ -156,8 +167,12 @@ namespace TitanOrbit.Game
                 _localDepositBeatSequence = 0;
                 _localDepositBeatPrimed = false;
                 _cachedLocalGems = -1f;
+                GemCollectSfxBuffer.Clear();
                 return;
             }
+
+            // Scoop stings follow GemConsumedRpc (per crystal colour), not the cargo total.
+            PlayQueuedGemCollectSounds();
 
             // --- Local deposit beats from ghosted ShipDepositFeedback (tagged ship read) ---
             TickLocalDepositMetronome();
@@ -477,15 +492,12 @@ namespace TitanOrbit.Game
                     // [TITAN-ORBIT] People ±N floats are owned by PeopleTransportVfxDriver at the
                     // transport sphere (leave / consume) — not by CurrentPeople deltas on the hull.
 
-                    // --- Gem pickup only (deposit audio is the metronome in TickGemDepositMetronomes) ---
-                    // Positive cargo jumps = mined / collected gems. Deposit drains are intentionally
-                    // ignored here so bursty ghost updates cannot stutter or pitch-jump the beat.
+                    // --- Gem pickup popup only ---
+                    // Collect audio is PlayQueuedGemCollectSounds (one clip per crystal colour).
+                    // Deposit drains are ignored here so bursty ghost updates cannot stutter the beat.
                     float gemsDelta = state.CurrentGems - last.Gems;
                     if (gemsDelta > 0.01f)
                     {
-                        float hear = GameplaySfxProximity.VolumeAt(anchor.position);
-                        if (hear > 0.001f)
-                            AudioManager.Instance?.PlayGemCollectSound(gemsDelta, hear);
                         WorldFloatingCountManager.Instance.ShowOrAccumulateOnShip(
                             networkId,
                             anchor,
@@ -582,6 +594,72 @@ namespace TitanOrbit.Game
                     LastDepositBeatSequence = snap.LastDepositBeatSequence,
                     LastBurnTickSequence = burnSeq,
                 };
+            }
+        }
+
+        /// <summary>
+        /// Plays one collect sting per ship per crystal colour. Same-colour scoops in the
+        /// queue share a pitch (cargo added). Regular, team, and commander clips stay separate
+        /// so a mixed burst is three sounds, not one blended note.
+        /// </summary>
+        void PlayQueuedGemCollectSounds()
+        {
+            var audio = AudioManager.GetOrFind();
+            if (audio == null)
+                return;
+
+            GemCollectSfxBuffer.CopyAndClear(_gemSfxScratch);
+            if (_gemSfxScratch.Count == 0)
+                return;
+
+            _gemSfxBuckets.Clear();
+            for (int i = 0; i < _gemSfxScratch.Count; i++)
+            {
+                GemCollectSfxBuffer.Event scoop = _gemSfxScratch[i];
+                int found = -1;
+                for (int b = 0; b < _gemSfxBuckets.Count; b++)
+                {
+                    if (_gemSfxBuckets[b].NetworkId == scoop.CollectorNetworkId &&
+                        _gemSfxBuckets[b].Tint == scoop.Tint)
+                    {
+                        found = b;
+                        break;
+                    }
+                }
+
+                if (found < 0)
+                {
+                    _gemSfxBuckets.Add(new GemCollectSfxBucket
+                    {
+                        NetworkId = scoop.CollectorNetworkId,
+                        Tint = scoop.Tint,
+                        Amount = scoop.Amount,
+                    });
+                }
+                else
+                {
+                    GemCollectSfxBucket bucket = _gemSfxBuckets[found];
+                    bucket.Amount += scoop.Amount;
+                    _gemSfxBuckets[found] = bucket;
+                }
+            }
+
+            int localNetworkId = EcsGameBridge.GetLocalNetworkId();
+            for (int b = 0; b < _gemSfxBuckets.Count; b++)
+            {
+                GemCollectSfxBucket bucket = _gemSfxBuckets[b];
+                float hear;
+                if (TryGetShipAnchor(bucket.NetworkId, out Transform anchor) && anchor != null)
+                    hear = GameplaySfxProximity.VolumeAt(anchor.position);
+                else if (localNetworkId > 0 && bucket.NetworkId == localNetworkId)
+                    hear = 1f;
+                else
+                    continue;
+
+                if (hear <= 0.001f)
+                    continue;
+
+                audio.PlayGemCollectSound(bucket.Amount, bucket.Tint, hear);
             }
         }
 

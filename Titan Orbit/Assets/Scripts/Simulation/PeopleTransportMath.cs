@@ -801,9 +801,10 @@ namespace TitanOrbit.Simulation
         /// <summary>
         /// Multiplier on the prefab's authored localScale from carried people amount.
         /// Dispatch packs each batch into one sphere. Load Amount =
-        /// <c>shipLevel × planetLevel</c>; unload Amount = ship level. Higher Amount
-        /// → larger visual (e.g. +1 ≈ 0.9×, +18 ≈ 1.7×, +36 ≈ 2.7× on the prefab's
-        /// 0.25 base scale).
+        /// <c>shipLevel × planetLevel</c>. Unload Amount is the parked escort's own
+        /// people count — the seat flies down intact instead of being cut into a
+        /// smaller landing piece. Higher Amount → larger visual (e.g. +1 ≈ 0.9×,
+        /// +18 ≈ 1.7×, +36 ≈ 2.7× on the prefab's 0.25 base scale).
         /// </summary>
         public static float GetVisualScaleMultiplier(float peopleAmount)
         {

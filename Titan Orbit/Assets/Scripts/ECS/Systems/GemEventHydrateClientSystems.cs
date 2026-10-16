@@ -32,6 +32,14 @@ namespace TitanOrbit.ECS
             public GemVisualTint Tint;
         }
 
+        struct PendingConsume
+        {
+            public int SpawnId;
+            public int CollectorNetworkId;
+            public byte Tint;
+            public float Amount;
+        }
+
         /// <summary>Consumes inbound gem RPCs every client tick.</summary>
         public void OnUpdate(ref SystemState state)
         {
@@ -39,7 +47,7 @@ namespace TitanOrbit.ECS
             var destroyEcb = new EntityCommandBuffer(Allocator.Temp);
             var spawns = new NativeList<PendingSpawn>(8, Allocator.Temp);
             var bursts = new NativeList<PendingBurst>(4, Allocator.Temp);
-            var consumed = new NativeList<int>(8, Allocator.Temp);
+            var consumed = new NativeList<PendingConsume>(8, Allocator.Temp);
             var values = new NativeList<int2>(4, Allocator.Temp);
             var valueAmounts = new NativeList<float>(4, Allocator.Temp);
             var locks = new NativeList<GemTractorLockRpc>(4, Allocator.Temp);
@@ -73,7 +81,14 @@ namespace TitanOrbit.ECS
             foreach (var (rpc, reqEntity) in SystemAPI.Query<RefRO<GemConsumedRpc>>()
                          .WithAll<ReceiveRpcCommandRequest>().WithEntityAccess())
             {
-                consumed.Add(rpc.ValueRO.SpawnId);
+                var r = rpc.ValueRO;
+                consumed.Add(new PendingConsume
+                {
+                    SpawnId = r.SpawnId,
+                    CollectorNetworkId = r.CollectorNetworkId,
+                    Tint = r.Tint,
+                    Amount = r.Amount,
+                });
                 destroyEcb.DestroyEntity(reqEntity);
             }
 
@@ -148,8 +163,14 @@ namespace TitanOrbit.ECS
             for (int i = 0; i < valueAmounts.Length; i++)
                 ClientLocalGemSpawn.ApplyValueChanged(em, values[i].x, valueAmounts[i]);
 
+            bool playCollectSfx = !state.WorldUnmanaged.IsThinClient();
             for (int i = 0; i < consumed.Length; i++)
-                ClientLocalGemSpawn.Consume(em, consumed[i]);
+            {
+                var c = consumed[i];
+                ClientLocalGemSpawn.Consume(em, c.SpawnId);
+                if (playCollectSfx)
+                    GemCollectSfxBuffer.Push(c.CollectorNetworkId, c.Tint, c.Amount);
+            }
 
             for (int i = 0; i < locks.Length; i++)
                 ClientLocalGemSpawn.ApplyTractorLock(em, locks[i]);

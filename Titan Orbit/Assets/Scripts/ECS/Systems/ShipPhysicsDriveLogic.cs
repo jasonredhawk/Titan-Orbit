@@ -405,6 +405,8 @@ namespace TitanOrbit.ECS
             {
                 // --- Passive orbit blend (replaces thrust/coast this tick) ---
                 // [TITAN-ORBIT] Continuous lerp toward the shared ring speed — Starblast pillar 3.
+                // Desired velocity is tangential only. A radial speed target used to shove the
+                // hull out of the thin annulus; the next reconcile then snapped it back.
                 // Same GetOrbitRingSpeed as gem-moon kinematics. Do NOT multiply by territoryMult:
                 // friendly boost is for thrust flight only; scaling orbit made ships lap the moon.
                 PlanetOrbitMath.BuildOrbitMotorParams(
@@ -420,6 +422,8 @@ namespace TitanOrbit.ECS
                 orbitDesiredVel.y = 0f;
                 float t = math.saturate(alignRate * dt);
                 vel = math.lerp(vel, orbitDesiredVel, t);
+                PlanetOrbitMath.RemoveOrbitRadialVelocity(
+                    ref vel, transform.Position, orbitPlanetTransform.Position, mapW, mapH);
                 vel.y = 0f;
             }
             else if (moonDocking)

@@ -244,23 +244,22 @@ namespace TitanOrbit.ECS
                     in shipState.ValueRO, in planetState);
                 if (wantUnload)
                 {
+                    // Each parked escort flies down intact — same people, same size, same HP.
+                    // The old unload chunk carved a big seat into a smaller sphere and the
+                    // replacement spawned at full health.
                     transfer.TransferDirection = PeopleTransferDirection.Unload;
-                    int unloadChunk = TeamCommandRoleRules.ScaleTransferChunk(
-                        PeopleTransportMath.GetTransferChunk(shipLevel, planetLevel), topTroop);
                     bool intervalReady = transfer.UnloadAccumulator <= 0.01f ||
                         (now - transfer.UnloadAccumulator) >=
                         PeopleTransportConstants.UnloadDispatchIntervalSeconds;
-                    if (intervalReady)
+                    if (intervalReady &&
+                        shipState.ValueRO.CurrentPeople > 0 &&
+                        TryDispatchUnload(
+                            ref ecb, ref state, shipEntity, ref shipState.ValueRW, shipNetworkId,
+                            planetState.PlanetId, shipState.ValueRO.Team, planetState.Ownership,
+                            shipTransform.ValueRO, planetPos, planetSize,
+                            mapW, mapH, now, hopClock))
                     {
-                        int send = math.min(unloadChunk, shipState.ValueRO.CurrentPeople);
-                        if (send > 0 && TryDispatchUnload(
-                                ref ecb, ref state, shipEntity, ref shipState.ValueRW, send, shipNetworkId,
-                                planetState.PlanetId, shipState.ValueRO.Team, planetState.Ownership,
-                                shipTransform.ValueRO, planetPos, planetSize,
-                                mapW, mapH, now, hopClock))
-                        {
-                            transfer.UnloadAccumulator = now;
-                        }
+                        transfer.UnloadAccumulator = now;
                     }
                 }
                 else
@@ -448,15 +447,17 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Spawns one packed unload transport. Ship pays immediately; the planet
-        /// gains (or is drained) when the sphere delivers.
+        /// Launches one parked escort toward the planet without resizing it.
+        /// The sphere carries that seat's people and its current health. Ship pays
+        /// immediately; the planet gains (or is drained) when the sphere delivers.
+        /// Up to <see cref="PeopleTransportMath.MaxEscortVisualSlots"/> escorts exist,
+        /// and each one is a single descent — they are not split into smaller pieces.
         /// </summary>
         static bool TryDispatchUnload(
             ref EntityCommandBuffer ecb,
             ref SystemState state,
             Entity shipEntity,
             ref ShipState ship,
-            int amount,
             int shipNetworkId,
             int planetId,
             TeamId team,
@@ -470,7 +471,7 @@ namespace TitanOrbit.ECS
             float hopClock)
         {
             _ = now;
-            if (amount <= 0 || ship.CurrentPeople < amount)
+            if (ship.CurrentPeople <= 0)
                 return false;
 
             if (!PeopleTransportEscortLogic.TryPeelParkedSeat(
@@ -479,10 +480,12 @@ namespace TitanOrbit.ECS
                 return false;
             }
 
-            amount = math.min(amount, peeled);
-            if (amount <= 0)
+            if (peeled <= 0)
                 return false;
 
+            // Keep the seat's size. Clamping to the unload chunk replaced a damaged
+            // escort with a smaller sphere whose max HP made the old damage look like full health.
+            int amount = peeled;
             float3 shipPos = shipTransform.Position;
             PeopleTransportEscortLogic.GetEscortHullExtents(
                 state.EntityManager, shipEntity, shipTransform.Scale, out float extX, out float extZ);
@@ -571,7 +574,9 @@ namespace TitanOrbit.ECS
 
             // --- Client VFX spawn (PeopleTransportVfxDriver) ---
             float3 bakedTarget = targetPos;
-            bakedTarget.y = 0f;
+            // Y carries live HP (same 62-byte layout). 0 means "full" for older packets.
+            // Clients read it, then flatten Y before using the point as a destination.
+            bakedTarget.y = health;
             // Seat rides in spawn Y (seat+1). XZ stays the launch point. Layout stays 62 bytes.
             float3 rpcSpawn = spawnPos;
             rpcSpawn.y = seatId + 1f;
@@ -691,13 +696,51 @@ namespace TitanOrbit.ECS
                          .WithEntityAccess())
             {
                 ref var t = ref transport.ValueRW;
-                if (t.Health <= 0f && t.Amount > 0f)
-                    t.Health = PeopleTransportMath.ComputeMaxHealth(t.Amount);
                 float elapsed = hopClock - t.SpawnTime;
                 float3 myPos = transform.ValueRO.Position;
                 myPos.y = 0f;
                 bool isLoad = t.IsLoad != 0;
                 var team = (TeamId)t.Team;
+
+                if (isLoad &&
+                    t.TargetShipNetworkId != 0 &&
+                    shipByNetworkId.TryGetValue(t.TargetShipNetworkId, out var loadShip) &&
+                    shipStateByNetworkId.TryGetValue(t.TargetShipNetworkId, out var loadState) &&
+                    state.EntityManager.HasBuffer<PeopleEscortVitalElement>(loadShip))
+                {
+                    int combine = 0;
+                    if (state.EntityManager.HasComponent<ShipPeopleTransferState>(loadShip))
+                        combine = state.EntityManager.GetComponentData<ShipPeopleTransferState>(loadShip).LastLoadCombineMax;
+                    int chunk = PeopleTransportEscortLogic.ResolveChunk(
+                        math.max(1, loadState.ShipLevel), combine);
+                    float3 approach = myPos;
+                    if (planetTransformById.TryGetValue(t.SourcePlanetId, out var approachPlanet))
+                        approach = approachPlanet.Position;
+                    shipTransformByNetworkId.TryGetValue(t.TargetShipNetworkId, out var loadXfForSeat);
+                    if (PeopleTransportEscortLogic.TryRetargetLoadSeat(
+                            state.EntityManager, loadShip, loadState.CurrentPeople, (int)math.max(1f, t.Amount),
+                            chunk, t.SeatId, t.OwnsSeat != 0, approach, loadXfForSeat,
+                            t.TargetShipNetworkId, hopClock, mapW, mapH, out byte retargeted))
+                    {
+                        // Leave an owned reservation behind so it does not stay
+                        // InFlight after this hop joins a parked seat.
+                        if (t.OwnsSeat != 0)
+                        {
+                            PeopleTransportEscortLogic.RemoveSeat(state.EntityManager, loadShip, t.SeatId);
+                            t.OwnsSeat = 0;
+                        }
+
+                        t.SeatId = retargeted;
+                        // Rebase the formation offset so the sphere curves to the new
+                        // seat instead of jumping when the home pose changes.
+                        t.FormationReady = 0;
+                        float3 shipPos = shipTransformByNetworkId.TryGetValue(t.TargetShipNetworkId, out var loadXf)
+                            ? loadXf.Position
+                            : myPos;
+                        PeopleTransportNetNotify.SendSeatRetarget(
+                            ref ecb, t.Sequence, retargeted, shipPos, t.TargetShipNetworkId);
+                    }
+                }
 
                 StepTransportMotion(
                     ref state, ref t, ref transform.ValueRW, isLoad, myPos, dt, hopClock, mapW, mapH,

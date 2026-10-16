@@ -442,13 +442,16 @@ namespace TitanOrbit.ECS
         /// <summary>
         /// World spawn position on XZ. Y carries the seeded escort seat as
         /// <c>seatId + 1</c> (0 = unknown) so the 62-byte layout stays put.
-        /// Clients flatten Y after reading the seat.
+        /// The VFX driver reads the seat, then flattens Y. Do not clear Y before that.
         /// </summary>
         public float3 SpawnPosition;
 
         /// <summary>
         /// Baked destination at spawn time (ship hull or planet surface).
         /// Clients fly toward this even if ship/planet lookups fail — prevents instant despawn.
+        /// Y carries the transport's live hull points so a damaged escort does not
+        /// spawn the descent sphere at full health. The VFX driver reads Y, then flattens it.
+        /// 0 means full HP (older packets). XZ is the destination. Do not clear Y before the driver.
         /// </summary>
         public float3 TargetPosition;
 
@@ -1131,12 +1134,29 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
-    /// [NETCODE] Server → all clients: this SpawnId was scooped into cargo. Hide and destroy locally.
+    /// [NETCODE] Server → all clients: this SpawnId was scooped into cargo or expired.
+    /// Hide and destroy locally. Pickup fields drive the per-tint collect sting;
+    /// expiry leaves <see cref="CollectorNetworkId"/> at 0 so no collect sound plays.
     /// </summary>
     public struct GemConsumedRpc : IRpcCommand
     {
-        /// <summary>Recipe SpawnId of the scooped crystal.</summary>
+        /// <summary>Recipe SpawnId of the scooped or expired crystal.</summary>
         public int SpawnId;
+
+        /// <summary>
+        /// Scooping ship <c>GhostOwner.NetworkId</c>. 0 means the crystal expired
+        /// (no cargo, no collect sound).
+        /// </summary>
+        public int CollectorNetworkId;
+
+        /// <summary>
+        /// Crystal colour: 0 regular, 1 yellow team/territory, 2 blue commander miner
+        /// (<see cref="TitanOrbit.Simulation.GemVisualTint"/>).
+        /// </summary>
+        public byte Tint;
+
+        /// <summary>Cargo actually added. 0 on expiry. May be less than the crystal when the hold is nearly full.</summary>
+        public float Amount;
     }
 
     /// <summary>

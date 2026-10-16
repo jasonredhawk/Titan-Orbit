@@ -68,6 +68,8 @@ namespace TitanOrbit.Game
             public GameObject Go;
             public uint Sequence;
             public float3 LogicalPos;
+            /// <summary>Baked endpoint from the spawn RPC (ship hull or planet surface).</summary>
+            public float3 BakedTarget;
             public float3 Velocity;
             public byte IsLoad;
             public int SourcePlanetId;
@@ -122,8 +124,6 @@ namespace TitanOrbit.Game
         const float MaxLifetimeSeconds = 20f;
         /// <summary>Windows: Instantiates 1/frame — same discipline as GhostSpawn Instantiates cap.</summary>
         const int MaxSpawnsPerFrame = 1;
-        /// <summary>Blend toward server pose so packet jitter does not teleport the sphere.</summary>
-        const float ServerPoseBlend = 0.65f;
 
         /// <summary>Singleton for other client bridges (turret aim) without FindObject each frame.</summary>
         static PeopleTransportVfxDriver s_Instance;
@@ -476,7 +476,22 @@ namespace TitanOrbit.Game
                     mapW,
                     mapH,
                     out var intent))
-                return;
+            {
+                // Slot or planet pose is not ready this frame. Keep flying toward the
+                // baked endpoint so the sphere does not sit at the launch point until
+                // the server consume packet deletes it.
+                float3 baked = f.BakedTarget;
+                baked.y = 0f;
+                if (math.lengthsq(baked) < 1e-8f && math.lengthsq(f.LogicalPos) < 1e-8f)
+                    return;
+                intent.Home = baked;
+                intent.DesiredOffset = float3.zero;
+                // Different anchor from a later slot home so the first real seat
+                // rebases the offset and the sphere curves instead of jumping.
+                intent.Anchor = PeopleTransportEscortLogic.TroopAnchorPlanet;
+                intent.HoldWorld = true;
+                intent.HasHome = true;
+            }
 
             float3 offset = f.FormationOffset;
             float3 offsetVel = f.FormationVelocity;
@@ -540,27 +555,15 @@ namespace TitanOrbit.Game
                     index < 0 || index >= _flights.Count ||
                     _flights[index].Sequence != pose.Sequence)
                 {
-                    _pendingPoses[pose.Sequence] = pose;
-                    // Late join: SpawnRpc already fired before this client existed. Instantiates
-                    // a capsule from the live pose so the flight is visible.
-                    if (pose.Status == PeopleTransportPoseStatus.Active)
-                    {
-                        PeopleTransportVfxBridge.TryEnqueue(new PeopleTransportVfxBridge.SpawnRequest
-                        {
-                            Sequence = pose.Sequence,
-                            SpawnPosition = pose.Position,
-                            TargetPosition = pose.Position + pose.Velocity,
-                            Velocity = pose.Velocity,
-                            CruiseSpeed = math.length(pose.Velocity),
-                            Amount = 1f,
-                            TargetShipNetworkId = 0,
-                            SourcePlanetId = 0,
-                            TargetPlanetId = 0,
-                            IsLoad = 0,
-                            Team = 0,
-                        });
-                    }
+                    // Keep the packet until the real SpawnRpc Instantiates this sequence.
+                    // An Active pose must not become a spawn: its XZ is the ship, and
+                    // TryEnqueue would consume the sequence so the planet/seat launch
+                    // is dropped. Late join already sends SpawnRpc.
+                    if (pose.Status == PeopleTransportPoseStatus.Active &&
+                        !IsSeatRetargetPose(in pose))
+                        continue;
 
+                    _pendingPoses[pose.Sequence] = pose;
                     continue;
                 }
 
@@ -634,21 +637,35 @@ namespace TitanOrbit.Game
                 return;
             }
 
-            // --- Active (unused for load hops): snap if a leftover pose arrives ---
-            float3 serverPos = pose.Position;
-            serverPos.y = 0f;
-            if (f.HasServerPose)
-                f.LogicalPos = math.lerp(f.LogicalPos, serverPos, ServerPoseBlend);
-            else
-                f.LogicalPos = serverPos;
+            // In-flight load switched seats. Curve from the current spot — do not snap XZ.
+            // Any other Active packet is ignored. Streaming the ship position here used
+            // to lerp the sphere onto the hull, so the planet→seat and seat→planet
+            // flights never played while the server still delivered on its own clock.
+            if (pose.Status == PeopleTransportPoseStatus.Active)
+            {
+                if (IsSeatRetargetPose(in pose) && pose.Position.y >= 0.5f)
+                {
+                    byte seat = (byte)math.clamp((int)math.round(pose.Position.y) - 1, 0, 15);
+                    if (f.SeatId != seat)
+                    {
+                        f.SeatId = seat;
+                        f.FormationReady = 0;
+                    }
+                }
 
-            f.Velocity = pose.Velocity;
-            f.Velocity.y = 0f;
-            if (pose.Health >= 0f)
-                f.Health = pose.Health;
-            f.HasServerPose = true;
-            TryShowReturnToPlanetPopup(ref f);
-            _flights[index] = f;
+                _flights[index] = f;
+                return;
+            }
+        }
+
+        /// <summary>
+        /// Active pose that only changes the escort seat. Velocity Y is the sentinel;
+        /// position Y is <c>seatId + 1</c>.
+        /// </summary>
+        static bool IsSeatRetargetPose(in PeopleTransportVfxBridge.PoseUpdate pose)
+        {
+            return pose.Status == PeopleTransportPoseStatus.Active &&
+                   pose.Velocity.y <= PeopleTransportPoseStatus.SeatRetargetVelocityY + 0.01f;
         }
 
         /// <summary>Budgeted Instantiates from the VFX bridge; shows leave (−N) at spawn.</summary>
@@ -697,11 +714,20 @@ namespace TitanOrbit.Game
                         req.TargetPlanetId, out _, out _, out var spawnPlanet))
                     ownerAtSpawn = (byte)spawnPlanet.Ownership;
 
+                float hintedHealth = req.TargetPosition.y;
+                float3 bakedTarget = req.TargetPosition;
+                bakedTarget.y = 0f;
+                float amount = math.max(1f, req.Amount);
+                float health = hintedHealth > 0.01f
+                    ? hintedHealth
+                    : PeopleTransportMath.ComputeMaxHealth(amount);
+
                 var flight = new Flight
                 {
                     Go = go,
                     Sequence = req.Sequence,
                     LogicalPos = spawn,
+                    BakedTarget = bakedTarget,
                     Velocity = req.Velocity,
                     IsLoad = req.IsLoad,
                     SourcePlanetId = req.SourcePlanetId,
@@ -709,7 +735,7 @@ namespace TitanOrbit.Game
                     TargetShipNetworkId = req.TargetShipNetworkId,
                     SeatId = seatId,
                     TargetOwnerAtSpawn = ownerAtSpawn,
-                    Amount = math.max(1f, req.Amount),
+                    Amount = amount,
                     CruiseSpeed = req.CruiseSpeed,
                     Team = req.Team,
                     RemainingLifetime = MaxLifetimeSeconds,
@@ -721,7 +747,7 @@ namespace TitanOrbit.Game
                     LeavePopupShown = false,
                     HasServerPose = true,
                     Thruster = PeopleTransportVisualApplier.EnsureThruster(go),
-                    Health = PeopleTransportMath.ComputeMaxHealth(math.max(1f, req.Amount)),
+                    Health = health,
                 };
 
                 // Leave: planet −N (load) or ship −N (unload). Arrive is a separate target.

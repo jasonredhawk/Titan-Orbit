@@ -210,6 +210,192 @@ namespace TitanOrbit.ECS
             return TryNthParkedSeat(em, ship, bestSlot, out seatId);
         }
 
+        /// <summary>
+        /// Extra distance a new seat must beat the current one by before every
+        /// in-flight load switches. Buzz on the parked orbs is smaller than this,
+        /// so a yaw that actually brings another seat closer still switches.
+        /// </summary>
+        const float ClosestSeatSwitchSlack = 0.45f;
+
+        /// <summary>
+        /// True when cargo already needs more than 12 escort slots, so leftovers
+        /// are spread across the existing seats instead of opening another one.
+        /// </summary>
+        public static bool IsEscortOverflow(int currentPeople, int chunk)
+        {
+            chunk = math.max(1, chunk);
+            if (currentPeople <= 0)
+                return false;
+            int raw = (currentPeople + chunk - 1) / chunk;
+            return raw > PeopleTransportMath.MaxEscortVisualSlots;
+        }
+
+        /// <summary>
+        /// In-flight load whose parked home will no longer absorb this batch.
+        /// Switch onto the parked capsule that is still filling, or onto the
+        /// in-flight seat that just opened. A hop that reserved its own seat
+        /// stays there — that seat is the new one. Once all 12 seats are full,
+        /// every load homes on the parked seat closest to <paramref name="approachPos"/>
+        /// (the planet they launch from) and follows it as the ship rotates.
+        /// </summary>
+        public static bool TryRetargetLoadSeat(
+            EntityManager em,
+            Entity ship,
+            int currentPeople,
+            int incomingAmount,
+            int chunk,
+            byte currentSeat,
+            bool ownsSeat,
+            float3 approachPos,
+            in LocalTransform shipTransform,
+            int shipNetworkId,
+            double timeSeconds,
+            float mapW,
+            float mapH,
+            out byte newSeat)
+        {
+            newSeat = currentSeat;
+            if (incomingAmount <= 0 || ship == Entity.Null || !em.Exists(ship))
+                return false;
+
+            // Past 12 seats the packed "+1" index rotates. Aim at the seated
+            // transport nearest the planet instead, and move only when rotation
+            // makes a different one clearly closer.
+            if (IsEscortOverflow(currentPeople, chunk) &&
+                TryPickClosestParkedSeat(
+                    em, ship, shipTransform, shipNetworkId, approachPos, currentSeat,
+                    timeSeconds, mapW, mapH, out byte closest))
+            {
+                if (closest == currentSeat)
+                    return false;
+                newSeat = closest;
+                return true;
+            }
+
+            if (ownsSeat || !em.HasBuffer<PeopleEscortVitalElement>(ship))
+                return false;
+
+            int after = math.max(0, currentPeople) + incomingAmount;
+            if (TryPickGrowingSeat(em, ship, currentPeople, after, chunk, out byte growing))
+            {
+                if (growing == currentSeat)
+                    return false;
+                newSeat = growing;
+                return true;
+            }
+
+            // Already joined an open reservation. Do not hop between in-flight seats.
+            var buf = em.GetBuffer<PeopleEscortVitalElement>(ship);
+            if (SeatIsInFlight(buf, currentSeat))
+                return false;
+
+            if (!TryNewestInFlightSeat(buf, currentSeat, out byte open))
+                return false;
+
+            newSeat = open;
+            return true;
+        }
+
+        /// <summary>
+        /// Parked escort whose world pose is nearest <paramref name="approachPos"/>.
+        /// Keeps <paramref name="currentSeat"/> when it is still within
+        /// <see cref="ClosestSeatSwitchSlack"/> of that nearest pose.
+        /// </summary>
+        static bool TryPickClosestParkedSeat(
+            EntityManager em,
+            Entity ship,
+            in LocalTransform shipTransform,
+            int shipNetworkId,
+            float3 approachPos,
+            byte currentSeat,
+            double timeSeconds,
+            float mapW,
+            float mapH,
+            out byte seatId)
+        {
+            seatId = currentSeat;
+            if (!em.HasBuffer<PeopleEscortVitalElement>(ship))
+                return false;
+
+            var buf = em.GetBuffer<PeopleEscortVitalElement>(ship);
+            GetEscortHullExtents(em, ship, shipTransform.Scale, out float extX, out float extZ);
+            float3 heading = float3.zero;
+            if (em.HasComponent<ShipKinematics>(ship))
+                heading = em.GetComponentData<ShipKinematics>(ship).FormationHeading;
+
+            approachPos.y = 0f;
+            float bestDist = float.MaxValue;
+            byte bestSeat = 0;
+            bool found = false;
+            float currentDist = float.MaxValue;
+            bool haveCurrent = false;
+
+            for (int i = 0; i < buf.Length; i++)
+            {
+                var vital = buf[i];
+                if (vital.InFlight != 0 || vital.Amount <= 0)
+                    continue;
+
+                float3 pose = PeopleTransportMath.EvaluateEscortSwarmPose(
+                    shipTransform.Position, shipTransform.Rotation, extX, extZ,
+                    vital.SeatId, vital.Amount, shipNetworkId,
+                    timeSeconds, mapW, mapH, heading);
+                float dist = ToroidalMapEcs.ToroidalDistance(pose, approachPos, mapW, mapH);
+                if (vital.SeatId == currentSeat)
+                {
+                    currentDist = dist;
+                    haveCurrent = true;
+                }
+
+                if (dist >= bestDist)
+                    continue;
+                bestDist = dist;
+                bestSeat = vital.SeatId;
+                found = true;
+            }
+
+            if (!found)
+                return false;
+            if (haveCurrent && currentDist <= bestDist + ClosestSeatSwitchSlack)
+            {
+                seatId = currentSeat;
+                return true;
+            }
+
+            seatId = bestSeat;
+            return true;
+        }
+
+        static bool SeatIsInFlight(DynamicBuffer<PeopleEscortVitalElement> buf, byte seatId)
+        {
+            for (int i = 0; i < buf.Length; i++)
+            {
+                if (buf[i].SeatId == seatId && buf[i].InFlight != 0)
+                    return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>Last reserved seat that is not <paramref name="exceptSeat"/>.</summary>
+        static bool TryNewestInFlightSeat(
+            DynamicBuffer<PeopleEscortVitalElement> buf,
+            byte exceptSeat,
+            out byte seatId)
+        {
+            seatId = 0;
+            bool found = false;
+            for (int i = 0; i < buf.Length; i++)
+            {
+                if (buf[i].InFlight == 0 || buf[i].SeatId == exceptSeat)
+                    continue;
+                seatId = buf[i].SeatId;
+                found = true;
+            }
+
+            return found;
+        }
+
         /// <summary>Seat id of the nth parked escort (in-flight reservations skipped).</summary>
         static bool TryNthParkedSeat(EntityManager em, Entity ship, int slot, out byte seatId)
         {
