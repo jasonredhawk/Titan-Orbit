@@ -214,6 +214,8 @@ namespace TitanOrbit.Entities
                         remainingCharges = e.RemainingCharges,
                         itemLevel = e.ItemLevel,
                         stampedBulletBankPlusOne = e.StampedBulletBankPlusOne,
+                        // [TITAN-ORBIT] World the row was bought at. 0 on older ghosts.
+                        sourcePlanetId = e.SourcePlanetId,
                         bufferIndex = i,
                     });
                 }

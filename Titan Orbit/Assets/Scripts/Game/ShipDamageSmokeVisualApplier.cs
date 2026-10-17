@@ -9,16 +9,18 @@ using UnityEngine.Rendering;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// Client-only cosmetic smoke that leaks from a damaged ship hull.
+    /// Client-only cosmetic smoke that streams out of damaged engine and thruster nozzles.
     /// Profile comes from <see cref="ShipDamageSmokeSettings"/> on
     /// <see cref="ShipFamilyDefinition.damageSmokeSettings"/> (shared asset today, per-family later).
     /// Reads ghosted <see cref="ShipState.Health"/> / <see cref="ShipState.MaxHealth"/> — no server
     /// sim change. Attached by <see cref="EcsWorldVisualizer"/> on hybrid ship proxies.
     /// <para>
-    /// One prefab instance is spawned per <see cref="ChassisComponentStats.thrusterVfxTransforms"/>
-    /// mount (same list as <see cref="ShipPropulsionVisualApplier"/> jets). Instances parent to the
-    /// hull proxy root so Hierarchy scale stays readable, then snap to each mount every frame.
-    /// Ships with no VFX thrusters fall back to a single hull-root emitter.
+    /// One prefab instance is spawned per propulsion nozzle (thruster VFX mounts, plus engine
+    /// mounts when those are the jets). Instances stay parented to the hull proxy so mount scale
+    /// does not resize the puffs, and snap to the aft face of each nozzle every frame.
+    /// On death, <see cref="HandoffEmittersToDebris"/> parents those same systems to the wreck
+    /// chunks so they keep pouring at full intensity while the debris spirals.
+    /// Ships with no engine or thruster fall back to a single hull-root emitter.
     /// </para>
     /// <para>
     /// Prefab loads via the settings asset (usually <c>Resources/ShipDamageSmoke</c>).
@@ -38,7 +40,17 @@ namespace TitanOrbit.Game
 
         readonly List<GameObject> _smokeInstances = new List<GameObject>();
         readonly List<Transform> _smokeAnchors = new List<Transform>();
+        readonly List<Vector3> _nozzleLocalRear = new List<Vector3>();
+        readonly List<bool> _nozzleHasRear = new List<bool>();
         readonly List<ParticleSystem> _particleSystems = new List<ParticleSystem>();
+        readonly List<ShipPropulsionVisualApplier.PropulsionNozzle> _nozzleScratch =
+            new List<ShipPropulsionVisualApplier.PropulsionNozzle>(8);
+
+        /// <summary>True after emitters were parented onto death-debris chunks.</summary>
+        bool _handedToDebris;
+
+        /// <summary>True once death has written full-intensity emission (do not rewrite every frame).</summary>
+        bool _deathEmissionLocked;
 
         /// <summary>Smoothed 0–1 smoke intensity (cosmetic blend).</summary>
         float _intensity;
@@ -92,9 +104,9 @@ namespace TitanOrbit.Game
         void OnDestroy() => ClearSmoke();
 
         /// <summary>
-        /// Instantiates one smoke prefab per thruster VFX mount, parented to the hull proxy root.
+        /// Instantiates one smoke prefab per engine/thruster nozzle, parented to the hull proxy root.
         /// Engine/Thruster mounts inherit tiny chassis scales which made particles invisible, so
-        /// instances stay on the hull and snap to mount world pose instead.
+        /// instances stay on the hull and snap to the nozzle's aft face instead.
         /// </summary>
         void RebuildSmoke()
         {
@@ -103,42 +115,32 @@ namespace TitanOrbit.Game
             _lastAppliedIntensity = -1f;
             _lastAppliedSpeedFactor = -1f;
             _wasEmitting = false;
+            _handedToDebris = false;
+            _deathEmissionLocked = false;
 
             if (_config == null || !_config.enabled || _config.smokePrefab == null)
                 return;
 
-            // --- Same sites as live thruster jet instances ---
-            // Prefer the propulsion applier's spawned flames (exact VFX pose, including local offset).
-            // Fall back to ChassisComponentStats mounts when jets have not been Instantiated yet.
-            var anchors = new List<Transform>(8);
+            // --- Same nozzles as live jets (aft face of each engine / thruster mesh) ---
+            _nozzleScratch.Clear();
             var propulsion = GetComponent<ShipPropulsionVisualApplier>();
             if (propulsion != null)
-                propulsion.CopyThrusterVfxAnchors(anchors);
+                propulsion.CopyPropulsionNozzles(_nozzleScratch);
 
-            if (anchors.Count == 0)
-            {
-                // [TITAN-ORBIT] thrusterVfxTransforms = enablePropulsionVfx only
-                // (Thrusters_Big / Tiny_Thrusters yes; Thruster_Place / Cover no).
-                var stats = ChassisComponentStats.FromTransform(transform, _familyPrefix, _family);
-                for (int i = 0; i < stats.thrusterVfxTransforms.Count; i++)
-                {
-                    Transform mount = stats.thrusterVfxTransforms[i];
-                    if (mount != null)
-                        anchors.Add(mount);
-                }
-            }
+            if (_nozzleScratch.Count == 0)
+                CollectChassisNozzleFallback();
 
-            for (int i = 0; i < anchors.Count; i++)
+            for (int i = 0; i < _nozzleScratch.Count; i++)
             {
-                Transform mount = anchors[i];
-                if (mount == null)
+                ShipPropulsionVisualApplier.PropulsionNozzle nozzle = _nozzleScratch[i];
+                if (nozzle.Mount == null)
                     continue;
-                SpawnSmokeInstance(mount, i);
+                SpawnSmokeInstance(nozzle.Mount, nozzle.LocalRear, nozzle.HasLocalRear, i);
             }
 
-            // --- Fallback: hull-root emitter when this chassis has no VFX thrusters ---
+            // --- Fallback: hull-root emitter when this chassis has no engine or thruster ---
             if (_smokeInstances.Count == 0)
-                SpawnSmokeInstance(anchor: null, index: 0);
+                SpawnSmokeInstance(anchor: null, localRear: Vector3.zero, hasRear: false, index: 0);
 
             SyncSmokeToAnchors();
             ApplyWorldNormalizedScale(0.35f);
@@ -147,11 +149,47 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Instantiates one settings prefab on the hull root and optionally tracks a thruster mount.
+        /// Thruster VFX mounts, or engine meshes when the hull has no thruster nozzles.
+        /// Used only when jets have not been spawned yet.
         /// </summary>
-        /// <param name="anchor">Thruster VFX mount to follow, or null for hull-root fallback.</param>
+        void CollectChassisNozzleFallback()
+        {
+            var stats = ChassisComponentStats.FromTransform(transform, _familyPrefix, _family);
+            AppendMounts(stats.thrusterVfxTransforms);
+            if (_nozzleScratch.Count > 0)
+                return;
+
+            AppendMounts(stats.engineTransforms);
+        }
+
+        void AppendMounts(List<Transform> mounts)
+        {
+            if (mounts == null)
+                return;
+
+            for (int i = 0; i < mounts.Count; i++)
+            {
+                Transform mount = mounts[i];
+                if (mount == null)
+                    continue;
+
+                _nozzleScratch.Add(new ShipPropulsionVisualApplier.PropulsionNozzle
+                {
+                    Mount = mount,
+                    LocalRear = Vector3.zero,
+                    HasLocalRear = false,
+                });
+            }
+        }
+
+        /// <summary>
+        /// Instantiates one settings prefab on the hull root and tracks an engine or thruster nozzle.
+        /// </summary>
+        /// <param name="anchor">Nozzle mount to follow, or null for hull-root fallback.</param>
+        /// <param name="localRear">Aft-face point in <paramref name="anchor"/> local space.</param>
+        /// <param name="hasRear">When false, follow the mount pivot.</param>
         /// <param name="index">Instance index for the GameObject name.</param>
-        void SpawnSmokeInstance(Transform anchor, int index)
+        void SpawnSmokeInstance(Transform anchor, Vector3 localRear, bool hasRear, int index)
         {
             GameObject go = Instantiate(_config.smokePrefab, transform);
             // Keep "Thruster" out of the name — ChassisComponentStats substring
@@ -172,18 +210,27 @@ namespace TitanOrbit.Game
 
             _smokeInstances.Add(go);
             _smokeAnchors.Add(anchor);
+            _nozzleLocalRear.Add(localRear);
+            _nozzleHasRear.Add(hasRear);
         }
 
         /// <summary>
-        /// Copies each tracked thruster mount's world pose onto the matching hull-parented emitter.
-        /// Attribute-scale / OVERDRIVE can move mounts after Bind — keep smoke glued every frame.
+        /// Puts each hull-parented emitter on the aft face of its engine or thruster, aimed aft
+        /// so the plume leaves the nozzle. Attribute-scale / OVERDRIVE can move mounts after Bind.
         /// </summary>
         void SyncSmokeToAnchors()
         {
             if (_config == null)
                 return;
 
-            Quaternion smokeLocal = Quaternion.Euler(_config.localEuler);
+            Vector3 aft = -transform.forward;
+            aft.y = 0f;
+            if (aft.sqrMagnitude < 0.0001f)
+                aft = -transform.forward;
+            else
+                aft.Normalize();
+            Quaternion aim = Quaternion.LookRotation(aft, transform.up);
+
             for (int i = 0; i < _smokeInstances.Count; i++)
             {
                 GameObject go = _smokeInstances[i];
@@ -191,11 +238,13 @@ namespace TitanOrbit.Game
                 if (go == null || anchor == null)
                     continue;
 
-                // Exact thruster VFX mount world position (same sites as jet flames).
-                // localOffset stays for the no-thruster hull-root fallback only.
-                go.transform.position = anchor.position;
-                // Billow in hull space (same as the old single emitter), not the nozzle's jet yaw.
-                go.transform.rotation = transform.rotation * smokeLocal;
+                bool hasRear = i < _nozzleHasRear.Count && _nozzleHasRear[i];
+                Vector3 localRear = i < _nozzleLocalRear.Count ? _nozzleLocalRear[i] : Vector3.zero;
+                Vector3 pos = hasRear ? anchor.TransformPoint(localRear) : anchor.position;
+                if ((go.transform.position - pos).sqrMagnitude > 1e-8f)
+                    go.transform.position = pos;
+                if (Quaternion.Angle(go.transform.rotation, aim) > 0.1f)
+                    go.transform.rotation = aim;
             }
         }
 
@@ -362,6 +411,18 @@ namespace TitanOrbit.Game
         /// </summary>
         void LateUpdate()
         {
+            if (_handedToDebris)
+            {
+                if (TryGetShip(out ShipState alive) && !alive.IsDead)
+                {
+                    _handedToDebris = false;
+                    _deathEmissionLocked = false;
+                    RebuildSmoke();
+                }
+
+                return;
+            }
+
             if (!_initialized || _shipEntity == Entity.Null || _config == null)
                 return;
 
@@ -392,18 +453,16 @@ namespace TitanOrbit.Game
 
             var ship = em.GetComponentData<ShipState>(_shipEntity);
 
+            // Death used to StopEmitting here, so the wreck popped out with no trail.
+            // Hold the heaviest plume; ShipDeathDebrisDriver reparents these systems
+            // onto the chunks before the live hull is hidden.
             if (ship.IsDead)
             {
-                if (_wasEmitting || _intensity > 0.001f)
-                {
-                    _intensity = 0f;
-                    ApplySmokeIntensity(0f, 0f, forceStop: true);
-                    _wasEmitting = false;
-                    _lastAppliedIntensity = 0f;
-                    _lastAppliedSpeedFactor = 0f;
-                }
+                HoldMaximumEmission();
                 return;
             }
+
+            _deathEmissionLocked = false;
 
             // --- Health window from the ScriptableObject (e.g. start at 50% HP) ---
             float maxHp = math.max(1f, ship.MaxHealth);
@@ -420,8 +479,15 @@ namespace TitanOrbit.Game
 
             float speedFactor = math.saturate(speed / math.max(0.01f, _config.trailSpeedReference));
 
-            float transition = math.max(0.01f, _config.intensityTransitionSpeed);
-            _intensity = Mathf.MoveTowards(_intensity, targetIntensity, transition * Time.deltaTime);
+            // Empty hull is full smoke immediately. The ease is only for the climb
+            // from the start threshold down toward smokeFullAtHealthFraction.
+            if (healthFraction <= _config.smokeFullAtHealthFraction || targetIntensity >= 0.999f)
+                _intensity = 1f;
+            else
+            {
+                float transition = math.max(0.01f, _config.intensityTransitionSpeed);
+                _intensity = Mathf.MoveTowards(_intensity, targetIntensity, transition * Time.deltaTime);
+            }
 
             bool shouldEmit = _intensity > 0.01f;
             float intensityDelta = math.abs(_intensity - _lastAppliedIntensity);
@@ -606,6 +672,125 @@ namespace TitanOrbit.Game
             }
         }
 
+        /// <summary>
+        /// Parents live nozzle emitters onto the wreck chunks that own their engine or thruster
+        /// so the plume keeps looping as those chunks spiral. Clears ownership here — destroying
+        /// the proxy must not destroy the wreck smoke. Idempotent.
+        /// </summary>
+        /// <param name="parts">Debris source transforms, parallel to <paramref name="chunkRoots"/>.</param>
+        /// <param name="chunkRoots">Chunk transform each part was parented under.</param>
+        public void HandoffEmittersToDebris(List<Transform> parts, List<Transform> chunkRoots)
+        {
+            if (_handedToDebris || _smokeInstances.Count == 0)
+                return;
+            if (parts == null || chunkRoots == null || parts.Count == 0 || chunkRoots.Count == 0)
+                return;
+
+            HoldMaximumEmission();
+
+            for (int i = 0; i < _smokeInstances.Count; i++)
+            {
+                GameObject go = _smokeInstances[i];
+                if (go == null)
+                    continue;
+
+                Transform mount = i < _smokeAnchors.Count ? _smokeAnchors[i] : null;
+                Transform chunk = FindChunkForMount(mount != null ? mount : go.transform, parts, chunkRoots);
+                if (chunk == null)
+                    continue;
+
+                go.transform.SetParent(chunk, true);
+                ResumeEmittersOn(go);
+            }
+
+            _smokeInstances.Clear();
+            _smokeAnchors.Clear();
+            _nozzleLocalRear.Clear();
+            _nozzleHasRear.Clear();
+            _particleSystems.Clear();
+            _initialized = false;
+            _handedToDebris = true;
+        }
+
+        static Transform FindChunkForMount(Transform mount, List<Transform> parts, List<Transform> chunkRoots)
+        {
+            Transform walk = mount;
+            while (walk != null)
+            {
+                int count = Mathf.Min(parts.Count, chunkRoots.Count);
+                for (int i = 0; i < count; i++)
+                {
+                    if (parts[i] == walk && chunkRoots[i] != null)
+                        return chunkRoots[i];
+                }
+
+                walk = walk.parent;
+            }
+
+            for (int i = 0; i < chunkRoots.Count; i++)
+            {
+                if (chunkRoots[i] != null)
+                    return chunkRoots[i];
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Writes full emission once. Repeat calls skip module writes so in-flight puffs are not restarted.
+        /// </summary>
+        void HoldMaximumEmission()
+        {
+            if (_deathEmissionLocked || _config == null)
+                return;
+
+            _intensity = 1f;
+            ApplySmokeIntensity(1f, 1f, forceStop: false);
+            _lastAppliedIntensity = 1f;
+            _lastAppliedSpeedFactor = 1f;
+            _wasEmitting = true;
+            _deathEmissionLocked = true;
+        }
+
+        static void ResumeEmittersOn(GameObject root)
+        {
+            if (root == null)
+                return;
+
+            ParticleSystem[] systems = root.GetComponentsInChildren<ParticleSystem>(true);
+            for (int i = 0; i < systems.Length; i++)
+            {
+                ParticleSystem ps = systems[i];
+                if (ps == null)
+                    continue;
+
+                var main = ps.main;
+                main.loop = true;
+                var emission = ps.emission;
+                emission.enabled = true;
+                if (!ps.isPlaying)
+                    ps.Play();
+            }
+        }
+
+        bool TryGetShip(out ShipState ship)
+        {
+            ship = default;
+            if (_shipEntity == Entity.Null)
+                return false;
+
+            var world = EcsGameBridge.GetVisualizationWorld();
+            if (world == null || !world.IsCreated)
+                return false;
+
+            var em = world.EntityManager;
+            if (!em.Exists(_shipEntity) || !em.HasComponent<ShipState>(_shipEntity))
+                return false;
+
+            ship = em.GetComponentData<ShipState>(_shipEntity);
+            return true;
+        }
+
         /// <summary>Destroys every smoke instance and clears cached particle systems.</summary>
         void ClearSmoke()
         {
@@ -617,6 +802,8 @@ namespace TitanOrbit.Game
 
             _smokeInstances.Clear();
             _smokeAnchors.Clear();
+            _nozzleLocalRear.Clear();
+            _nozzleHasRear.Clear();
             _particleSystems.Clear();
             _initialized = false;
         }

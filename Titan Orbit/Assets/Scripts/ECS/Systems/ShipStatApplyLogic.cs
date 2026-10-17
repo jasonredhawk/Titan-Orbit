@@ -786,6 +786,8 @@ namespace TitanOrbit.ECS
                         hash = hash * 31 + e.RemainingCharges;
                         hash = hash * 31 + e.ItemLevel;
                         hash = hash * 31 + e.StampedBulletBankPlusOne;
+                        // Origin planet changes the loadout caption even when stats do not.
+                        hash = hash * 31 + e.SourcePlanetId;
                         hash = hash * 31 + e.ComponentId.GetHashCode();
                     }
                 }

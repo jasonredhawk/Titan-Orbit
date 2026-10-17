@@ -104,6 +104,15 @@ namespace TitanOrbit.ECS
         /// B-key row even when that source planet is not in the client's ghost set.
         /// </summary>
         [GhostField] public byte StampedBulletBankPlusOne;
+
+        /// <summary>
+        /// <c>PlanetState.PlanetId</c> of the moon this row was bought at.
+        /// 0 means an older buy from before the stamp — the Orbit Menu then tries
+        /// a unique family-and-gun match, and hides the world name if two planets
+        /// could both be the source. Ghosted so every client paints the same
+        /// place name (Helios, Aetheris, …) without a separate name string.
+        /// </summary>
+        [GhostField] public int SourcePlanetId;
     }
 
     /// <summary>

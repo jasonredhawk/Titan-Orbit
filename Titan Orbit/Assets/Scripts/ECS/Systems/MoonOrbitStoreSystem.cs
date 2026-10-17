@@ -1184,6 +1184,35 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
+        /// Stable <c>PlanetId</c> of the moon this purchase is happening at.
+        /// Docked moon wins. If the ship is somehow undocked, the team home is used
+        /// so the loadout still has a world name. 0 only when neither planet exists.
+        /// </summary>
+        /// <param name="em">Server entity manager (store RPCs run on the server world).</param>
+        /// <param name="shipEntity">Hull receiving the new gear row.</param>
+        /// <returns>Ghosted planet id, or 0 when no planet can be resolved.</returns>
+        static int ResolvePurchasePlanetId(EntityManager em, Entity shipEntity)
+        {
+            // --- Docked moon (the Orbit Menu the player is standing in) ---
+            if (em.HasComponent<ShipMoonDockState>(shipEntity))
+            {
+                int planetId = em.GetComponentData<ShipMoonDockState>(shipEntity).MoonPlanetId;
+                if (planetId > 0 && TryFindPlanetById(em, planetId, out _, out _))
+                    return planetId;
+            }
+
+            // --- Team capital if the dock ghost has not arrived ---
+            if (em.HasComponent<ShipState>(shipEntity))
+            {
+                var ship = em.GetComponentData<ShipState>(shipEntity);
+                if (TryFindHomePlanet(em, ship.Team, out _, out var home))
+                    return home.PlanetId;
+            }
+
+            return 0;
+        }
+
+        /// <summary>
         /// Family + rolled gun of the moon the ship is docked at (home if undocked / unknown).
         /// Stamped onto purchased drones so each drone keeps that planet's bullet type,
         /// not merely the family's Laserbolt fallback.
@@ -1402,12 +1431,15 @@ namespace TitanOrbit.ECS
             if (StoreItemData.IsDrone(itemType))
                 componentId = BulletBankProfileUtility.FormatDroneSourceFamilyId(
                     sourceFamilyConfigIndex, sourceBulletBankIndex);
+            // [TITAN-ORBIT] Every support row remembers the moon it was bought at so the
+            // loadout can name that world (engines, drones, rockets, mines — not only guns).
             buffer.Add(new EquippedEquipmentElement
             {
                 ItemType = (int)itemType,
                 RemainingCharges = math.max(1, charges),
                 ItemLevel = itemLevel,
                 ComponentId = componentId,
+                SourcePlanetId = ResolvePurchasePlanetId(em, shipEntity),
             });
             return true;
         }
@@ -1461,6 +1493,9 @@ namespace TitanOrbit.ECS
                 ItemLevel = math.max(1, purchaseLevel),
                 ComponentId = componentId,
                 StampedBulletBankPlusOne = stampedBank,
+                // Same moon id drones get — a Cosmic Shark engine bought at Kryos stays "Kryos"
+                // even after the ship docks somewhere else.
+                SourcePlanetId = ResolvePurchasePlanetId(em, shipEntity),
             });
             return true;
         }

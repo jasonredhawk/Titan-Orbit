@@ -95,6 +95,15 @@ namespace TitanOrbit.UI
         /// <summary>Air after a family (verbs → nouns) before the next section rail.</summary>
         const float FamilyGap = 8f;
         const float PanelPad = 12f;
+        /// <summary>
+        /// Margin inside the compose bay, around the five sentence slots.
+        /// Horizontal pad hangs into the card padding and the gap before RECENT
+        /// so the keyword grid below stays column-aligned. Vertical pad is what
+        /// makes the bay taller than one chip row.
+        /// </summary>
+        const float PreviewWellPadX = 5f;
+        const float PreviewWellPadY = 6f;
+        const float PreviewWellHeight = TileHeight + PreviewWellPadY * 2f;
         const float RecentRowHeight = TileHeight * RecentScale;
         /// <summary>SEND / CLOSE row hung under the card when the matrix was opened from the button.</summary>
         const float PinnedActionHeight = 28f;
@@ -112,6 +121,26 @@ namespace TitanOrbit.UI
         static readonly Color TileIdle = new Color(0.03f, 0.05f, 0.09f, 0.96f);
         static readonly Color TileSelected = new Color(0.05f, 0.12f, 0.22f, 0.98f);
         static readonly Color PreviewEmpty = new Color(0.02f, 0.04f, 0.07f, 0.92f);
+        /// <summary>
+        /// Compose bay plate. One flat navy band behind the sentence slots so the
+        /// typing strip reads against the card void. No extra frame.
+        /// </summary>
+        static readonly Color PreviewWellFill = new Color(0.07f, 0.14f, 0.22f, 1f);
+        /// <summary>Empty compose cell. Darker than the bay so each slot reads as a pocket in that band.</summary>
+        static readonly Color PreviewSlotEmptyFill = new Color(0.015f, 0.03f, 0.05f, 1f);
+        /// <summary>Slot index (1–5) on an empty cell.</summary>
+        static readonly Color PreviewSlotIndex = new Color(0.74f, 0.88f, 1f, 0.95f);
+        /// <summary>
+        /// Dark glass under a chosen word. Mixed with that word's accent so the
+        /// compose chip stays in the void palette and still reads as armed.
+        /// </summary>
+        static readonly Color PreviewArmedBase = new Color(0.035f, 0.07f, 0.12f, 1f);
+        /// <summary>
+        /// How far a filled compose chip moves from <see cref="PreviewArmedBase"/>
+        /// toward its accent. High enough to separate it from an empty slot;
+        /// low enough that the plate stays cockpit glass, not a light card.
+        /// </summary>
+        const float PreviewArmedWash = 0.46f;
         static readonly Color LabelOutline = new Color(0.02f, 0.04f, 0.08f, 0.85f);
         static readonly Color SeparatorColor = new Color(0.12f, 0.18f, 0.28f, 0.85f);
         static readonly Color TeamChannelColor = new Color(0.95f, 0.62f, 0.22f, 0.95f);
@@ -257,6 +286,10 @@ namespace TitanOrbit.UI
             public TextMeshProUGUI Label;
             public Outline Outline;
             public Button Button;
+            /// <summary>Left ice rail. Lit only while this slot holds a chosen word.</summary>
+            public Image Caret;
+            /// <summary>Top ice rail. Same armed state as <see cref="Caret"/>.</summary>
+            public Image TopRail;
         }
 
         /// <summary>
@@ -1128,8 +1161,10 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Refreshes preview chips and the 1/2/3 badges on keyword tiles.
-        /// Slots 4–5 use the gold bonus plate after the keyword ad (or Orbit Unlocked).
+        /// Refreshes the five compose chips and the order badges on keyword tiles.
+        /// An empty chip is a dark pocket on the compose band, with its slot number
+        /// and no extra border. A chosen word then fills that cell. Slots 4–5 stay
+        /// on the brass plate until a word is placed (after the keyword ad or Orbit Unlocked).
         /// </summary>
         void PaintSequence()
         {
@@ -1149,30 +1184,72 @@ namespace TitanOrbit.UI
                 }
 
                 PreviewSlot slot = _preview[i];
-                // Slots 4–5 after the keyword ad (or Orbit Unlocked) — quiet brass, not navy Empty.
+                // Slots 4–5 after the keyword ad (or Orbit Unlocked) — quiet brass until a word lands.
                 bool bonusSlot = !locked && i >= ShipCommsKeywordCatalog.DefaultSequenceLength;
-                Color previewFill = locked ? CaptionPlateColor : (filled ? TileSelected : PreviewEmpty);
-                Color previewLabel = filled ? BodyTextColor : CaptionTextColor;
+                bool armed = filled && !locked;
+                Color previewFill = locked ? CaptionPlateColor : PreviewSlotEmptyFill;
+                Color previewLabel = PreviewSlotIndex;
                 Color previewAccent = AccentColor;
                 if (filled)
                     ShipCommsCalloutGraphics.ResolveChipPaint(label, selected: true, out previewFill, out previewLabel, out previewAccent);
-                if (bonusSlot && !filled)
+
+                // --- Armed compose chip ---
+                // Empty cells stay dark pockets on the bay. A chosen word replaces
+                // that fill with a wash of its own accent (team red, command gold,
+                // action tint, or ice). The wash starts from a fixed navy base so a
+                // faction word does not stack two tints.
+                Color frame = previewAccent;
+                if (armed)
+                {
+                    previewFill = Color.Lerp(PreviewArmedBase, previewAccent, PreviewArmedWash);
+                    previewFill.a = 1f;
+                    frame = Color.Lerp(previewAccent, Color.white, 0.30f);
+                    frame.a = 1f;
+                    previewLabel = Color.Lerp(BodyTextColor, previewAccent, 0.20f);
+                    previewLabel.a = 1f;
+                }
+                else if (bonusSlot)
+                {
                     previewFill = BonusPlateBg;
+                }
+
                 if (slot.Fill != null)
                     slot.Fill.color = previewFill;
                 if (slot.Outline != null)
                 {
-                    // Empty extras keep a hairline brass frame so 4 and 5 stay readable.
-                    slot.Outline.effectColor = bonusSlot ? BonusPlateOutline : previewAccent;
-                    slot.Outline.effectDistance = bonusSlot
-                        ? new Vector2(1.1f, -1.1f)
-                        : new Vector2(1.2f, -1.2f);
-                    slot.Outline.enabled = bonusSlot || (filled && !locked);
+                    if (armed)
+                    {
+                        slot.Outline.effectColor = frame;
+                        slot.Outline.effectDistance = new Vector2(2f, -2f);
+                        slot.Outline.enabled = true;
+                    }
+                    else if (bonusSlot)
+                    {
+                        // Empty extras keep a quiet brass edge so 4 and 5 stay readable.
+                        slot.Outline.effectColor = BonusPlateOutline;
+                        slot.Outline.effectDistance = new Vector2(1.1f, -1.1f);
+                        slot.Outline.enabled = true;
+                    }
+                    else
+                    {
+                        slot.Outline.enabled = false;
+                    }
+                }
+                if (slot.Caret != null)
+                {
+                    slot.Caret.color = frame;
+                    slot.Caret.enabled = armed;
+                }
+                if (slot.TopRail != null)
+                {
+                    slot.TopRail.color = frame;
+                    slot.TopRail.enabled = armed;
                 }
                 if (slot.Label != null)
                 {
                     slot.Label.text = locked ? string.Empty : (filled ? label.ToUpperInvariant() : (i + 1).ToString());
                     slot.Label.color = !filled && bonusSlot ? BonusPlateTitle : previewLabel;
+                    slot.Label.fontStyle = armed ? FontStyles.Bold : FontStyles.Normal;
                 }
 
                 if (slot.Button != null)
@@ -1417,9 +1494,10 @@ namespace TitanOrbit.UI
 
             float mainW = KeywordColumns * TileWidth + (KeywordColumns - 1) * TileGap;
             float overlayW = PanelPad + mainW + RootGap + RecentColWidth + PanelPad;
+            // PreviewWellHeight is the compose bay (frame + empty slots), not a keyword row.
             float overlayH = PanelPad
                 + HeaderHeight + SectionGap
-                + TileHeight + SectionGap
+                + PreviewWellHeight + SectionGap
                 + MeasureClusterStack(words)
                 + PanelPad;
             // --- RECENT fill ---
@@ -1887,19 +1965,29 @@ namespace TitanOrbit.UI
                 sentence.Count, sentence.K0, sentence.K1, sentence.K2, sentence.K3, sentence.K4);
         }
 
-        /// <summary>Five clickable sequence chips. Slots 4–5 start under one unlock plate.</summary>
+        /// <summary>
+        /// Compose bay: one flat plate behind the five sentence slots.
+        /// The plate is the typing region. Empty cells are darker pockets on it,
+        /// with no extra border. Slots 4–5 start under one unlock plate.
+        /// </summary>
         void BuildPreviewRail(Transform parent, ref float y)
         {
-            float railW = ShipCommsKeywordCatalog.MaxSequenceLength * TileWidth
+            float slotsW = ShipCommsKeywordCatalog.MaxSequenceLength * TileWidth
                 + (ShipCommsKeywordCatalog.MaxSequenceLength - 1) * TileGap;
-            RectTransform rail = CreateTopLeft(parent, "PreviewRail", 0f, y, railW, TileHeight);
+            float wellW = slotsW + PreviewWellPadX * 2f;
+            // Negative x lets the plate use the card pad without shifting the keyword columns.
+            RectTransform well = CreateTopLeft(parent, "PreviewWell", -PreviewWellPadX, y, wellW, PreviewWellHeight);
+
+            var wellFill = well.gameObject.AddComponent<Image>();
+            wellFill.color = PreviewWellFill;
+            wellFill.raycastTarget = false;
 
             for (int i = 0; i < _preview.Length; i++)
             {
                 int slot = i;
-                float x = i * (TileWidth + TileGap);
-                Image tile = CreateTile(rail, "Preview" + (i + 1), x, 0f, TileWidth, TileHeight, PreviewEmpty);
-                var label = CreateLabel(tile.transform, "Label", (i + 1).ToString(), 10f, CaptionTextColor, TextAlignmentOptions.Center);
+                float x = PreviewWellPadX + i * (TileWidth + TileGap);
+                Image tile = CreateTile(well, "Preview" + (i + 1), x, PreviewWellPadY, TileWidth, TileHeight, PreviewSlotEmptyFill);
+                var label = CreateLabel(tile.transform, "Label", (i + 1).ToString(), 10f, PreviewSlotIndex, TextAlignmentOptions.Center);
                 Stretch(label.rectTransform, 4f);
                 label.enableWordWrapping = false;
                 label.overflowMode = TextOverflowModes.Ellipsis;
@@ -1908,6 +1996,30 @@ namespace TitanOrbit.UI
                 outline.effectDistance = new Vector2(1.2f, -1.2f);
                 outline.useGraphicAlpha = false;
                 outline.enabled = false;
+
+                // Left and top rails stay off until PaintSequence arms the slot.
+                // They sit in the label's 4px inset so the word is not covered.
+                var caretGo = new GameObject("Caret", typeof(RectTransform), typeof(Image));
+                caretGo.transform.SetParent(tile.transform, false);
+                var caretRt = caretGo.GetComponent<RectTransform>();
+                caretRt.anchorMin = new Vector2(0f, 0f);
+                caretRt.anchorMax = new Vector2(0f, 1f);
+                caretRt.pivot = new Vector2(0f, 0.5f);
+                caretRt.sizeDelta = new Vector2(3f, -4f);
+                caretRt.anchoredPosition = new Vector2(2f, 0f);
+                var caret = caretGo.GetComponent<Image>();
+                caret.color = AccentColor;
+                caret.raycastTarget = false;
+                caret.enabled = false;
+
+                var topRail = CreateIgnoredImage(tile.transform, "TopRail", AccentColor);
+                var topRt = topRail.rectTransform;
+                topRt.anchorMin = new Vector2(0f, 1f);
+                topRt.anchorMax = new Vector2(1f, 1f);
+                topRt.pivot = new Vector2(0.5f, 1f);
+                topRt.sizeDelta = new Vector2(-6f, 2f);
+                topRt.anchoredPosition = new Vector2(0f, -1f);
+                topRail.enabled = false;
 
                 var btn = tile.gameObject.GetComponent<Button>();
                 btn.onClick.AddListener(() => OnPreviewClicked(slot));
@@ -1918,6 +2030,8 @@ namespace TitanOrbit.UI
                     Label = label,
                     Outline = outline,
                     Button = btn,
+                    Caret = caret,
+                    TopRail = topRail,
                 };
             }
 
@@ -1928,13 +2042,13 @@ namespace TitanOrbit.UI
             int lockedCount = ShipCommsKeywordCatalog.MaxSequenceLength - lockedStart;
             if (lockedCount > 0)
             {
-                float gateX = lockedStart * (TileWidth + TileGap);
+                float gateX = PreviewWellPadX + lockedStart * (TileWidth + TileGap);
                 float gateW = lockedCount * TileWidth + (lockedCount - 1) * TileGap;
                 _slotUnlockGate = CreateUnlockGate(
-                    rail,
+                    well,
                     "UnlockSlots",
                     gateX,
-                    0f,
+                    PreviewWellPadY,
                     gateW,
                     TileHeight,
                     compact: true,
@@ -1943,7 +2057,7 @@ namespace TitanOrbit.UI
                     onClick: TryUnlockNextSlot);
             }
 
-            y += TileHeight;
+            y += PreviewWellHeight;
         }
 
         /// <summary>

@@ -81,6 +81,7 @@ namespace TitanOrbit.Game
 
         static ShipDeathDebrisDriver s_instance;
         static readonly List<Transform> s_partScratch = new List<Transform>(64);
+        static readonly List<Transform> s_chunkRootScratch = new List<Transform>(64);
         static readonly List<float3> s_offsetScratch = new List<float3>(64);
         static readonly List<int> s_clusterScratch = new List<int>(64);
         static readonly List<float3> s_chunkComScratch = new List<float3>(8);
@@ -327,6 +328,7 @@ namespace TitanOrbit.Game
             }
 
             s_chunkIndexScratch.Clear();
+            s_chunkRootScratch.Clear();
             int written = 0;
             for (int c = 0; c < clusterCount; c++)
             {
@@ -375,10 +377,22 @@ namespace TitanOrbit.Game
                 {
                     Go = clone,
                 });
+
+                Transform chunkRoot = wreck.Chunks.Count > 0
+                    ? wreck.Chunks[chunkIndex].Root.transform
+                    : transform;
+                s_chunkRootScratch.Add(chunkRoot);
             }
 
             if (wreck.Pieces.Count == 0)
                 return false;
+
+            // Smoke stays parented to the hull until this moment. Move the live emitters
+            // onto the chunks before the visualizer deactivates the proxy, or death cuts
+            // the plume off. Same systems keep playing at full intensity.
+            var damageSmoke = proxy.GetComponent<ShipDamageSmokeVisualApplier>();
+            if (damageSmoke != null)
+                damageSmoke.HandoffEmittersToDebris(s_partScratch, s_chunkRootScratch);
 
             QueueSeamFires(wreck, seed, hullRadius);
             _wrecks[ship] = wreck;

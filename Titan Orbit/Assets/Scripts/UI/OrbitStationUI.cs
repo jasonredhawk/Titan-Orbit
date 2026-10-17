@@ -5293,21 +5293,178 @@ namespace TitanOrbit.UI
             return $"Lv {level} · PWR {power:F0}";
         }
 
-        /// <summary>Owned gear glance: bullet type on weapons, then level and power.</summary>
+        /// <summary>
+        /// Owned component glance. Line one is the world it was bought at, and for
+        /// guns also the bullet type that world stamped (Fireballs, Laserbolt, …).
+        /// Line two stays level and power. Engines and other non-guns omit the type.
+        /// </summary>
         static string FormatEquippedComponentMeta(
             ShipFamilyComponentEntry entry,
             ShipFamilyDefinition family,
             int shipLevel,
             float power,
-            int sourceBank)
+            int sourceBank,
+            string planetName)
         {
             int level = Mathf.Max(1, shipLevel);
+            // --- Gun type only on weapon parts ---
+            // [TITAN-ORBIT] An engine from Kryos is still just Kryos. A gun from Kryos
+            // is "Kryos · Fireballs" because that planet's roll is what the barrel fires.
             string typeName = entry != null && ShipComponentAbilityStats.IsWeaponComponent(entry.componentId)
                 ? BulletBankProfileUtility.FormatComponentBulletTypeName(entry, family, sourceBank)
                 : string.Empty;
-            if (!string.IsNullOrEmpty(typeName))
-                return $"{typeName}\nLv {level} · PWR {power:F0}";
-            return $"Lv {level} · PWR {power:F0}";
+            string origin = FormatLoadoutOriginLine(planetName, typeName);
+            return JoinOriginAndStats(origin, $"Lv {level} · PWR {power:F0}");
+        }
+
+        /// <summary>
+        /// First glance line on an owned loadout card: planet name, and when the row
+        /// fires a planet gun, that bullet type after a middle dot.
+        /// Either half may be missing (older gear, or a non-weapon).
+        /// </summary>
+        /// <param name="planetName">World name (Helios, Aetheris, …), or empty.</param>
+        /// <param name="bulletTypeName">Bank category (Fireballs, Rift, …), or empty.</param>
+        static string FormatLoadoutOriginLine(string planetName, string bulletTypeName)
+        {
+            bool hasPlanet = !string.IsNullOrEmpty(planetName);
+            bool hasBullet = !string.IsNullOrEmpty(bulletTypeName);
+            if (hasPlanet && hasBullet)
+                return planetName + " · " + bulletTypeName;
+            if (hasPlanet)
+                return planetName;
+            return bulletTypeName ?? string.Empty;
+        }
+
+        /// <summary>
+        /// Stacks the origin line over the existing stats line. A missing origin
+        /// leaves the stats alone so older rows still read as they did before.
+        /// </summary>
+        static string JoinOriginAndStats(string originLine, string statsLine)
+        {
+            if (string.IsNullOrEmpty(originLine))
+                return statsLine ?? string.Empty;
+            if (string.IsNullOrEmpty(statsLine))
+                return originLine;
+            return originLine + "\n" + statsLine;
+        }
+
+        /// <summary>
+        /// World name for one equipped row. The purchase stamp wins. When it is 0
+        /// (gear bought before <c>SourcePlanetId</c>), a unique family-and-gun match
+        /// in the live planet cache is used. Two planets that share both stay unnamed.
+        /// </summary>
+        static string ResolveEquippedGearPlanetName(
+            EquippedEquipmentEntry entry,
+            ShipFamilyDefinition componentOrHullFamily)
+        {
+            int planetId = entry.sourcePlanetId;
+            if (planetId <= 0)
+                planetId = TryInferUniqueSourcePlanetId(entry, componentOrHullFamily);
+            return ResolveGearSourcePlanetName(planetId);
+        }
+
+        /// <summary>
+        /// Best-effort planet id for a row that has no <c>SourcePlanetId</c>.
+        /// Drones use the <c>DroneFam</c> stamp. Ship parts use their catalog family
+        /// plus the purchase bullet-bank stamp. Returns 0 when the pair is missing
+        /// or more than one cached planet fits.
+        /// </summary>
+        static int TryInferUniqueSourcePlanetId(
+            EquippedEquipmentEntry entry,
+            ShipFamilyDefinition componentOrHullFamily)
+        {
+            // --- Drones already carry family + gun ---
+            if (StoreItemData.IsDrone(entry.ItemType)
+                && BulletBankProfileUtility.TryParseDroneSource(
+                    entry.ComponentId, out int droneFamily, out int droneBank)
+                && droneBank >= 0
+                && EcsGameBridge.TryFindUniquePlanetForFamilyAndBank(
+                    droneFamily, droneBank, out int dronePlanetId))
+                return dronePlanetId;
+
+            // --- Weapons and engines: family of the part + stamped gun ---
+            if (!entry.IsShipComponent || entry.stampedBulletBankPlusOne <= 0)
+                return 0;
+
+            int familyIndex = FindComponentFamilyConfigIndex(componentOrHullFamily);
+            if (familyIndex < 0)
+                return 0;
+
+            int bank = entry.stampedBulletBankPlusOne - 1;
+            return EcsGameBridge.TryFindUniquePlanetForFamilyAndBank(familyIndex, bank, out int partPlanetId)
+                ? partPlanetId
+                : 0;
+        }
+
+        /// <summary>
+        /// PlanetShipFamilyConfig list index for a component's source family, or −1.
+        /// Reference match first, then family id, same walk the gun resolver uses.
+        /// </summary>
+        static int FindComponentFamilyConfigIndex(ShipFamilyDefinition componentFamily)
+        {
+            if (componentFamily == null)
+                return -1;
+
+            var config = PlanetShipFamilyConfig.LoadDefault();
+            if (config?.families == null)
+                return -1;
+
+            for (int i = 0; i < config.families.Count; i++)
+            {
+                var candidate = config.families[i]?.shipFamilyDefinition;
+                if (candidate == null)
+                    continue;
+                if (candidate == componentFamily)
+                    return i;
+                if (!string.IsNullOrEmpty(candidate.familyId)
+                    && string.Equals(candidate.familyId, componentFamily.familyId, StringComparison.Ordinal))
+                    return i;
+            }
+
+            return -1;
+        }
+
+        /// <summary>
+        /// Player-facing world name for a planet id. Live <c>PlanetState</c> supplies
+        /// the home flag and family index so a designer <c>planetName</c> override wins.
+        /// If that body is not in the ghost set, the name is still deterministic from
+        /// the id (homes under 100, neutrals from 100 up).
+        /// </summary>
+        static string ResolveGearSourcePlanetName(int planetId)
+        {
+            if (planetId <= 0)
+                return string.Empty;
+
+            // --- Home vs neutral when the ghost is missing ---
+            bool isHome = planetId < PlanetDisplayNames.NeutralPlanetIdBase;
+            int familyIndex = -1;
+            if (EcsGameBridge.TryGetPlanetStateByPlanetId(planetId, out PlanetState state))
+            {
+                isHome = state.IsHomePlanet;
+                familyIndex = state.ShipFamilyConfigIndex;
+            }
+
+            var config = PlanetShipFamilyConfig.LoadDefault();
+            if (config != null)
+                return config.GetPlanetDisplayName(planetId, isHome, familyIndex);
+
+            return PlanetDisplayNames.Resolve(planetId, isHome);
+        }
+
+        /// <summary>
+        /// Bullet-type caption for a fighter or mining drone. Shield drones, rockets,
+        /// and mines return empty — they do not fire that planet's gun.
+        /// Uses the <c>DroneFam</c> purchase stamp, which is the bank the swarm actually fires.
+        /// </summary>
+        static string ResolveDroneBulletTypeName(
+            EquippedEquipmentEntry entry,
+            ShipFamilyDefinition hullFamily)
+        {
+            if (!StoreItemData.IsLeveledCombatDrone(entry.ItemType))
+                return string.Empty;
+
+            int bank = BulletBankProfileUtility.ResolveBankIndexForDrone(entry.ComponentId, hullFamily);
+            return BulletBankProfileUtility.FormatBankCategoryName(bank);
         }
 
         /// <summary>
@@ -6627,15 +6784,30 @@ namespace TitanOrbit.UI
                     else if (entry.IsShipComponent && componentEntry != null)
                     {
                         int componentLevel = entry.itemLevel > 0 ? entry.itemLevel : shipLevel;
-                        equipmentDescTexts[i].text = ShipComponentStoreData.GetStatsDescription(
+                        int sourceBank = ResolveEquippedComponentBulletBank(entry, componentFamily);
+                        string stats = ShipComponentStoreData.GetStatsDescription(
                             componentEntry,
                             componentLevel,
                             componentFamily,
                             2,
-                            ResolveEquippedComponentBulletBank(entry, componentFamily));
+                            sourceBank);
+                        string bullet = ShipComponentAbilityStats.IsWeaponComponent(componentEntry.componentId)
+                            ? BulletBankProfileUtility.FormatComponentBulletTypeName(
+                                componentEntry, componentFamily, sourceBank)
+                            : string.Empty;
+                        string planetName = ResolveEquippedGearPlanetName(entry, componentFamily);
+                        equipmentDescTexts[i].text = JoinOriginAndStats(
+                            FormatLoadoutOriginLine(planetName, bullet), stats);
                     }
                     else
-                        equipmentDescTexts[i].text = StoreItemData.GetDescription(itemType);
+                    {
+                        // Drones that shoot append the planet gun; rockets and mines stay planet-only.
+                        string planetName = ResolveEquippedGearPlanetName(entry, shipFamily);
+                        string bullet = ResolveDroneBulletTypeName(entry, shipFamily);
+                        equipmentDescTexts[i].text = JoinOriginAndStats(
+                            FormatLoadoutOriginLine(planetName, bullet),
+                            StoreItemData.GetDescription(itemType));
+                    }
                 }
                 if (equipmentChargeTexts != null && i < equipmentChargeTexts.Length && equipmentChargeTexts[i] != null)
                 {
@@ -6938,6 +7110,13 @@ namespace TitanOrbit.UI
 
             if (slotUi?.sublineText != null)
             {
+                // --- Origin caption ---
+                // [TITAN-ORBIT] Every filled row names the planet it was bought at.
+                // Weapons and fighter/mining drones also name that planet's bullet type.
+                string planetName = filled
+                    ? ResolveEquippedGearPlanetName(entry, family)
+                    : string.Empty;
+
                 if (filled && entry.IsShipComponent && componentEntry != null)
                 {
                     int componentLevel = entry.itemLevel > 0 ? entry.itemLevel : shipLevel;
@@ -6945,7 +7124,7 @@ namespace TitanOrbit.UI
                     float power = ShipComponentStoreData.GetComponentPowerScore(
                         componentEntry, componentLevel, family, sourceBank);
                     slotUi.sublineText.text = FormatEquippedComponentMeta(
-                        componentEntry, family, componentLevel, power, sourceBank);
+                        componentEntry, family, componentLevel, power, sourceBank, planetName);
                     slotUi.sublineText.gameObject.SetActive(true);
                 }
                 else if (filled && StoreItemData.IsDrone(itemType))
@@ -6954,30 +7133,32 @@ namespace TitanOrbit.UI
                         ? entry.itemLevel
                         : StoreItemData.DroneReferenceMaxLevel;
                     int maxHp = StoreItemData.GetDroneMaxHp(itemType, droneLevel);
-                    if (StoreItemData.IsLeveledDrone(itemType))
-                    {
-                        slotUi.sublineText.text =
-                            $"Lv.{droneLevel} · {entry.remainingCharges}/{maxHp} HP";
-                    }
-                    else
-                        slotUi.sublineText.text = $"{entry.remainingCharges}/{maxHp} HP";
+                    string hpLine = StoreItemData.IsLeveledDrone(itemType)
+                        ? $"Lv.{droneLevel} · {entry.remainingCharges}/{maxHp} HP"
+                        : $"{entry.remainingCharges}/{maxHp} HP";
+                    string origin = FormatLoadoutOriginLine(
+                        planetName, ResolveDroneBulletTypeName(entry, family));
+                    slotUi.sublineText.text = JoinOriginAndStats(origin, hpLine);
                     slotUi.sublineText.gameObject.SetActive(true);
                 }
                 else if (filled && StoreItemData.IsRocket(itemType))
                 {
                     int rocketLevel = entry.itemLevel > 0 ? entry.itemLevel : 1;
-                    slotUi.sublineText.text = $"Lv.{rocketLevel} · \u00d7{entry.remainingCharges}";
+                    slotUi.sublineText.text = JoinOriginAndStats(
+                        planetName, $"Lv.{rocketLevel} · \u00d7{entry.remainingCharges}");
                     slotUi.sublineText.gameObject.SetActive(true);
                 }
                 else if (filled && StoreItemData.IsMine(itemType))
                 {
                     int mineLevel = entry.itemLevel > 0 ? entry.itemLevel : 1;
-                    slotUi.sublineText.text = $"Lv.{mineLevel} · \u00d7{entry.remainingCharges}";
+                    slotUi.sublineText.text = JoinOriginAndStats(
+                        planetName, $"Lv.{mineLevel} · \u00d7{entry.remainingCharges}");
                     slotUi.sublineText.gameObject.SetActive(true);
                 }
                 else if (filled && !entry.IsShipComponent)
                 {
-                    slotUi.sublineText.text = $"\u00d7{entry.remainingCharges} charges";
+                    slotUi.sublineText.text = JoinOriginAndStats(
+                        planetName, $"\u00d7{entry.remainingCharges} charges");
                     slotUi.sublineText.gameObject.SetActive(true);
                 }
                 else
@@ -7144,7 +7325,9 @@ namespace TitanOrbit.UI
                 subLe.minHeight = filled ? 18f : 12f;
             }
             slotUi.sublineText.maxVisibleLines = filled ? 2 : 1;
-            slotUi.sublineText.enableWordWrapping = filled;
+            // Filled meta is two explicit lines (origin, then level). Wrapping would let a
+            // long "Aetheris · Fireballs" steal the stats line. Ellipsis clips the origin instead.
+            slotUi.sublineText.enableWordWrapping = false;
             slotUi.sublineText.alignment = TextAlignmentOptions.MidlineLeft;
         }
 

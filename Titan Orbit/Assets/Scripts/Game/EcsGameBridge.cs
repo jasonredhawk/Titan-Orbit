@@ -3334,6 +3334,59 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// Planet that currently sells <paramref name="familyConfigIndex"/> with
+        /// <paramref name="bulletBankIndex"/>. True only when exactly one cached world matches.
+        /// Two sibling planets that rolled the same gun must not be labeled as each other —
+        /// the purchase stamp (<c>SourcePlanetId</c>) is the real answer; this is the
+        /// fallback for gear bought before that field existed.
+        /// Uses the per-frame planet cache (no extra entity query).
+        /// </summary>
+        /// <param name="familyConfigIndex">PlanetShipFamilyConfig list index.</param>
+        /// <param name="bulletBankIndex">Damage-bank index that planet rolled (homes are Laserbolt).</param>
+        /// <param name="planetId">Matching <c>PlanetState.PlanetId</c> when the match is unique.</param>
+        /// <returns>False when zero or more than one cached planet fits.</returns>
+        public static bool TryFindUniquePlanetForFamilyAndBank(
+            int familyConfigIndex,
+            int bulletBankIndex,
+            out int planetId)
+        {
+            planetId = 0;
+            if (familyConfigIndex < 0 || bulletBankIndex < 0)
+                return false;
+
+            // --- Walk this frame's planet map once ---
+            EnsurePlanetStateCacheForFrame();
+            int wantBank = PlanetShipFamilyAssignment.SanitizeSelectableDamageBank(bulletBankIndex);
+            int found = 0;
+            foreach (var kv in s_PlanetStateByIdCache)
+            {
+                PlanetState planet = kv.Value;
+                int planetFamily = planet.IsHomePlanet
+                    ? PlanetShipFamilyAssignment.HomeFamilyConfigIndex
+                    : planet.ShipFamilyConfigIndex;
+                if (planetFamily != familyConfigIndex)
+                    continue;
+
+                int planetBank = planet.IsHomePlanet
+                    ? PlanetShipFamilyAssignment.DefaultBulletBankIndex
+                    : PlanetShipFamilyAssignment.SanitizeSelectableDamageBank(planet.BulletBankIndex);
+                if (planetBank != wantBank)
+                    continue;
+
+                found++;
+                planetId = planet.PlanetId;
+                // A second hit means the family+gun pair is not a place name.
+                if (found > 1)
+                {
+                    planetId = 0;
+                    return false;
+                }
+            }
+
+            return found == 1;
+        }
+
+        /// <summary>
         /// MEGA L7 slot on a planet (catalog index + occupancy). Used by the Orbit Menu tree.
         /// Skips during late-join settle so we do not scan planet buffers while ghosts hydrate.
         /// </summary>

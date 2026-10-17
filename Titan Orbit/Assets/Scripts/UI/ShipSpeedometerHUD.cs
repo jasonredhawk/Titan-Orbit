@@ -48,7 +48,10 @@ namespace TitanOrbit.UI
     /// [TITAN-ORBIT] The speed bar always spans to OVERDRIVE top speed (motor baked capacity),
     /// even when Shift is not held. The right-hand band uses the fill colour at alpha 0.1 so
     /// players see unused overdrive headroom; the solid fill only enters that band while OD is active.
-    /// MEGA hulls have no overdrive — the bar stays at cruise and Shift does not open a zone.
+    /// MEGA hulls (Titans) have no overdrive — the bar stays at cruise and Shift does not open a zone.
+    /// A SHIFT keycap sits inside that faint blue headroom band for every other hull, so the
+    /// player can see that holding Shift fills the extra speed. Titans never get that keycap:
+    /// on a Titan, Shift is mouse-aim, not a speed burst.
     /// </para>
     /// <para>
     /// [TITAN-ORBIT] Pre–mass-tax baselines for SPD / ACC / turn are always chassis
@@ -140,6 +143,21 @@ namespace TitanOrbit.UI
         [SerializeField] Color tickLabelColor = new Color(0.85f, 0.9f, 1f, 0.85f);
         [SerializeField] Color frameAccentColor = new Color(0.35f, 0.85f, 1f, 0.35f);
 
+        /// <summary>Same dark plate as the CTRL / B / TAB keycaps.</summary>
+        static readonly Color ShiftKeycapFill = new Color(0.04f, 0.10f, 0.16f, 0.96f);
+        /// <summary>Slightly lifted plate while the overdrive burst is actually running.</summary>
+        static readonly Color ShiftKeycapFillActive = new Color(0.04f, 0.10f, 0.20f, 0.96f);
+        /// <summary>Green glyph — same "ready bind" colour as brakes and fire-type keycaps.</summary>
+        static readonly Color ShiftKeycapGlyph = new Color(0.45f, 0.92f, 0.62f, 1f);
+        /// <summary>TMP outline so SHIFT stays readable on the faint blue band and on the solid fill.</summary>
+        static readonly Color ShiftKeycapOutline = new Color(0.02f, 0.04f, 0.08f, 0.95f);
+        /// <summary>Keycap height. Shorter than the speed track so the blue tint shows above and below.</summary>
+        const float ShiftKeycapHeight = 11f;
+        /// <summary>Preferred keycap width when the overdrive band is wide enough.</summary>
+        const float ShiftKeycapMaxWidth = 40f;
+        /// <summary>Narrowest plate that still fits the SHIFT glyph. Below this the band hides the chip.</summary>
+        const float ShiftKeycapMinWidth = 30f;
+
         GameObject rootPanel;
         Slider speedSlider;
         /// <summary>Speed-bar band for OVERDRIVE headroom (behind the cyan fill).</summary>
@@ -147,6 +165,21 @@ namespace TitanOrbit.UI
         Image overdriveZoneImage;
         RectTransform accelGreenFill;
         RectTransform accelRedFill;
+        /// <summary>
+        /// SHIFT keycap centered in the faint blue overdrive band on the speed track.
+        /// Inactive for Titans — <see cref="MegaShipState.IsMega"/> means Shift does not
+        /// raise top speed, so that hull never gets a band or a keycap.
+        /// </summary>
+        GameObject shiftKeycapRoot;
+        RectTransform shiftKeycapRect;
+        Image shiftKeycapImage;
+        TextMeshProUGUI shiftKeycapLabel;
+        /// <summary>Last visibility applied to <see cref="shiftKeycapRoot"/> (skips SetActive every frame).</summary>
+        bool shiftKeycapVisible;
+        /// <summary>Last burst tint painted on the keycap (cyan while the speed burst is on).</summary>
+        bool shiftKeycapBurstPainted;
+        /// <summary>Last cruise fraction used to center the keycap. -1 forces a fresh place.</summary>
+        float shiftKeycapCruiseFrac = -1f;
         TextMeshProUGUI speedLabel;
         /// <summary>Live planar speed digits to the right of the SPD track (compact readout).</summary>
         TextMeshProUGUI speedLiveLabel;
@@ -376,6 +409,7 @@ namespace TitanOrbit.UI
                     || rootPanel.GetComponent<Outline>() != null
                     || rootPanel.transform.Find("HudText") != null
                     || rootPanel.transform.Find("SpeedTicks") == null
+                    || rootPanel.transform.Find("SpeedBar/ShiftKeycap") == null
                     || existingRt == null
                     || Mathf.Abs(existingRt.sizeDelta.y - SlimPanelHeight) > 0.5f
                     || Mathf.Abs(existingRt.sizeDelta.x - SlimPanelWidth) > 0.5f;
@@ -391,6 +425,12 @@ namespace TitanOrbit.UI
                 overdriveZoneImage = null;
                 accelGreenFill = null;
                 accelRedFill = null;
+                shiftKeycapRoot = null;
+                shiftKeycapRect = null;
+                shiftKeycapImage = null;
+                shiftKeycapLabel = null;
+                shiftKeycapVisible = false;
+                shiftKeycapCruiseFrac = -1f;
                 speedCruiseTickRt = null;
                 speedCruiseMarkRt = null;
                 _rootRect = null;
@@ -603,6 +643,9 @@ namespace TitanOrbit.UI
             accelTickRect.offsetMax = new Vector2(-(pad + ValueGutter), 0f);
             accelTickLabels = CreateTickLabelRow(accelTickStrip.transform, 3, 7.5f);
 
+            // SHIFT lives in the blue overdrive band on the speed track, above the fill.
+            CreateShiftKeycap(sliderGo.transform);
+
             speedLabel = null;
             lastTickMaxSpeed = -1f;
             lastTickAccelSkew = -1f;
@@ -653,6 +696,142 @@ namespace TitanOrbit.UI
             Image img = cap.AddComponent<Image>();
             img.color = new Color(accent.r, accent.g, accent.b, 0.55f);
             img.raycastTarget = false;
+        }
+
+        /// <summary>
+        /// Builds the SHIFT keycap as the top child of the speed track.
+        /// Same dark plate and green glyph as the CTRL / B / TAB keycaps.
+        /// Starts hidden — <see cref="UpdateShiftKeycap"/> places it inside the
+        /// faint blue overdrive band, and never for Titans.
+        /// </summary>
+        /// <param name="speedBar">Speed track transform (the slider). The keycap anchors in this space.</param>
+        void CreateShiftKeycap(Transform speedBar)
+        {
+            // --- Plate ---
+            // [UNITY] Child of the speed bar so anchors match the overdrive band.
+            // Last sibling draws above the cyan fill once that fill enters the band.
+            GameObject go = new GameObject("ShiftKeycap");
+            go.transform.SetParent(speedBar, false);
+            go.transform.SetAsLastSibling();
+            shiftKeycapRoot = go;
+            shiftKeycapRect = go.AddComponent<RectTransform>();
+            shiftKeycapRect.anchorMin = new Vector2(0.78f, 0.5f);
+            shiftKeycapRect.anchorMax = new Vector2(0.78f, 0.5f);
+            shiftKeycapRect.pivot = new Vector2(0.5f, 0.5f);
+            shiftKeycapRect.anchoredPosition = Vector2.zero;
+            shiftKeycapRect.sizeDelta = new Vector2(ShiftKeycapMaxWidth, ShiftKeycapHeight);
+
+            shiftKeycapImage = go.AddComponent<Image>();
+            shiftKeycapImage.color = ShiftKeycapFill;
+            shiftKeycapImage.raycastTarget = false;
+
+            // --- Glyph ---
+            GameObject labelGo = new GameObject("Glyph");
+            labelGo.transform.SetParent(go.transform, false);
+            RectTransform labelRt = labelGo.AddComponent<RectTransform>();
+            labelRt.anchorMin = Vector2.zero;
+            labelRt.anchorMax = Vector2.one;
+            labelRt.offsetMin = Vector2.zero;
+            labelRt.offsetMax = Vector2.zero;
+
+            shiftKeycapLabel = labelGo.AddComponent<TextMeshProUGUI>();
+            shiftKeycapLabel.text = "SHIFT";
+            shiftKeycapLabel.fontSize = 6.5f;
+            shiftKeycapLabel.fontStyle = FontStyles.Bold;
+            shiftKeycapLabel.alignment = TextAlignmentOptions.Center;
+            shiftKeycapLabel.color = ShiftKeycapGlyph;
+            shiftKeycapLabel.characterSpacing = 0.35f;
+            shiftKeycapLabel.enableWordWrapping = false;
+            shiftKeycapLabel.raycastTarget = false;
+            shiftKeycapLabel.outlineWidth = 0.18f;
+            shiftKeycapLabel.outlineColor = ShiftKeycapOutline;
+            // [UNITY] Same Shift face as the other keycaps when it is in Resources.
+            TMP_FontAsset font = Resources.Load<TMP_FontAsset>("Rajdhani-SemiBold SDF");
+            if (font != null)
+                shiftKeycapLabel.font = font;
+            else if (TMP_Settings.defaultFontAsset != null)
+                shiftKeycapLabel.font = TMP_Settings.defaultFontAsset;
+
+            // Hidden until LateUpdate confirms this hull has a blue overdrive band.
+            go.SetActive(false);
+            shiftKeycapVisible = false;
+            shiftKeycapBurstPainted = false;
+            shiftKeycapCruiseFrac = -1f;
+        }
+
+        /// <summary>
+        /// Centers the SHIFT keycap in the faint blue overdrive band and tints it
+        /// while the burst is on. <paramref name="show"/> must be false for Titans
+        /// and for hulls with no overdrive headroom — those ships have no blue band.
+        /// </summary>
+        /// <param name="show">True when this hull can raise top speed by holding Shift.</param>
+        /// <param name="burstActive">True while overdrive is actually applying this frame.</param>
+        /// <param name="cruiseFrac">Cruise max as a fraction of the full bar (left edge of the blue band).</param>
+        void UpdateShiftKeycap(bool show, bool burstActive, float cruiseFrac)
+        {
+            if (shiftKeycapRoot == null || shiftKeycapRect == null)
+                return;
+
+            // --- Fit inside the blue band, or hide ---
+            // Titans pass show=false. A missing or tiny band also hides the chip so
+            // the plate never spills into the solid cruise portion of the speed bar.
+            cruiseFrac = Mathf.Clamp01(cruiseFrac);
+            float zone = 1f - cruiseFrac;
+            float trackWidth = SpeedTrackWidth();
+            float chipWidth = Mathf.Min(ShiftKeycapMaxWidth, zone * trackWidth - 4f);
+            bool inZone = show && zone > 0.02f && chipWidth >= ShiftKeycapMinWidth;
+
+            if (shiftKeycapRoot.activeSelf != inZone)
+                shiftKeycapRoot.SetActive(inZone);
+
+            if (!inZone)
+            {
+                shiftKeycapVisible = false;
+                shiftKeycapCruiseFrac = -1f;
+                return;
+            }
+
+            // Re-anchor only when cruise (and therefore the band) actually moves.
+            bool moved = !shiftKeycapVisible || Mathf.Abs(shiftKeycapCruiseFrac - cruiseFrac) > 0.002f;
+            if (moved)
+            {
+                float mid = cruiseFrac + zone * 0.5f;
+                shiftKeycapRect.anchorMin = new Vector2(mid, 0.5f);
+                shiftKeycapRect.anchorMax = new Vector2(mid, 0.5f);
+                shiftKeycapRect.pivot = new Vector2(0.5f, 0.5f);
+                shiftKeycapRect.anchoredPosition = Vector2.zero;
+                shiftKeycapRect.sizeDelta = new Vector2(chipWidth, ShiftKeycapHeight);
+                shiftKeycapCruiseFrac = cruiseFrac;
+            }
+
+            // Skip the TMP color write when the burst tint did not change.
+            bool tintDirty = !shiftKeycapVisible || shiftKeycapBurstPainted != burstActive;
+            shiftKeycapVisible = true;
+            if (!tintDirty)
+                return;
+
+            shiftKeycapBurstPainted = burstActive;
+            // Green = "you can hold this". Cyan = the burst is on (matches the speed fill).
+            if (shiftKeycapLabel != null)
+                shiftKeycapLabel.color = burstActive ? fillColor : ShiftKeycapGlyph;
+            if (shiftKeycapImage != null)
+                shiftKeycapImage.color = burstActive ? ShiftKeycapFillActive : ShiftKeycapFill;
+        }
+
+        /// <summary>
+        /// Pixel width of the speed track. Falls back to the authored meter width
+        /// before the first layout pass, when <c>rect.width</c> is still 0.
+        /// </summary>
+        float SpeedTrackWidth()
+        {
+            if (speedSlider != null)
+            {
+                RectTransform bar = speedSlider.transform as RectTransform;
+                if (bar != null && bar.rect.width > 1f)
+                    return bar.rect.width;
+            }
+
+            return SlimPanelWidth - TagGutter - ValueGutter - 4f;
         }
 
         /// <summary>OVERDRIVE zone uses the speed-fill RGB at alpha 0.1.</summary>
@@ -1712,6 +1891,9 @@ namespace TitanOrbit.UI
             // Fill against full OD scale so unused faint OD headroom stays readable at cruise.
             speedSlider.value = Mathf.Clamp01(cur / Mathf.Max(0.01f, barMax));
             UpdateOverdriveZone(cruiseMax, barMax);
+            // Titans never see the keycap. It only sits inside the blue overdrive band.
+            float cruiseFrac = Mathf.Clamp01(cruiseMax / Mathf.Max(0.01f, barMax));
+            UpdateShiftKeycap(!localMega && overdriveCapacityMult > 1.001f, overdriveActive, cruiseFrac);
 
             float mass = GetMovementMass(ship, motor);
             maxFwd = Mathf.Max(0.01f, maxFwd);

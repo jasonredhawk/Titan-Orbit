@@ -26,6 +26,13 @@ namespace TitanOrbit.Entities
         /// </summary>
         public byte stampedBulletBankPlusOne;
 
+        /// <summary>
+        /// Planet id copied from the ghost <c>SourcePlanetId</c>. The loadout
+        /// card turns this into a world name. 0 means the row was bought before
+        /// that stamp existed.
+        /// </summary>
+        public int sourcePlanetId;
+
         // --- Local transform (ship hull space) ---
         public float localPosX;
         public float localPosY;

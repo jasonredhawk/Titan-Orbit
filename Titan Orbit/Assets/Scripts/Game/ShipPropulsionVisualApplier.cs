@@ -452,6 +452,17 @@ namespace TitanOrbit.Game
         void OnDestroy() => ClearVfxInstances();
 
         /// <summary>
+        /// Chassis nozzle damage smoke should parent to. <see cref="LocalRear"/> is the aft face
+        /// of that mesh in mount-local space (same point the jet flame uses).
+        /// </summary>
+        public struct PropulsionNozzle
+        {
+            public Transform Mount;
+            public Vector3 LocalRear;
+            public bool HasLocalRear;
+        }
+
+        /// <summary>
         /// Copies live thruster jet instance transforms (same objects <see cref="RebuildVfx"/> spawned).
         /// Used by <see cref="ShipDamageSmokeVisualApplier"/> so damage smoke sits on each flame.
         /// </summary>
@@ -467,6 +478,55 @@ namespace TitanOrbit.Game
                 GameObject go = _thrusterVfxInstances[i];
                 if (go != null)
                     dest.Add(go.transform);
+            }
+        }
+
+        /// <summary>
+        /// Engine and thruster chassis mounts that actually have a jet, with the nozzle point
+        /// on the aft face. Thruster mounts win when present; engine mounts fill the rest
+        /// (engine-only hulls, or an engine that is not already a thruster nozzle).
+        /// </summary>
+        /// <param name="dest">Cleared then filled; null is ignored.</param>
+        public void CopyPropulsionNozzles(List<PropulsionNozzle> dest)
+        {
+            if (dest == null)
+                return;
+
+            dest.Clear();
+            AppendPropulsionNozzles(_thrusterJets, dest);
+            AppendPropulsionNozzles(_engineJets, dest);
+        }
+
+        static void AppendPropulsionNozzles(List<JetBind> jets, List<PropulsionNozzle> dest)
+        {
+            if (jets == null)
+                return;
+
+            for (int i = 0; i < jets.Count; i++)
+            {
+                JetBind jet = jets[i];
+                if (jet == null || jet.mount == null)
+                    continue;
+
+                bool already = false;
+                for (int j = 0; j < dest.Count; j++)
+                {
+                    if (dest[j].Mount == jet.mount)
+                    {
+                        already = true;
+                        break;
+                    }
+                }
+
+                if (already)
+                    continue;
+
+                dest.Add(new PropulsionNozzle
+                {
+                    Mount = jet.mount,
+                    LocalRear = jet.mountLocalRear,
+                    HasLocalRear = jet.hasMountLocalRear,
+                });
             }
         }
 

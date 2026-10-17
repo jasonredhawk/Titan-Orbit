@@ -58,13 +58,18 @@ namespace TitanOrbit.Data
         [Header("Health Window")]
         [Tooltip(
             "Hull health fraction (0–1) at or below which smoke begins. " +
-            "0.5 = smoke only when the ship is at or below half HP.")]
+            "Higher values start smoke sooner and read thicker at the same hull HP, " +
+            "because intensity ramps from this value down to Smoke Full At Health Fraction. " +
+            "1 = smoke begins as soon as the ship drops below full HP. " +
+            "Edit this on the Ship Damage Smoke Settings asset (no code change).")]
         [Range(0.01f, 1f)]
-        public float smokeStartsAtHealthFraction = 0.5f;
+        public float smokeStartsAtHealthFraction = 1f;
 
         [Tooltip(
-            "Hull health fraction (0–1) at or below which smoke reaches full intensity. " +
-            "Usually 0 (empty hull). Must be ≤ smokeStartsAtHealthFraction.")]
+            "Hull health fraction (0–1) at or below which smoke stays at full intensity, " +
+            "including all the way to 0 HP. 0 = heaviest smoke on an empty hull. " +
+            "Must be ≤ smokeStartsAtHealthFraction. Death wrecks hold this full intensity " +
+            "while the debris spirals.")]
         [Range(0f, 1f)]
         public float smokeFullAtHealthFraction = 0f;
 
