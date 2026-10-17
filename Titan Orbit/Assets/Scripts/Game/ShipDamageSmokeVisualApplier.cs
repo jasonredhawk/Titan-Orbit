@@ -344,6 +344,20 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// Rewrites smoke localScale from the live hull lossy scale. Intensity-only updates
+        /// skip this, so a scale captured while the hull was shrunk on a pad would stay huge
+        /// after the ship leaves the turret.
+        /// </summary>
+        public void ReapplyThrusterAnchorScale()
+        {
+            if (!_initialized || _config == null)
+                return;
+
+            float scaleMul = Mathf.Lerp(0.55f, 1f, _intensity);
+            ApplyWorldNormalizedScale(scaleMul);
+        }
+
+        /// <summary>
         /// Each frame: map hull HP + speed → smoke intensity from the settings asset.
         /// </summary>
         void LateUpdate()

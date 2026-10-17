@@ -177,6 +177,14 @@ namespace TitanOrbit.Game
         bool _forceRestartPending;
 
         /// <summary>
+        /// Hull was <c>SetActive(false)</c> while piloting a defense turret, then shown again.
+        /// Hierarchy particle scaling captures <c>lossyScale</c> on enable; that read is wrong
+        /// while the proxy is inactive and the flames come back several times too big.
+        /// One restore after show, plus the next LateUpdate, puts them back on the hull scale.
+        /// </summary>
+        bool _restoreScaleAfterHullShow;
+
+        /// <summary>
         /// Builds default VFX settings with a jet-flame bank for color-matched thrusters.
         /// Called from <see cref="EcsWorldVisualizer"/> Awake when the scene bank is empty.
         /// Player builds require <c>Resources/ModularJetFlame2</c>; without it the bank stays empty
@@ -302,6 +310,23 @@ namespace TitanOrbit.Game
         {
             if (!s_Live.Contains(this))
                 s_Live.Add(this);
+
+            // Child particle systems enable after this component. Flag a LateUpdate restore
+            // so Hierarchy scaling is recaptured once the hull is active, not during OnEnable.
+            if (_initialized)
+                _restoreScaleAfterHullShow = true;
+        }
+
+        /// <summary>
+        /// Call after the hull proxy is shown again (turret exit). Rewrites jet localScale from
+        /// the thruster mounts and re-asserts Hierarchy scaling so flames do not keep a size
+        /// baked while the ship was hidden on the pad.
+        /// </summary>
+        public void NotifyHullShownAfterStow()
+        {
+            RestoreThrusterScaleNow();
+            // LateUpdate repeats once: particle OnEnable can run after this call and recache scale.
+            _restoreScaleAfterHullShow = true;
         }
 
         void OnDisable()
@@ -566,6 +591,14 @@ namespace TitanOrbit.Game
         {
             if (!_initialized)
                 return;
+
+            // Turret exit shows the hull after this LateUpdate has already run. The flag
+            // (set from OnEnable / NotifyHullShownAfterStow) finishes the scale restore here.
+            if (_restoreScaleAfterHullShow)
+            {
+                _restoreScaleAfterHullShow = false;
+                RestoreThrusterScaleNow();
+            }
 
             if (_previewMode)
             {
@@ -1757,6 +1790,82 @@ namespace TitanOrbit.Game
                     continue;
                 trails[i].time = Mathf.Max(trails[i].time, 0.85f);
                 trails[i].minVertexDistance = Mathf.Min(trails[i].minVertexDistance, 0.08f);
+            }
+        }
+
+        /// <summary>
+        /// Drops the size hysteresis and re-applies Hierarchy scaling on every jet.
+        /// A defense-turret stow deactivates the hull; Unity then treats the jet's
+        /// local scale as if the parent 0.155 presentation scale were not there, so
+        /// the flame renders about 6× too big until scaling mode is assigned again.
+        /// </summary>
+        void RestoreThrusterScaleNow()
+        {
+            ResetJetScaleCache(_thrusterJets);
+            ResetJetScaleCache(_engineJets);
+            ReparentJetsToHull(_thrusterJets);
+            ReparentJetsToHull(_engineJets);
+            ReassertHierarchyScaling(_thrusterJets);
+            ReassertHierarchyScaling(_engineJets);
+            UpdateJetPoses();
+        }
+
+        static void ResetJetScaleCache(List<JetBind> jets)
+        {
+            for (int i = 0; i < jets.Count; i++)
+            {
+                JetBind jet = jets[i];
+                if (jet != null)
+                    jet.appliedSizeMul = 0f;
+            }
+        }
+
+        /// <summary>
+        /// Jets belong on the hull. If a stow path parented one under the turret (or the
+        /// scene root), keep the hull-local scale instead of the turret's world scale.
+        /// </summary>
+        void ReparentJetsToHull(List<JetBind> jets)
+        {
+            for (int i = 0; i < jets.Count; i++)
+            {
+                JetBind jet = jets[i];
+                if (jet == null || jet.instance == null)
+                    continue;
+
+                Transform jetTransform = jet.instance.transform;
+                if (jetTransform.parent == transform || jetTransform.IsChildOf(transform))
+                    continue;
+
+                // worldPositionStays false — do not inherit the turret / pad world scale.
+                jetTransform.SetParent(transform, false);
+            }
+        }
+
+        static void ReassertHierarchyScaling(List<JetBind> jets)
+        {
+            for (int i = 0; i < jets.Count; i++)
+            {
+                JetBind jet = jets[i];
+                if (jet == null)
+                    continue;
+
+                ParticleSystem[] systems = jet.particles;
+                if (systems == null)
+                    continue;
+
+                for (int p = 0; p < systems.Length; p++)
+                {
+                    ParticleSystem ps = systems[p];
+                    if (ps == null)
+                        continue;
+
+                    var main = ps.main;
+                    // Toggle through Local so a stale Hierarchy cache from the inactive hull drops.
+                    main.scalingMode = ParticleSystemScalingMode.Local;
+                    main.scalingMode = ParticleSystemScalingMode.Hierarchy;
+                    if (ps.isPlaying)
+                        RestartParticleSystem(ps);
+                }
             }
         }
 

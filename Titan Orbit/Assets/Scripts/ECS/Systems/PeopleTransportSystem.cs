@@ -427,10 +427,13 @@ namespace TitanOrbit.ECS
             float3 targetPos = shipPos;
             float3 loadDir = ToroidalMapEcs.ToroidalDirection(spawnPos, targetPos, mapW, mapH);
             spawnPos += loadDir * 0.2f;
-            // Home on the parked capsule whose troop count goes up. A new seat is
-            // used only when no existing transport grows.
+            // Seat this sphere as if everyone already inbound has landed. The one
+            // that fills a capsule homes there; the next reserves the following
+            // seat instead of chasing the same capsule.
+            int inbound = (int)math.round(math.max(0f, transfer.PeopleInTransit));
+            int peopleBefore = math.max(0, ship.CurrentPeople) + inbound;
             PeopleTransportEscortLogic.ResolveLoadHomeSeat(
-                state.EntityManager, shipEntity, ship.CurrentPeople,
+                state.EntityManager, shipEntity, peopleBefore,
                 amount, combineChunk, out byte seatId, out bool ownsSeat);
 
             // --- One packed sphere for the whole batch ---
@@ -438,7 +441,7 @@ namespace TitanOrbit.ECS
             // RPC stream instead of N × +1 flights (less bandwidth + fewer client Instantiates).
             // Target baked here is only a fallback — the live flight homes on the seat above.
             SpawnTransport(ref ecb, spawnPos, targetPos, amount, shipNetworkId, planetId, 0,
-                shipNetworkId, true, team, hopClock, mapW, mapH, seatId, ownsSeat, -1f, 0);
+                shipNetworkId, true, team, hopClock, mapW, mapH, seatId, ownsSeat, peopleBefore, -1f, 0);
 
             // [TITAN-ORBIT] Planet pays immediately; ship gains only on DeliverLoad (transitory vessel).
             planet.Population -= amount;
@@ -499,7 +502,7 @@ namespace TitanOrbit.ECS
                 planetPos, planetSize, spawnPos, mapW, mapH);
 
             SpawnTransport(ref ecb, spawnPos, targetPos, amount, 0, 0, planetId,
-                shipNetworkId, false, team, hopClock, mapW, mapH, seatId, false, peeledHealth,
+                shipNetworkId, false, team, hopClock, mapW, mapH, seatId, false, 0, peeledHealth,
                 (byte)planetOwnership);
 
             ship.CurrentPeople = math.max(0, ship.CurrentPeople - amount);
@@ -527,6 +530,7 @@ namespace TitanOrbit.ECS
             float mapH,
             byte seatId,
             bool ownsSeat,
+            int seatClaimPeople,
             float healthOverride = -1f,
             byte targetOwnerAtSpawn = 0)
         {
@@ -568,6 +572,7 @@ namespace TitanOrbit.ECS
                 Team = teamByte,
                 SeatId = seatId,
                 OwnsSeat = (byte)(ownsSeat ? 1 : 0),
+                SeatClaimPeople = math.max(0, seatClaimPeople),
                 TargetOwnerAtSpawn = targetOwnerAtSpawn,
                 Returning = 0,
             });
@@ -689,6 +694,7 @@ namespace TitanOrbit.ECS
             }
 
             var ecb = new EntityCommandBuffer(Allocator.Temp);
+            var claimReleases = new NativeList<PeopleInboundClaimRelease>(4, Allocator.Temp);
 
             foreach (var (transport, transform, entity) in SystemAPI
                          .Query<RefRW<PeopleTransportState>, RefRW<LocalTransform>>()
@@ -718,27 +724,29 @@ namespace TitanOrbit.ECS
                         approach = approachPlanet.Position;
                     shipTransformByNetworkId.TryGetValue(t.TargetShipNetworkId, out var loadXfForSeat);
                     if (PeopleTransportEscortLogic.TryRetargetLoadSeat(
-                            state.EntityManager, loadShip, loadState.CurrentPeople, (int)math.max(1f, t.Amount),
+                            state.EntityManager, loadShip, t.SeatClaimPeople, (int)math.max(1f, t.Amount),
                             chunk, t.SeatId, t.OwnsSeat != 0, approach, loadXfForSeat,
-                            t.TargetShipNetworkId, hopClock, mapW, mapH, out byte retargeted))
+                            t.TargetShipNetworkId, hopClock, mapW, mapH,
+                            out byte retargeted, out bool ownsNewSeat))
                     {
-                        // Leave an owned reservation behind so it does not stay
-                        // InFlight after this hop joins a parked seat.
-                        if (t.OwnsSeat != 0)
-                        {
+                        // Drop a reservation only when this hop is leaving it for a
+                        // parked capsule. A fresh reserve is the seat it now owns.
+                        if (t.OwnsSeat != 0 && !ownsNewSeat && retargeted != t.SeatId)
                             PeopleTransportEscortLogic.RemoveSeat(state.EntityManager, loadShip, t.SeatId);
-                            t.OwnsSeat = 0;
-                        }
 
-                        t.SeatId = retargeted;
-                        // Rebase the formation offset so the sphere curves to the new
-                        // seat instead of jumping when the home pose changes.
-                        t.FormationReady = 0;
-                        float3 shipPos = shipTransformByNetworkId.TryGetValue(t.TargetShipNetworkId, out var loadXf)
-                            ? loadXf.Position
-                            : myPos;
-                        PeopleTransportNetNotify.SendSeatRetarget(
-                            ref ecb, t.Sequence, retargeted, shipPos, t.TargetShipNetworkId);
+                        t.OwnsSeat = (byte)(ownsNewSeat ? 1 : 0);
+                        if (retargeted != t.SeatId)
+                        {
+                            t.SeatId = retargeted;
+                            // Rebase onto the new seat. StepTroopDrone keeps speed
+                            // so the sphere curves instead of braking to a stop.
+                            t.FormationReady = 0;
+                            float3 shipPos = shipTransformByNetworkId.TryGetValue(t.TargetShipNetworkId, out var loadXf)
+                                ? loadXf.Position
+                                : myPos;
+                            PeopleTransportNetNotify.SendSeatRetarget(
+                                ref ecb, t.Sequence, retargeted, shipPos, t.TargetShipNetworkId);
+                        }
                     }
                 }
 
@@ -776,6 +784,7 @@ namespace TitanOrbit.ECS
                         planetStateById[t.SourcePlanetId] = sourcePlanetOnly;
                         ecb.SetComponent(planetById[t.SourcePlanetId], sourcePlanetOnly);
                         ClearInboundPeopleInTransit(ref state, t.TargetShipNetworkId, t.Amount, shipByNetworkId);
+                        NoteInboundClaimRelease(ref claimReleases, t.TargetShipNetworkId, t.Sequence, t.Amount);
                         PeopleTransportNetNotify.EndAndDestroy(
                             ref ecb, entity, in t, myPos, PeopleTransportPoseStatus.Returned);
                         continue;
@@ -800,6 +809,7 @@ namespace TitanOrbit.ECS
                                 ref state, planetById[t.SourcePlanetId], sourcePlanetSize, sourcePlanet.PlanetLevel);
                             ReturnLoadToPlanet(
                                 ref state, ref sourcePlanet, shipEntity, t.Amount, sourceMax, t.SeatId, t.OwnsSeat != 0);
+                            NoteInboundClaimRelease(ref claimReleases, t.TargetShipNetworkId, t.Sequence, t.Amount);
                             planetStateById[t.SourcePlanetId] = sourcePlanet;
                             ecb.SetComponent(planetById[t.SourcePlanetId], sourcePlanet);
                             PeopleTransportNetNotify.EndAndDestroy(
@@ -1008,6 +1018,8 @@ namespace TitanOrbit.ECS
                 }
             }
 
+            ApplyInboundClaimReleases(state.EntityManager, claimReleases);
+            claimReleases.Dispose();
             ecb.Playback(state.EntityManager);
             ecb.Dispose();
             planetById.Dispose();
@@ -1321,6 +1333,78 @@ namespace TitanOrbit.ECS
             ClearPeopleInTransitOnShip(ref state, shipEntity, amount);
         }
 
+        /// <summary>Earlier load that will not land, and the people later claims should drop.</summary>
+        struct PeopleInboundClaimRelease
+        {
+            public int ShipNetworkId;
+            public uint Sequence;
+            public int Amount;
+        }
+
+        static void NoteInboundClaimRelease(
+            ref NativeList<PeopleInboundClaimRelease> releases,
+            int shipNetworkId,
+            uint sequence,
+            float amount)
+        {
+            int people = (int)math.round(math.max(0f, amount));
+            if (people <= 0 || shipNetworkId == 0 || sequence == 0)
+                return;
+            releases.Add(new PeopleInboundClaimRelease
+            {
+                ShipNetworkId = shipNetworkId,
+                Sequence = sequence,
+                Amount = people,
+            });
+        }
+
+        static void ReleaseInboundClaim(EntityManager em, int shipNetworkId, uint sequence, float amount)
+        {
+            var releases = new NativeList<PeopleInboundClaimRelease>(1, Allocator.Temp);
+            NoteInboundClaimRelease(ref releases, shipNetworkId, sequence, amount);
+            ApplyInboundClaimReleases(em, releases);
+            releases.Dispose();
+        }
+
+        /// <summary>
+        /// Shrink seat claims on loads that spawned after a hop which will not land.
+        /// One query for the whole batch — this runs on abort, not every tick.
+        /// </summary>
+        static void ApplyInboundClaimReleases(EntityManager em, NativeList<PeopleInboundClaimRelease> releases)
+        {
+            if (releases.Length == 0)
+                return;
+
+            using var query = em.CreateEntityQuery(
+                ComponentType.ReadWrite<PeopleTransportState>(),
+                ComponentType.ReadOnly<PeopleTransportTag>());
+            using var hops = query.ToEntityArray(Allocator.Temp);
+            for (int i = 0; i < hops.Length; i++)
+            {
+                var hop = em.GetComponentData<PeopleTransportState>(hops[i]);
+                if (hop.IsLoad == 0 || hop.Sequence == 0)
+                    continue;
+
+                int claim = hop.SeatClaimPeople;
+                bool changed = false;
+                for (int r = 0; r < releases.Length; r++)
+                {
+                    PeopleInboundClaimRelease rel = releases[r];
+                    if (rel.Amount <= 0 || hop.TargetShipNetworkId != rel.ShipNetworkId)
+                        continue;
+                    if (hop.Sequence <= rel.Sequence)
+                        continue;
+                    claim = math.max(0, claim - rel.Amount);
+                    changed = true;
+                }
+
+                if (!changed || claim == hop.SeatClaimPeople)
+                    continue;
+                hop.SeatClaimPeople = claim;
+                em.SetComponentData(hops[i], hop);
+            }
+        }
+
         static PeopleUnloadOutcome DeliverUnload(ref PlanetState planet, float amount, TeamId team, int maxPop)
         {
             // --- DeliverUnload ---
@@ -1383,6 +1467,8 @@ namespace TitanOrbit.ECS
                     ClearPeopleInTransitOnShip(ref state, ships[i], transport.Amount);
                     if (transport.OwnsSeat != 0)
                         PeopleTransportEscortLogic.RemoveSeat(em, ships[i], transport.SeatId);
+                    ReleaseInboundClaim(
+                        em, transport.TargetShipNetworkId, transport.Sequence, transport.Amount);
                     break;
                 }
             }

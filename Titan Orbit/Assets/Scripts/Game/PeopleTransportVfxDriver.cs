@@ -631,7 +631,8 @@ namespace TitanOrbit.Game
                 return;
             }
 
-            // In-flight load switched seats. Curve from the current spot — do not snap XZ.
+            // In-flight load switched seats. Rebase from the current spot — do not snap
+            // XZ, and do not clear formation speed (StepTroopDrone keeps it).
             // Any other Active packet is ignored. Streaming the ship position here used
             // to lerp the sphere onto the hull, so the planet→seat and seat→planet
             // flights never played while the server still delivered on its own clock.

@@ -79,6 +79,14 @@ namespace TitanOrbit.ECS
         public byte OwnsSeat;
 
         /// <summary>
+        /// Crew committed ahead of this load when its seat was chosen: people
+        /// already aboard plus earlier planet→ship hops. The next sphere uses a
+        /// higher total, so it does not chase a capsule those hops are about to
+        /// fill. Shrinks when an earlier hop is shot down or sent home.
+        /// </summary>
+        public int SeatClaimPeople;
+
+        /// <summary>
         /// Planet <see cref="PlanetState.Ownership"/> when this unload launched.
         /// Capture flips ownership and recalls leftover hops to the source ship.
         /// </summary>

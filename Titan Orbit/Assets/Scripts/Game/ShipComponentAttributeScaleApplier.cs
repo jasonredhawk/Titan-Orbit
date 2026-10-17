@@ -396,6 +396,13 @@ namespace TitanOrbit.Game
                 _propulsionVisual.ForceRefreshEmission();
         }
 
+        /// <summary>
+        /// Writes mesh scales from the bind-time bases again. Used when the hull is shown
+        /// after a turret stow so a scale written while the proxy was inactive cannot stick.
+        /// Does not rescan the hierarchy (that would snapshot an already-grown localScale).
+        /// </summary>
+        public void ReapplyAuthoredScales() => TryApplyAttributeScale(force: true);
+
         void LateUpdate() => TryApplyAttributeScale();
     }
 }

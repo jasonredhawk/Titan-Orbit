@@ -121,15 +121,17 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Home for a planet→ship hop. The sphere flies to the parked capsule whose
-        /// troop count increases when this batch is added — the one the player sees
-        /// growing. A new seat is reserved only when no parked capsule gains troops,
-        /// so that new transport stays where the sphere arrives.
+        /// Home for a planet→ship hop. <paramref name="peopleBefore"/> is crew
+        /// already committed ahead of this sphere (aboard plus earlier inbound).
+        /// The sphere flies to the parked capsule whose packed count grows when
+        /// <paramref name="incomingAmount"/> is added on top of that. A new seat
+        /// is reserved only when no parked capsule gains troops, so the next
+        /// sphere does not follow one that is about to fill.
         /// </summary>
         public static void ResolveLoadHomeSeat(
             EntityManager em,
             Entity ship,
-            int currentPeople,
+            int peopleBefore,
             int incomingAmount,
             int chunk,
             out byte seatId,
@@ -139,7 +141,7 @@ namespace TitanOrbit.ECS
             ownsSeat = false;
             incomingAmount = math.max(0, incomingAmount);
             chunk = math.max(1, chunk);
-            int before = math.max(0, currentPeople);
+            int before = math.max(0, peopleBefore);
             int after = before + incomingAmount;
 
             if (TryPickGrowingSeat(em, ship, before, after, chunk, out seatId))
@@ -231,17 +233,20 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// In-flight load whose parked home will no longer absorb this batch.
-        /// Switch onto the parked capsule that is still filling, or onto the
-        /// in-flight seat that just opened. A hop that reserved its own seat
-        /// stays there — that seat is the new one. Once all 12 seats are full,
-        /// every load homes on the parked seat closest to <paramref name="approachPos"/>
-        /// (the planet they launch from) and follows it as the ship rotates.
+        /// Keep a load on the seat chosen for <paramref name="peopleBefore"/>
+        /// (aboard plus earlier inbound). Later spheres already carry a higher
+        /// total, so a capsule filling does not pull the whole flight onto one
+        /// new seat. A hop moves when that claim now grows a different parked
+        /// capsule, or when it still needs a seat of its own. Past 12 seats,
+        /// leftovers rotate, so the hop homes on the parked capsule closest to
+        /// <paramref name="approachPos"/> and follows it as the ship rotates.
+        /// <paramref name="ownsNewSeat"/> is set when this call reserved the
+        /// returned seat.
         /// </summary>
         public static bool TryRetargetLoadSeat(
             EntityManager em,
             Entity ship,
-            int currentPeople,
+            int peopleBefore,
             int incomingAmount,
             int chunk,
             byte currentSeat,
@@ -252,16 +257,18 @@ namespace TitanOrbit.ECS
             double timeSeconds,
             float mapW,
             float mapH,
-            out byte newSeat)
+            out byte newSeat,
+            out bool ownsNewSeat)
         {
             newSeat = currentSeat;
+            ownsNewSeat = ownsSeat;
             if (incomingAmount <= 0 || ship == Entity.Null || !em.Exists(ship))
                 return false;
 
             // Past 12 seats the packed "+1" index rotates. Aim at the seated
             // transport nearest the planet instead, and move only when rotation
             // makes a different one clearly closer.
-            if (IsEscortOverflow(currentPeople, chunk) &&
+            if (IsEscortOverflow(peopleBefore, chunk) &&
                 TryPickClosestParkedSeat(
                     em, ship, shipTransform, shipNetworkId, approachPos, currentSeat,
                     timeSeconds, mapW, mapH, out byte closest))
@@ -269,30 +276,33 @@ namespace TitanOrbit.ECS
                 if (closest == currentSeat)
                     return false;
                 newSeat = closest;
+                ownsNewSeat = false;
                 return true;
             }
 
-            if (ownsSeat || !em.HasBuffer<PeopleEscortVitalElement>(ship))
+            if (!em.HasBuffer<PeopleEscortVitalElement>(ship))
                 return false;
 
-            int after = math.max(0, currentPeople) + incomingAmount;
-            if (TryPickGrowingSeat(em, ship, currentPeople, after, chunk, out byte growing))
+            int before = math.max(0, peopleBefore);
+            int after = before + incomingAmount;
+            if (TryPickGrowingSeat(em, ship, before, after, chunk, out byte growing))
             {
                 if (growing == currentSeat)
                     return false;
                 newSeat = growing;
+                ownsNewSeat = false;
                 return true;
             }
 
-            // Already joined an open reservation. Do not hop between in-flight seats.
-            var buf = em.GetBuffer<PeopleEscortVitalElement>(ship);
-            if (SeatIsInFlight(buf, currentSeat))
+            // This claim opens a slot. The hop that already reserved it stays.
+            if (ownsSeat)
                 return false;
 
-            if (!TryNewestInFlightSeat(buf, currentSeat, out byte open))
+            if (!TryReserveLoadSeat(em, ship, math.max(1, incomingAmount), out byte reserved))
                 return false;
 
-            newSeat = open;
+            newSeat = reserved;
+            ownsNewSeat = true;
             return true;
         }
 
@@ -364,36 +374,6 @@ namespace TitanOrbit.ECS
 
             seatId = bestSeat;
             return true;
-        }
-
-        static bool SeatIsInFlight(DynamicBuffer<PeopleEscortVitalElement> buf, byte seatId)
-        {
-            for (int i = 0; i < buf.Length; i++)
-            {
-                if (buf[i].SeatId == seatId && buf[i].InFlight != 0)
-                    return true;
-            }
-
-            return false;
-        }
-
-        /// <summary>Last reserved seat that is not <paramref name="exceptSeat"/>.</summary>
-        static bool TryNewestInFlightSeat(
-            DynamicBuffer<PeopleEscortVitalElement> buf,
-            byte exceptSeat,
-            out byte seatId)
-        {
-            seatId = 0;
-            bool found = false;
-            for (int i = 0; i < buf.Length; i++)
-            {
-                if (buf[i].InFlight == 0 || buf[i].SeatId == exceptSeat)
-                    continue;
-                seatId = buf[i].SeatId;
-                found = true;
-            }
-
-            return found;
         }
 
         /// <summary>Seat id of the nth parked escort (in-flight reservations skipped).</summary>
@@ -761,8 +741,9 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// One drone formation step. Retargeting rebases the offset so the sphere
-        /// does not jump when the home swaps from the slot to a planet.
+        /// One drone formation step. A new home rebases the offset so the sphere
+        /// stays where it is and curves onto that home. Speed is kept — clearing
+        /// it on a seat change braked every inbound load to a stop.
         /// </summary>
         public static void StepTroopDrone(
             ref float3 offset,
@@ -794,8 +775,6 @@ namespace TitanOrbit.ECS
                 previousIdle = home;
                 ready = 1;
                 anchor = intent.Anchor;
-                if (first)
-                    offsetVelocity = float3.zero;
             }
 
             var state = new DroneSwarmLogic.FormationAnchorState

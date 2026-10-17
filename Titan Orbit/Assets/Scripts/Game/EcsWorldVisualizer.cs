@@ -3412,9 +3412,38 @@ namespace TitanOrbit.Game
             ShipDeathDebrisDriver.End(shipEntity);
             bool stowedInTurret = IsShipHullStowed(em, shipEntity);
             if (stowedInTurret)
+            {
                 proxyGo.SetActive(false);
-            else if (!proxyGo.activeSelf)
+                return;
+            }
+
+            // Turret exit: the hull was inactive, so thruster jets kept a Hierarchy scale
+            // captured while hidden (flames render ~1/ShipPresentationScale too big).
+            // Show first, then rewrite mount + jet scale against the live hull.
+            if (!proxyGo.activeSelf)
+            {
                 proxyGo.SetActive(true);
+                RestoreThrusterScaleAfterTurretExit(proxyGo);
+            }
+        }
+
+        /// <summary>
+        /// Puts thruster meshes, pad smoke, and jet flames back on authored hull scale
+        /// after <see cref="ApplyShipDeathOrStowPresentation"/> shows a stowed ship.
+        /// </summary>
+        static void RestoreThrusterScaleAfterTurretExit(GameObject proxyGo)
+        {
+            var attributeScale = proxyGo.GetComponent<ShipComponentAttributeScaleApplier>();
+            if (attributeScale != null)
+                attributeScale.ReapplyAuthoredScales();
+
+            var smoke = proxyGo.GetComponent<ShipDamageSmokeVisualApplier>();
+            if (smoke != null)
+                smoke.ReapplyThrusterAnchorScale();
+
+            var propulsion = proxyGo.GetComponent<ShipPropulsionVisualApplier>();
+            if (propulsion != null)
+                propulsion.NotifyHullShownAfterStow();
         }
 
         /// <summary>Tears down proxy GameObject and clears all per-entity registry entries.</summary>
