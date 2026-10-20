@@ -17,6 +17,12 @@ namespace TitanOrbit.Shared
         /// <summary>World rotation of the local ship visual proxy (presentation phase).</summary>
         public static Quaternion LocalRotation { get; private set; }
 
+        /// <summary>
+        /// True when the local hull touched an asteroid or another ship this presentation frame.
+        /// <see cref="Game.CameraFollowEcs"/> trails on XZ while this is set. Presentation only.
+        /// </summary>
+        public static bool LocalHullContact { get; private set; }
+
         /// <summary>Caches presentation pose for camera / parallax readers.</summary>
         public static void SetLocalPose(Vector3 position, Quaternion rotation)
         {
@@ -24,6 +30,13 @@ namespace TitanOrbit.Shared
             LocalRotation = rotation;
             HasLocalPose = true;
         }
+
+        /// <summary>
+        /// Publishes whether the local hull is in asteroid or ship contact this frame.
+        /// Cleared with the pose. Camera follow reads this; sim does not.
+        /// </summary>
+        /// <param name="inContact">True on a live asteroid or hull contact.</param>
+        public static void SetLocalHullContact(bool inContact) => LocalHullContact = inContact;
 
         /// <summary>Clears pose when local ship despawns or player disconnects.</summary>
         public static void ClearLocalPose() => ClearLocalPose("ClearLocalPose");
@@ -40,6 +53,7 @@ namespace TitanOrbit.Shared
             // [TITAN-ORBIT] Position/rotation left as-is are unused while HasLocalPose is false;
             // ShipVisualSyncSystem also resets its soft-track so the next ship hard-snaps.
             HasLocalPose = false;
+            LocalHullContact = false;
         }
     }
 }

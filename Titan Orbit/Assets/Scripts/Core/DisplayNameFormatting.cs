@@ -79,12 +79,13 @@ namespace TitanOrbit.Core
         }
 
         /// <summary>
-        /// Drops a leading family label from a hull title so the Your Ship card
-        /// can show only the ship name. The Orbit Menu left panel already prints
-        /// the family (ASTRO EAGLE) above the silhouette, so "Astro Eagle Hawk"
-        /// becomes "Hawk". Names that do not start with that family stay as-is
-        /// (Cosmic Shark's "Fin", a Titan's "Pyrestar"). If stripping would leave
-        /// nothing, the original title is kept so the card is never blank.
+        /// Drops a leading family label from a hull title so a card can show only
+        /// the ship name. The Your Ship card already prints the family above the
+        /// silhouette, and each regular upgrade-tree card prints it on the line
+        /// under the title, so "Astro Eagle Hawk" becomes "Hawk". Names that do
+        /// not start with that family stay as-is (Cosmic Shark's "Fin", a Titan's
+        /// "Pyrestar"). If stripping would leave nothing, the original title is
+        /// kept so the card is never blank.
         /// Client-only string formatting — no gameplay effect.
         /// </summary>
         /// <param name="title">Authored or prefab hull label. CamelCase is split first.</param>

@@ -79,8 +79,10 @@ namespace TitanOrbit.Data
     /// <para>
     /// [TITAN-ORBIT] Callers pass Base / PerExtra already multiplied by prefab starting
     /// <c>localScale</c> (<see cref="ShipComponentAbilityStatsMath.ScaleStatsByTransform"/>).
-    /// A Cockpit at scale 3 is <c>3 ×</c> catalog Health / Gems / Troops. A weapon at
-    /// scale 2 is <c>2 ×</c> fire power and <c>½ ×</c> fire rate (average XY vs 1/Z).
+    /// A Cockpit at scale 3 is <c>3 ×</c> catalog Health, Gems, Troops, and Ramming.
+    /// An engine or thruster at scale 2 is <c>2 ×</c> Move and Acceleration. Turn,
+    /// bullet speed, and bullet range use that same average. A weapon at scale 2 is
+    /// <c>2 ×</c> fire power and <c>½ ×</c> fire rate (average XY vs 1/Z).
     /// Ability details cards show that multiply as its own formula step. Moon-store extras stay at ×1.
     /// </para>
     /// <para>

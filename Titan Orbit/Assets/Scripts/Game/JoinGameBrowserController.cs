@@ -16,7 +16,7 @@ namespace TitanOrbit.Game
     /// lobbies and connecting the client via Relay. Opened from <see cref="NceGameFlowController"/> main menu.
     /// Client only; dedicated server builds have no canvas.
     /// Layout matches the Main Menu look: transparent backdrop over SpaceBackground, Titan Orbit logo,
-    /// then Refresh / Quick join latest, then the lobby list.
+    /// a Refresh control in the top bar, then the lobby list.
     /// Each lobby row shows team cards, map extras, capacity, and its own Join button (no footer Join).
     /// When the list is empty, a silent auto-request can still wake a dedicated match (no Request Match button).
     /// </summary>
@@ -48,7 +48,8 @@ namespace TitanOrbit.Game
         Transform _listContainer;
         TextMeshProUGUI _statusText;
         Button _refreshButton;
-        Button _quickJoinButton;
+        /// <summary>A click arrived while a fetch was already running. Run one more pass when it finishes.</summary>
+        bool _refreshAgain;
 
         readonly List<TitanOrbitLobbyService.LobbySummary> _cached = new List<TitanOrbitLobbyService.LobbySummary>();
         readonly List<GameObject> _rowObjects = new List<GameObject>();
@@ -111,6 +112,8 @@ namespace TitanOrbit.Game
                                  statusMissingOutside ||
                                  listNotFlexed ||
                                  _screenRoot.transform.Find("JoinGameBody/JoinGameContentColumn/JoinGameTitle") != null ||
+                                 _screenRoot.transform.Find("JoinGameBody/JoinGameContentColumn/JoinGameActions") != null ||
+                                 _screenRoot.transform.Find("TopBar/RefreshLobbies") == null ||
                                  _screenRoot.transform.Find("JoinGameBody/JoinGameContentColumn/JoinGameActions/RequestDedicatedMatch") != null);
             if (needsRebuild)
             {
@@ -120,7 +123,6 @@ namespace TitanOrbit.Game
                 _lobbyRowPrefab = null;
                 _listContainer = null;
                 _refreshButton = null;
-                _quickJoinButton = null;
                 _statusText = null;
                 _lobbyScroll = null;
             }
@@ -130,6 +132,9 @@ namespace TitanOrbit.Game
                 mainMenuPanel.SetActive(false);
             _screenRoot.SetActive(true);
             _screenRoot.transform.SetAsLastSibling();
+            var column = _screenRoot.transform.Find("JoinGameBody/JoinGameContentColumn") as RectTransform;
+            if (column != null)
+                LayoutRebuilder.ForceRebuildLayoutImmediate(column);
             _autoRefreshTimer = 0f;
             _autoRequestMatchSent = false;
             Debug.Log("[JoinGameBrowser] Opening join browser — refreshing lobby list.");
@@ -243,14 +248,22 @@ namespace TitanOrbit.Game
             topH.spacing = 16f;
             topH.childAlignment = TextAnchor.MiddleLeft;
             topH.childControlHeight = true;
-            topH.childControlWidth = false;
+            topH.childControlWidth = true;
             topH.childForceExpandHeight = false;
             topH.childForceExpandWidth = false;
 
             var back = CreateMenuButton("Back", "Back", topBar.transform, new Vector2(120f, 40f), false);
             back.onClick.AddListener(Hide);
+            PinToolbarButtonWidth(back);
 
-            // --- Body: logo (flush top) → tight actions → status → list stretched to bottom ---
+            // Refresh lives in the top bar (same row as Back). The lobby panel used to stretch
+            // over the old action-row button, so the label showed through and clicks never landed.
+            _refreshButton = CreateMenuButton("RefreshLobbies", "Refresh", topBar.transform,
+                new Vector2(160f, 40f), false);
+            _refreshButton.onClick.AddListener(() => _ = RefreshAsync(silent: false));
+            PinToolbarButtonWidth(_refreshButton);
+
+            // --- Body: logo (flush top) → status → list stretched to the bottom ---
             var body = CreateChild("JoinGameBody", _screenRoot.transform, typeof(RectTransform), typeof(VerticalLayoutGroup));
             var bodyRt = body.GetComponent<RectTransform>();
             bodyRt.anchorMin = Vector2.zero;
@@ -287,30 +300,6 @@ namespace TitanOrbit.Game
             // [TITAN-ORBIT] Logo first — PlaceCompactTopLogo trims PNG padding so the gap under the art is smaller.
             MainMenuPresenter.PlaceCompactTopLogo(contentColumn.transform, "JoinGameLogo");
 
-            // --- Action row: Refresh | Quick join latest ---
-            var actionRow = CreateChild("JoinGameActions", contentColumn.transform,
-                typeof(RectTransform), typeof(HorizontalLayoutGroup), typeof(LayoutElement));
-            var actionH = actionRow.GetComponent<HorizontalLayoutGroup>();
-            actionH.spacing = 12f;
-            actionH.childAlignment = TextAnchor.MiddleCenter;
-            actionH.childControlWidth = true;
-            actionH.childControlHeight = false;
-            actionH.childForceExpandWidth = true;
-            actionH.childForceExpandHeight = false;
-            var actionLe = actionRow.GetComponent<LayoutElement>();
-            actionLe.minHeight = 44f;
-            actionLe.preferredHeight = 48f;
-            actionLe.flexibleHeight = 0f;
-            ApplyContentColumnLayout(actionLe);
-
-            _refreshButton = CreateMenuButton("RefreshLobbies", "Refresh", actionRow.transform,
-                new Vector2(200f, 48f), false);
-            _refreshButton.onClick.AddListener(() => _ = RefreshAsync(silent: false));
-
-            _quickJoinButton = CreateMenuButton("QuickJoinButton", "Quick join latest", actionRow.transform,
-                new Vector2(320f, 48f), true);
-            _quickJoinButton.onClick.AddListener(() => _ = QuickJoinAsync());
-
             _statusText = CreateStyledLabel("JoinGameStatus", "Loading lobbies...", contentColumn.transform,
                 16f, FontStyles.Normal, TextAlignmentOptions.Center);
             _statusText.color = MutedLabelColor;
@@ -339,10 +328,11 @@ namespace TitanOrbit.Game
             _lobbyBrowserRoot = CreateChild("LobbyBrowserRoot", parent,
                 typeof(RectTransform), typeof(Image), typeof(Outline), typeof(VerticalLayoutGroup), typeof(LayoutElement));
             var rootRt = _lobbyBrowserRoot.GetComponent<RectTransform>();
-            // Stretch horizontally within the content column; height comes from LayoutElement flex.
-            rootRt.anchorMin = new Vector2(0f, 0f);
+            // Top-anchored, not full-stretch. A stretch rect covers the column (and used to sit
+            // on top of Refresh) until layout runs; layout then assigns the flexible height.
+            rootRt.anchorMin = new Vector2(0f, 1f);
             rootRt.anchorMax = new Vector2(1f, 1f);
-            rootRt.pivot = new Vector2(0.5f, 0.5f);
+            rootRt.pivot = new Vector2(0.5f, 1f);
             rootRt.sizeDelta = Vector2.zero;
 
             // Semi-transparent so the space backdrop still reads through the list panel.
@@ -365,17 +355,20 @@ namespace TitanOrbit.Game
 
             var rootLe = _lobbyBrowserRoot.GetComponent<LayoutElement>();
             ApplyContentColumnLayout(rootLe);
-            // flexibleHeight=1 → eats all leftover space under logo/buttons/status down to screen bottom.
+            // flexibleHeight=1 → eats leftover space under the logo and status, down to the screen bottom.
+            // preferredHeight stays unset (-1). 0 meant "prefer nothing" and let the stretch rect win.
             rootLe.minHeight = 160f;
-            rootLe.preferredHeight = 0f;
+            rootLe.preferredHeight = -1f;
             rootLe.flexibleHeight = 1f;
 
             var scrollRoot = CreateChild("LobbyScroll", _lobbyBrowserRoot.transform,
                 typeof(RectTransform), typeof(Image), typeof(ScrollRect), typeof(LayoutElement));
-            scrollRoot.GetComponent<Image>().color = new Color(0.03f, 0.05f, 0.09f, 0.45f);
+            var scrollImage = scrollRoot.GetComponent<Image>();
+            scrollImage.color = new Color(0.03f, 0.05f, 0.09f, 0.45f);
+            scrollImage.raycastTarget = true;
             var scrollLe = scrollRoot.GetComponent<LayoutElement>();
             scrollLe.minHeight = 120f;
-            scrollLe.preferredHeight = 0f;
+            scrollLe.preferredHeight = -1f;
             scrollLe.flexibleHeight = 1f;
             ApplyContentColumnLayout(scrollLe);
 
@@ -417,19 +410,34 @@ namespace TitanOrbit.Game
                 _lobbyRowPrefab.SetActive(false);
         }
 
+        /// <summary>
+        /// Toolbar buttons keep their authored width. <see cref="CreateMenuButton"/> stretches
+        /// horizontal-layout children, which would turn Back / Refresh into full-width bars.
+        /// </summary>
+        static void PinToolbarButtonWidth(Button button)
+        {
+            if (button == null)
+                return;
+            var layout = button.GetComponent<LayoutElement>();
+            if (layout == null)
+                return;
+            layout.flexibleWidth = 0f;
+        }
+
         async Task RefreshAsync(bool silent)
         {
             // --- RefreshAsync ---
             if (_refreshInProgress)
+            {
+                // Don't drop the click. One follow-up runs when the in-flight fetch returns.
+                if (!silent)
+                    _refreshAgain = true;
                 return;
+            }
 
             _refreshInProgress = true;
             if (!silent)
-            {
                 SetStatus("Loading lobbies...");
-                if (_refreshButton != null)
-                    _refreshButton.interactable = false;
-            }
 
             try
             {
@@ -494,6 +502,13 @@ namespace TitanOrbit.Game
                 _refreshInProgress = false;
                 if (_refreshButton != null)
                     _refreshButton.interactable = true;
+
+                // Early returns inside try still land here, so a click during the fetch is not lost.
+                if (_refreshAgain && IsVisible)
+                {
+                    _refreshAgain = false;
+                    await RefreshAsync(silent: false);
+                }
             }
         }
 
@@ -510,7 +525,7 @@ namespace TitanOrbit.Game
                 string project = Application.cloudProjectId ?? "(none)";
                 SetStatus(_cached.Count == 0
                     ? "No dedicated matches listed (project " + project + "). Tap Refresh — a match may start automatically."
-                    : "Tap Join on a match, or use Quick join latest.");
+                    : "Tap Join on a match.");
             }
         }
 
@@ -979,49 +994,6 @@ namespace TitanOrbit.Game
             ApplyRowSelectionVisuals();
         }
 
-        async Task QuickJoinAsync()
-        {
-            // --- QuickJoinAsync ---
-            if (_joinInProgress || TitanOrbitSessionManager.Instance == null)
-                return;
-            _joinInProgress = true;
-            SetStatus("Quick joining latest match...");
-            SetRowJoinButtonsInteractable(false);
-            if (_quickJoinButton != null)
-                _quickJoinButton.interactable = false;
-            try
-            {
-                bool ok = await TitanOrbitSessionManager.Instance.QuickJoinDedicatedAsync();
-                if (!ok)
-                {
-                    SetStatus(TitanOrbitSessionManager.Instance.LastStatusMessage ?? "Quick join failed.");
-                    return;
-                }
-
-                // --- Hand off to Loading Map ---
-                // [TITAN-ORBIT] Leave Join Game before Relay connect finishes so the lobby list
-                // is not visible under the loading overlay (RefreshUi also dismisses as backup).
-                DismissForLoading();
-                SetStatus("Connecting to match...");
-                if (!await WaitForDedicatedConnectionAsync(65f))
-                {
-                    // Connection failed — bring the browser back so the player can retry.
-                    SetStatus(TitanOrbitSessionManager.Instance.LastStatusMessage ??
-                              "Connection timed out. Tap Refresh — the server may be offline.");
-                    if (!IsVisible)
-                        Show();
-                    return;
-                }
-            }
-            finally
-            {
-                _joinInProgress = false;
-                SetRowJoinButtonsInteractable(true);
-                if (_quickJoinButton != null)
-                    _quickJoinButton.interactable = true;
-            }
-        }
-
         /// <summary>
         /// Joins a specific dedicated lobby by id — used by each row's Join button.
         /// </summary>
@@ -1037,8 +1009,6 @@ namespace TitanOrbit.Game
             _selectedLobbyId = lobbyId;
             SetStatus("Joining...");
             SetRowJoinButtonsInteractable(false);
-            if (_quickJoinButton != null)
-                _quickJoinButton.interactable = false;
             try
             {
                 bool ok = await TitanOrbitSessionManager.Instance.JoinDedicatedLobbyAsync(lobbyId);
@@ -1068,8 +1038,6 @@ namespace TitanOrbit.Game
             {
                 _joinInProgress = false;
                 SetRowJoinButtonsInteractable(true);
-                if (_quickJoinButton != null)
-                    _quickJoinButton.interactable = true;
             }
         }
 
@@ -1142,7 +1110,7 @@ namespace TitanOrbit.Game
                     await RefreshAsync(silent: true);
                     if (_cached.Count > 0)
                     {
-                        SetStatus("A dedicated match is ready. Tap Join on a row, or Quick join latest.");
+                        SetStatus("A dedicated match is ready. Tap Join on a row.");
                         return;
                     }
                 }

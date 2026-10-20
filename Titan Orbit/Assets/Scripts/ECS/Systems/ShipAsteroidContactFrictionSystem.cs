@@ -12,7 +12,9 @@ namespace TitanOrbit.ECS
     /// <list type="number">
     /// <item>
     /// Clears then writes <see cref="ShipAsteroidContactState"/> so the next drive tick can
-    /// reject inward motor velocity into asteroids. Ship↔ship sets
+    /// reject inward motor velocity into asteroids. An overkill punch-through
+    /// (<see cref="ShipAsteroidContactState.PunchThrough"/>) skips that stick so the next
+    /// drive does not cancel the remaining into-rock speed. Ship↔ship sets
     /// <see cref="ShipAsteroidContactState.InContactHull"/> for presentation coast.
     /// </item>
     /// <item>
@@ -51,7 +53,11 @@ namespace TitanOrbit.ECS
                          .Query<RefRW<ShipAsteroidContactState>>()
                          .WithAll<ShipTag, Simulate>())
             {
+                // Bounce already set PunchThrough this step. Keep it across the clear so
+                // the pair walk below does not arm InContact on a rock this hit destroys.
+                byte punchThrough = contact.ValueRO.PunchThrough;
                 contact.ValueRW = default;
+                contact.ValueRW.PunchThrough = punchThrough;
             }
 
             var settings = AsteroidSettingsCache.ResolveOrDefault();
@@ -62,69 +68,85 @@ namespace TitanOrbit.ECS
             if (dt <= 0f)
                 dt = 1f / 60f;
 
-            if (!SystemAPI.TryGetSingletonBuffer<ShipPhysicsContactElement>(out var pairs) ||
-                pairs.Length == 0)
-                return;
-
-            var asteroidStateLookup = SystemAPI.GetComponentLookup<AsteroidState>(true);
-            var megaLookup = SystemAPI.GetComponentLookup<MegaShipState>(true);
-            var culledLookup = SystemAPI.GetComponentLookup<AsteroidClientCulledTag>(true);
-            var velocityLookup = SystemAPI.GetComponentLookup<PhysicsVelocity>(false);
             var contactLookup = SystemAPI.GetComponentLookup<ShipAsteroidContactState>(false);
-
-            for (int i = 0; i < pairs.Length; i++)
+            bool hasPairs = SystemAPI.TryGetSingletonBuffer<ShipPhysicsContactElement>(out var pairs)
+                            && pairs.Length > 0;
+            if (hasPairs)
             {
-                ShipPhysicsContactElement pair = pairs[i];
-                if (pair.Kind == ShipPhysicsContactKind.Ship)
+                var asteroidStateLookup = SystemAPI.GetComponentLookup<AsteroidState>(true);
+                var megaLookup = SystemAPI.GetComponentLookup<MegaShipState>(true);
+                var culledLookup = SystemAPI.GetComponentLookup<AsteroidClientCulledTag>(true);
+                var velocityLookup = SystemAPI.GetComponentLookup<PhysicsVelocity>(false);
+
+                for (int i = 0; i < pairs.Length; i++)
                 {
-                    if (contactLookup.HasComponent(pair.Ship))
+                    ShipPhysicsContactElement pair = pairs[i];
+                    if (pair.Kind == ShipPhysicsContactKind.Ship)
                     {
-                        var hull = contactLookup[pair.Ship];
-                        hull.InContactHull = 1;
-                        contactLookup[pair.Ship] = hull;
+                        if (contactLookup.HasComponent(pair.Ship))
+                        {
+                            var hull = contactLookup[pair.Ship];
+                            hull.InContactHull = 1;
+                            contactLookup[pair.Ship] = hull;
+                        }
+
+                        continue;
                     }
 
-                    continue;
-                }
-
-                if (pair.Kind != ShipPhysicsContactKind.Asteroid)
-                    continue;
-
-                Entity ship = pair.Ship;
-                Entity other = pair.Other;
-
-                if (megaLookup.HasComponent(ship) && megaLookup[ship].IsMega)
-                    continue;
-                if (culledLookup.HasComponent(other))
-                    continue;
-                if (asteroidStateLookup.HasComponent(other))
-                {
-                    var rock = asteroidStateLookup[other];
-                    if (rock.IsDestroyed || !(rock.Health > 0.01f))
+                    if (pair.Kind != ShipPhysicsContactKind.Asteroid)
                         continue;
+
+                    Entity ship = pair.Ship;
+                    // Punch-through already reduced into-rock speed. Do not grip or mark contact —
+                    // next drive would zero the speed this hit left on the hull.
+                    if (contactLookup.HasComponent(ship) && contactLookup[ship].PunchThrough != 0)
+                        continue;
+                    Entity other = pair.Other;
+
+                    if (megaLookup.HasComponent(ship) && megaLookup[ship].IsMega)
+                        continue;
+                    if (culledLookup.HasComponent(other))
+                        continue;
+                    if (asteroidStateLookup.HasComponent(other))
+                    {
+                        var rock = asteroidStateLookup[other];
+                        if (rock.IsDestroyed || !(rock.Health > 0.01f))
+                            continue;
+                    }
+
+                    float3 normal = pair.NormalShipFromOther;
+                    normal.y = 0f;
+                    if (math.lengthsq(normal) < 1e-8f)
+                        continue;
+                    normal = math.normalize(normal);
+
+                    if (contactLookup.HasComponent(ship))
+                    {
+                        var rockContact = contactLookup[ship];
+                        rockContact.InContact = 1;
+                        rockContact.OutwardNormal = normal;
+                        contactLookup[ship] = rockContact;
+                    }
+
+                    if (friction <= 0f || !velocityLookup.HasComponent(ship))
+                        continue;
+
+                    var vel = velocityLookup[ship];
+                    vel.Linear = AsteroidColliderMaterialLogic.ApplyTangentialFriction(
+                        vel.Linear, normal, friction, dt);
+                    velocityLookup[ship] = vel;
                 }
+            }
 
-                float3 normal = pair.NormalShipFromOther;
-                normal.y = 0f;
-                if (math.lengthsq(normal) < 1e-8f)
+            foreach (var contact in SystemAPI
+                         .Query<RefRW<ShipAsteroidContactState>>()
+                         .WithAll<ShipTag, Simulate>())
+            {
+                if (contact.ValueRO.PunchThrough == 0)
                     continue;
-                normal = math.normalize(normal);
-
-                if (contactLookup.HasComponent(ship))
-                {
-                    var rockContact = contactLookup[ship];
-                    rockContact.InContact = 1;
-                    rockContact.OutwardNormal = normal;
-                    contactLookup[ship] = rockContact;
-                }
-
-                if (friction <= 0f || !velocityLookup.HasComponent(ship))
-                    continue;
-
-                var vel = velocityLookup[ship];
-                vel.Linear = AsteroidColliderMaterialLogic.ApplyTangentialFriction(
-                    vel.Linear, normal, friction, dt);
-                velocityLookup[ship] = vel;
+                var cleared = contact.ValueRO;
+                cleared.PunchThrough = 0;
+                contact.ValueRW = cleared;
             }
         }
     }

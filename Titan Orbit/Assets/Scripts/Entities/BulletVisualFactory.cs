@@ -24,6 +24,7 @@ namespace TitanOrbit.Entities
     /// </summary>
     public static class BulletVisualFactory
     {
+        /// <summary>Unused. Drawn size is the fire-power ratio times the bank global scale.</summary>
         public const float DefaultBulletVisualScale = 1.2f;
         /// <summary>Legacy CombatSystem global bullet VFX scale when no bank is assigned.</summary>
         public const float LegacyGlobalVisualScale = 0.5f;
@@ -50,8 +51,9 @@ namespace TitanOrbit.Entities
         static readonly List<DeferredAudioReplay> s_deferredAudioReplay = new List<DeferredAudioReplay>(8);
 
         /// <summary>
-        /// Final VFX size = factory baseline × fire-power scale × the one bank-wide
-        /// global. Bullet type (category) does not change size.
+        /// Drawn tracer size = fire-power scale × the one bank-wide global.
+        /// <paramref name="scaleMultiplier"/> is fire power ÷ reference (7.5 / 3 = 2.5).
+        /// Bullet type does not change size.
         /// </summary>
         /// <param name="bankIndex">Unused. Kept so existing call sites still compile.</param>
         public static float GetBulletVisualScale(BulletVfxBank bank, float scaleMultiplier, int bankIndex = -1)
@@ -61,7 +63,7 @@ namespace TitanOrbit.Entities
                 ? LegacyGlobalVisualScale
                 : bank.GlobalVisualScaleMultiplier;
 
-            return DefaultBulletVisualScale * Mathf.Max(0.1f, scaleMultiplier) * globalScale;
+            return scaleMultiplier * globalScale;
         }
 
         /// <summary>Impact burst uses the same size stack as in-flight tracers.</summary>

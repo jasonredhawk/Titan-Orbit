@@ -2521,23 +2521,44 @@ namespace TitanOrbit.UI
             hlg.padding = new RectOffset(0, 0, 0, 0);
         }
 
+        /// <summary>
+        /// Hull title painted on one upgrade-tree card. Regular L1–L6 cards drop a
+        /// leading family label ("Astro Eagle Hawk" → "Hawk") because the family
+        /// line under the title already says Astro Eagle. L7 MEGA cards keep the
+        /// catalog name. Client-only label — does not change the chassis id.
+        /// </summary>
+        /// <param name="node">Legacy tree row used when the family catalog has no name.</param>
+        /// <param name="level">Tree level 1–7. Levels below 7 are regular hulls.</param>
+        /// <param name="branchIndex">Branch at that level (0-based).</param>
         private string GetShipDisplayName(ShipUpgradeNode node, int level, int branchIndex)
         {
+            // --- Resolve the authored or prefab hull label ---
+            string raw = null;
             Planet storePlanet = GetShipUpgradeStorePlanet();
             if (currentShip != null && storePlanet != null && CardShopSystem.Instance != null)
             {
                 string treeName = CardShopSystem.Instance.GetUpgradeTreeShipNameForUpgradeSlot(currentShip, storePlanet.PlanetId, level, branchIndex);
                 if (!string.IsNullOrEmpty(treeName))
-                    return DisplayNameFormatting.SplitCamelCase(treeName.Trim());
+                    raw = treeName.Trim();
             }
-            if (node != null)
+            if (string.IsNullOrEmpty(raw) && node != null)
             {
                 if (!string.IsNullOrEmpty(node.shipName))
-                    return DisplayNameFormatting.SplitCamelCase(node.shipName.Trim());
-                if (node.shipData != null && !string.IsNullOrEmpty(node.shipData.shipName))
-                    return DisplayNameFormatting.SplitCamelCase(node.shipData.shipName.Trim());
+                    raw = node.shipName.Trim();
+                else if (node.shipData != null && !string.IsNullOrEmpty(node.shipData.shipName))
+                    raw = node.shipData.shipName.Trim();
             }
-            return "Unassigned";
+            if (string.IsNullOrEmpty(raw))
+                return "Unassigned";
+
+            string spaced = DisplayNameFormatting.SplitCamelCase(raw);
+            // L7 is the MEGA row. Those titles are catalog hulls, not "family + ship".
+            if (level >= 7)
+                return spaced;
+
+            // Family line under the title already shows "Astro Eagle" — drop that prefix.
+            return DisplayNameFormatting.StripLeadingFamilyLabel(
+                spaced, GetShipFamilyDisplayName(level, branchIndex));
         }
 
         private Sprite ResolveShipTreePreviewSprite(int level, int branchIndex)

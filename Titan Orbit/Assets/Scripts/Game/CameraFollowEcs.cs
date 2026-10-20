@@ -25,8 +25,10 @@ namespace TitanOrbit.Game
     /// [TITAN-ORBIT] Framing knobs live on a <see cref="CameraFollowSettings"/> ScriptableObject.
     /// Each <see cref="ShipFamilyDefinition"/> can point at its own profile; this component watches
     /// the local ship's ghosted <c>ShipFamilyConfigIndex</c> and calls <see cref="SetSettings"/> when
-    /// the family changes (team spawn or moon-dock purchase). The camera hard-locks to the ship,
-    /// then adds a gently smoothed look-ahead on XZ and a smoothly eased height zoom from ship level.
+    /// the family changes (team spawn or moon-dock purchase). The camera hard-locks to the ship
+    /// in free flight. While the hull is grinding an asteroid or touching another ship, the XZ
+    /// anchor trails the hull so contact shoves do not snap the view. On top of that anchor it
+    /// adds a gently smoothed look-ahead on XZ and a smoothly eased height zoom from ship level.
     /// Family <see cref="ShipFamilySpecialBonuses.cameraHeightMul"/> scales that height (zoom out / in)
     /// without needing a unique CameraFollowSettings asset. MEGA hulls skip the family mul — the
     /// MEGA catalog owns framing. <see cref="CurrentHeightZoomFactor"/> exposes that zoom proportion
@@ -268,6 +270,42 @@ namespace TitanOrbit.Game
         bool _hasLastShipPos;
 
         /// <summary>
+        /// Catch-up rate (1/seconds) while grinding or in hull contact. Time constant ~0.22s,
+        /// so a steady slide trails by about speed/4.5 and a PhysX bounce does not hard-lock.
+        /// </summary>
+        const float ContactFollowSharpness = 4.5f;
+
+        /// <summary>Faster catch-up after contact ends, until the anchor is close enough to hard-lock.</summary>
+        const float ContactFollowReleaseSharpness = 12f;
+
+        /// <summary>
+        /// Seconds to keep trailing after contact drops. InContact clears every physics tick
+        /// and can miss a frame while the hull is still grinding.
+        /// </summary>
+        const float ContactFollowReleaseSeconds = 0.28f;
+
+        /// <summary>Largest XZ trail during contact, in world units. A gap past the teleport distance snaps.</summary>
+        const float ContactFollowMaxLag = 1.6f;
+
+        /// <summary>Planar gap that ends the release trail and hard-locks again.</summary>
+        const float ContactFollowSnapDistance = 0.05f;
+
+        /// <summary>Gaps this large are a respawn or abandon, not a grind shove. Hard-lock.</summary>
+        const float ContactFollowTeleportDistance = 12f;
+
+        /// <summary>Smoothed XZ follow point while trailing a contact. Y is copied from the ship.</summary>
+        Vector3 _contactFollowAnchor;
+
+        /// <summary>False until the anchor has been seeded, so the first lock does not ease in from the origin.</summary>
+        bool _contactFollowAnchorValid;
+
+        /// <summary>Seconds of trail left after the contact flag drops.</summary>
+        float _contactFollowReleaseLeft;
+
+        /// <summary>Set on a map wrap so the anchor jumps with the ship the same frame.</summary>
+        bool _snapContactFollowThisFrame;
+
+        /// <summary>
         /// Last successfully read <see cref="ShipState.ShipLevel"/>. Never fall back to 1 during
         /// <see cref="ClientJoinSettleCache.ShouldSkipShipEntityQueries"/> (gem Instantiates after
         /// asteroid destroy) — that caused SmoothDamp height zoom-in/out.
@@ -443,6 +481,9 @@ namespace TitanOrbit.Game
                 Instance = null;
             MapWrapTransition.Reset();
             ResetTheatricalState();
+            _contactFollowAnchorValid = false;
+            _contactFollowReleaseLeft = 0f;
+            _snapContactFollowThisFrame = false;
         }
 
         /// <summary>
@@ -505,6 +546,8 @@ namespace TitanOrbit.Game
         /// </summary>
         void LateUpdate()
         {
+            _snapContactFollowThisFrame = false;
+
             // --- Family profile sync (before framing) ---
             // [TITAN-ORBIT] Ghosted ShipFamilyConfigIndex changes on moon-dock purchase / team spawn.
             // Reuse EcsGameBridge.TryGetLocalShipState — no new ship ECS gathers.
@@ -543,6 +586,7 @@ namespace TitanOrbit.Game
                 SnapTheatricalWorldPoints(wrapDelta);
                 _lastShipPos = shipPos;
                 _lookAheadSmoothVelocity = Vector3.zero;
+                _snapContactFollowThisFrame = true;
             }
 
             var profile = Settings;
@@ -630,7 +674,12 @@ namespace TitanOrbit.Game
             // --- Compose gameplay pose first ---
             // [TITAN-ORBIT] Height / look-ahead keep ticking during theatrical so exit has a
             // live top-down target and the minimap zoom factor does not drift.
-            Vector3 gameplayPosition = shipPos + _lookAheadCurrent + new Vector3(0f, _currentHeight, 0f);
+            // Contact trail is XZ only. The hull pose stays on the sim; this anchor lags it.
+            Vector3 followPos = ApplyContactFollowLag(
+                shipPos,
+                dt,
+                isMoonDockOverride || deadNow || respawnedNow);
+            Vector3 gameplayPosition = followPos + _lookAheadCurrent + new Vector3(0f, _currentHeight, 0f);
             Quaternion gameplayRotation = Quaternion.Euler(90f, 0f, 0f);
             float gameplayFov = profile.gameplayFieldOfView;
 
@@ -1651,8 +1700,8 @@ namespace TitanOrbit.Game
                 {
                     if (family.cameraFollowSettings != null)
                         desired = family.cameraFollowSettings;
-                    // [TITAN-ORBIT] Family identity zoom — same shared profile, different height.
-                    heightMul = family.specialBonuses.ResolveCameraHeightMul();
+                    // Home worlds stay at 1×. Other planets use this match's camera roll.
+                    heightMul = family.ResolveSpecialBonuses().ResolveCameraHeightMul();
                 }
             }
 
@@ -1850,6 +1899,70 @@ namespace TitanOrbit.Game
             // Narrower axis limits the fit: portrait → width; landscape → height.
             float axisFactor = Mathf.Min(1f, aspect);
             return radius / (tanHalf * axisFactor);
+        }
+
+        /// <summary>
+        /// XZ follow anchor. Hard-locks in free flight, on a wrap, and on death / respawn.
+        /// While the hull is grinding an asteroid or touching another ship, eases toward the
+        /// ship so the view trails the bounce instead of snapping onto it. Y stays on the ship.
+        /// </summary>
+        /// <param name="shipPos">This frame's follow target, after MEGA framing.</param>
+        /// <param name="dt">Frame delta in seconds.</param>
+        /// <param name="hardLock">Moon dock, turret pad, death hold, or respawn — copy the target.</param>
+        /// <returns>World point the gameplay camera should sit over (before look-ahead and height).</returns>
+        Vector3 ApplyContactFollowLag(Vector3 shipPos, float dt, bool hardLock)
+        {
+            if (hardLock || _snapContactFollowThisFrame || !_contactFollowAnchorValid)
+            {
+                _contactFollowAnchor = shipPos;
+                _contactFollowAnchorValid = true;
+                _contactFollowReleaseLeft = 0f;
+                return shipPos;
+            }
+
+            // --- Live contact, plus a short hold so a one-tick InContact gap does not snap ---
+            bool liveContact = ShipDisplayPose.LocalHullContact;
+            if (liveContact)
+                _contactFollowReleaseLeft = ContactFollowReleaseSeconds;
+            else if (_contactFollowReleaseLeft > 0f)
+                _contactFollowReleaseLeft = Mathf.Max(0f, _contactFollowReleaseLeft - dt);
+
+            float planarX = shipPos.x - _contactFollowAnchor.x;
+            float planarZ = shipPos.z - _contactFollowAnchor.z;
+            float planarDist = Mathf.Sqrt(planarX * planarX + planarZ * planarZ);
+            bool trailing = liveContact || _contactFollowReleaseLeft > 0f;
+
+            // Free flight, already caught up, or a real teleport: hard-lock.
+            if (!trailing ||
+                planarDist <= ContactFollowSnapDistance ||
+                planarDist >= ContactFollowTeleportDistance)
+            {
+                _contactFollowAnchor = shipPos;
+                if (!liveContact)
+                    _contactFollowReleaseLeft = 0f;
+                return shipPos;
+            }
+
+            float sharpness = liveContact ? ContactFollowSharpness : ContactFollowReleaseSharpness;
+            float t = 1f - Mathf.Exp(-sharpness * Mathf.Max(0f, dt));
+            var anchor = _contactFollowAnchor;
+            anchor.x = Mathf.Lerp(anchor.x, shipPos.x, t);
+            anchor.z = Mathf.Lerp(anchor.z, shipPos.z, t);
+            anchor.y = shipPos.y;
+
+            // Cap the trail so a fast slide stays a slight lag, not a lost ship.
+            float lagX = shipPos.x - anchor.x;
+            float lagZ = shipPos.z - anchor.z;
+            float lag = Mathf.Sqrt(lagX * lagX + lagZ * lagZ);
+            if (lag > ContactFollowMaxLag && lag > 1e-5f)
+            {
+                float scale = ContactFollowMaxLag / lag;
+                anchor.x = shipPos.x - lagX * scale;
+                anchor.z = shipPos.z - lagZ * scale;
+            }
+
+            _contactFollowAnchor = anchor;
+            return anchor;
         }
 
         /// <summary>

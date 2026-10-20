@@ -508,7 +508,8 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// MEGA barrels use catalog unique-component stats (including short <c>bulletRange</c>),
-        /// not the store-planet family's per-mount combat table.
+        /// not the store-planet family's per-mount combat table. Fleet bonuses still scale
+        /// those catalog numbers inside <see cref="MegaShipStatApplyLogic.ApplyCatalogWeaponMountStats"/>.
         /// </summary>
         static void TryApplyMegaWeaponMountStats(EntityManager em, Entity entity)
         {

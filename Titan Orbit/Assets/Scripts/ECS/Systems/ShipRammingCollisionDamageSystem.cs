@@ -59,11 +59,13 @@ namespace TitanOrbit.ECS
         /// seconds have passed. Compound hulls raise several PhysX events per rock, and a
         /// bounce often drops the contact for a few ticks — each one used to apply a full
         /// cruise ram (the stat-sheet hit) again, so one collision showed 250+ damage.
+        /// Shared with <see cref="ShipCollisionBounceSystem"/> so an overkill punch-through
+        /// uses the same rearm window as this impact.
         /// </summary>
-        const double ImpactRearmSeconds = 0.75;
+        public const double ImpactRearmSeconds = 0.75;
 
         /// <summary>Minimum closing speed (u/s) to fire an impact pulse on contact enter.</summary>
-        const float ImpactMinClosingSpeed = 0.35f;
+        public const float ImpactMinClosingSpeed = 0.35f;
 
         /// <summary>Require queue + ships.</summary>
         public void OnCreate(ref SystemState state)
@@ -296,8 +298,19 @@ namespace TitanOrbit.ECS
                 {
                     if (!otherIsShip)
                     {
-                        float asteroidDamage = ShipComponentRammingSuggestions.ComputeImpactDamage(
-                            ramRating, currentSpeed, baseCruise);
+                        float territory = 1f;
+                        if (state.EntityManager.HasComponent<ShipTerritoryBoostLatch>(shipEntity))
+                        {
+                            territory = state.EntityManager.GetComponentData<ShipTerritoryBoostLatch>(shipEntity)
+                                .LatchedMult;
+                        }
+
+                        float asteroidDamage = ComputeAsteroidImpactDamage(
+                            in ship,
+                            in motor,
+                            currentSpeed,
+                            territory,
+                            BulletBankCombatLogic.GetRammingPowerMultiplier(ramBankIndex));
                         // Self-chip is the ram formula, but never more than the rock still has.
                         // A size-1 asteroid must not punch the hull for a full cruise ram.
                         float selfDamage = ShipComponentRammingSuggestions.CapCollisionSelfDamageToAsteroidHealth(
@@ -588,6 +601,34 @@ namespace TitanOrbit.ECS
                 impulsePower: damage,
                 sourceEntity: offender);
             state.EntityManager.SetComponentData(victim, vicShip);
+        }
+
+        /// <summary>
+        /// Impact HP this ship deals to an asteroid at <paramref name="currentPlanarSpeed"/>.
+        /// Same product as contact-enter ram: rating × (1 + speed / stock cruise), including
+        /// the bullet-bank ramming multiplier, cargo tax, and friendly-territory scale.
+        /// Bounce uses this so a punch-through slowdown matches the HP this hit applies.
+        /// </summary>
+        public static float ComputeAsteroidImpactDamage(
+            in ShipState ship,
+            in ShipMotorConfig motor,
+            float currentPlanarSpeed,
+            float territoryLatchedMult,
+            float bankRammingMultiplier)
+        {
+            ResolveMobilityRamInputs(
+                in ship, in motor, out _, out _, out _, out float taxedBaseCruise);
+            float familyRam = motor.RammingPower > 0.001f
+                ? motor.RammingPower
+                : ShipFamilyDefaultFallbackStats.CreateBaseline().rammingPower;
+            familyRam *= math.max(0f, bankRammingMultiplier);
+            float ramRating = ShipComponentRammingSuggestions.ComputeDamageRatingFromFamilyPower(familyRam);
+            float baseCruise = taxedBaseCruise;
+            if (territoryLatchedMult > 1f)
+                baseCruise *= territoryLatchedMult;
+            baseCruise = math.max(0.01f, baseCruise);
+            return ShipComponentRammingSuggestions.ComputeImpactDamage(
+                ramRating, currentPlanarSpeed, baseCruise);
         }
 
         /// <summary>

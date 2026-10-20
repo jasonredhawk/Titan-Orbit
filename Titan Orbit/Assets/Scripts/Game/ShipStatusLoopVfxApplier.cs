@@ -8,23 +8,18 @@ using UnityEngine;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// Client-only: loops the bullet-bank impact ("end") particle on a ship proxy for the
-    /// remaining burn DoT or electric-shock stun. Reads ghosted
-    /// <see cref="ShipBurnOverTimeState"/> / <see cref="ShipElectricShockState"/>.
-    /// Burn sits on the ghosted collider contact (<see cref="ShipBurnOverTimeState.HitLocalX"/>);
-    /// shock stays on the hull center. Cosmetic — no sim change. Attached by <see cref="EcsWorldVisualizer"/>.
+    /// Client-only: plays the bullet-bank impact on a ship proxy for burn DoT or
+    /// electric-shock stun. Reads ghosted <see cref="ShipBurnOverTimeState"/> /
+    /// <see cref="ShipElectricShockState"/>. Burn sits on the ghosted collider contact
+    /// (<see cref="ShipBurnOverTimeState.HitLocalX"/>) and replays that impact each time
+    /// <see cref="ShipBurnOverTimeState.TickSequence"/> advances. Shock stays on the hull
+    /// center for the stun window. Cosmetic — no sim change. Attached by <see cref="EcsWorldVisualizer"/>.
     /// </summary>
     [DefaultExecutionOrder(108)]
     public class ShipStatusLoopVfxApplier : MonoBehaviour
     {
         const float ShockLocalY = 0.55f;
         const float BurnLocalY = 0.2f;
-
-        /// <summary>
-        /// How often the burn slot re-emits the impact burst. Matches the default DoT tick
-        /// so the hull keeps burning instead of waiting out the prefab's 2s one-shot duration.
-        /// </summary>
-        const float BurnReplayInterval = 0.25f;
 
         Entity _shipEntity;
         readonly Slot _shock = new Slot();
@@ -40,6 +35,10 @@ namespace TitanOrbit.Game
         public void Bind(Entity shipEntity)
         {
             ReleaseAll();
+            // New proxy. The next sample snapshots TickSequence so a hull that is
+            // already burning shows fire, without treating 0 as a fresh tick.
+            _burn.AwaitingBaseline = true;
+            _burn.LastTickSequence = 0;
             _shipEntity = shipEntity;
         }
 
@@ -100,40 +99,72 @@ namespace TitanOrbit.Game
                 shockTeam = shock.VfxTeam;
             }
 
+            bool haveBurn = em.HasComponent<ShipBurnOverTimeState>(_shipEntity);
             bool burnActive = false;
             int burnBank = 0;
             byte burnTeam = 0;
+            uint burnSeq = 0;
             Vector2 burnLocalXZ = Vector2.zero;
-            if (em.HasComponent<ShipBurnOverTimeState>(_shipEntity))
+            if (haveBurn)
             {
                 var burn = em.GetComponentData<ShipBurnOverTimeState>(_shipEntity);
                 burnActive = burn.IsActive(elapsed);
                 burnBank = burn.VfxBankIndex;
                 burnTeam = burn.VfxTeam;
+                burnSeq = burn.TickSequence;
                 burnLocalXZ = new Vector2(burn.HitLocalX, burn.HitLocalZ);
             }
 
             // Shock has no damage ticks — keep the impact looping on the hull center.
-            // Burn re-emits that same impact on the collider contact for the whole DoT.
+            // Burn replays the same impact on each ghosted damage tick.
             SyncSlot(_shock, shockActive, shockBank, shockTeam, ShockLocalY, Vector2.zero);
-            SyncSlot(_burn, burnActive, burnBank, burnTeam, BurnLocalY, burnLocalXZ);
-            if (burnActive)
-                ReplayBurnIfDue(_burn);
+            SyncBurn(haveBurn, burnActive, burnSeq, burnBank, burnTeam, burnLocalXZ);
         }
 
         /// <summary>
-        /// Impact prefabs burst once per multi-second duration. While the burn ghost is active,
-        /// emit that burst again so the ship shows fire for every damage tick.
+        /// One impact play per burn iteration. The bullet's own hit already played the
+        /// first explosion; <paramref name="seq"/> advances only when a DoT tick lands.
         /// </summary>
-        void ReplayBurnIfDue(Slot slot)
+        void SyncBurn(bool haveBurn, bool active, uint seq, int bankIndex, byte team, Vector2 hitLocalXZ)
         {
-            if (slot.Instance == null)
+            if (!haveBurn || !active)
+            {
+                ReleaseSlot(_burn);
+                // Remember the counter while idle so the next bullet's impact is not
+                // replayed again — only a later TickSequence step starts the burn flash.
+                if (haveBurn)
+                {
+                    _burn.AwaitingBaseline = false;
+                    _burn.LastTickSequence = seq;
+                }
+
                 return;
-            if (Time.time < slot.NextReplay)
+            }
+
+            if (_burn.AwaitingBaseline)
+            {
+                _burn.AwaitingBaseline = false;
+                _burn.LastTickSequence = seq;
+                // Proxy appeared while this hull was already on fire (late join).
+                TryStartBurn(bankIndex, team, hitLocalXZ);
+                return;
+            }
+
+            if (_burn.Instance != null)
+                PlaceOnHull(_burn.Instance.transform, BurnLocalY, hitLocalXZ);
+
+            if (seq == _burn.LastTickSequence)
                 return;
 
-            slot.NextReplay = Time.time + BurnReplayInterval;
-            VfxUrpCompat.ReplayParticleBursts(slot.Instance);
+            _burn.LastTickSequence = seq;
+            if (_burn.Instance != null &&
+                (_burn.BankIndex != bankIndex || _burn.Team != team))
+                ReleaseSlot(_burn);
+
+            if (_burn.Instance == null)
+                TryStartBurn(bankIndex, team, hitLocalXZ);
+            else
+                VfxUrpCompat.ReplayImpactAnimation(_burn.Instance);
         }
 
         void SyncSlot(Slot slot, bool active, int bankIndex, byte team, float localY, Vector2 hitLocalXZ)
@@ -185,8 +216,42 @@ namespace TitanOrbit.Game
             slot.Instance = go;
             slot.BankIndex = bankIndex;
             slot.Team = team;
-            // Start already emitted the burst. The next replay is one DoT step later.
-            slot.NextReplay = Time.time + BurnReplayInterval;
+        }
+
+        /// <summary>
+        /// Rents the bank impact and plays it once. Later ticks call
+        /// <see cref="VfxUrpCompat.ReplayImpactAnimation"/> on this same shell.
+        /// </summary>
+        void TryStartBurn(int bankIndex, byte team, Vector2 hitLocalXZ)
+        {
+            BulletVfxBank bank = BulletVfxBank.LoadDefault();
+            if (bank == null)
+                return;
+
+            GameObject prefab = bank.GetImpactPrefab(bankIndex, (TeamId)team);
+            if (prefab == null)
+                return;
+
+            if (!BulletOneShotVfxPool.TryRent(prefab, out GameObject go) || go == null)
+                return;
+
+            go.name = prefab.name + "_BurnTick";
+            go.transform.SetParent(transform, false);
+            PlaceOnHull(go.transform, BurnLocalY, hitLocalXZ);
+
+            float parentLossy = transform.lossyScale.x;
+            if (parentLossy < 0.0001f)
+                parentLossy = 0.0001f;
+            float worldScale = BulletVisualFactory.GetImpactScale(bank, 1f, bankIndex);
+            VfxUrpCompat.ApplyImpactVisualScale(go, worldScale / parentLossy);
+
+            MuteAudio(go);
+            // Inactive rent: Prepare enables the shell and plays the time-0 burst.
+            VfxUrpCompat.PrepareVfxInstance(go);
+
+            _burn.Instance = go;
+            _burn.BankIndex = bankIndex;
+            _burn.Team = team;
         }
 
         /// <summary>
@@ -221,7 +286,6 @@ namespace TitanOrbit.Game
             slot.Instance = null;
             slot.BankIndex = -1;
             slot.Team = 0;
-            slot.NextReplay = 0f;
 
             VfxUrpCompat.SetParticleSystemsLooping(go, false);
             RestoreAudio(go);
@@ -272,7 +336,9 @@ namespace TitanOrbit.Game
             public GameObject Instance;
             public int BankIndex = -1;
             public byte Team;
-            public float NextReplay;
+            public uint LastTickSequence;
+            /// <summary>True until this proxy has sampled <see cref="ShipBurnOverTimeState.TickSequence"/> once.</summary>
+            public bool AwaitingBaseline = true;
         }
     }
 }

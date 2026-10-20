@@ -163,5 +163,14 @@ namespace TitanOrbit
 
         /// <summary>Inspector cap so a debug toggle cannot fill the match with hulls.</summary>
         public const int AiShipsPerTeamCap = 2;
+
+        /// <summary>
+        /// When true, beta testers get the field-notes screen and the server accepts
+        /// those notes into <c>BetaFeedback.log</c>. Written by GameManager from
+        /// <c>Enable Beta Feedback</c>. Default false — public builds hide the screen
+        /// and the server refuses writes. Honored on the dedicated server (this is
+        /// the feature switch, not a local cheat).
+        /// </summary>
+        public static bool BetaFeedbackEnabled;
     }
 }

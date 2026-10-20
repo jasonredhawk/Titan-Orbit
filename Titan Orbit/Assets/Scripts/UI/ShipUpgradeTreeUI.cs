@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using TitanOrbit.Core;
 using TitanOrbit.Data;
 using TMPro;
 using UnityEngine;
@@ -443,6 +444,12 @@ namespace TitanOrbit.UI
                         : $"Branch {b + 1}";
                     if (string.IsNullOrWhiteSpace(shipName))
                         shipName = $"Branch {b + 1}";
+                    // Regular cards: family is the line under the title, so drop "Astro Eagle " from "Astro Eagle Hawk".
+                    if (!mega)
+                    {
+                        shipName = DisplayNameFormatting.StripLeadingFamilyLabel(
+                            shipName, FamilyStatHudCopy.FormatFamilyDisplayName(family));
+                    }
                     node.SetShipName(shipName);
                     node.SetFamilyName(FamilyStatHudCopy.FormatFamilyDisplayName(family));
                     // Editor preview: same FIREBALLS / LASER roster the moon dock paints.

@@ -10,9 +10,9 @@ namespace TitanOrbit.Data
     /// and how Scan / VFX / attribute mesh-scale treat it. Filled by Discover &amp; Classify on
     /// the shared ProfileSet.
     /// <para>
-    /// <see cref="partType"/> is the <b>group</b>: shared Part Profile stats + which attribute-scale
-    /// bucket the mesh grows with (e.g. Thruster Cover stays <c>Thruster</c> so it grows with jets,
-    /// but <see cref="contributesAbilityStats"/> is false and VFX stays off).
+    /// <see cref="partType"/> is the <b>group</b> (mesh-scale bucket + which Part Profile seeds
+    /// a new row). <see cref="baseStats"/> is the master ability block for <b>this name only</b>
+    /// — HyperFalcon_Cockpit and LightFox_Cockpit each keep their own numbers.
     /// </para>
     /// </summary>
     [Serializable]
@@ -41,6 +41,18 @@ namespace TitanOrbit.Data
         public string notes = string.Empty;
         /// <summary>When false, Scan Folder skips creating a component entry for this name.</summary>
         public bool includeInPopulate = true;
+        /// <summary>
+        /// Master ability stats for this part name. Seeded from the Part Profile (version-adjusted)
+        /// the first time stats are applied to a ship component with this id. Later edits here
+        /// change only this part.
+        /// </summary>
+        [Tooltip("Master stats for this part only. Recalculate copies these onto the matching ship component.")]
+        public ShipComponentAbilityStats baseStats;
+        /// <summary>
+        /// True after <see cref="baseStats"/> has been written from a Part Profile apply or a hand edit.
+        /// While false, apply still reads the shared Part Profile and then stamps this row.
+        /// </summary>
+        public bool hasBaseStats;
 
         /// <summary>True when partType is empty, Unmapped, or Ignore.</summary>
         public bool IsUnmappedOrIgnore
@@ -202,10 +214,11 @@ namespace TitanOrbit.Data
     }
 
     /// <summary>
-    /// Project-wide shared asset: discovered component name inventory, AI-assisted classification,
-    /// per-name propulsion VFX flags/scales, part-type calc profiles used by every
-    /// <see cref="ShipFamilyDefinition"/> Scan / Populate button, and the global attribute
-    /// mesh-grow dampener (<see cref="globalUpgradeScaleMultiplier"/>).
+    /// Project-wide shared asset: discovered component name inventory (each row holds that
+    /// part's master <see cref="ShipFamilyPartNameMapping.baseStats"/>), AI-assisted classification,
+    /// per-name propulsion VFX flags/scales, part-type calc profiles that seed a name mapping
+    /// which does not yet have its own block, and the global attribute mesh-grow dampener
+    /// (<see cref="globalUpgradeScaleMultiplier"/>).
     /// Place under Resources as <c>ShipFamilyPartCalcProfileSet</c> for runtime VFX fallback.
     /// </summary>
     [CreateAssetMenu(
@@ -229,11 +242,11 @@ namespace TitanOrbit.Data
         public float globalUpgradeScaleMultiplier = DefaultGlobalUpgradeScaleMultiplier;
 
         [Header("Name inventory — one row per unique family-prefixed prefab part name (Discover & Classify)")]
-        [Tooltip("Inventory of full prefab part ids (AstroEagle_Wing_2, SpaceExcalibur_Thrusters_Big…). Each maps into a Part Profile group via partType. Count is large; that is expected.")]
+        [Tooltip("One row per prefab part id. partType is the group. baseStats is the master stat block for that part only (HyperFalcon_Cockpit and LightFox_Cockpit are independent).")]
         public List<ShipFamilyPartNameMapping> nameMappings = new List<ShipFamilyPartNameMapping>();
 
         [Header("Part Profiles — Cockpit, Weapons, Wing, Engine, Thruster, Tail, Hull")]
-        [Tooltip("Eight shared groups. Edit stats once per group; Scan applies to every Name Mapping in that group. Version digits in the name pick the tier. Engine = power plant (move/accel + Energy + OVERDRIVE knobs). Thruster = maneuver jets (move/accel + turn).")]
+        [Tooltip("Template stats per group. Seeds a Name Mapping that does not yet have base stats. Editing a profile does not change mappings that already have their own block. Version digits in the name pick the tier when seeding. Engine = power plant. Thruster = maneuver jets.")]
         public List<ShipFamilyPartCalcProfile> partProfiles = new List<ShipFamilyPartCalcProfile>();
 
         [NonSerialized] Dictionary<string, ShipFamilyPartNameMapping> _nameLookup;
@@ -454,34 +467,153 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Suggests ability stats for a component using ProfileSet profiles + categories.
-        /// Cosmetics (<see cref="ShipFamilyPartNameMapping.contributesAbilityStats"/> false) get zeros.
+        /// Part type used when writing component categories: mapping group, else name heuristic.
         /// </summary>
-        public ShipComponentAbilityStats SuggestStatsForComponent(
+        public string ResolveAuthoringPartType(string componentId)
+        {
+            string partType = ResolvePartType(componentId);
+            if (string.IsNullOrEmpty(partType)
+                || string.Equals(partType, ShipFamilyPartTypes.Unmapped, StringComparison.OrdinalIgnoreCase))
+                partType = ShipFamilyPartTypes.InferFromComponentName(componentId);
+            else
+                partType = ShipFamilyPartTypes.Normalize(partType, componentId);
+            return partType;
+        }
+
+        /// <summary>
+        /// Stat categories Recalculate / Scan write for this part. Empty for cosmetics.
+        /// </summary>
+        public List<ShipComponentStatCategory> GetAuthoringCategories(string componentId)
+        {
+            if (!ContributesAbilityStats(componentId))
+                return new List<ShipComponentStatCategory>();
+
+            string partType = ResolveAuthoringPartType(componentId);
+            List<ShipComponentStatCategory> categories =
+                ShipFamilyComponentPartKey.InferDefaultStatCategoriesForPartType(partType, componentId);
+            if (categories == null || categories.Count == 0)
+                categories = ShipFamilyComponentPartKey.InferDefaultStatCategories(componentId);
+            return categories ?? new List<ShipComponentStatCategory>();
+        }
+
+        /// <summary>
+        /// Ability stats from the shared Part Profile only (version digit in the name picks the tier).
+        /// Does not read <see cref="ShipFamilyPartNameMapping.baseStats"/>.
+        /// </summary>
+        public ShipComponentAbilityStats EvaluatePartProfileStats(
             string componentId,
             IReadOnlyList<ShipComponentStatCategory> categories)
         {
-            // --- Cosmetics: same group for scale/VFX flags, no ability numbers ---
             if (!ContributesAbilityStats(componentId))
                 return default;
 
             string partType = ResolvePartType(componentId);
             int version = ExtractVersion(componentId);
             if (categories == null || categories.Count == 0)
-                categories = ShipFamilyComponentPartKey.InferDefaultStatCategories(componentId);
+                categories = GetAuthoringCategories(componentId);
 
-            ShipComponentAbilityStats merged = default;
+            ShipComponentAbilityStats merged;
             if (TryGetProfile(partType, out ShipFamilyPartCalcProfile profile) && profile != null)
-            {
                 merged = profile.EvaluateAtVersion(version);
-            }
             else
-            {
-                // Last-resort keyword seed when profiles not reset yet.
                 merged = SeedStatsHeuristic(partType, version, categories);
-            }
 
             return ShipComponentAbilityStats.KeepOnlyAuthoringFields(merged, categories, componentId);
+        }
+
+        /// <summary>
+        /// Ability stats for a component. A name mapping that already has
+        /// <see cref="ShipFamilyPartNameMapping.baseStats"/> is the master for that part.
+        /// Otherwise the shared Part Profile is evaluated (and apply should stamp the mapping).
+        /// Cosmetics get zeros.
+        /// </summary>
+        public ShipComponentAbilityStats SuggestStatsForComponent(
+            string componentId,
+            IReadOnlyList<ShipComponentStatCategory> categories)
+        {
+            if (!ContributesAbilityStats(componentId))
+                return default;
+
+            if (categories == null || categories.Count == 0)
+                categories = GetAuthoringCategories(componentId);
+
+            // --- Per-part master: HyperFalcon_Cockpit does not share numbers with LightFox_Cockpit ---
+            if (TryGetNameMapping(componentId, out ShipFamilyPartNameMapping mapping)
+                && mapping != null
+                && mapping.hasBaseStats
+                && mapping.contributesAbilityStats)
+            {
+                return ShipComponentAbilityStats.KeepOnlyAuthoringFields(
+                    mapping.baseStats, categories, componentId);
+            }
+
+            return EvaluatePartProfileStats(componentId, categories);
+        }
+
+        /// <summary>
+        /// Writes the stats just applied to a ship component onto that part's name mapping.
+        /// Rows that already have base stats are left alone so a hand edit stays the master.
+        /// </summary>
+        /// <returns>True when this call stored a new block.</returns>
+        public bool TryWriteAppliedBaseStats(string componentId, ShipComponentAbilityStats appliedStats)
+        {
+            if (!TryGetNameMapping(componentId, out ShipFamilyPartNameMapping mapping) || mapping == null)
+                return false;
+            if (mapping.IsUnmappedOrIgnore || !mapping.contributesAbilityStats || mapping.hasBaseStats)
+                return false;
+
+            mapping.baseStats = appliedStats;
+            mapping.hasBaseStats = true;
+            return true;
+        }
+
+        /// <summary>
+        /// Copies Part Profile stats (version-adjusted) onto name mappings.
+        /// <paramref name="overwrite"/> false keeps rows that already have a master block.
+        /// </summary>
+        /// <returns>How many mappings were written.</returns>
+        public int SeedNameMappingBaseStatsFromPartProfiles(bool overwrite)
+        {
+            if (nameMappings == null)
+                return 0;
+
+            int written = 0;
+            for (int i = 0; i < nameMappings.Count; i++)
+            {
+                ShipFamilyPartNameMapping mapping = nameMappings[i];
+                if (!TrySeedMappingFromPartProfile(mapping, overwrite))
+                    continue;
+                written++;
+            }
+
+            InvalidateLookups();
+            return written;
+        }
+
+        /// <summary>Copies Part Profile stats onto one name mapping, looked up by discovered name.</summary>
+        public bool SeedNameMappingBaseStats(string discoveredName, bool overwrite)
+        {
+            if (!TryGetNameMapping(discoveredName, out ShipFamilyPartNameMapping mapping) || mapping == null)
+                return false;
+            if (!TrySeedMappingFromPartProfile(mapping, overwrite))
+                return false;
+            InvalidateLookups();
+            return true;
+        }
+
+        bool TrySeedMappingFromPartProfile(ShipFamilyPartNameMapping mapping, bool overwrite)
+        {
+            if (mapping == null || mapping.IsUnmappedOrIgnore || !mapping.contributesAbilityStats)
+                return false;
+            if (mapping.hasBaseStats && !overwrite)
+                return false;
+            if (string.IsNullOrWhiteSpace(mapping.discoveredName))
+                return false;
+
+            List<ShipComponentStatCategory> categories = GetAuthoringCategories(mapping.discoveredName);
+            mapping.baseStats = EvaluatePartProfileStats(mapping.discoveredName, categories);
+            mapping.hasBaseStats = true;
+            return true;
         }
 
         /// <summary>

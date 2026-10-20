@@ -260,6 +260,28 @@ namespace TitanOrbit.NetCode
             StartCoroutine(ResetAfterUnexpectedDisconnect());
         }
 
+        /// <summary>
+        /// The match link is dead, but NetCode still lists the connection as in-game.
+        /// A dead Relay WebSocket often never raises a disconnect, so
+        /// <see cref="WatchDedicatedClientDrop"/> keeps waiting on the transport timer.
+        /// Return to the menu with the same message that watcher uses.
+        /// </summary>
+        /// <remarks>
+        /// Called from the client link HUD after several seconds with no new snapshot.
+        /// Keeping the socket "connected" does not save the flight — prediction is
+        /// already flying a world the server has stopped updating. This does not run
+        /// for a command stall while snapshots are still arriving.
+        /// </remarks>
+        public void NotifyDedicatedLinkUnrecoverable()
+        {
+            if (!IsDedicatedOnlineClient || !IsInGame)
+                return;
+            if (_returningToMenu || _unexpectedDisconnectResetRunning)
+                return;
+
+            BeginUnexpectedDedicatedClientReset("Connection lost. Join the match again.");
+        }
+
         IEnumerator ResetAfterUnexpectedDisconnect()
         {
             Task reset = ResetDedicatedClientSessionAsync(LastStatusMessage);
@@ -1966,37 +1988,12 @@ namespace TitanOrbit.NetCode
                     return false;
                 }
 
-#if UNITY_WEBGL && !UNITY_EDITOR
-                // Player loop owns ClientWorld. The init-group system resets the driver and
-                // connects before NetworkStreamReceiveSystem polls the WebSocket.
-                TitanOrbitWebGlRelayConnect.Request();
-#else
-                // A leftover IPC connection from the Editor's local ServerWorld makes
-                // ResetDriverStore refuse, and Connect then dials Relay on the wrong driver.
-                int released = ForceReleaseClientConnectionEntities(clientWorld.EntityManager);
-                if (released > 0)
-                    Debug.Log("[TitanOrbitSessionManager] Released " + released +
-                              " stale connection(s) before the Editor Relay driver rebuild.");
-                if (!ResetClientDriverIfNeeded())
-                {
-                    Debug.LogError("[TitanOrbitSessionManager] Editor Relay driver was not rebuilt.");
-                    LastStatusMessage = "Could not open the online connection. Stop Play, then Join game again.";
-                    return false;
-                }
-
-                Entity connection = ConnectRelayClient(clientWorld);
-                if (connection == Entity.Null)
-                {
-                    Debug.LogError("[TitanOrbitSessionManager] Editor Relay connect was skipped.");
-                    LastStatusMessage = "Online connect did not start. Tap Refresh, then join again.";
-                    return false;
-                }
-
-                TitanOrbitRelayState.TryGetClientRelay(out var dial);
-                Debug.Log("[TitanOrbitSessionManager] Editor Relay connect issued endpoint=" + dial.Endpoint +
-                          " wss=" + dial.IsWebSocket + " secure=" + dial.IsSecure +
-                          " connection=" + connection.Index);
-#endif
+                // The first Join of a Play has no NetworkStreamConnection, so an inline
+                // ResetDriverStore used to succeed. After a match — menu leave or a drop —
+                // that entity is cleanup data and stays in the query. ResetDriverStore then
+                // refuses, and doing the destroy from this async method races the player
+                // loop. Queue the rebuild onto the init system, which runs before receive.
+                TitanOrbitClientRelayConnect.Request();
                 for (int i = 0; i < 30; i++)
                 {
                     TickClientWorld(clientWorld);
@@ -2267,15 +2264,50 @@ namespace TitanOrbit.NetCode
             }
 
             TitanOrbitRelayState.Clear();
-            // WebGL: the player loop is already inside ClientWorld. Resetting the socket
-            // from this async method races NetworkStreamReceiveSystem and can throw while
-            // a dead connection entity still exists — the next Join then never connects
-            // until the browser page is refreshed. The init-group system resets instead.
-#if UNITY_WEBGL && !UNITY_EDITOR
-            TitanOrbitWebGlRelayConnect.RequestIdleReset();
-#else
-            ResetClientDriverIfNeeded();
-#endif
+            // Queue the close, then wait until that socket is actually gone. Returning
+            // here used to let the next Join replace the queued close and attach a second
+            // driver while the dedicated server still had the first connection on the ship.
+            TitanOrbitClientRelayConnect.RequestIdleReset();
+            const int idleResetFrames = 180;
+            for (int frame = 0; frame < idleResetFrames; frame++)
+            {
+                if (epoch != _clientSessionEpoch)
+                {
+                    Debug.Log("[TitanOrbitSessionManager] Aborted idle driver reset — a newer Join already started.");
+                    return;
+                }
+
+                if (clientWorld == null || !clientWorld.IsCreated)
+                    break;
+
+                int remaining;
+                using (var connections = clientWorld.EntityManager.CreateEntityQuery(typeof(NetworkStreamConnection)))
+                    remaining = connections.CalculateEntityCount();
+
+                if (remaining == 0 && !TitanOrbitClientRelayConnect.HasPendingWork)
+                    break;
+
+                TickClientWorld(clientWorld);
+                await Task.Yield();
+            }
+
+            if (epoch != _clientSessionEpoch)
+            {
+                Debug.Log("[TitanOrbitSessionManager] Aborted idle driver reset — a newer Join already started.");
+                return;
+            }
+
+            if (clientWorld != null && clientWorld.IsCreated)
+            {
+                using var connections = clientWorld.EntityManager.CreateEntityQuery(typeof(NetworkStreamConnection));
+                int remaining = connections.CalculateEntityCount();
+                if (remaining > 0)
+                {
+                    Debug.LogWarning("[TitanOrbitSessionManager] " + remaining +
+                                     " NetworkStreamConnection(s) still present after leave. " +
+                                     "The next Join will not attach until they disconnect.");
+                }
+            }
 
             if (!string.IsNullOrEmpty(reason))
             {
@@ -2670,12 +2702,10 @@ namespace TitanOrbit.NetCode
                     {
                         lastDiag = Time.realtimeSinceStartup;
                         LogClientConnectDiagnostics(client);
-#if UNITY_WEBGL && !UNITY_EDITOR
-                        // A failed WebSocket removes the connection entity. Ask for another
-                        // connect on the next initialization tick instead of waiting out the minute.
+                        // Handshake not started (or the socket died). Ask the init system to
+                        // rebuild and connect again instead of waiting out the minute.
                         if (!HasClientConnection(client) && TitanOrbitRelayState.TryGetClientRelay(out _))
-                            TitanOrbitWebGlRelayConnect.Request();
-#endif
+                            TitanOrbitClientRelayConnect.Request();
                     }
 
                     if (dedicatedJoin && Time.realtimeSinceStartup - started >= zombieFailSeconds &&
@@ -2986,53 +3016,141 @@ namespace TitanOrbit.NetCode
         }
 
         /// <summary>
-        /// Removes leftover client connection entities so the WebSocket driver can be rebuilt.
+        /// Tells every live client socket to disconnect. Does not destroy the connection entity.
         /// </summary>
-        /// <param name="em">Client world entity manager. Call this from the init-group system, before receive runs.</param>
-        /// <returns>How many connection entities were released. Zero means the driver was already clear.</returns>
+        /// <param name="em">Client world. Call from initialization, before receive runs.</param>
+        /// <returns>
+        /// How many sockets are still up (connected, connecting, or disconnecting).
+        /// Zero means none of them are live — records with no socket are left for
+        /// <see cref="ReleaseStaleClientConnectionEntities"/>.
+        /// </returns>
         /// <remarks>
-        /// [NETCODE] <see cref="NetworkStreamConnection"/> is cleanup data. <c>DestroyEntity</c> does
-        /// not remove it, so the entity stays in the query. <c>ResetDriverStore</c> then throws
-        /// ("connections still present") before it disposes the old socket. On WebGL that throw
-        /// aborts the reconnect, and the browser keeps the dead WebSocket until a full page refresh.
-        /// Stripping the cleanup components lets the entity actually die. The caller then disposes
-        /// the driver, which closes the JavaScript socket.
+        /// [NETCODE] <see cref="NetworkStreamReceiveSystem"/> is what removes
+        /// <see cref="NetworkStreamConnection"/> after <see cref="NetworkDriverStore.Disconnect"/>.
+        /// Destroying that entity first skips the close packet. The dedicated server then keeps
+        /// the old connection on the ship, and the next <c>Connect</c> is a second socket.
         /// </remarks>
-        internal static int ForceReleaseClientConnectionEntities(EntityManager em)
+        internal static int DisconnectLiveClientConnections(EntityManager em)
         {
             using var query = em.CreateEntityQuery(ComponentType.ReadOnly<NetworkStreamConnection>());
             if (query.IsEmptyIgnoreFilter)
                 return 0;
 
+            using var driverQuery = em.CreateEntityQuery(ComponentType.ReadOnly<NetworkStreamDriver>());
+            if (!driverQuery.TryGetSingleton<NetworkStreamDriver>(out var driver) || !driver.DriverStore.IsCreated)
+            {
+                // No transport left to disconnect. The records are stale; the caller strips them
+                // instead of treating them as a second live socket.
+                Debug.LogWarning("[TitanOrbitSessionManager] Client connection records exist but the driver is gone.");
+                return 0;
+            }
+
             using var entities = query.ToEntityArray(Allocator.Temp);
-            int released = entities.Length;
+            int live = 0;
             for (int i = 0; i < entities.Length; i++)
             {
                 Entity entity = entities[i];
-                if (!em.Exists(entity))
+                if (!em.Exists(entity) || !em.HasComponent<NetworkStreamConnection>(entity))
                     continue;
 
-                // --- Strip cleanup, then destroy ---
-                // A normal disconnect removes these from NetworkStreamReceiveSystem. A dropped
-                // WebSocket can leave Value uncreated, and that system then returns without
-                // cleaning up. The entity would block every later Join.
+                var connection = em.GetComponentData<NetworkStreamConnection>(entity);
+                if (!TryReadTransportState(driver, connection, out NetworkConnection.State state))
+                    continue;
+                if (state == NetworkConnection.State.Disconnected)
+                    continue;
+
+                // Already closing. Receive removes the entity once the driver reports Disconnected.
+                // Disconnect is not called again — a second Disconnect restarts the handshake,
+                // and NetworkStreamRequestDisconnect would make receive do that every frame.
+                if (state != NetworkConnection.State.Disconnecting)
+                    driver.DriverStore.Disconnect(connection);
+                live++;
+            }
+
+            return live;
+        }
+
+        /// <summary>
+        /// Drops connection entities whose transport socket is already gone.
+        /// </summary>
+        /// <param name="em">Client world entity manager.</param>
+        /// <returns>How many stale records were removed. Live sockets are left untouched.</returns>
+        /// <remarks>
+        /// [NETCODE] A default <see cref="NetworkConnection"/> never reaches the receive cleanup
+        /// (that job returns when <c>Value</c> is not created), so <c>ResetDriverStore</c> would
+        /// refuse forever. Stripping is safe only after the socket is gone. A live socket has to
+        /// go through <see cref="DisconnectLiveClientConnections"/> first.
+        /// </remarks>
+        internal static int ReleaseStaleClientConnectionEntities(EntityManager em)
+        {
+            using var query = em.CreateEntityQuery(ComponentType.ReadOnly<NetworkStreamConnection>());
+            if (query.IsEmptyIgnoreFilter)
+                return 0;
+
+            using var driverQuery = em.CreateEntityQuery(ComponentType.ReadOnly<NetworkStreamDriver>());
+            bool hasDriver = driverQuery.TryGetSingleton<NetworkStreamDriver>(out var driver) &&
+                             driver.DriverStore.IsCreated;
+
+            using var entities = query.ToEntityArray(Allocator.Temp);
+            // Playback now. DestroyEntity inside an init system is deferred until the system
+            // ends, so the connection query would still see the entity this frame.
+            var ecb = new EntityCommandBuffer(Allocator.Temp);
+            int released = 0;
+            for (int i = 0; i < entities.Length; i++)
+            {
+                Entity entity = entities[i];
+                if (!em.Exists(entity) || !em.HasComponent<NetworkStreamConnection>(entity))
+                    continue;
+
+                var connection = em.GetComponentData<NetworkStreamConnection>(entity);
+                if (hasDriver &&
+                    TryReadTransportState(driver, connection, out NetworkConnection.State state) &&
+                    state != NetworkConnection.State.Disconnected)
+                    continue;
+
                 using (var types = em.GetComponentTypes(entity, Allocator.Temp))
                 {
                     for (int t = 0; t < types.Length; t++)
                     {
-                        if (!em.Exists(entity))
-                            break;
-                        if (!types[t].IsCleanupComponent)
+                        if (!types[t].IsCleanupComponent &&
+                            !types[t].IsCleanupBufferComponent &&
+                            !types[t].IsCleanupSharedComponent)
                             continue;
-                        em.RemoveComponent(entity, types[t]);
+                        ecb.RemoveComponent(entity, types[t]);
                     }
                 }
 
-                if (em.Exists(entity))
-                    em.DestroyEntity(entity);
+                ecb.DestroyEntity(entity);
+                released++;
             }
 
+            ecb.Playback(em);
+            ecb.Dispose();
             return released;
+        }
+
+        /// <summary>
+        /// Reads the transport state. False when this record has no socket (missing driver id,
+        /// disposed driver, or a default connection value).
+        /// </summary>
+        static bool TryReadTransportState(
+            in NetworkStreamDriver driver,
+            in NetworkStreamConnection connection,
+            out NetworkConnection.State state)
+        {
+            state = NetworkConnection.State.Disconnected;
+            if (!connection.Value.IsCreated || !driver.DriverStore.IsCreated)
+                return false;
+
+            try
+            {
+                state = driver.GetConnectionState(connection);
+                return true;
+            }
+            catch (InvalidOperationException)
+            {
+                return false;
+            }
         }
 
         /// <summary>
@@ -3043,7 +3161,7 @@ namespace TitanOrbit.NetCode
         /// [NETCODE] Call this only when no <see cref="NetworkStreamConnection"/> exists.
         /// <c>ResetDriverStore</c> throws in that case, and it throws before disposing the new
         /// store, which leaks a WebSocket. On WebGL the browser will not recover that socket
-        /// until the page reloads. The WebGL init system releases stuck connections first.
+        /// until the page reloads. Disconnect live sockets and let receive drop the entity first.
         /// </remarks>
         internal static bool ResetClientDriverIfNeeded()
         {

@@ -182,6 +182,12 @@ namespace TitanOrbit.UI
             }
         }
 
+        /// <summary>
+        /// One line of this bullet type's combat scalars (fire power, speed, rate, range, ram).
+        /// Every scalar is shown, including ×1, so a changed rate is read beside the ones
+        /// that stayed put. The label is "Multipliers" — these belong to the type named
+        /// on the line above (Plasma, Fireballs, …), not to the hull parts grid.
+        /// </summary>
         static void AppendStatModifiers(
             StringBuilder sb,
             BulletBankStatModifiers m,
@@ -193,7 +199,9 @@ namespace TitanOrbit.UI
             float range = SafeMul(m.bulletRangeMultiplier);
             float ram = SafeMul(m.rammingPowerMultiplier);
 
-            sb.Append("Muls  ");
+            // "Multipliers" is this bullet type's own scalars (Plasma, Fireballs, …).
+            // ×1 stays visible so a changed Rate is read next to the unchanged ones.
+            sb.Append("Multipliers  ");
             AppendMulToken(sb, "FP", fp);
             sb.Append("  ");
             AppendMulToken(sb, "Spd", spd);

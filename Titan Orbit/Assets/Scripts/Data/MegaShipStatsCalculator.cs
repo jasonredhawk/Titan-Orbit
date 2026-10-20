@@ -177,8 +177,11 @@ namespace TitanOrbit.Data
 
                 ShipComponentAbilityStats extra = EvaluateLoadoutExtra(raw, id, shipLevel);
 
-                // Purchased weapon: bullet-type unlock only. Energy and other
-                // non-damage fields still merge. Damage and cadence stay on the catalog guns.
+                // Purchased weapon: bullet-type unlock only on the frozen hull sum.
+                // Energy and other non-damage fields still merge. Catalog gun damage
+                // stays here. When that bank is selected, Titan shots use
+                // MegaShipStatApplyLogic.TryResolveTitanFamilyWeaponFirepower
+                // (base + per-extra × 14) instead of this hull firepower.
                 if (ShipComponentAbilityStats.IsWeaponComponent(id))
                 {
                     extra.firePower = 0f;
@@ -223,6 +226,48 @@ namespace TitanOrbit.Data
                 in noAbilities,
                 isWeaponPool: weapon,
                 includeBase: false);
+        }
+
+        /// <summary>
+        /// Fleet bonuses for the ship family a Titan was bought with.
+        /// Home slot (config index 0) is exactly 1× during a match. Every other
+        /// planet's family uses this match's roll (half to double). With no match
+        /// seed yet, this is the family's authored preview multipliers — the same
+        /// numbers a regular hull on that planet would use.
+        /// </summary>
+        /// <param name="familyConfigIndex">
+        /// Ghosted <c>ShipState.ShipFamilyConfigIndex</c> stamped from the store planet.
+        /// </param>
+        public static ShipFamilySpecialBonuses ResolveFleetBonuses(int familyConfigIndex)
+        {
+            // --- Same family the planet sold ---
+            // [TITAN-ORBIT] Titans are rolled onto planets. The purchase copies that
+            // planet's family index onto the ship. The roll is per family slot, so
+            // two planets that share Cosmic Shark share one set of multipliers.
+            PlanetShipFamilyConfig config = PlanetShipFamilyConfig.LoadDefault();
+            PlanetShipFamilyConfig.ShipFamilyEntry entry = config != null
+                ? config.GetFamilyByConfigIndex(familyConfigIndex)
+                : null;
+            ShipFamilyDefinition family = entry != null ? entry.shipFamilyDefinition : null;
+            if (family != null)
+                return family.ResolveSpecialBonuses();
+
+            return ShipFamilyMatchBonuses.ResolveIndex(familyConfigIndex);
+        }
+
+        /// <summary>
+        /// Multiplies a Titan hull by <see cref="ResolveFleetBonuses"/>.
+        /// Gem cap stays 0 — Titans do not hold gems, even when the family rolls gem cap.
+        /// </summary>
+        /// <param name="stats">Catalog hull plus any moon-store extras already folded in.</param>
+        /// <param name="familyConfigIndex">Planet family slot this Titan was added with.</param>
+        public static ShipComponentAbilityStats ApplyFleetBonuses(
+            ShipComponentAbilityStats stats,
+            int familyConfigIndex)
+        {
+            stats = ResolveFleetBonuses(familyConfigIndex).Apply(stats);
+            stats.maxGems = 0f;
+            return stats;
         }
 
         /// <summary>True when a stored sum was never written (all zeros).</summary>

@@ -388,8 +388,9 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// Writes the uppercase family caption and the FAMILY BONUSES list.
-        /// Hides the list when every special bonus is 1× (Astro Eagle today) —
-        /// the upgrade-tree matrix still shows the full baseline board.
+        /// Home planets are exactly 1×, so the rail stays hidden there.
+        /// Other planets list this match's 0.5–2.0 roll. The upgrade-tree wheel
+        /// still shows the full board, including 1× spokes.
         /// </summary>
         public void RefreshFamilyIdentity(
             ShipFamilyDefinition family,
@@ -402,7 +403,7 @@ namespace TitanOrbit.UI
 
             // Family Special Bonuses only. Bullet-bank vs-target lines live on the weapon glance.
             string familyLines = family != null
-                ? FamilyStatHudCopy.FormatListedBonusesRichText(family.specialBonuses)
+                ? FamilyStatHudCopy.FormatListedBonusesRichText(family.ResolveSpecialBonuses())
                 : string.Empty;
             bool showStats = !string.IsNullOrEmpty(familyLines);
             if (_familyStatsBlock != null)

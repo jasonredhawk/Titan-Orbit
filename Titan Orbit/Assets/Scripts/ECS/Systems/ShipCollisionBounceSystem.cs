@@ -24,7 +24,11 @@ namespace TitanOrbit.ECS
     /// When the remote is the one closing, a moving wall from ghosted
     /// <see cref="ShipKinematics"/> plus the full solver separation stays, so the owner
     /// rides the interpolated hull. PhysX materials stay restitution 0 so this pass owns rebound.
-    /// MEGA hulls plow asteroids only (restore pre-collision motion). Planets and moons
+    /// MEGA hulls plow asteroids only (restore pre-collision motion). A regular hull that
+    /// deals more damage than the asteroid has left does not reflect: into-rock speed drops
+    /// by remainingHealth / collisionDamage (5 HP vs 20 damage keeps 75% of that speed)
+    /// and the pre-collision pose is restored so depenetration cannot pop the hull back.
+    /// A rock that survives the hit still uses the wall reflect. Planets and moons
     /// use the same wall bounce as regular ships — undoing PhysX depenetration there
     /// let Titans tunnel through the body. Friendly shields are off via
     /// <see cref="TitanOrbitPhysicsLayers.ShipForTeam"/>. Flying ships that PhysX
@@ -52,6 +56,10 @@ namespace TitanOrbit.ECS
         NativeHashSet<long> _seenShipPairs;
         NativeHashSet<Entity> _seenPlowRocks;
         NativeHashSet<Entity> _pusherPoseCorrected;
+        NativeHashSet<long> _seenAsteroidPairs;
+        NativeHashSet<long> _overkillPairs;
+        NativeHashSet<Entity> _overkillRocks;
+        NativeHashMap<long, double> _impactRearmUntil;
 
         /// <summary>Require the classified contact buffer from <see cref="ShipPhysicsContactCollectSystem"/>.</summary>
         public void OnCreate(ref SystemState state)
@@ -63,6 +71,10 @@ namespace TitanOrbit.ECS
             _seenShipPairs = new NativeHashSet<long>(16, Allocator.Persistent);
             _seenPlowRocks = new NativeHashSet<Entity>(16, Allocator.Persistent);
             _pusherPoseCorrected = new NativeHashSet<Entity>(16, Allocator.Persistent);
+            _seenAsteroidPairs = new NativeHashSet<long>(16, Allocator.Persistent);
+            _overkillPairs = new NativeHashSet<long>(16, Allocator.Persistent);
+            _overkillRocks = new NativeHashSet<Entity>(16, Allocator.Persistent);
+            _impactRearmUntil = new NativeHashMap<long, double>(32, Allocator.Persistent);
         }
 
         /// <summary>Persistent scratch from <see cref="OnCreate"/>.</summary>
@@ -80,6 +92,14 @@ namespace TitanOrbit.ECS
                 _seenPlowRocks.Dispose();
             if (_pusherPoseCorrected.IsCreated)
                 _pusherPoseCorrected.Dispose();
+            if (_seenAsteroidPairs.IsCreated)
+                _seenAsteroidPairs.Dispose();
+            if (_overkillPairs.IsCreated)
+                _overkillPairs.Dispose();
+            if (_overkillRocks.IsCreated)
+                _overkillRocks.Dispose();
+            if (_impactRearmUntil.IsCreated)
+                _impactRearmUntil.Dispose();
         }
 
         /// <summary>
@@ -122,6 +142,9 @@ namespace TitanOrbit.ECS
             var megaLookup = SystemAPI.GetComponentLookup<MegaShipState>(true);
             var asteroidStateLookup = SystemAPI.GetComponentLookup<AsteroidState>(true);
             var culledLookup = SystemAPI.GetComponentLookup<AsteroidClientCulledTag>(true);
+            var loadoutLookup = SystemAPI.GetComponentLookup<ShipLoadoutState>(true);
+            var territoryLookup = SystemAPI.GetComponentLookup<ShipTerritoryBoostLatch>(true);
+            var contactLookup = SystemAPI.GetComponentLookup<ShipAsteroidContactState>(false);
             var velocityLookup = SystemAPI.GetComponentLookup<PhysicsVelocity>(false);
             var kinematicsLookup = SystemAPI.GetComponentLookup<ShipKinematics>(true);
             var transformLookup = SystemAPI.GetComponentLookup<LocalTransform>(false);
@@ -137,11 +160,19 @@ namespace TitanOrbit.ECS
             EnsureSetCapacity(ref _megaKeepPhysX, pairCap);
             EnsureSetCapacity(ref _seenShipPairs, math.max(8, pairs.Length));
             EnsureSetCapacity(ref _pusherPoseCorrected, pairCap);
+            EnsureSetCapacity(ref _seenAsteroidPairs, math.max(8, pairs.Length));
+            EnsureSetCapacity(ref _overkillPairs, math.max(8, pairs.Length));
+            EnsureSetCapacity(ref _overkillRocks, math.max(8, pairs.Length));
             _working.Clear();
             _megaUnconstrained.Clear();
             _megaKeepPhysX.Clear();
             _seenShipPairs.Clear();
             _pusherPoseCorrected.Clear();
+            _seenAsteroidPairs.Clear();
+            _overkillPairs.Clear();
+            _overkillRocks.Clear();
+            double now = SystemAPI.Time.ElapsedTime;
+            PruneImpactRearm(now);
 
             for (int i = 0; i < pairs.Length; i++)
             {
@@ -165,11 +196,25 @@ namespace TitanOrbit.ECS
                 }
                 else if (pair.Kind == ShipPhysicsContactKind.Asteroid)
                 {
-                    bool plowed = ApplyShipVsAsteroid(
+                    AsteroidContactResult result = ApplyShipVsAsteroid(
                         pair, ref _working, snapshotLookup, shipStateLookup,
-                        megaLookup, asteroidStateLookup, culledLookup, restitution);
-                    if (plowed)
+                        megaLookup, asteroidStateLookup, culledLookup, restitution,
+                        motorLookup, loadoutLookup, territoryLookup, contactLookup,
+                        ref _impactRearmUntil, ref _seenAsteroidPairs, ref _overkillPairs,
+                        now, fixedDt);
+                    if (result == AsteroidContactResult.MegaPlow
+                        || result == AsteroidContactResult.Overkill)
                         _megaUnconstrained.Add(pair.Ship);
+                    if (result == AsteroidContactResult.Overkill)
+                    {
+                        _overkillRocks.Add(pair.Other);
+                        if (contactLookup.HasComponent(pair.Ship))
+                        {
+                            var contact = contactLookup[pair.Ship];
+                            contact.PunchThrough = 1;
+                            contactLookup[pair.Ship] = contact;
+                        }
+                    }
                 }
                 else if (pair.Kind == ShipPhysicsContactKind.Planet)
                 {
@@ -217,7 +262,7 @@ namespace TitanOrbit.ECS
                 velocityLookup[e] = pv;
             }
 
-            // --- Undo PhysX depenetration (MEGA asteroid plow / dock-owned pose) ---
+            // --- Undo PhysX depenetration (MEGA plow / overkill punch-through / dock-owned pose) ---
             // Reconstruct unconstrained pose from the pre-physics snapshot (drive already applied).
             // [PHYSICS] The solver already wrote LocalTransform. Writing it back here is what
             // stops the visible snap; velocity restore alone is not enough.
@@ -263,6 +308,15 @@ namespace TitanOrbit.ECS
                 }
 
                 foreach (Entity rock in _seenPlowRocks)
+                {
+                    ClientLocalAsteroidCombatSync.SoftDestroyLocalAsteroidEntity(
+                        state.EntityManager, rock);
+                }
+
+                // Predicted overkill: hide the rock this tick so the next physics step cannot
+                // bounce the hull again while HitRpc is still in flight. Server kill, gems,
+                // and self-damage stay in ramming.
+                foreach (Entity rock in _overkillRocks)
                 {
                     ClientLocalAsteroidCombatSync.SoftDestroyLocalAsteroidEntity(
                         state.EntityManager, rock);
@@ -731,13 +785,100 @@ namespace TitanOrbit.ECS
             return math.max(ShipMassLogic.MinMass, mass);
         }
 
+        enum AsteroidContactResult : byte
+        {
+            Ignored = 0,
+            MegaPlow = 1,
+            Wall = 2,
+            Overkill = 3,
+        }
+
+        /// <summary>
+        /// Drop expired impact-rearm keys so the map stays bounded. Checked lazily on read;
+        /// this only runs once the map is large enough to matter.
+        /// </summary>
+        void PruneImpactRearm(double now)
+        {
+            if (!_impactRearmUntil.IsCreated || _impactRearmUntil.Count <= 48)
+                return;
+
+            var kept = new NativeHashMap<long, double>(_impactRearmUntil.Capacity, Allocator.Temp);
+            foreach (var kv in _impactRearmUntil)
+            {
+                if (kv.Value > now)
+                    kept.TryAdd(kv.Key, kv.Value);
+            }
+
+            _impactRearmUntil.Clear();
+            foreach (var kv in kept)
+                _impactRearmUntil.TryAdd(kv.Key, kv.Value);
+            kept.Dispose();
+        }
+
+        /// <summary>
+        /// Extend this pair's "not a new impact" hold. A real impact uses the ram rearm
+        /// window. Any other contact only covers a few missed physics events (ram's
+        /// sticky pair), and never shortens a longer hold already in the map.
+        /// </summary>
+        static void TouchImpactRearm(
+            ref NativeHashMap<long, double> map,
+            long key,
+            bool newImpact,
+            double now,
+            float fixedDt)
+        {
+            double hold = newImpact
+                ? now + ShipRammingCollisionDamageSystem.ImpactRearmSeconds
+                : now + 4.0 * math.max(1e-4f, fixedDt);
+            if (map.TryGetValue(key, out double existing) && existing > hold)
+                hold = existing;
+            SetImpactRearm(ref map, key, hold);
+        }
+
+        /// <summary>Insert or replace one ship↔asteroid impact-rearm deadline.</summary>
+        static void SetImpactRearm(ref NativeHashMap<long, double> map, long key, double until)
+        {
+            if (map.ContainsKey(key))
+            {
+                map[key] = until;
+                return;
+            }
+
+            if (map.Capacity < map.Count + 1)
+            {
+                var grown = new NativeHashMap<long, double>(
+                    math.max(map.Count + 1, map.Capacity * 2), Allocator.Persistent);
+                foreach (var kv in map)
+                    grown.TryAdd(kv.Key, kv.Value);
+                map.Dispose();
+                map = grown;
+            }
+
+            map.TryAdd(key, until);
+        }
+
+        /// <summary>
+        /// Planar speed from the pre-collision snapshot (OVERDRIVE included). Matches ram
+        /// impact HP, which does not use the post-solve velocity.
+        /// </summary>
+        static float ReadSnapshotPlanarSpeed(
+            Entity ship,
+            ComponentLookup<ShipPreCollisionVelocity> snapshots)
+        {
+            if (!snapshots.HasComponent(ship))
+                return 0f;
+            float3 pre = snapshots[ship].Linear;
+            return math.length(new float2(pre.x, pre.z));
+        }
+
         /// <summary>
         /// Wall-reflect off one asteroid (rock stays put). Skips dead / client-culled rocks so a
         /// leftover PhysX contact after the mesh hid cannot keep shoving the hull.
         /// MEGAs restore the pre-collision snapshot instead of bouncing (plow).
+        /// A new impact whose damage exceeds remaining health punches through: into-rock speed
+        /// drops by health/damage instead of reflecting.
         /// </summary>
-        /// <returns>True when this pair was a MEGA plow (caller may restore unconstrained pose).</returns>
-        static bool ApplyShipVsAsteroid(
+        static AsteroidContactResult ApplyShipVsAsteroid(
             ShipPhysicsContactElement pair,
             ref NativeHashMap<Entity, float3> working,
             ComponentLookup<ShipPreCollisionVelocity> snapshots,
@@ -745,35 +886,128 @@ namespace TitanOrbit.ECS
             ComponentLookup<MegaShipState> megas,
             ComponentLookup<AsteroidState> asteroidStates,
             ComponentLookup<AsteroidClientCulledTag> culled,
-            float restitution)
+            float restitution,
+            ComponentLookup<ShipMotorConfig> motors,
+            ComponentLookup<ShipLoadoutState> loadouts,
+            ComponentLookup<ShipTerritoryBoostLatch> territory,
+            ComponentLookup<ShipAsteroidContactState> contacts,
+            ref NativeHashMap<long, double> impactRearmUntil,
+            ref NativeHashSet<long> seenPairs,
+            ref NativeHashSet<long> overkillPairs,
+            double now,
+            float fixedDt)
         {
             Entity ship = pair.Ship;
             Entity asteroid = pair.Other;
             if (!shipStates.HasComponent(ship) || shipStates[ship].IsDead)
-                return false;
+                return AsteroidContactResult.Ignored;
             if (!asteroidStates.HasComponent(asteroid))
-                return false;
+                return AsteroidContactResult.Ignored;
             var rock = asteroidStates[asteroid];
             // Dead / client-culled rocks must not bounce — PhysX can still emit events for a
             // stale static hull after the mesh hid (phantom grind).
             if (rock.IsDestroyed || !(rock.Health > 0.01f))
-                return false;
+                return AsteroidContactResult.Ignored;
             if (culled.HasComponent(asteroid))
-                return false;
+                return AsteroidContactResult.Ignored;
 
             bool isMega = MegaShipCatalog.PlowsAsteroids
                           && megas.HasComponent(ship)
                           && megas[ship].IsMega;
+            long key = PackEntityPairKey(ship, asteroid);
+            // First manifold this tick owns the impact decision (same as ram's isNewContact).
+            // Later manifolds must not reflect a hull that is already punching through.
+            if (!seenPairs.Add(key))
+            {
+                if (isMega)
+                    return AsteroidContactResult.MegaPlow;
+                // Later manifold of a pair ram already counted. Keep the sticky hold alive.
+                TouchImpactRearm(ref impactRearmUntil, key, newImpact: false, now, fixedDt);
+                if (overkillPairs.Contains(key))
+                    return AsteroidContactResult.Overkill;
+                ApplyWorldWallBounce(pair, ref working, snapshots, restitution);
+                return AsteroidContactResult.Wall;
+            }
+
             float3 vShip = GetWorkingOrSnapshot(ship, ref working, snapshots);
             if (isMega)
             {
                 // Keep pre-collision velocity so PhysX's inelastic stop cannot park the hull.
                 working[ship] = vShip;
-                return true;
+                return AsteroidContactResult.MegaPlow;
+            }
+
+            bool wasInContact = contacts.HasComponent(ship) && contacts[ship].InContact != 0;
+            bool inRearm = impactRearmUntil.TryGetValue(key, out double rearmUntil) && now < rearmUntil;
+            bool newImpact = !wasInContact
+                             && !inRearm
+                             && pair.ClosingSpeed >= ShipRammingCollisionDamageSystem.ImpactMinClosingSpeed;
+            // Ram keeps the pair through a few missed events and, after a real impact, for
+            // ImpactRearmSeconds. Refresh that hold on every contact so a one-tick gap cannot
+            // punch through a rock the server will not damage again.
+            TouchImpactRearm(ref impactRearmUntil, key, newImpact, now, fixedDt);
+
+            if (newImpact
+                && TryAsteroidOverkillReduction(
+                    ship, rock.Health, motors, shipStates, loadouts, territory, snapshots,
+                    out float speedReduction))
+            {
+                // Write even when the hull was not closing along this normal so the solver
+                // stop cannot park it on a rock this hit destroys.
+                ShipCollisionImpulseLogic.ApplyForwardSpeedReduction(
+                    ref vShip, pair.NormalShipFromOther, speedReduction);
+                working[ship] = vShip;
+                overkillPairs.Add(key);
+                return AsteroidContactResult.Overkill;
             }
 
             ApplyWorldWallBounce(pair, ref working, snapshots, restitution);
-            return false;
+            return AsteroidContactResult.Wall;
+        }
+
+        /// <summary>
+        /// True when this hit's ram damage exceeds the asteroid's current health.
+        /// <paramref name="speedReduction"/> is health / damage (the fraction of into-rock
+        /// speed to remove). Health ≥ damage keeps the full wall bounce.
+        /// </summary>
+        static bool TryAsteroidOverkillReduction(
+            Entity ship,
+            float asteroidHealth,
+            ComponentLookup<ShipMotorConfig> motors,
+            ComponentLookup<ShipState> shipStates,
+            ComponentLookup<ShipLoadoutState> loadouts,
+            ComponentLookup<ShipTerritoryBoostLatch> territory,
+            ComponentLookup<ShipPreCollisionVelocity> snapshots,
+            out float speedReduction)
+        {
+            speedReduction = 0f;
+            if (!motors.HasComponent(ship) || !shipStates.HasComponent(ship))
+                return false;
+
+            var shipState = shipStates[ship];
+            var motor = motors[ship];
+            float bankMul = 1f;
+            if (loadouts.HasComponent(ship))
+            {
+                int bank = BulletBankFireResolve.ResolveFireBankIndex(loadouts[ship]);
+                bankMul = BulletBankCombatLogic.GetRammingPowerMultiplier(bank);
+            }
+
+            float territoryMult = 1f;
+            if (territory.HasComponent(ship) && territory[ship].LatchedMult > 1f)
+                territoryMult = territory[ship].LatchedMult;
+
+            float damage = ShipRammingCollisionDamageSystem.ComputeAsteroidImpactDamage(
+                in shipState,
+                in motor,
+                ReadSnapshotPlanarSpeed(ship, snapshots),
+                territoryMult,
+                bankMul);
+            if (!(damage > 0.01f) || !(asteroidHealth < damage))
+                return false;
+
+            speedReduction = asteroidHealth / damage;
+            return true;
         }
 
         /// <summary>

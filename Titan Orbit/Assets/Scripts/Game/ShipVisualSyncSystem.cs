@@ -21,11 +21,12 @@ namespace TitanOrbit.Game
     /// Soft-track on NetCode storms; H73 cruise for reconcile pops. Death→alive hard-snaps to
     /// the home orbit ring so the hull does not crawl across the map. While dead, display stays
     /// on the wreck — a one-frame LocalTransform hop to the home-ring spawn (asteroid death)
-    /// must not drag the camera there and back. Asteroid grind and hull contacts coast bounce
-    /// nibbles (camera follows display — hard-snapping every PhysX shove felt like a snap-back).
-    /// After contact ends, hitch-sized 0.22–0.30u sim steps still coast. Wrap / respawn / 50u
-    /// abandon still hard-snap. GhostPredictionSmoothing is left off so this system alone owns
-    /// local presentation (avoids double-smooth jitter).
+    /// must not drag the camera there and back. Asteroid grind and hull contacts do not spring
+    /// the hull pose (that coast chased every PhysX bounce and looked jittery). The hull stays
+    /// on H73 cruise; <see cref="CameraFollowEcs"/> trails the published pose while
+    /// <see cref="ShipDisplayPose.LocalHullContact"/> is set. Wrap / respawn / 50u abandon still
+    /// hard-snap. GhostPredictionSmoothing is left off so this system alone owns local
+    /// presentation (avoids double-smooth jitter).
     /// </para>
     /// <para>
     /// Evidence: H71 absorbed pops (maxDelta max 0.25). H72 deadzone rejected — correctFrames
@@ -97,48 +98,10 @@ namespace TitanOrbit.Game
         /// [TITAN-ORBIT] Floor for raw-follow even when speed is ~0 (grind / ram stuck on a rock).
         /// H73 used max(speed·dt, 0.02) — bounce/reconcile of a few centimeters then looked like a
         /// pop, so coast ran every frame and the toroidal map stepped with the camera.
+        /// Contact shoves under this floor stay on the hull. Camera lag lives in
+        /// <see cref="CameraFollowEcs"/>, not a second spring here.
         /// </summary>
         const float CruiseMinRawFollowDistance = 0.45f;
-
-        /// <summary>
-        /// InContact is cleared every physics tick then set from events, so it can drop for a
-        /// frame while still grinding. Keep contact-coast this many presentation frames so
-        /// flicker does not toggle the 0.45 cruise floor mid-contact.
-        /// </summary>
-        const int ContactFlickerHoldFrames = 3;
-
-        /// <summary>
-        /// After grind / hull contact ends, keep the contact nibble floor for this many frames.
-        /// Post-kill thrust ramps ~0.4→8 u/s; hitch-sized 0.22–0.30u sim steps sit under
-        /// <see cref="CruiseMinRawFollowDistance"/> (0.45), so H73 would snap them.
-        /// </summary>
-        const int PostContactCoastFrames = 24;
-
-        /// <summary>
-        /// Extra coast frames after a bounce-sized velocity reversal (ram / rock shove).
-        /// </summary>
-        const int BounceReversalCoastFrames = 10;
-
-        /// <summary>
-        /// Nibble floor while in contact or bounce-coast. Larger than noise, smaller than a
-        /// typical 0.15–0.30u PhysX bounce nibble so the camera coasts instead of snapping.
-        /// </summary>
-        const float ContactCoastNibble = 0.08f;
-
-        /// <summary>
-        /// Pull-cap ratio during contact coast (fraction of vel×dt). Higher than cruise so
-        /// display does not drift off a stuck grind while still blending bounce pops.
-        /// </summary>
-        const float ContactCoastPullCapRatio = 0.5f;
-
-        /// <summary>
-        /// Treat a velocity reversal as a bounce when both frames are above this speed and
-        /// the unit-velocity dot is below <see cref="BounceReversalDot"/>.
-        /// </summary>
-        const float BounceReversalMinSpeed = 1f;
-
-        /// <summary>Unit-velocity dot below this (with speed) forces bounce coast.</summary>
-        const float BounceReversalDot = -0.2f;
 
         /// <summary>
         /// [TITAN-ORBIT] Frames the local ship must stay unresolved before we treat it as a real
@@ -158,15 +121,6 @@ namespace TitanOrbit.Game
 
         /// <summary>True after we already ran one ResetSession/ClearLocalPose for this missing streak.</summary>
         bool _missingShipCleared;
-
-        /// <summary>Contact-coast hold left to cover InContact flicker.</summary>
-        int _contactFlickerFrames;
-
-        /// <summary>Frames left to force contact nibble after grind / hull so hitch steps do not snap.</summary>
-        int _postContactCoastFrames;
-
-        /// <summary>Previous presentation frame's sim velocity (bounce-reversal detect).</summary>
-        float3 _lastSimVel;
 
         /// <summary>
         /// Previous presentation frame's local <see cref="ShipState.IsDead"/>. Detects the
@@ -313,58 +267,19 @@ namespace TitanOrbit.Game
 
             bool shipChanged = _smoothInitialized && _smoothShipEntity != Entity.Null && localShip != _smoothShipEntity;
             _smoothShipEntity = localShip;
-            if (shipChanged)
-            {
-                _contactFlickerFrames = 0;
-                _postContactCoastFrames = 0;
-                _lastSimVel = float3.zero;
-            }
 
-            // --- Asteroid / hull contact: coast bounce nibbles (do not hard-snap camera) ---
-            // [TITAN-ORBIT] ShipAsteroidContactState is written this physics step (AfterPhysics).
-            // Hard-snapping display to every PhysX shove made asteroid rams feel like a camera
-            // snap-back. Coast with a small nibble so bounce pops blend; wrap/death still snap.
-            bool asteroidContact = false;
-            bool hullContact = false;
+            // --- Asteroid / hull contact flag for camera trail (hull pose stays on H73) ---
+            // [TITAN-ORBIT] A contact spring on this pose chased every PhysX bounce (velocity
+            // coast + capped pull) and the camera, hard-locked to the pose, jittered worse.
+            // Publish the contact; CameraFollowEcs lags its own XZ anchor.
+            bool liveContact = false;
             if (EntityManager.HasComponent<ShipAsteroidContactState>(localShip))
             {
                 var contact = EntityManager.GetComponentData<ShipAsteroidContactState>(localShip);
-                asteroidContact = contact.InContact != 0;
-                hullContact = contact.InContactHull != 0;
+                liveContact = contact.InContact != 0 || contact.InContactHull != 0;
             }
 
-            bool liveContact = asteroidContact || hullContact;
-            bool bounceReversal = false;
-            float lastSpd = math.length(_lastSimVel);
-            float curSpd = math.length(simVel);
-            if (_smoothInitialized && lastSpd > BounceReversalMinSpeed && curSpd > BounceReversalMinSpeed)
-            {
-                float3 a = _lastSimVel / lastSpd;
-                float3 b = simVel / curSpd;
-                bounceReversal = math.dot(a, b) < BounceReversalDot;
-            }
-
-            _lastSimVel = simVel;
-
-            if (liveContact)
-            {
-                _contactFlickerFrames = ContactFlickerHoldFrames;
-                _postContactCoastFrames = PostContactCoastFrames;
-            }
-            else
-            {
-                if (_contactFlickerFrames > 0)
-                    _contactFlickerFrames--;
-                if (_postContactCoastFrames > 0)
-                    _postContactCoastFrames--;
-            }
-
-            if (bounceReversal)
-                _postContactCoastFrames = math.max(_postContactCoastFrames, BounceReversalCoastFrames);
-
-            bool contactCoast = liveContact
-                                || _contactFlickerFrames > 0
-                                || _postContactCoastFrames > 0;
+            ShipDisplayPose.SetLocalHullContact(liveContact);
 
             // --- Death / respawn edge ---
             // [TITAN-ORBIT] Respawn teleports LocalTransform to the home orbit ring. Display
@@ -414,7 +329,7 @@ namespace TitanOrbit.Game
             }
             else if (!holdWreck)
             {
-                StepCruiseRawOrCoast(targetPos, targetRot, simVel, dt, contactCoast);
+                StepCruiseRawOrCoast(targetPos, targetRot, simVel, dt);
             }
 
             // --- Publish pose for camera / hybrid / EG LocalToWorld ---
@@ -453,26 +368,21 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// H73 cruise: snap to sim when within one tick or the active nibble; otherwise coast
-        /// + capped soft correct (H71). Contact / bounce uses a smaller nibble so PhysX shoves
-        /// blend instead of snapping the camera.
+        /// H73 cruise: snap to sim when within one tick or the cruise floor; otherwise coast
+        /// + capped soft correct (H71). Grind / hull bounce is not filtered here — the camera
+        /// trails that pose on its own anchor.
         /// </summary>
         /// <param name="simPos">Predicted / reconciled pose this frame.</param>
         /// <param name="simRot">Sim rotation.</param>
         /// <param name="simVel">Kinematics velocity (world units/sec).</param>
         /// <param name="dt">Clamped unscaled frame delta.</param>
-        /// <param name="contactCoast">
-        /// True during asteroid/hull contact and a short window after: use the contact nibble
-        /// so bounce-sized sim steps coast instead of snapping (the 0.45 cruise floor would snap them).
-        /// </param>
-        void StepCruiseRawOrCoast(float3 simPos, quaternion simRot, float3 simVel, float dt, bool contactCoast = false)
+        void StepCruiseRawOrCoast(float3 simPos, quaternion simRot, float3 simVel, float dt)
         {
             float expected = math.max(math.length(simVel) * math.max(0f, dt), 0.02f);
             float dist = math.distance(_smoothPos, simPos);
-            float minNibble = contactCoast ? ContactCoastNibble : CruiseMinRawFollowDistance;
-            float rawFollowSlop = math.max(expected * CruiseRawFollowSlopRatio, minNibble);
+            float rawFollowSlop = math.max(expected * CruiseRawFollowSlopRatio, CruiseMinRawFollowDistance);
 
-            // --- Healthy frame: within one tick (+slop) or the active nibble — raw follow ---
+            // --- Healthy frame: within one tick (+slop) or the cruise floor — raw follow ---
             // H72 failed because capped pull left a permanent >deadzone lag and corrected forever.
             if (dist <= rawFollowSlop)
             {
@@ -481,15 +391,14 @@ namespace TitanOrbit.Game
                 return;
             }
 
-            // --- Reconcile pop / bounce nibble: coast then capped soft correct ---
+            // --- Reconcile pop: coast then capped soft correct ---
             float3 coasted = _smoothPos + simVel * dt;
             float3 err = simPos - coasted;
             err.y = 0f;
             float t = 1f - math.exp(-CruiseCorrectSharpness * math.max(0f, dt));
             float3 pull = err * t;
             float pullLen = math.length(pull);
-            float pullCapRatio = contactCoast ? ContactCoastPullCapRatio : CruiseCorrectPullCapRatio;
-            float pullCap = expected * pullCapRatio;
+            float pullCap = expected * CruiseCorrectPullCapRatio;
             if (pullLen > pullCap && pullLen > 1e-6f)
                 pull *= pullCap / pullLen;
 

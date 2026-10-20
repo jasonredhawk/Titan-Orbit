@@ -45,7 +45,6 @@ namespace TitanOrbit.Data
                 { "Gun", ShipFamilyPartTypes.WeaponBullet },
                 { "Machinegun", ShipFamilyPartTypes.WeaponBullet },
                 { "Barrel", ShipFamilyPartTypes.WeaponBullet },
-                { "Ammunition", ShipFamilyPartTypes.WeaponBullet },
                 { "Cannon", ShipFamilyPartTypes.WeaponBullet },
                 { "Missile", ShipFamilyPartTypes.WeaponBullet },
                 { "Missile_Launcher", ShipFamilyPartTypes.WeaponBullet },
@@ -105,12 +104,18 @@ namespace TitanOrbit.Data
             ShipComponentStatCategory.Capacity
         };
 
-        static readonly string[] RammingOffenseFields = { "rammingPower", "rammingPowerPerExtraLevel" };
-        static readonly string[] WeaponOffenseFields =
+        /// <summary>
+        /// Every offense stat. Cockpits and weapons share this list.
+        /// Part type does not drop fire power, bullet speed, range, rate, or ramming.
+        /// Scan seeds stay narrower: a cockpit writes ramming only; a weapon focuses on bullet speed.
+        /// </summary>
+        static readonly string[] OffenseFields =
         {
-            "firePower", "firePowerPerExtraLevel", "bulletSpeed", "bulletSpeedPerExtraLevel",
+            "firePower", "firePowerPerExtraLevel",
+            "bulletSpeed", "bulletSpeedPerExtraLevel",
             "bulletRange", "bulletRangePerExtraLevel",
-            "fireRate", "fireRatePerExtraLevel"
+            "fireRate", "fireRatePerExtraLevel",
+            "rammingPower", "rammingPowerPerExtraLevel"
         };
         static readonly string[] HealthFields =
             { "healthCap", "healthCapPerExtraLevel", "healthRegen", "healthRegenPerExtraLevel" };
@@ -290,7 +295,10 @@ namespace TitanOrbit.Data
             return categories.Count > 0 ? categories[0] : ShipComponentStatCategory.Health;
         }
 
-        /// <summary>Stat fields shown and stored for a component based on category and part id.</summary>
+        /// <summary>
+        /// Stat fields shown and stored for a component based on category and part id.
+        /// Offense always returns <see cref="OffenseFields"/> — fire power stays on the list.
+        /// </summary>
         public static string[] GetAuthoringStatFieldNames(ShipComponentStatCategory category, string componentId)
         {
             string partType = ShipFamilyPartTypes.Normalize(
@@ -298,13 +306,11 @@ namespace TitanOrbit.Data
             switch (category)
             {
                 case ShipComponentStatCategory.Offense:
-                    return string.Equals(partType, ShipFamilyPartTypes.Cockpit, StringComparison.OrdinalIgnoreCase)
-                        ? RammingOffenseFields
-                        : WeaponOffenseFields;
+                    return OffenseFields;
                 case ShipComponentStatCategory.Health:
                     return HealthFields;
                 case ShipComponentStatCategory.Energy:
-                    // Weapons: Cap only. Engines / other Energy mounts: Cap + Regen.
+                    // Weapons: Cap only. Engines and other Energy mounts: Cap + Regen.
                     if (ShipFamilyPartTypes.IsWeapon(partType)
                         || ShipComponentAbilityStats.IsWeaponComponent(componentId))
                         return WeaponEnergyCapFields;

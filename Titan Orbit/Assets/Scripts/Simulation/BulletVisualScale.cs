@@ -4,15 +4,22 @@ using Unity.Mathematics;
 namespace TitanOrbit.Simulation
 {
     /// <summary>
-    /// Bullet size from fire power. Bullet type does not change it.
-    /// Ship guns pass the hull’s fire power (level, abilities, upgrades) so a held
-    /// trigger is one size. Energy and bullet speed do not change it.
+    /// Tracer size is fire power ÷ reference fire power. A shot at 7.5 against a
+    /// base of 3 is 2.5. The bank global scale is applied when the tracer is drawn.
+    /// Bullet type, bullet speed, and the old upgrade blend do not change it.
     /// </summary>
     [BurstCompile]
     public static class BulletVisualScale
     {
         /// <summary>Reference damage for "no upgrade" visual baseline (matches default cannon).</summary>
         public const float DefaultReferenceBulletDamage = 8f;
+
+        /// <summary>
+        /// Ship-bullet tracer reference. Every gun and bullet type uses this, not the
+        /// barrel's own catalog base. Drawn size is fire power ÷ this, then the bank global.
+        /// Missiles, lasers, turrets, and ramming do not use it.
+        /// </summary>
+        public const float FixedBulletReferenceDamage = 3f;
 
         /// <summary>
         /// Kept for call-site compatibility only — speed no longer drives visual size.
@@ -88,19 +95,15 @@ namespace TitanOrbit.Simulation
         }
 
         /// <summary>
-        /// Scale multiplier from fire power vs reference. Bullet speed is ignored (API kept so
-        /// call sites need not change).
+        /// Fire power ÷ reference fire power. 7.5 against a base of 3 is 2.5.
+        /// Speed, the bank upgrade knob, and category upgrade are not inputs.
+        /// Bank global scale is applied later in <see cref="Entities.BulletVisualFactory"/>.
         /// </summary>
-        /// <param name="bulletDamage">This shot’s fire power (per-mount when available).</param>
+        /// <param name="bulletDamage">This shot’s fire power.</param>
         /// <param name="bulletSpeed">Unused — retained for signature stability.</param>
-        /// <param name="referenceBulletDamage">
-        /// Level-1 / chassis baseline damage for this barrel (upgradeMul ≈ 1 at that baseline).
-        /// </param>
+        /// <param name="referenceBulletDamage">Unleveled catalog fire power for this shot.</param>
         /// <param name="referenceBulletSpeed">Unused — retained for signature stability.</param>
-        /// <param name="categoryUpgradeVisualScaleMultiplier">
-        /// Per-category override from <c>BulletVfxBank</c> (1 = 100% of bank upgrade growth).
-        /// </param>
-        /// <returns>Scale factor ≥ 1 when damage meets or beats the reference.</returns>
+        /// <param name="categoryUpgradeVisualScaleMultiplier">Unused — retained for signature stability.</param>
         [BurstCompile]
         public static float ComputeUpgradeScaleMultiplier(
             float bulletDamage,
@@ -109,32 +112,16 @@ namespace TitanOrbit.Simulation
             float referenceBulletSpeed = DefaultReferenceBulletSpeed,
             float categoryUpgradeVisualScaleMultiplier = 1f)
         {
-            // --- Fire power only (speed does not grow the mesh) ---
             _ = bulletSpeed;
             _ = referenceBulletSpeed;
-
-            float damageMul = bulletDamage / math.max(0.01f, referenceBulletDamage);
-
-            // [TITAN-ORBIT] Bank Upgrade × category Upgrade (category default 1 = unchanged).
-            // Example: bank 0.5 × category 1, damage 8 vs ref 3 → 1 + (8/3 − 1)×0.5 ≈ 1.83×.
-            float categoryMul = categoryUpgradeVisualScaleMultiplier > 0.001f
-                ? categoryUpgradeVisualScaleMultiplier
-                : 1f;
-
-            // [BURST] Read SharedStatic — not a plain C# static float (BC1040).
-            float bankUpgradeMul = s_ActiveUpgradeVisualScaleMultiplier.Data;
-            float growthFactor = math.max(0f, bankUpgradeMul * categoryMul);
-            float damageGrowth = (damageMul - 1f) * growthFactor;
-            return 1f + math.max(0f, damageGrowth);
+            _ = categoryUpgradeVisualScaleMultiplier;
+            return bulletDamage / referenceBulletDamage;
         }
 
         /// <summary>
-        /// Final per-shot visual scale = cannon authored scale × fire-power upgrade multiplier (floor 0.1).
-        /// Bank×category global scale is applied later in <see cref="Entities.BulletVisualFactory"/>.
+        /// Per-shot tracer scale before the bank global: fire power ÷ reference fire power.
         /// </summary>
-        /// <param name="categoryUpgradeVisualScaleMultiplier">
-        /// Per-category upgrade knob (1 = 100%). See <see cref="ComputeUpgradeScaleMultiplier"/>.
-        /// </param>
+        /// <param name="categoryUpgradeVisualScaleMultiplier">Unused. See <see cref="ComputeUpgradeScaleMultiplier"/>.</param>
         [BurstCompile]
         public static float ComputePerShotScale(
             float cannonBulletScale,
@@ -144,13 +131,13 @@ namespace TitanOrbit.Simulation
             float referenceBulletSpeed = DefaultReferenceBulletSpeed,
             float categoryUpgradeVisualScaleMultiplier = 1f)
         {
-            float upgradeMul = ComputeUpgradeScaleMultiplier(
+            _ = cannonBulletScale;
+            return ComputeUpgradeScaleMultiplier(
                 bulletDamage,
                 bulletSpeed,
                 referenceBulletDamage,
                 referenceBulletSpeed,
                 categoryUpgradeVisualScaleMultiplier);
-            return math.max(0.1f, math.max(0.1f, cannonBulletScale) * upgradeMul);
         }
     }
 }

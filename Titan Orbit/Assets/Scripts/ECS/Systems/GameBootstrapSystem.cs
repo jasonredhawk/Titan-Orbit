@@ -251,6 +251,8 @@ namespace TitanOrbit.ECS
             mapState.MapWidth = _rolled.MapWidth;
             mapState.MapHeight = _rolled.MapHeight;
             mapState.BlueprintSeed = (int)_rolled.Seed;
+            // Home ships stay 1×. Other family slots roll 0.5–2.0 from this same seed.
+            ShipFamilyMatchBonuses.PublishMatchSeed(_rolled.Seed);
             mapState.LoadingProgress = 0.05f;
             mapState.LoadingComplete = false;
             // --- Publish TeamCount + map size early; body counts wait for layout ---

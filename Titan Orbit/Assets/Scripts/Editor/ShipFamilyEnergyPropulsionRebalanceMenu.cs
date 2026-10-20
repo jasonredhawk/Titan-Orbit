@@ -34,7 +34,10 @@ namespace TitanOrbit.Editor
             }
 
             var profileSet = ShipFamilyPartCalcProfileSetEditorUtility.FindOrLoadShared();
+            if (profileSet != null)
+                Undo.RecordObject(profileSet, "Write Name Mapping Base Stats");
             int updated = 0;
+            bool stampedMappings = false;
 
             for (int i = 0; i < guids.Length; i++)
             {
@@ -65,6 +68,8 @@ namespace TitanOrbit.Editor
                     if (profileSet != null)
                     {
                         entry.stats = profileSet.SuggestStatsForComponent(entry.componentId, entry.statCategories);
+                        if (profileSet.TryWriteAppliedBaseStats(entry.componentId, entry.stats))
+                            stampedMappings = true;
                         entry.enablePropulsionVfx = profileSet.ShouldEnablePropulsionVfx(
                             entry.componentId, out float scale);
                         entry.propulsionVfxScale = scale;
@@ -110,6 +115,12 @@ namespace TitanOrbit.Editor
 
                 EditorUtility.SetDirty(def);
                 updated++;
+            }
+
+            if (profileSet != null && stampedMappings)
+            {
+                profileSet.InvalidateLookups();
+                EditorUtility.SetDirty(profileSet);
             }
 
             AssetDatabase.SaveAssets();

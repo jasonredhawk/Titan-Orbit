@@ -325,8 +325,10 @@ namespace TitanOrbit.UI
             if (sb == null)
                 return;
             // ASCII hyphens — box-drawing rules fall back to Liberation Sans (or boxes) on WebGL.
+            // Long enough to sit under PART … SCALE FLEET BONUS ADD. Mass-tax
+            // tables are shorter; a rule that runs past them still reads as one band.
             sb.Append("<color=#").Append(SectionRailHex)
-                .Append(">----------------------------------------</color>")
+                .Append(">----------------------------------------------------------------------</color>")
                 .AppendLine();
         }
 

@@ -1,3 +1,4 @@
+using TitanOrbit.Data;
 using UnityEngine;
 
 namespace TitanOrbit.ECS
@@ -112,6 +113,9 @@ namespace TitanOrbit.ECS
                                 !IsComplete;
 
             MatchSeed = matchSeed;
+            // Same roll the server published in map generation. Home stays 1×.
+            if (matchSeed != 0)
+                ShipFamilyMatchBonuses.PublishMatchSeed(matchSeed);
             RecipeConfig = config;
             AsteroidBody = asteroidBody;
             HasFullRecipe = full;
@@ -171,6 +175,7 @@ namespace TitanOrbit.ECS
             HasRecipe = false;
             HasFullRecipe = false;
             MatchSeed = 0;
+            ShipFamilyMatchBonuses.ClearMatch();
             RecipeConfig = default;
             AsteroidBody = default;
             ExpectedBodies = 0;

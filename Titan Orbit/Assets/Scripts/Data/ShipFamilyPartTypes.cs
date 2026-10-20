@@ -303,6 +303,7 @@ namespace TitanOrbit.Data
                 return Wing;
             if (IsCargoLikeName(componentId))
                 return Cargo;
+
             if (id.IndexOf("cannon", StringComparison.Ordinal) >= 0
                 || id.IndexOf("missile", StringComparison.Ordinal) >= 0
                 || id.IndexOf("rocket", StringComparison.Ordinal) >= 0
@@ -310,8 +311,7 @@ namespace TitanOrbit.Data
                 || id.IndexOf("weapon", StringComparison.Ordinal) >= 0
                 || id.IndexOf("gun", StringComparison.Ordinal) >= 0
                 || id.IndexOf("barrel", StringComparison.Ordinal) >= 0
-                || id.IndexOf("turret", StringComparison.Ordinal) >= 0
-                || id.IndexOf("ammunition", StringComparison.Ordinal) >= 0)
+                || id.IndexOf("turret", StringComparison.Ordinal) >= 0)
                 return WeaponBullet;
 
             // Thruster / exhaust before generic "thrust" / engine.

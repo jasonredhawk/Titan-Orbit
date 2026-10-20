@@ -100,9 +100,10 @@ namespace TitanOrbit.Data
             if (family == null)
                 return Mathf.Max(0f, allGunDps);
 
-            // Zero / unset family muls mean "no change" (same as SpecialBonuses.Apply).
-            float fpMul = family.specialBonuses.firePowerMul > 0.01f ? family.specialBonuses.firePowerMul : 1f;
-            float rateMul = family.specialBonuses.fireRateMul > 0.01f ? family.specialBonuses.fireRateMul : 1f;
+            // Home planets are 1×. Other planets use the match roll (0 / unset → 1).
+            ShipFamilySpecialBonuses bonuses = family.ResolveSpecialBonuses();
+            float fpMul = bonuses.firePowerMul > 0.01f ? bonuses.firePowerMul : 1f;
+            float rateMul = bonuses.fireRateMul > 0.01f ? bonuses.fireRateMul : 1f;
             return Mathf.Max(0f, allGunDps) * fpMul * rateMul;
         }
 

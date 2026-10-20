@@ -9,6 +9,7 @@ using TitanOrbit.Data;
 using TitanOrbit.ECS;
 using TitanOrbit.Generation;
 using TitanOrbit.Game;
+using TitanOrbit.Input;
 using TitanOrbit.Simulation;
 using Shapes;
 
@@ -2471,8 +2472,9 @@ namespace TitanOrbit.UI
                 return;
             }
 
-            // Toggle minimap expanded/minimized with M key
-            if (Keyboard.current != null && Keyboard.current.mKey.wasPressedThisFrame)
+            // Toggle minimap expanded/minimized with M key. Not while typing a note.
+            if (Keyboard.current != null && Keyboard.current.mKey.wasPressedThisFrame
+                && !PlayerInputHandler.IsTextEntryFocused())
                 ToggleExpand();
 
             SetMinimapVisible(true);

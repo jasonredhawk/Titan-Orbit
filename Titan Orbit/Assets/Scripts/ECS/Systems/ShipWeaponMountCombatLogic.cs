@@ -131,10 +131,15 @@ namespace TitanOrbit.ECS
                 // Fire rate is not an Extra Level stat. A level-6 hull does not
                 // shoot faster than level 1, and extra barrels do not add rate
                 // here — each barrel keeps this rate and they fire together.
-                // One family bonus (Light Fox 1.12, and so on), applied once.
+                // One family fire-rate bonus, applied once. Home planets are 1×.
+                // Other planets use this match's roll (0.5–2.0), not the asset.
                 float familyRateMul = 1f;
-                if (family != null && family.specialBonuses.fireRateMul > 0.01f)
-                    familyRateMul = family.specialBonuses.fireRateMul;
+                if (family != null)
+                {
+                    float rolledRate = family.ResolveSpecialBonuses().fireRateMul;
+                    if (rolledRate > 0.01f)
+                        familyRateMul = rolledRate;
+                }
                 float leveledRate = math.max(0.1f, baseRate * familyRateMul);
                 _ = ratePer;
 

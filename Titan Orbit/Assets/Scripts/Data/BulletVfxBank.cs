@@ -21,12 +21,11 @@ namespace TitanOrbit.Data
     /// Inspector scale knobs (bank-wide + per category):
     /// <list type="bullet">
     /// <item><b>Global Visual Scale Multiplier</b> (bank) — shrink/grow every bullet VFX.</item>
-    /// <item><b>Upgrade Visual Scale Multiplier</b> (bank) — how much tier/attribute fire-power
-    /// growth becomes size (0.5 = half-step: 3→8 fire → ~1.83× size, not 2.67×).</item>
-    /// <item><b>Per-category</b> Global / Upgrade multipliers (default 1 = 100%) — relative to the
-    /// bank knobs, so one family (e.g. Fireballs) can be larger/smaller than Darts.</item>
+    /// <item><b>Upgrade Visual Scale Multiplier</b> — not applied. Tracer size is
+    /// fire power ÷ reference fire power (7.5 / 3 = 2.5), then the global scale.</item>
+    /// <item><b>Per-category</b> multipliers are not applied to tracer size.</item>
     /// </list>
-    /// Final size uses bank × category for both global and upgrade paths.
+    /// Drawn size is that fire-power ratio times <b>Global Visual Scale Multiplier</b>.
     /// </para>
     /// </summary>
     [CreateAssetMenu(fileName = "BulletVfxBank", menuName = "Titan Orbit/Bullet VFX Bank")]
@@ -67,15 +66,15 @@ namespace TitanOrbit.Data
         [FormerlySerializedAs("visualScaleMultiplier")]
         [SerializeField] float globalVisualScaleMultiplier = 0.25f;
 
-        [Tooltip("How much fire-power growth above level-1 becomes bullet size. 1 = size tracks damage 1:1; 0.5 = half-step (3→8 fire ≈ 1.83× size).")]
+        [Tooltip("Not applied. Tracer size is fire power ÷ reference fire power, then Global Visual Scale.")]
         [SerializeField] float upgradeVisualScaleMultiplier = 0.5f;
 
         /// <summary>Bank-wide global VFX size on spawned instances.</summary>
         public float GlobalVisualScaleMultiplier => Mathf.Max(0.05f, globalVisualScaleMultiplier);
 
         /// <summary>
-        /// Bank-wide fraction of (damage/reference − 1) applied to visual size.
-        /// Callers push this into <c>BulletVisualScale.ActiveUpgradeVisualScaleMultiplier</c> on load.
+        /// Kept on the asset. Tracer scale does not read it — size is fire power ÷ reference,
+        /// then <see cref="GlobalVisualScaleMultiplier"/>.
         /// </summary>
         public float UpgradeVisualScaleMultiplier => Mathf.Clamp01(upgradeVisualScaleMultiplier);
 

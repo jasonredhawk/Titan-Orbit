@@ -296,6 +296,8 @@ namespace TitanOrbit.Game
 
             // --- Drain HitRpc impacts (pooled one-shot VFX) + mining floats / gem burst ---
             DrainHits();
+            // Drop burn-impact shells whose DoT ticks have stopped.
+            BurnImpactLoop.Tick();
 
             // Return expired muzzle/impact shells so the next shot can Rent without Instantiates.
             BulletOneShotVfxPool.TickReturns();
@@ -777,15 +779,43 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// Sequence-0 burn tick. Asteroids have no ghosted burn state, so each damage
+        /// step replays the bank impact here. Ships replay from
+        /// <see cref="ShipStatusLoopVfxApplier"/> (ghosted tick counter) — playing again
+        /// would stack a second explosion on the hull. Floats still run for both.
+        /// </summary>
+        void DrainBurnTick(in BulletVfxBridge.HitRequest hit, Vector3 hitPos)
+        {
+            var team = (TeamId)hit.OwnerTeam;
+            int bank = math.max(0, hit.BankIndex);
+            if (hit.AsteroidHealthAfter >= 0f)
+            {
+                BurnImpactLoop.Pulse(
+                    hit.HitPosition,
+                    bank,
+                    team,
+                    preferNonShip: true);
+            }
+
+            var synth = new Tracer { OwnerNetworkId = 0, IsAnticipation = false };
+            TryShowHitRpcFloats(
+                hitPos, hit.HitPosition, hit.Damage, team,
+                hit.AsteroidHealthAfter, hit.PlanetaryDefensePlanetId,
+                hit.PlanetaryDefenseSlotIndex, hit.PlanetaryDefenseHealthAfter, in synth);
+        }
+
+        /// <summary>
         /// Impact VFX + destroy matching tracer by Sequence.
         /// Falls back to nearest same-team tracer (incl. Sequence=0 anticipation) so orphan
         /// cosmetics do not keep flying through the rock after a real server hit.
         /// Skips duplicate impact flash when client already predicted this Sequence / nearby impact.
         /// Mining floats always use HitRpc <c>AsteroidHealthAfter</c> (never cosmetic-predicted HP).
         /// Turret HP is written in <see cref="BulletHitRpcClientSystem"/> (not here).
-        /// Sequence 0 (ram/grind) plays a looping impact-particle stream via
+        /// Sequence 0 with a shooter id is ram/grind: a looping spark stream via
         /// <see cref="ShipRamSparksDriver"/> — never adopts a tracer. Kill / plow still
-        /// rent the bullet impact once.
+        /// rent the bullet impact once. Sequence 0 with no shooter id is a burn tick:
+        /// asteroid burns replay the bank impact; ship burns replay from the ghosted
+        /// tick counter in <see cref="ShipStatusLoopVfxApplier"/>.
         /// </summary>
         void DrainHits()
         {
@@ -812,6 +842,14 @@ namespace TitanOrbit.Game
                 // and firing.
                 if (hit.Sequence == 0)
                 {
+                    // Burn ticks reuse this packet and leave OwnerNetworkId at 0.
+                    // Ram/grind always carries the ramming ship.
+                    if (hit.OwnerNetworkId == 0)
+                    {
+                        DrainBurnTick(hit, hitPos);
+                        continue;
+                    }
+
                     var ramTeam = (TeamId)hit.OwnerTeam;
                     int ramBank = math.max(0, hit.BankIndex);
                     float ramScale = hit.ScaleMultiplier > 0f ? hit.ScaleMultiplier : 1f;

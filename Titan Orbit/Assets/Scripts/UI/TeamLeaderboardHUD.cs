@@ -3,6 +3,7 @@ using TitanOrbit.Core;
 using TitanOrbit.Data;
 using TitanOrbit.ECS;
 using TitanOrbit.Game;
+using TitanOrbit.Input;
 using TitanOrbit.NetCode;
 using TMPro;
 using UnityEngine;
@@ -382,7 +383,7 @@ namespace TitanOrbit.UI
         bool WasCycleKeyPressed()
         {
             var keyboard = Keyboard.current;
-            if (keyboard == null)
+            if (keyboard == null || PlayerInputHandler.IsTextEntryFocused())
                 return false;
 
             // [UNITY] Tab is often bound to UI Navigate — tabKey.wasPressedThisFrame still fires.

@@ -150,7 +150,9 @@ namespace TitanOrbit.Editor
 
         /// <summary>
         /// Extra Level at the tree slot with every HUD ability maxed, then stamp
-        /// all-gun DPS and the family's default bullet bank.
+        /// all-gun DPS and the family's default bullet bank. This catalog is the
+        /// fully upgraded ceiling. The Orbit Menu power bar uses the same formulas
+        /// with ability counts at 0 (purchase-time hull).
         /// </summary>
         static ShipFamilyBalanceRankRow BuildRegularRow(
             ShipFamilyDefinition family,

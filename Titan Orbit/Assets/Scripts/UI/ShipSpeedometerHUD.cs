@@ -252,6 +252,12 @@ namespace TitanOrbit.UI
         /// <summary>Last <see cref="ShipState.ShipFamilyConfigIndex"/> baked into the stats cache.</summary>
         byte _statsCacheFamilyIndex = byte.MaxValue;
 
+        /// <summary>
+        /// Match seed baked into the stats cache. Fleet rolls change when this
+        /// seed publishes, even if the family index stays the same.
+        /// </summary>
+        uint _statsCacheMatchBonusSeed;
+
         Entity _statsCacheShipEntity;
         int _statsCacheShipLevel = int.MinValue;
         int _statsCacheBranch = int.MinValue;
@@ -891,6 +897,7 @@ namespace TitanOrbit.UI
                 h = h * 31 + (int)ship.Team;
                 h = h * 31 + ship.BranchIndex;
                 h = h * 31 + ship.ShipFamilyConfigIndex;
+                h = h * 31 + (int)ShipFamilyMatchBonuses.ActiveMatchSeed;
                 h = h * 31 + attrs.FirePower;
                 h = h * 31 + attrs.BulletSpeed;
                 h = h * 31 + attrs.MaxHealth;
@@ -1281,6 +1288,7 @@ namespace TitanOrbit.UI
                 _statsCacheShipLevel == ship.ShipLevel &&
                 _statsCacheBranch == branchIndex &&
                 _statsCacheFamilyIndex == familyIndex &&
+                _statsCacheMatchBonusSeed == ShipFamilyMatchBonuses.ActiveMatchSeed &&
                 _statsCacheChassisKey.Equals(chassisKey) &&
                 _statsCacheEquipmentHash == equipmentHash &&
                 (!hasAttrs || AttrsEqual(attrs, _statsCacheAttrs)))
@@ -1346,6 +1354,9 @@ namespace TitanOrbit.UI
                     else
                         ShipStatApplyLogic.TryGetBaseStatsForChassis(
                             chassisId, ship.ShipLevel, out effectiveStats);
+                    // Same roll the motor just wrote. Home Titans stay 1×.
+                    effectiveStats = MegaShipStatsCalculator.ApplyFleetBonuses(
+                        effectiveStats, ship.ShipFamilyConfigIndex);
                 }
                 else
                 {
@@ -1407,6 +1418,7 @@ namespace TitanOrbit.UI
             _statsCacheShipLevel = ship.ShipLevel;
             _statsCacheBranch = branchIndex;
             _statsCacheFamilyIndex = familyIndex;
+            _statsCacheMatchBonusSeed = ShipFamilyMatchBonuses.ActiveMatchSeed;
             _statsCacheChassisKey = chassisKey;
             _statsCacheEquipmentHash = equipmentHash;
             _statsCacheAttrs = attrs;

@@ -32,7 +32,9 @@ namespace TitanOrbit.Core
     /// CARDS tab (default off) so the dock shows SHIPS and GEAR only; flip it later to bring
     /// the spin-offer panel back without deleting that UI. <see cref="ShowJoinGameClosesIn"/>
     /// hides the Join Game "closes in…" countdown (default off); flip it to show empty-lobby
-    /// idle-kill time again. Publishes debug values to
+    /// idle-kill time again. <see cref="EnableBetaFeedback"/> (default off) shows the hidden
+    /// field-notes screen and lets the server append tester notes to BetaFeedback.log —
+    /// leave it off for a public build. Publishes debug values to
     /// <see cref="TitanOrbitDebugFlags"/> so other assemblies can honor toggles without
     /// referencing this Core assembly. Dedicated server builds normally leave debug flags false.
     /// </summary>
@@ -140,6 +142,13 @@ namespace TitanOrbit.Core
         [Tooltip("ON: each empty lobby row on the Join Game screen shows \"closes in…\" until the idle-kill deadline. OFF (default): hide that countdown. The server still closes empty matches on the same schedule.")]
         [SerializeField] bool showJoinGameClosesIn;
 
+        // [TITAN-ORBIT] Public builds leave this off so players never see the notes screen.
+        // A beta build flips it on here (NceGameRoot → Game Manager). The dedicated server
+        // reads the same checkbox: off means it refuses the write even if a client asks.
+        [Header("Beta — Field Notes")]
+        [Tooltip("ON: beta testers get a NOTES screen. Opening it stamps the ship they own, the gun, ship level, branch, and any ability levels they added, then SEND appends that snapshot plus their note to BetaFeedback.log on the machine running the server (beside the dedicated build, or beside this Unity project when you host locally). OFF (default): no NOTES button, and the server will not store notes. Turn this on for a beta build and leave it off for the public. Client and Linux server must both be built from a project that contains this feature.")]
+        [SerializeField] bool enableBetaFeedback;
+
         // [UNITY] Inspector toggle — when true, ship upgrade tree treats all nodes as free / clickable.
         [Header("Debug — Ship Upgrade Tree")]
         [Tooltip("When enabled, the moon orbit ship upgrade tree unlocks every node. Click any ship to try it for free (local Editor / development only).")]
@@ -243,6 +252,12 @@ namespace TitanOrbit.Core
         /// </summary>
         public bool ShowJoinGameClosesIn => showJoinGameClosesIn;
 
+        /// <summary>
+        /// True when the beta field-notes screen should exist (Inspector on NceGameRoot).
+        /// Default off — public players never see NOTES, and the server refuses writes.
+        /// </summary>
+        public bool EnableBetaFeedback => enableBetaFeedback;
+
         /// <summary>True when designers enabled free upgrades in the Inspector (client + local-host convenience).</summary>
         public bool DebugFreeShipUpgradeTree => debugFreeShipUpgradeTree;
 
@@ -314,6 +329,16 @@ namespace TitanOrbit.Core
         /// </summary>
         public static bool IsShowJoinGameClosesInActive =>
             Instance != null && Instance.showJoinGameClosesIn;
+
+        /// <summary>
+        /// Safe static check for the beta NOTES screen. Defaults <b>off</b> when no
+        /// GameManager exists, matching the Inspector default (hidden for the public).
+        /// Also true when the Shared flag was published, so the server system and the
+        /// UI agree after Awake.
+        /// </summary>
+        public static bool IsBetaFeedbackEnabled =>
+            TitanOrbitDebugFlags.BetaFeedbackEnabled
+            || (Instance != null && Instance.enableBetaFeedback);
 
         /// <summary>
         /// Safe static check used by moon orbit UI. Also true when the Shared flag was published
@@ -418,6 +443,7 @@ namespace TitanOrbit.Core
                 TitanOrbitDebugFlags.EgressMeterEnabled = false;
                 TitanOrbitDebugFlags.AiShips = false;
                 TitanOrbitDebugFlags.AiShipsPerTeam = 0;
+                TitanOrbitDebugFlags.BetaFeedbackEnabled = false;
                 ClearIsolationFlags();
                 _hasPublishedShowSpeedometer = false;
                 _hasPublishedShowEgressMeter = false;
@@ -437,6 +463,10 @@ namespace TitanOrbit.Core
             TitanOrbitDebugFlags.FreeShipUpgradeTree = debugFreeShipUpgradeTree;
             TitanOrbitDebugFlags.FreeGear = debugFreeGear;
             TitanOrbitDebugFlags.FreeCards = debugFreeCards;
+            // [TITAN-ORBIT] Field notes are a beta switch, not a local cheat. The dedicated
+            // server must see the same checkbox the client build baked, so a public server
+            // refuses notes and a beta server accepts them.
+            TitanOrbitDebugFlags.BetaFeedbackEnabled = enableBetaFeedback;
             // [TITAN-ORBIT] Cycle-all / infinite ordnance are local Editor / MPPM conveniences.
             // Dedicated GCE stays Production so a baked-on Inspector tick cannot unlock
             // every bank or free rockets for remote clients.

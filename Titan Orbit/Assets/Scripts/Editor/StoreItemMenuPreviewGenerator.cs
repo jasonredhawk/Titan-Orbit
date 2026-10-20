@@ -43,7 +43,15 @@ namespace TitanOrbit.Editor
                 "OK");
         }
 
-        public static int GenerateAll()
+        public static int GenerateAll() => Generate(rocketsOnly: false);
+
+        /// <summary>
+        /// Rewrites only the rocket thumbs. Ship-hull skins do not match the missile UVs,
+        /// so each team gets the authored rocket albedo with its stripe recolored.
+        /// </summary>
+        public static int GenerateRockets() => Generate(rocketsOnly: true);
+
+        static int Generate(bool rocketsOnly)
         {
             EnsureFolder(OutputFolder);
             StoreItemPreviewCatalog catalog = LoadOrCreateCatalog();
@@ -54,7 +62,8 @@ namespace TitanOrbit.Editor
                 (StoreItemType.FighterDrone, "FighterDrone", LoadPrefab("Assets/Resources/FighterDrone.prefab"), MaterialPolicy.TeamHullKeepCore),
                 (StoreItemType.ShieldDrone, "ShieldDrone", LoadPrefab("Assets/Resources/ShieldDrone.prefab"), MaterialPolicy.TeamHullKeepCore),
                 (StoreItemType.MiningDrone, "MiningDrone", LoadPrefab("Assets/Resources/MiningDrone.prefab"), MaterialPolicy.TeamHullKeepCore),
-                (StoreItemType.SmallRockets, "Rockets", null, MaterialPolicy.TeamHullKeepCore),
+                // Single team material: the Sci-Fi rocket skin, not AstroEagle hull mats.
+                (StoreItemType.SmallRockets, "Rockets", null, MaterialPolicy.SingleTeamMaterial),
                 (StoreItemType.SmallMines, "Mines", LoadMinePrefab(), MaterialPolicy.SingleTeamMaterial),
             };
 
@@ -64,6 +73,8 @@ namespace TitanOrbit.Editor
                 for (int s = 0; s < subjects.Length; s++)
                 {
                     var (item, fileBase, prefab, policy) = subjects[s];
+                    if (rocketsOnly && item != StoreItemType.SmallRockets)
+                        continue;
                     EditorUtility.DisplayProgressBar("Store Item Previews", fileBase, (s + 0.5f) / subjects.Length);
 
                     var entry = catalog.GetOrCreateEntry(item);
@@ -79,9 +90,12 @@ namespace TitanOrbit.Editor
                         GameObject capturePrefab = prefab;
                         Material[] mats = variant.materials;
                         TeamId droneTeam = TeamId.None;
+                        Material generatedSkin = null;
                         if (item == StoreItemType.SmallRockets)
                         {
                             capturePrefab = LoadRocketBankPrefab(variant.team);
+                            generatedSkin = CreateRocketTeamSkin(variant.team);
+                            mats = generatedSkin != null ? new[] { generatedSkin } : null;
                         }
                         else if (policy == MaterialPolicy.SingleTeamMaterial)
                         {
@@ -94,35 +108,42 @@ namespace TitanOrbit.Editor
                             mats = null;
                         }
 
-                        if (capturePrefab == null)
-                            continue;
-
-                        string folder = $"{OutputFolder}/{variant.name}";
-                        EnsureFolder(folder);
-                        string pngPath = $"{folder}/{fileBase}.png";
-                        float standoffMul = item == StoreItemType.SmallMines ? 7.6f : 6.2f;
-                        if (!RenderPrefabToPng(
-                                capturePrefab,
-                                pngPath,
-                                mats,
-                                isDrone ? MaterialPolicy.KeepAuthored : policy,
-                                standoffMul,
-                                droneTeam))
-                            continue;
-                        AssetDatabase.ImportAsset(pngPath, ImportAssetOptions.ForceUpdate);
-                        ConfigureSpriteImporter(pngPath);
-                        Sprite sprite = AssetDatabase.LoadAssetAtPath<Sprite>(pngPath);
-                        if (sprite == null)
-                            continue;
-                        entry.teamMenuPreviewSprites.Add(new ShipFamilyTeamMenuPreview
+                        try
                         {
-                            variantName = variant.name,
-                            team = variant.team,
-                            sprite = sprite,
-                        });
-                        if (first == null)
-                            first = sprite;
-                        written++;
+                            if (capturePrefab == null)
+                                continue;
+
+                            string folder = $"{OutputFolder}/{variant.name}";
+                            EnsureFolder(folder);
+                            string pngPath = $"{folder}/{fileBase}.png";
+                            float standoffMul = item == StoreItemType.SmallMines ? 7.6f : 6.2f;
+                            if (!RenderPrefabToPng(
+                                    capturePrefab,
+                                    pngPath,
+                                    mats,
+                                    isDrone ? MaterialPolicy.KeepAuthored : policy,
+                                    standoffMul,
+                                    droneTeam))
+                                continue;
+                            AssetDatabase.ImportAsset(pngPath, ImportAssetOptions.ForceUpdate);
+                            ConfigureSpriteImporter(pngPath);
+                            Sprite sprite = AssetDatabase.LoadAssetAtPath<Sprite>(pngPath);
+                            if (sprite == null)
+                                continue;
+                            entry.teamMenuPreviewSprites.Add(new ShipFamilyTeamMenuPreview
+                            {
+                                variantName = variant.name,
+                                team = variant.team,
+                                sprite = sprite,
+                            });
+                            if (first == null)
+                                first = sprite;
+                            written++;
+                        }
+                        finally
+                        {
+                            DestroyGeneratedSkin(generatedSkin);
+                        }
                     }
 
                     entry.menuPreviewSprite = first;
@@ -192,6 +213,141 @@ namespace TitanOrbit.Editor
                 case TeamManager.Team.TeamE: return "Purple";
                 default: return "Blue";
             }
+        }
+
+        const string RocketMaterialPath =
+            "Assets/Archanor/Sci-Fi Arsenal/Sci-Fi Effects/Materials/Misc/Rocket.mat";
+
+        static Material _rocketSource;
+        static Color32[] _rocketAlbedo;
+        static int _rocketAlbedoWidth;
+        static int _rocketAlbedoHeight;
+
+        /// <summary>
+        /// Authored <c>Rocket.mat</c> with the yellow stripe painted in the team color.
+        /// Hull atlases (GenericSpaceships / AstroEagle) do not match this mesh, so they
+        /// read as a scrambled skin in the gear thumb.
+        /// </summary>
+        static Material CreateRocketTeamSkin(TeamManager.Team team)
+        {
+            EnsureRocketAlbedo();
+            if (_rocketSource == null)
+                return null;
+
+            var skin = new Material(_rocketSource) { name = "RocketSkin_" + RocketColorToken(team) };
+            if (_rocketAlbedo == null)
+                return skin;
+
+            Color stripe = TeamStripeColor(team);
+            var tex = new Texture2D(_rocketAlbedoWidth, _rocketAlbedoHeight, TextureFormat.RGBA32, false, false)
+            {
+                name = skin.name + "_Albedo",
+                wrapMode = TextureWrapMode.Clamp,
+            };
+            var painted = new Color32[_rocketAlbedo.Length];
+            int stripePixels = 0;
+            for (int i = 0; i < _rocketAlbedo.Length; i++)
+            {
+                Color32 src = _rocketAlbedo[i];
+                if (!TryRecolorRocketStripe(src, stripe, out Color32 paintedPx))
+                {
+                    painted[i] = src;
+                    continue;
+                }
+
+                painted[i] = paintedPx;
+                stripePixels++;
+            }
+
+            if (stripePixels == 0)
+                Debug.LogWarning($"[StoreItemPreview] Rocket stripe recolor matched no pixels for {team}.");
+
+            tex.SetPixels32(painted);
+            tex.Apply(true, false);
+            skin.SetTexture("_BaseMap", tex);
+            skin.SetTexture("_MainTex", tex);
+            return skin;
+        }
+
+        static void EnsureRocketAlbedo()
+        {
+            if (_rocketSource != null)
+                return;
+
+            _rocketSource = AssetDatabase.LoadAssetAtPath<Material>(RocketMaterialPath);
+            if (_rocketSource == null)
+            {
+                Debug.LogWarning("[StoreItemPreview] Missing Rocket.mat. Rocket thumbs keep the prefab material.");
+                return;
+            }
+
+            Texture albedo = _rocketSource.HasProperty("_BaseMap")
+                ? _rocketSource.GetTexture("_BaseMap")
+                : _rocketSource.mainTexture;
+            string texPath = albedo != null ? AssetDatabase.GetAssetPath(albedo) : null;
+            if (string.IsNullOrEmpty(texPath))
+                return;
+
+            string projectRoot = Directory.GetParent(Application.dataPath)?.FullName;
+            if (string.IsNullOrEmpty(projectRoot))
+                return;
+
+            string full = Path.Combine(projectRoot, texPath.Replace('/', Path.DirectorySeparatorChar));
+            if (!File.Exists(full))
+                return;
+
+            var decoded = new Texture2D(2, 2, TextureFormat.RGBA32, false, false);
+            if (!decoded.LoadImage(File.ReadAllBytes(full)))
+            {
+                Object.DestroyImmediate(decoded);
+                return;
+            }
+
+            _rocketAlbedoWidth = decoded.width;
+            _rocketAlbedoHeight = decoded.height;
+            _rocketAlbedo = decoded.GetPixels32();
+            Object.DestroyImmediate(decoded);
+        }
+
+        /// <summary>
+        /// Canonical faction color for the rocket stripe. Team D is orange in the rest of the UI.
+        /// </summary>
+        static Color TeamStripeColor(TeamManager.Team team)
+        {
+            return TeamManager.ToTeamId(team).ToColor();
+        }
+
+        /// <summary>
+        /// Yellow bands on <c>scifi_rocket.png</c> become <paramref name="stripe"/>. Gray metal stays.
+        /// </summary>
+        static bool TryRecolorRocketStripe(Color32 src, Color stripe, out Color32 painted)
+        {
+            painted = src;
+            float r = src.r / 255f;
+            float g = src.g / 255f;
+            float b = src.b / 255f;
+            float max = Mathf.Max(r, Mathf.Max(g, b));
+            float min = Mathf.Min(r, Mathf.Min(g, b));
+            float sat = max > 0.02f ? (max - min) / max : 0f;
+            // The albedo's only saturated paint is the yellow nose cap and body band.
+            bool isStripe = sat > 0.28f && r > 0.25f && g > 0.18f && b < r * 0.65f && g > b;
+            if (!isStripe)
+                return false;
+
+            float brightness = Mathf.Clamp01(max);
+            painted = new Color(stripe.r * brightness, stripe.g * brightness, stripe.b * brightness, src.a / 255f);
+            return true;
+        }
+
+        static void DestroyGeneratedSkin(Material skin)
+        {
+            if (skin == null || EditorUtility.IsPersistent(skin))
+                return;
+
+            Texture tex = skin.HasProperty("_BaseMap") ? skin.GetTexture("_BaseMap") : null;
+            Object.DestroyImmediate(skin);
+            if (tex != null && !EditorUtility.IsPersistent(tex))
+                Object.DestroyImmediate(tex);
         }
 
         static Material LoadMineTeamMaterial(TeamManager.Team team)
@@ -322,6 +478,8 @@ namespace TitanOrbit.Editor
             RenderSettings.ambientLight = new Color(0.32f, 0.35f, 0.42f);
             var rt = RenderTexture.GetTemporary(RenderSize, RenderSize, 24, RenderTextureFormat.ARGB32);
             cam.targetTexture = rt;
+            // First Camera.Render after a fresh shader variant can come back black.
+            cam.Render();
             cam.Render();
             RenderTexture.active = rt;
             var tex = new Texture2D(RenderSize, RenderSize, TextureFormat.RGBA32, false);

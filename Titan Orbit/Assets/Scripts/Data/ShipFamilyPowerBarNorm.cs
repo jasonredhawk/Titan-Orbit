@@ -185,10 +185,12 @@ namespace TitanOrbit.Data
     }
 
     /// <summary>
-    /// Resolves upgrade-tree power-bar stats: Extra Level at ship level with every HUD
-    /// ability maxed (<see cref="ShipAbilityLevelCounts.Maxed"/>). Same formulas as live
-    /// ships — non-weapons use <c>shipLevel + ability</c> per part; weapons omit N;
-    /// weapon bullet speed is ability-only. Live prefab sums are cached per session.
+    /// Resolves upgrade-tree power-bar stats: Extra Level at the chassis's ship
+    /// level with zero ability purchases — the hull the moment you buy it, before
+    /// any bottom-HUD upgrade. Same formulas as live ships — non-weapons use
+    /// <c>shipLevel + ability</c> per part; weapons omit N; weapon bullet speed is
+    /// ability-only. Ability counts stay 0, so a Fire Power purchase is not added
+    /// on top of the ship level. Live prefab sums are cached per session.
     /// Also walks three separate ten-stat max pools and remembers who set each
     /// slot’s ceiling (RANK 1 for power-bar hover tips):
     /// regular hulls (L1–L6), Titans (armed MEGAs), and gear components from every family.
@@ -231,7 +233,7 @@ namespace TitanOrbit.Data
         static Func<int, int> s_componentBankResolver;
 
         /// <summary>
-        /// Extra Level at the tier's tree level with every HUD ability maxed.
+        /// Extra Level at the tier's tree level with zero ability purchases.
         /// Writes <see cref="ShipFamilyChassisTierEntry.powerScoreBreakdownAtShipLevel"/>.
         /// Editor bake path — call after the tier's ship level is assigned.
         /// </summary>
@@ -247,9 +249,10 @@ namespace TitanOrbit.Data
             }
 
             int shipLevel = Mathf.Max(1, entry.minHomePlanetLevel);
-            ShipAbilityLevelCounts maxed = ShipAbilityLevelCounts.Maxed(shipLevel);
+            // Purchase-time hull: ship level counts, bottom-HUD ability levels do not.
+            ShipAbilityLevelCounts fresh = default;
             if (TryBuildBreakdown(
-                    entry.prefab, family, shipLevel, in maxed,
+                    entry.prefab, family, shipLevel, in fresh,
                     out _, out ShipFamilyPowerScoreBreakdown breakdown))
             {
                 entry.powerScoreBreakdownAtShipLevel = breakdown;
@@ -260,9 +263,11 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Display breakdown for a chassis at <paramref name="shipLevel"/> with every HUD
-        /// ability maxed. Live-sums the prefab (session-cached) so bars stay correct even
-        /// when the editor bake still has the older ability-0 values.
+        /// Display breakdown for a chassis at <paramref name="shipLevel"/> with zero
+        /// ability purchases. This is the minimum on the card the moment the hull
+        /// is bought, before any bottom-HUD upgrade. Live-sums the prefab
+        /// (session-cached) so the bar matches that fresh ship even when an older
+        /// bake still stored the fully upgraded ceiling.
         /// </summary>
         public static ShipFamilyPowerScoreBreakdown GetBreakdownAtShipLevel(
             ShipFamilyDefinition family,
@@ -273,15 +278,19 @@ namespace TitanOrbit.Data
                 return default;
 
             shipLevel = Mathf.Max(1, shipLevel);
-            string cacheKey = (tier.chassisId ?? string.Empty) + "@" + shipLevel + "@max";
+            string cacheKey = (tier.chassisId ?? string.Empty) + "@" + shipLevel + "@base";
             if (s_liveCache.TryGetValue(cacheKey, out ShipFamilyPowerScoreBreakdown cached))
                 return cached;
 
-            ShipAbilityLevelCounts maxed = ShipAbilityLevelCounts.Maxed(shipLevel);
+            // --- Zero ability purchases ---
+            // [TITAN-ORBIT] Ship level still grows the hull (a level-3 ship is stronger
+            // than a level-1 ship). Ability counts stay 0 so one Fire Power buy is not
+            // added on top. Level-1 Astro Eagle Hawk is 11.25 DPS/s here, not 13.5.
+            ShipAbilityLevelCounts fresh = default;
             if (tier.prefab != null &&
                 family != null &&
                 TryBuildBreakdown(
-                    tier.prefab, family, shipLevel, in maxed,
+                    tier.prefab, family, shipLevel, in fresh,
                     out _, out ShipFamilyPowerScoreBreakdown live))
             {
                 s_liveCache[cacheKey] = live;
@@ -321,8 +330,8 @@ namespace TitanOrbit.Data
 
         /// <summary>
         /// Highest value of each of the ten display stats across every regular-family
-        /// chassis (levels 1–6), each evaluated at that chassis's tree level with every
-        /// HUD ability maxed. MEGA catalog hulls are excluded. Cached until
+        /// chassis (levels 1–6), each evaluated at that chassis's tree level with zero
+        /// ability purchases. MEGA catalog hulls are excluded. Cached until
         /// <see cref="InvalidateCache"/>.
         /// </summary>
         /// <param name="config">Optional planet-family list. Null scans every loaded family asset.</param>

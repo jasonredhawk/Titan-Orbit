@@ -110,9 +110,9 @@ namespace TitanOrbit.Data
 
         [Header("Family Special Bonuses")]
         [Tooltip(
-            "Multipliers applied after component sum. Identity = all 1s. Values may be below 1 (trade-offs). " +
-            "cameraHeightMul is presentation-only (CameraFollowEcs zoom). " +
-            "This is how families differ from shared part profiles.")]
+            "Editor preview only. A live match does not use these numbers. " +
+            "Home-planet ships are always 1×. Every other planet's family is rolled " +
+            "from the match seed between 0.5 and 2.0 (ShipFamilyMatchBonuses).")]
         public ShipFamilySpecialBonuses specialBonuses = ShipFamilySpecialBonuses.Identity;
 
         [Header("Bullets")]
@@ -221,10 +221,24 @@ namespace TitanOrbit.Data
             return ShipComponentAbilityStatsMath.WithZeroStatFallbacks(summedStats, GetEffectiveDefaultFallbackStats());
         }
 
-        /// <summary>Applies <see cref="specialBonuses"/> multipliers (identity when unset).</summary>
+        /// <summary>
+        /// Bonuses that actually apply to this family right now.
+        /// During a match, home planets are exactly 1× and other planets use the
+        /// seed roll. With no match, this is the authored <see cref="specialBonuses"/>
+        /// block (inspector and power-bar bake).
+        /// </summary>
+        public ShipFamilySpecialBonuses ResolveSpecialBonuses()
+        {
+            return ShipFamilyMatchBonuses.Resolve(this);
+        }
+
+        /// <summary>
+        /// Multiplies summed stats by <see cref="ResolveSpecialBonuses"/>.
+        /// Unset authored values (all zeros) still count as 1× when no match is running.
+        /// </summary>
         public ShipComponentAbilityStats ApplySpecialBonuses(ShipComponentAbilityStats summedStats)
         {
-            return specialBonuses.Apply(summedStats);
+            return ResolveSpecialBonuses().Apply(summedStats);
         }
 
         /// <summary>Resets <see cref="defaultFallbackStats"/> to the global baseline.</summary>
@@ -241,7 +255,10 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Zeroes disallowed ability fields per Stat Categories × part type.
+        /// Zeroes ability fields that sit outside the component's stat categories.
+        /// Offense is not narrowed by part type: fire power, bullet speed, range,
+        /// fire rate, and ramming all stay on the row. Cockpit scan still seeds
+        /// ramming only; weapon scan still focuses on bullet speed.
         /// Called from editor OnValidate and after Scan / Populate.
         /// </summary>
         public void EnforceComponentStatCategories()
@@ -350,7 +367,10 @@ namespace TitanOrbit.Data
         {
             if (upgradeCardDeck != null && upgradeCardDeck.cards != null && upgradeCardDeck.cards.Count > 0)
                 return upgradeCardDeck.cards;
-            return _runtimeProceduralCards ??= CardDeckRuntimeDefaults.CreateUniqueDeck(familyId, specialBonuses);
+            // Identity on purpose. The old Family Crest card copied this asset's fixed
+            // trade-offs onto the hull. Match bonuses are the seed roll, not a card.
+            return _runtimeProceduralCards ??= CardDeckRuntimeDefaults.CreateUniqueDeck(
+                familyId, ShipFamilySpecialBonuses.Identity);
         }
 
         /// <summary>Clears the cached component-id → stats dictionary (editor OnValidate calls this).</summary>
@@ -780,10 +800,10 @@ namespace TitanOrbit.Data
         /// </summary>
         public ShipFamilyPowerScoreBreakdown powerScoreBreakdown;
         /// <summary>
-        /// Ten display stats at <see cref="minHomePlanetLevel"/> with every HUD ability
-        /// maxed (<c>abilityLevel = shipLevel</c>). Orbit Menu power bars use this so
-        /// higher-tier ships show their Extra Level ceiling (including weapon bullet speed).
-        /// Baked in the editor; live sum is the fallback when empty or stale.
+        /// Ten display stats at <see cref="minHomePlanetLevel"/> with zero ability
+        /// purchases. Orbit Menu power bars show this purchase-time hull: ship level
+        /// still applies, bottom-HUD Extra Levels do not. Baked in the editor; the
+        /// menu itself live-sums the prefab the same way.
         /// </summary>
         public ShipFamilyPowerScoreBreakdown powerScoreBreakdownAtShipLevel;
         public float componentMass;

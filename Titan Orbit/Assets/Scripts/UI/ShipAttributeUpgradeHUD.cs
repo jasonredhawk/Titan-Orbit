@@ -3,6 +3,7 @@ using TitanOrbit.Core;
 using TitanOrbit.Data;
 using TitanOrbit.ECS;
 using TitanOrbit.Game;
+using TitanOrbit.Input;
 using TitanOrbit.Shared;
 using TitanOrbit.Simulation;
 using TMPro;
@@ -1627,7 +1628,8 @@ namespace TitanOrbit.UI
 
             live.IsMega = mega;
             if (mega && TrySumLocalMegaWithGear(
-                    megaIndex, ship.ShipLevel, out ShipComponentAbilityStats megaStats, out float megaDps))
+                    megaIndex, ship.ShipLevel, ship.ShipFamilyConfigIndex,
+                    out ShipComponentAbilityStats megaStats, out float megaDps))
             {
                 // --- MEGA: frozen catalog + PerExtra-only LOADOUT gear ---
                 // [TITAN-ORBIT] Team+level+branch would resolve a regular L7 family chassis
@@ -1897,10 +1899,12 @@ namespace TitanOrbit.UI
         /// </summary>
         /// <param name="megaIndex">Catalog row for the current Titan.</param>
         /// <param name="shipLevel">Ghosted ship level (7 on a live Titan).</param>
+        /// <param name="familyConfigIndex">Planet family slot stamped on the Titan at purchase.</param>
         /// <param name="megaStats">Hull + gear totals when this returns true.</param>
         static bool TrySumLocalMegaWithGear(
             ushort megaIndex,
             int shipLevel,
+            int familyConfigIndex,
             out ShipComponentAbilityStats megaStats,
             out float megaDps)
         {
@@ -1911,11 +1915,19 @@ namespace TitanOrbit.UI
                     megaIndex, extraIds, shipLevel, out megaStats))
                 return false;
 
+            // Same fleet roll the server wrote onto the hull. Home Titans stay 1×.
+            megaStats = MegaShipStatsCalculator.ApplyFleetBonuses(megaStats, familyConfigIndex);
+
             // Catalog barrels only. A purchased weapon does not add DPS; the
             // selected bullet type's modifiers scale this after the snapshot fills.
+            // Fire power and fire rate rolls scale the chip the same way shots do.
             var megaCat = MegaShipCatalog.Load();
             if (megaCat != null)
                 megaDps = megaCat.GetPowerBreakdown(megaIndex).GetDisplayDps();
+            ShipFamilySpecialBonuses fleet = MegaShipStatsCalculator.ResolveFleetBonuses(familyConfigIndex);
+            float firePowerMul = fleet.firePowerMul > 0.0001f ? fleet.firePowerMul : 1f;
+            float fireRateMul = fleet.fireRateMul > 0.0001f ? fleet.fireRateMul : 1f;
+            megaDps *= firePowerMul * fireRateMul;
             return true;
         }
 
@@ -2659,7 +2671,7 @@ namespace TitanOrbit.UI
                 TryRefreshAbilityChipSnapshot(in ship, in attrs);
 
             var keyboard = Keyboard.current;
-            if (keyboard == null)
+            if (keyboard == null || PlayerInputHandler.IsTextEntryFocused())
                 return;
 
             // S toggles the chip row. Same result as clicking [S]TATS. Edge only,

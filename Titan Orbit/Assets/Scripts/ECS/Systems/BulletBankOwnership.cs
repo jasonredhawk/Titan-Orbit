@@ -576,6 +576,114 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
+        /// Authored fire-power base and per-extra for the family weapon on this bank.
+        /// Does not Extra-Level. A purchased gear weapon uses that part's numbers.
+        /// The inherited planet fleet gun uses the family's Weapon row.
+        /// Regular ships do not read this for live shots.
+        /// </summary>
+        /// <param name="em">World that owns <paramref name="shipEntity"/>.</param>
+        /// <param name="shipEntity">Ship whose loadout and family stamp we read.</param>
+        /// <param name="bankIndex">B-key bank being fired.</param>
+        /// <param name="baseFirePower">Catalog fire power before Extra Level.</param>
+        /// <param name="perExtraLevel">Catalog fire power added once per Extra Level step.</param>
+        /// <returns>True when this bank is a family weapon with a usable fire-power row.</returns>
+        public static bool TryGetFamilyWeaponFirepowerParts(
+            EntityManager em,
+            Entity shipEntity,
+            int bankIndex,
+            out float baseFirePower,
+            out float perExtraLevel)
+        {
+            baseFirePower = 0f;
+            perExtraLevel = 0f;
+            if (shipEntity == Entity.Null || em == default || !em.Exists(shipEntity) || bankIndex < 0)
+                return false;
+
+            var config = PlanetShipFamilyConfig.LoadDefault();
+            int hullBank = ResolveHullDefaultBank(em, shipEntity);
+
+            // --- Gear-slot weapon ---
+            // [TITAN-ORBIT] A gun bought at another planet keeps that part's base and per-extra.
+            // The hull sum still ignores this damage; only the selected bank's bullets use it.
+            if (em.HasBuffer<EquippedEquipmentElement>(shipEntity))
+            {
+                var equipment = em.GetBuffer<EquippedEquipmentElement>(shipEntity);
+                for (int i = 0; i < equipment.Length; i++)
+                {
+                    EquippedEquipmentElement item = equipment[i];
+                    if ((StoreItemType)item.ItemType != StoreItemType.ShipComponent)
+                        continue;
+
+                    string id = item.ComponentId.ToString();
+                    if (!IsPurchasedWeaponComponent(id))
+                        continue;
+                    if (ResolveEquippedWeaponBank(em, item, id, config, hullBank) != bankIndex)
+                        continue;
+                    if (!ShipFamilyStatsCalculator.TryResolveComponentStats(
+                            null, id, out ShipComponentAbilityStats stats))
+                        continue;
+                    if (stats.firePower <= 0.01f && stats.firePowerPerExtraLevel <= 0.01f)
+                        continue;
+
+                    baseFirePower = stats.firePower;
+                    perExtraLevel = stats.firePowerPerExtraLevel;
+                    return true;
+                }
+            }
+
+            // --- Inherited family fleet gun ---
+            // No purchase required. The planet's Weapon row is the bullet the Titan inherits.
+            if (bankIndex != hullBank)
+                return false;
+            if (!TryResolveFamilyForBank(em, shipEntity, bankIndex, out ShipFamilyDefinition family)
+                || family == null)
+                return false;
+            if (!TryGetFamilyFleetWeaponStats(family, out ShipComponentAbilityStats fleet))
+                return false;
+            if (fleet.firePower <= 0.01f && fleet.firePowerPerExtraLevel <= 0.01f)
+                return false;
+
+            baseFirePower = fleet.firePower;
+            perExtraLevel = fleet.firePowerPerExtraLevel;
+            return true;
+        }
+
+        /// <summary>
+        /// The family's fleet gun: the <c>Weapon</c> row, or the first weapon part that authored fire power.
+        /// </summary>
+        static bool TryGetFamilyFleetWeaponStats(
+            ShipFamilyDefinition family,
+            out ShipComponentAbilityStats stats)
+        {
+            stats = default;
+            if (family == null)
+                return false;
+
+            if (family.TryGetStatsForComponent("Weapon", out stats)
+                && (stats.firePower > 0.01f || stats.firePowerPerExtraLevel > 0.01f))
+                return true;
+
+            if (family.components == null)
+                return false;
+
+            for (int i = 0; i < family.components.Count; i++)
+            {
+                ShipFamilyComponentEntry entry = family.components[i];
+                if (entry == null || string.IsNullOrWhiteSpace(entry.componentId))
+                    continue;
+                if (!ShipComponentAbilityStats.IsWeaponComponent(entry.componentId))
+                    continue;
+                if (entry.stats.firePower <= 0.01f && entry.stats.firePowerPerExtraLevel <= 0.01f)
+                    continue;
+
+                stats = entry.stats;
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
         /// Authored Titan Gun-class bank (usually "Bullets") for this MEGA hull.
         /// False on regular family ships or when the catalog row is missing.
         /// </summary>

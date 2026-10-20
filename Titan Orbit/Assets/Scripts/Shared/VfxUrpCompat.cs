@@ -424,9 +424,85 @@ namespace TitanOrbit.Core
         }
 
         /// <summary>
+        /// Restarts a one-shot impact from time 0 so burn ticks show the explosion again.
+        /// Sci-Fi impacts burst once, then sit out a multi-second duration. Forcing
+        /// <c>main.loop</c> stays dark between ticks, and <c>Emit</c> alone does not rewind
+        /// lifetime curves. Stop, clear, then play — one rented shell, no new Instantiate.
+        /// </summary>
+        public static void ReplayImpactAnimation(GameObject root)
+        {
+            if (root == null)
+                return;
+
+            if (!root.activeInHierarchy)
+            {
+                PrepareVfxInstance(root);
+                return;
+            }
+
+            ReplayImpactAnimationRecursive(root.transform);
+        }
+
+        static void ReplayImpactAnimationRecursive(Transform node)
+        {
+            int childCount = node.childCount;
+            for (int i = 0; i < childCount; i++)
+                ReplayImpactAnimationRecursive(node.GetChild(i));
+
+            TrailRenderer trail = node.GetComponent<TrailRenderer>();
+            if (trail != null)
+            {
+                trail.Clear();
+                trail.emitting = true;
+                trail.enabled = true;
+            }
+
+            Animation legacy = node.GetComponent<Animation>();
+            if (legacy != null)
+            {
+                legacy.Rewind();
+                legacy.Play();
+            }
+
+            Animator animator = node.GetComponent<Animator>();
+            if (animator != null && animator.isActiveAndEnabled && animator.runtimeAnimatorController != null)
+            {
+                animator.Rebind();
+                animator.Update(0f);
+            }
+
+            ParticleSystem ps = node.GetComponent<ParticleSystem>();
+            if (ps == null || !ps.gameObject.activeInHierarchy)
+                return;
+
+            // Stop before loop changes — Unity warns if loop is edited while playing.
+            ps.Stop(false, ParticleSystemStopBehavior.StopEmittingAndClear);
+            ps.Clear(false);
+
+            ParticleSystem.MainModule main = ps.main;
+            main.loop = false;
+            main.cullingMode = ParticleSystemCullingMode.AlwaysSimulate;
+            main.stopAction = ParticleSystemStopAction.None;
+            main.playOnAwake = true;
+            ParticleSystem.EmissionModule emission = ps.emission;
+            emission.enabled = true;
+
+            ps.time = 0f;
+            ps.Play(false);
+            // A warm system can skip its time-0 burst on Play. Emit it if nothing spawned.
+            if (ps.particleCount == 0)
+            {
+                int burst = SumBurstCount(ps);
+                if (burst > 0)
+                    ps.Emit(burst);
+            }
+        }
+
+        /// <summary>
         /// Fires each system's authored time-0 burst again and keeps particles already in flight.
         /// Sci-Fi impacts emit once, then sit out a multi-second duration, so setting
         /// <c>main.loop</c> stays dark between burn ticks. <c>Emit</c> does not clear the system.
+        /// Prefer <see cref="ReplayImpactAnimation"/> when the whole explosion should play again.
         /// </summary>
         public static void ReplayParticleBursts(GameObject root)
         {

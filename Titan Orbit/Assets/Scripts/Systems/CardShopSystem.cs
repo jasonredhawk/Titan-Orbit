@@ -247,7 +247,7 @@ namespace TitanOrbit.Systems
 
         /// <summary>
         /// Upgrade-tree power bar: Extra Level at the slot's ship <paramref name="level"/>
-        /// with every HUD ability maxed. Level-1 <see cref="GetPowerScoreBreakdownForUpgradeSlot"/> stays
+        /// with zero ability purchases. Level-1 <see cref="GetPowerScoreBreakdownForUpgradeSlot"/> stays
         /// for gem cost / sort.
         /// </summary>
         public ShipFamilyPowerScoreBreakdown GetPowerScoreBreakdownForUpgradeSlotAtShipLevel(
@@ -259,7 +259,7 @@ namespace TitanOrbit.Systems
                 : GetPowerScoreBreakdownForChassisIdAtShipLevel(cid, level);
         }
 
-        /// <summary>At-ship-level power-bar breakdown with every HUD ability maxed.</summary>
+        /// <summary>At-ship-level power-bar breakdown with zero ability purchases.</summary>
         public ShipFamilyPowerScoreBreakdown GetPowerScoreBreakdownForChassisIdAtShipLevel(
             string chassisId, int shipLevel)
         {

@@ -29,10 +29,12 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// World units the orbit-ring fill and turret-pad discs sit below the planet equator.
-        /// Keeps translucent floors under ship hulls instead of cutting through them.
-        /// Presentation only — orbit membership and pad deposit still use the XZ plane.
+        /// A stock hull is only a few tenths tall, so 0.2 still sliced larger and pitched
+        /// ships near mid-body. 0.42 sits at the keel: a little clip remains, the disc
+        /// does not bury half the hull. Presentation only — orbit membership and pad
+        /// deposit still use the XZ plane.
         /// </summary>
-        public const float ZoneDiscBelowFlightPlane = 0.2f;
+        public const float ZoneDiscBelowFlightPlane = 0.42f;
 
         /// <summary>How long each occupying team holds the ring tint before the next.</summary>
         public const float SecondsPerOccupyingTeam = 1f;

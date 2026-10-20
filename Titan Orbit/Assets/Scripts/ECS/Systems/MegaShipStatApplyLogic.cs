@@ -17,9 +17,14 @@ namespace TitanOrbit.ECS
     /// Gem cap stays 0. Cannon / missile / sniper mounts fire the catalog unique-component
     /// (or type-table) bank. Titan Bullet mounts follow the B-key hull cycle
     /// (<see cref="ShipLoadoutState.RuntimeBulletIndex"/>): original catalog
-    /// "Bullets" first, then the ship-family weapon (Laserbolt on Astro Eagle).
+    /// "Bullets" keep that barrel's catalog firepower (no Extra Level). The
+    /// ship-family weapon and purchased planet guns use
+    /// <see cref="TryResolveTitanFamilyWeaponFirepower"/> instead.
     /// Fire mode is Energy Hybrid;
     /// Phase B uses <see cref="ShipWeaponFireLogic.TryPlanMegaFire"/>.
+    /// The planet's ship-family fleet bonuses (home 1×, other families this match's
+    /// half-to-double roll) multiply the frozen hull and each barrel. Shift stays
+    /// heading-lock — Titans do not gain overdrive from the family's overdrive roll.
     /// Paired with <see cref="ShipStatApplyLogic.ApplyToShip"/> which routes here when
     /// <see cref="MegaShipState.IsMega"/> is true.
     /// </summary>
@@ -31,8 +36,132 @@ namespace TitanOrbit.ECS
         static bool s_LoggedDedicatedWeaponFallback;
 
         /// <summary>
-        /// Applies frozen MEGA hull stats plus PerExtra-only moon-store gear, then resizes
-        /// the ghosted aim-slot buffer to match weapon mounts.
+        /// Chassis tier plugged into the family-weapon Extra Level formula.
+        /// Regular ships stop at 6. Titans evaluate family and gear guns as a
+        /// fully maxed level-7 ship.
+        /// </summary>
+        public const int TitanFamilyWeaponShipLevel = 7;
+
+        /// <summary>
+        /// Fire Power ability purchases on that maxed level-7 ship.
+        /// Together with <see cref="TitanFamilyWeaponShipLevel"/> the step count is 14.
+        /// </summary>
+        public const int TitanFamilyWeaponAbilityLevel = 7;
+
+        /// <summary>
+        /// Last family-weapon firepower for one Titan and one B-key bank.
+        /// Holding fire must not re-walk gear ids (those strings allocate).
+        /// </summary>
+        struct FamilyWeaponFirepowerCache
+        {
+            public World World;
+            public Entity Ship;
+            public int Bank;
+            public int AbilityLevel;
+            public int Fingerprint;
+            public bool Ok;
+            public float Firepower;
+            public float Base;
+            public float PerExtra;
+        }
+
+        static FamilyWeaponFirepowerCache s_FamilyWeaponFirepowerCache;
+
+        /// <summary>
+        /// Firepower for a Titan gun barrel that is not on the catalog default bullet.
+        /// Regular ships never call this — their mounts already Extra-Level at ship level 1–6.
+        /// </summary>
+        /// <remarks>
+        /// [TITAN-ORBIT] The default Titan gun keeps the firepower already on its catalog asset.
+        /// No Extra Level formula is applied, and this method does not write a firepower number
+        /// for that bank. Toggling to a ship-family weapon or a gear-slot weapon uses that
+        /// weapon's own base and per-extra, evaluated as a fully maxed level-7 ship:
+        /// <c>base + perExtra × (7 + 7) = base + perExtra × 14</c>.
+        /// Base 3 and per-extra 0.75 is 13.5. Regular ships never call this.
+        /// </remarks>
+        /// <param name="em">World that owns <paramref name="shipEntity"/>.</param>
+        /// <param name="shipEntity">Titan whose B-key bank is firing.</param>
+        /// <param name="bankIndex">Bullet bank this shot will use.</param>
+        /// <param name="firepower">Level-7 family firepower, or 0 when this shot keeps the catalog gun.</param>
+        /// <param name="baseFirePower">Authored family-weapon base (before Extra Level).</param>
+        /// <param name="perExtraLevel">Authored fire power per Extra Level.</param>
+        /// <returns>True when <paramref name="bankIndex"/> is a family weapon and not the Titan's own default gun.</returns>
+        public static bool TryResolveTitanFamilyWeaponFirepower(
+            EntityManager em,
+            Entity shipEntity,
+            int bankIndex,
+            out float firepower,
+            out float baseFirePower,
+            out float perExtraLevel)
+        {
+            firepower = 0f;
+            baseFirePower = 0f;
+            perExtraLevel = 0f;
+
+            // Regular hulls, and a Titan still on its catalog Bullets, keep the mount value.
+            if (!em.Exists(shipEntity)
+                || !em.HasComponent<MegaShipState>(shipEntity)
+                || !em.GetComponentData<MegaShipState>(shipEntity).IsMega)
+                return false;
+
+            if (BulletBankOwnership.TryResolveMegaOriginalGunBank(em, shipEntity, out int titanGun)
+                && bankIndex == titanGun)
+                return false;
+
+            // Fully maxed: ship level 7 plus 7 upgrade abilities. Not the Titan's live purchases.
+            const int abilityLevel = TitanFamilyWeaponAbilityLevel;
+
+            int fingerprint = ShipStatApplyLogic.ComputeEquippedLoadoutFingerprint(em, shipEntity);
+            if (s_FamilyWeaponFirepowerCache.World == em.World
+                && s_FamilyWeaponFirepowerCache.Ship == shipEntity
+                && s_FamilyWeaponFirepowerCache.Bank == bankIndex
+                && s_FamilyWeaponFirepowerCache.AbilityLevel == abilityLevel
+                && s_FamilyWeaponFirepowerCache.Fingerprint == fingerprint)
+            {
+                if (!s_FamilyWeaponFirepowerCache.Ok)
+                    return false;
+
+                firepower = s_FamilyWeaponFirepowerCache.Firepower;
+                baseFirePower = s_FamilyWeaponFirepowerCache.Base;
+                perExtraLevel = s_FamilyWeaponFirepowerCache.PerExtra;
+                return true;
+            }
+
+            bool ok = BulletBankOwnership.TryGetFamilyWeaponFirepowerParts(
+                em, shipEntity, bankIndex, out baseFirePower, out perExtraLevel);
+            if (ok)
+            {
+                // base + perExtra × 14. Example: 3 + 0.75 × 14 = 13.5.
+                firepower = ShipComponentExtraLevelMath.Evaluate(
+                    baseFirePower,
+                    perExtraLevel,
+                    TitanFamilyWeaponShipLevel,
+                    abilityLevel,
+                    componentCount: 1,
+                    includeExtraComponentLevels: false);
+                firepower = math.max(0.1f, firepower);
+            }
+
+            s_FamilyWeaponFirepowerCache = new FamilyWeaponFirepowerCache
+            {
+                World = em.World,
+                Ship = shipEntity,
+                Bank = bankIndex,
+                AbilityLevel = abilityLevel,
+                Fingerprint = fingerprint,
+                Ok = ok,
+                Firepower = firepower,
+                Base = baseFirePower,
+                PerExtra = perExtraLevel,
+            };
+            return ok;
+        }
+
+        /// <summary>
+        /// Applies frozen MEGA hull stats plus PerExtra-only moon-store gear, multiplies
+        /// by the planet family's fleet bonuses, then resizes the ghosted aim-slot buffer
+        /// to match weapon mounts. <paramref name="familyIndex"/> is the store planet's
+        /// <c>ShipFamilyConfigIndex</c> copied onto the ship at purchase.
         /// </summary>
         public static void ApplyToShip(
             EntityManager em,
@@ -59,6 +188,12 @@ namespace TitanOrbit.ECS
                 em, shipEntity, out List<string> extraIds);
             MegaShipStatsCalculator.SumFromEntry(
                 entry, catalog, extraIds, shipLevel, out ShipComponentAbilityStats effective);
+            // --- Planet family fleet bonuses ---
+            // [TITAN-ORBIT] The Titan was added on a planet that owns a ship family.
+            // Home worlds stay 1×. Every other family uses this match's roll (0.5–2.0)
+            // on health, energy, speed, guns, ram, and troop cap. Gem cap stays 0.
+            ShipFamilySpecialBonuses fleet = MegaShipStatsCalculator.ResolveFleetBonuses(familyIndex);
+            effective = fleet.Apply(effective);
             effective.maxGems = 0f;
 
             // --- Caps (server / authoritative only) ---
@@ -70,10 +205,14 @@ namespace TitanOrbit.ECS
                 ship.MaxHealth = Mathf.Max(1f, effective.healthCap);
                 ship.GemCapacity = 0f;
                 ship.CurrentGems = 0f;
+                // Widen the catalog energy band by the family roll so a 2× energy
+                // family is not clipped back to MaxHullEnergy, and a 0.5× family
+                // can sit under MinHullEnergy. A 1× home world keeps the old band.
+                float energyMul = FleetMul(fleet.energyCapMul);
                 ship.MaxEnergy = Mathf.Clamp(
                     effective.energyCap > 0.01f ? effective.energyCap : MegaShipCatalog.DefaultHullEnergy,
-                    MegaShipCatalog.MinHullEnergy,
-                    MegaShipCatalog.MaxHullEnergy);
+                    MegaShipCatalog.MinHullEnergy * math.min(1f, energyMul),
+                    MegaShipCatalog.MaxHullEnergy * math.max(1f, energyMul));
                 // SumFromEntry already resolved catalog defaults/mins. Do not clamp
                 // to MinHullPeople (400) — that hid cockpit+wing sums of 40–300.
                 ship.PeopleCapacity = Mathf.Max(0, Mathf.RoundToInt(effective.maxPeople));
@@ -239,6 +378,7 @@ namespace TitanOrbit.ECS
                 // the server kept auto-aiming planetary defense turrets.
                 AppliedEquipmentFingerprint = ShipStatApplyLogic.ComputeEquippedLoadoutFingerprint(
                     em, shipEntity),
+                AppliedMatchBonusSeed = ShipFamilyMatchBonuses.ActiveMatchSeed,
             };
             if (em.HasComponent<ShipChassisState>(shipEntity))
                 em.SetComponentData(shipEntity, chassisState);
@@ -253,7 +393,8 @@ namespace TitanOrbit.ECS
         /// Overwrites each MEGA mount's firePower / fireRate / bulletRange / bulletSpeed /
         /// bank / tracer scale from the unique component named like that prefab child.
         /// Family combat apply runs first and would otherwise stamp regular-ship numbers
-        /// onto MEGA barrels.
+        /// onto MEGA barrels. After that catalog write, the planet family's fleet rolls
+        /// scale fire power, fire rate, bullet speed, and range on each barrel.
         /// <para>
         /// Dedicated IL2CPP (Docker / Edgegap) cannot use Editor PrefabUtility names. If the
         /// unique-row lookup misses, type-table stats (or <c>componentCounts</c> when the
@@ -302,7 +443,59 @@ namespace TitanOrbit.ECS
                 mount.BulletRange = MegaShipCatalog.DefaultBulletAcquireRange;
                 mounts[m] = mount;
             }
+
+            // --- Family fleet bonuses on the barrels that actually fire ---
+            // [TITAN-ORBIT] Hull ShipWeaponConfig is the HUD average. Live shots read
+            // each mount's FirePower / FireRate / BulletSpeed / BulletRange. The
+            // chassis catalog re-stamps these from the unique-part library, so the
+            // scale has to live here or the next visual apply would wipe it.
+            // Reference fire power scales with the live number so tracer size stays
+            // the catalog ratio — the family roll changes damage, not bullet art size.
+            int familyIndex = PlanetShipFamilyAssignment.HomeFamilyConfigIndex;
+            if (em.HasComponent<ShipState>(shipEntity))
+                familyIndex = em.GetComponentData<ShipState>(shipEntity).ShipFamilyConfigIndex;
+            ApplyFleetBonusesToMounts(mounts, MegaShipStatsCalculator.ResolveFleetBonuses(familyIndex));
         }
+
+        /// <summary>
+        /// Multiplies each Titan barrel by the planet family's combat rolls.
+        /// Identity (home world, or a 1× roll) leaves the catalog numbers alone.
+        /// Called at the end of catalog weapon apply so a later chassis refresh
+        /// still includes the bonus.
+        /// </summary>
+        static void ApplyFleetBonusesToMounts(
+            DynamicBuffer<ShipWeaponMountElement> mounts,
+            in ShipFamilySpecialBonuses bonuses)
+        {
+            float firePower = FleetMul(bonuses.firePowerMul);
+            float fireRate = FleetMul(bonuses.fireRateMul);
+            float bulletSpeed = FleetMul(bonuses.bulletSpeedMul);
+            float bulletRange = FleetMul(bonuses.bulletRangeMul);
+            bool identity = math.abs(firePower - 1f) < 0.0001f
+                && math.abs(fireRate - 1f) < 0.0001f
+                && math.abs(bulletSpeed - 1f) < 0.0001f
+                && math.abs(bulletRange - 1f) < 0.0001f;
+            if (identity)
+                return;
+
+            for (int i = 0; i < mounts.Length; i++)
+            {
+                ShipWeaponMountElement mount = mounts[i];
+                mount.FirePower *= firePower;
+                mount.ReferenceFirePower *= firePower;
+                mount.FireRate = math.max(0.15f, mount.FireRate * fireRate);
+                mount.ReferenceFireRate = mount.FireRate;
+                mount.BulletSpeed = math.max(0.1f, mount.BulletSpeed * bulletSpeed);
+                mount.BulletRange = math.max(0.5f, mount.BulletRange * bulletRange);
+                mounts[i] = mount;
+            }
+        }
+
+        /// <summary>
+        /// Same zero-as-one rule as <see cref="ShipFamilySpecialBonuses.Apply"/>.
+        /// An unset authored multiplier must not zero a Titan barrel.
+        /// </summary>
+        static float FleetMul(float value) => value > 0.0001f ? value : 1f;
 
         /// <summary>
         /// Walks tagged weapon assemblies on the hull prefab. Unique-row lookup uses

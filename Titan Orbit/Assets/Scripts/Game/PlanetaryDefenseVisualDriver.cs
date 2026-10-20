@@ -76,7 +76,7 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// World Y for the whole slot vs planet center. Same drop as the people-transfer
-        /// orbit ring so ships clear the pad disc instead of intersecting it.
+        /// orbit ring so a ship crossing the pad only nicks the disc.
         /// </summary>
         const float PresentationLiftY = -PlanetOrbitRingOccupancy.ZoneDiscBelowFlightPlane;
 

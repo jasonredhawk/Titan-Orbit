@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Text;
 using TitanOrbit.Data;
 using TitanOrbit.ECS;
+using TitanOrbit.Simulation;
 using UnityEngine;
 
 namespace TitanOrbit.UI
@@ -11,11 +12,18 @@ namespace TitanOrbit.UI
     /// <summary>
     /// Telemetry-style calculation cards for the ten bottom Ship Ability chips.
     /// Colour-coded calculation grids for the ten bottom Ship Ability chips.
-    /// PARTS table: PRIMARY Base + each part’s own PerExtra × levels (extras add no Base).
+    /// PARTS table: one row per component. BASE and PERX are catalog numbers;
+    /// SCALE is that part’s prefab size (including ×1) and multiplies the row.
+    /// FLEET BONUS is this match’s family roll for that stat: a green +% adds,
+    /// an amber −% reduces, and ×1 means the roll does not change the ship.
+    /// The same roll is printed on every part — it is per family, not per component.
+    /// Extras add no Base. There is no second line under a part for scale.
     /// MASS TAX table (Move / Accel / Turn): gems / troops / hull → drag → chip.
     /// MEGA hulls skip Extra Level on catalog parts and show static unique-component
     /// sums (no +per-buy). Equipped moon-store gear adds PerExtra × shipLevel only
     /// (no Base) and appears in a GEAR section on Titan cards.
+    /// The Fire Power card prints rate of fire in the DPS product so a parts total
+    /// (damage per shot) and the chip (damage per second) multiply in view.
     /// Token colours are shared: violet = start scale, amber = part count N, steel = Primary,
     /// cyan = PerExtra, blue = shipLevel, green = ability, mint = total.
     /// Presentation-only — never writes ECS.
@@ -52,6 +60,11 @@ namespace TitanOrbit.UI
         const string HexResult = "AAEEDD";  // line total / chip
         const string HexMass = "FF8A8A";    // cargo drag (Move / Turn only)
         const string HexMute = "5B7A94";    // labels, operators, unused terms
+        /// <summary>
+        /// Formula-line colour for the word "fleet". The cell itself uses the
+        /// Fleet Bonuses wheel colours (green add, amber reduce, muted ×1).
+        /// </summary>
+        const string HexFleet = "E6C36A";
 
         /// <summary>Which authored float on a part contributes to a chip primary.</summary>
         public enum StatField
@@ -142,12 +155,19 @@ namespace TitanOrbit.UI
                     unitSuffix = " DPS/s";
                     if (live.IsMega)
                     {
-                        // Catalog barrel DPS. Purchased weapons are not added; the
-                        // selected bullet type scales AllGunDps before this read.
+                        // Catalog barrel DPS, then the planet family's fire rolls.
+                        // Purchased weapons are not added; the selected bullet type
+                        // scales AllGunDps before this read (that path already includes
+                        // the family rolls). Home Titans stay at the catalog DPS.
                         var mega = MegaShipCatalog.Load();
                         value = mega != null
                             ? mega.GetPowerBreakdown(live.MegaCatalogIndex).GetDisplayDps()
                             : ShipFamilyPowerScoreBreakdown.ComputeSustainedDps(eff.firePower, eff.fireRate);
+                        ShipFamilySpecialBonuses fleet = MegaShipStatsCalculator.ResolveFleetBonuses(
+                            live.Ship.ShipFamilyConfigIndex);
+                        float firePowerMul = fleet.firePowerMul > 0.0001f ? fleet.firePowerMul : 1f;
+                        float fireRateMul = fleet.fireRateMul > 0.0001f ? fleet.fireRateMul : 1f;
+                        value *= firePowerMul * fireRateMul;
                         if (live.AllGunDps > 0.0001f)
                             value = live.AllGunDps;
                         nextStep = 0f;
@@ -263,6 +283,7 @@ namespace TitanOrbit.UI
             {
                 case 0:
                     AppendTenPercentPipeline(sb, parts, live, attrs, StatField.FirePower, "Fire Power", lv, live.EffectiveStats.firePower);
+                    AppendFireDpsEquation(sb, in parts, in live, lv);
                     AppendRelatedFireExtras(sb, parts, live, lv);
                     BulletBankHudCopy.AppendFullSection(sb, in live, in attrs);
                     break;
@@ -536,8 +557,9 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// One part row: <c>1× Cockpit  10 ×3 → 30 Health</c> or <c>2× Wing_1   +2 to Wing</c>.
-        /// Starting scale is shown only when it actually changes the catalog number.
+        /// One part row: <c>1× Cockpit  10 × scale 3 = 30 Health</c>.
+        /// Every part prints its prefab scale, including ×1, so a unit-size part
+        /// is visible next to a cockpit that is three times catalog.
         /// </summary>
         static void AppendPartLine(
             StringBuilder sb,
@@ -562,19 +584,25 @@ namespace TitanOrbit.UI
             else
             {
                 // --- Catalog × starting scale → Primary used by Extra Level ---
-                if (HasMeaningfulScale(scaleFactor) && catalogEach > 0.0001f)
+                // Scale is always printed. A ×1 part still shows the factor so it
+                // is not mistaken for a part whose size was left out of the card.
+                float shownScale = scaleFactor > 0.0001f ? scaleFactor : 1f;
+                sb.Append("  ");
+                if (catalogEach > 0.0001f)
                 {
-                    sb.Append("  ");
                     AppendTint(sb, HexPrimary, FDetail(catalogEach));
                     sb.Append(" ");
-                    AppendTint(sb, HexScale, "Scale x" + FDetail(scaleFactor));
-                    sb.Append(" -> ");
+                    AppendTint(sb, HexMute, "× scale ");
+                    AppendTint(sb, HexScale, FDetail(shownScale));
+                    sb.Append(" = ");
                     AppendTint(sb, HexResult, FDetail(authoredEach));
                 }
                 else
                 {
-                    sb.Append("  ");
                     AppendTint(sb, HexResult, FDetail(authoredEach));
+                    sb.Append("  ");
+                    AppendTint(sb, HexMute, "scale ");
+                    AppendTint(sb, HexScale, "×" + FDetail(shownScale));
                 }
 
                 if (!string.IsNullOrEmpty(unitLabel))
@@ -613,9 +641,24 @@ namespace TitanOrbit.UI
         const int GridRoleW = 4;
         const int GridNumW = 7;
         const int GridLvW = 5;
+        /// <summary>
+        /// Width of the SCALE column on the parts grid. Wide enough for <c>×1.875</c>.
+        /// Mass-tax tables do not use this column.
+        /// </summary>
+        const int GridScaleW = 7;
 
         /// <summary>
-        /// Colour-coded parts table: PRIMARY Base + every part’s own PerExtra × levels.
+        /// Width of the FLEET BONUS column. Wide enough for the header and for
+        /// <c>+100%</c>, <c>-50%</c>, or stock <c>×1</c>. Mass-tax tables skip it.
+        /// </summary>
+        const int GridFleetW = 11;
+
+        /// <summary>
+        /// Colour-coded parts table. One row per component — scale is a column, not a second line.
+        /// BASE and PERX are family-catalog values (before prefab size). SCALE is that part’s
+        /// prefab multiplier, including ×1. FLEET BONUS is the match roll for this stat
+        /// (same number on every row). ADD is
+        /// <c>(Base + PerExtra × levels) × scale × fleet</c>.
         /// Extras show — in BASE (they never add a second Base). Weapon barrels keep Base.
         /// </summary>
         public static void AppendStatCalcGrid(
@@ -643,55 +686,51 @@ namespace TitanOrbit.UI
                 return;
             }
 
-            AppendGridHeader(sb, "PART", "ROLE", "BASE", "PERX", "xLV", "ADD");
+            AppendPartsCalcHeader(sb);
             ShipStatTooltipChrome.AppendGridRule(sb);
+
+            // --- Fleet roll for this stat ---
+            // [TITAN-ORBIT] Home planets stay 1×. Every other family is rolled once
+            // per match in [0.5, 2]. The roll multiplies the summed hull, so each
+            // part row shows the same percent and ADD already includes it.
+            // Summing those ADD cells equals sum(parts) × fleet — the percent does not stack.
+            float familyMul = ReadFamilyMul(parts.Family, field);
 
             float running = 0f;
             bool bulletSpeedWeaponLevels = field == StatField.BulletSpeed;
             for (int i = 0; i < rows.Count; i++)
             {
                 FieldPoolEval p = rows[i];
-                float baseDisp = p.Primary;
-                float perDisp = p.PerExtra;
-                float addDisp = p.Evaluated;
+                // Cache stats are already catalog × prefab scale. Split them back apart
+                // so the row shows both factors and ADD is their product with levels and fleet.
+                float scale = p.Scale > 0.0001f ? p.Scale : 1f;
+                float catalogBase = p.Primary / scale;
+                float catalogPer = p.PerExtra / scale;
+                float addDisp = p.Evaluated * familyMul;
                 running += addDisp;
 
+                // Name cell is 13 characters. Scale and fleet stay in their own columns
+                // so a long part name cannot clip either factor off the end of the row.
                 string name = p.PoolKey ?? "?";
-                if (HasMeaningfulScale(p.Scale))
-                    name = TrimGridName(name, GridNameW - 2) + "x" + FDetail(p.Scale);
 
                 string role = p.IsWeaponPool
                     ? (p.IsDisplayPrimary ? "PRI" : "GUN")
                     : (p.IsDisplayPrimary ? "PRI" : "+X");
                 string roleHex = p.IsDisplayPrimary ? HexPrimary : HexCount;
                 string nameHex = p.IsDisplayPrimary ? HexPrimary : HexCount;
-                string baseText = p.IncludeBase ? FGrid(baseDisp) : "-";
+                string baseText = p.IncludeBase ? FGrid(catalogBase) : "-";
                 string baseHex = p.IncludeBase ? HexPrimary : HexMute;
 
-                AppendGridRowOpen(sb, name, nameHex, role, roleHex, baseText, baseHex, FGrid(perDisp), HexPerExtra);
+                AppendGridRowOpen(sb, name, nameHex, role, roleHex, baseText, baseHex, FGrid(catalogPer), HexPerExtra);
                 AppendGridLevelsCell(
                     sb,
                     bulletSpeedWeaponLevels && p.IsWeaponPool,
                     shipSteps,
                     abilityLv);
+                AppendGridCell(sb, HexScale, FormatScaleColumn(scale), GridScaleW, right: true);
+                AppendFleetBonusCell(sb, familyMul);
                 AppendGridCell(sb, HexResult, FGrid(addDisp), GridNumW, right: true);
                 sb.AppendLine();
-            }
-
-            float familyMul = ReadFamilyMul(parts.Family, field);
-            if (Mathf.Abs(familyMul - 1f) > 0.01f)
-            {
-                ShipStatTooltipChrome.AppendGridRule(sb);
-                float afterMul = running * familyMul;
-                AppendGridRow(
-                    sb,
-                    "family", HexMute,
-                    "x", HexMute,
-                    FGrid(familyMul), HexMute,
-                    "-", HexMute,
-                    "-", HexMute,
-                    FGrid(afterMul), HexResult);
-                running = afterMul;
             }
 
             ShipStatTooltipChrome.AppendGridRule(sb);
@@ -850,6 +889,10 @@ namespace TitanOrbit.UI
                 .Append("</color>");
         }
 
+        /// <summary>
+        /// Parts-grid total. Blank cells keep the number under ADD, including SCALE and FLEET BONUS.
+        /// Mass tax uses <see cref="AppendMassGridTotal"/> so its four columns stay put.
+        /// </summary>
         static void AppendGridTotal(StringBuilder sb, float total, string unitLabel)
         {
             AppendGridCell(sb, HexMute, "TOTAL", GridNameW, right: false);
@@ -857,6 +900,9 @@ namespace TitanOrbit.UI
             AppendGridCell(sb, HexMute, "", GridNumW, right: true);
             AppendGridCell(sb, HexMute, "", GridNumW, right: true);
             AppendGridCell(sb, HexMute, "", GridLvW, right: true);
+            // Blank SCALE and FLEET BONUS cells keep the total under ADD.
+            AppendGridCell(sb, HexMute, "", GridScaleW, right: true);
+            AppendGridCell(sb, HexMute, "", GridFleetW, right: true);
             AppendGridCell(sb, HexResult, FGrid(total), GridNumW, right: true);
             if (!string.IsNullOrEmpty(unitLabel))
             {
@@ -883,7 +929,7 @@ namespace TitanOrbit.UI
             sb.AppendLine();
         }
 
-        /// <summary>First four columns of a parts row; caller writes ×LV + ADD.</summary>
+        /// <summary>First four columns of a parts row; caller writes ×LV, SCALE, FLEET BONUS, then ADD.</summary>
         static void AppendGridRowOpen(
             StringBuilder sb,
             string n, string nHex,
@@ -932,11 +978,100 @@ namespace TitanOrbit.UI
         static string FGrid(float v) =>
             v.ToString("0.##", CultureInfo.InvariantCulture);
 
-        static string TrimGridName(string name, int max)
+        /// <summary>
+        /// Parts-grid header: PART ROLE BASE PERX xLV SCALE FLEET BONUS ADD.
+        /// SCALE is the prefab multiplier for that row. FLEET BONUS is the match roll
+        /// for this stat. Mass-tax tables keep their own header.
+        /// </summary>
+        static void AppendPartsCalcHeader(StringBuilder sb)
         {
-            if (string.IsNullOrEmpty(name) || name.Length <= max)
-                return name ?? string.Empty;
-            return name.Substring(0, max);
+            AppendGridCell(sb, HexMute, "PART", GridNameW, right: false);
+            AppendGridCell(sb, HexMute, "ROLE", GridRoleW, right: true);
+            AppendGridCell(sb, HexMute, "BASE", GridNumW, right: true);
+            AppendGridCell(sb, HexMute, "PERX", GridNumW, right: true);
+            AppendGridCell(sb, HexMute, "xLV", GridLvW, right: true);
+            AppendGridCell(sb, HexMute, "SCALE", GridScaleW, right: true);
+            AppendGridCell(sb, HexMute, "FLEET BONUS", GridFleetW, right: true);
+            AppendGridCell(sb, HexMute, "ADD", GridNumW, right: true);
+            sb.AppendLine();
+        }
+
+        /// <summary>
+        /// One FLEET BONUS cell. <paramref name="mul"/> is the match roll already
+        /// resolved for this stat (1 when the family does not change it).
+        /// Green <c>+%</c> adds, amber <c>-%</c> reduces, muted <c>×1</c> is stock.
+        /// Colours match the Orbit Menu Fleet Bonuses wheel.
+        /// </summary>
+        static void AppendFleetBonusCell(StringBuilder sb, float mul)
+        {
+            FormatFleetBonus(mul, out string text, out string hex);
+            AppendGridCell(sb, hex, text, GridFleetW, right: true);
+        }
+
+        /// <summary>
+        /// Player-facing fleet roll. Signed percent so an add and a reduction
+        /// do not both look like a raw multiplier. Stock stays <c>×1</c>, same
+        /// idea as the SCALE column always printing ×1.
+        /// </summary>
+        /// <param name="mul">Resolved multiplier. Zero or negative is treated as 1.</param>
+        /// <param name="text">Cell text (<c>+12.5%</c>, <c>-20%</c>, or <c>×1</c>).</param>
+        /// <param name="hex">TMP colour without the leading <c>#</c>.</param>
+        static void FormatFleetBonus(float mul, out string text, out string hex)
+        {
+            float m = mul > 0.0001f ? mul : 1f;
+            float signed = (m - 1f) * 100f;
+            // Same dead-zone as FamilyStatHudCopy.FormatSignedPercent so a 1.000×
+            // roll does not flicker between ×1 and +0%.
+            if (signed > 0.05f)
+            {
+                text = "+" + signed.ToString("0.#", CultureInfo.InvariantCulture) + "%";
+                hex = FamilyStatHudCopy.HexBoost;
+                return;
+            }
+
+            if (signed < -0.05f)
+            {
+                text = "-" + Mathf.Abs(signed).ToString("0.#", CultureInfo.InvariantCulture) + "%";
+                hex = FamilyStatHudCopy.HexPenalty;
+                return;
+            }
+
+            text = "×1";
+            hex = FamilyStatHudCopy.HexMuted;
+        }
+
+        /// <summary>
+        /// Fire-rate fleet roll under the DPS caption. The parts table above is
+        /// damage per shot, so its FLEET BONUS column cannot also be cadence.
+        /// Prints even at ×1 so a stock rate is visible next to a damage bonus.
+        /// Called only when the Fire Power details card rebuilds — not every frame.
+        /// </summary>
+        static void AppendFireRateFleetLine(
+            StringBuilder sb,
+            in ShipSpeedometerStatTooltips.PartCache parts)
+        {
+            float rateMul = 1f;
+            if (parts.Family != null)
+            {
+                float rolled = parts.Family.ResolveSpecialBonuses().fireRateMul;
+                if (rolled > 0.0001f)
+                    rateMul = rolled;
+            }
+
+            FormatFleetBonus(rateMul, out string text, out string hex);
+            AppendTint(sb, HexFleet, "FLEET BONUS");
+            AppendTint(sb, HexMute, "  fire rate  ");
+            AppendTint(sb, hex, text);
+            sb.AppendLine();
+        }
+
+        /// <summary>
+        /// Scale cell text. Always includes ×1 so a unit-size part is visible next to a ×3 cockpit.
+        /// </summary>
+        static string FormatScaleColumn(float scale)
+        {
+            float shown = scale > 0.0001f ? scale : 1f;
+            return "×" + FEq(shown);
         }
 
         /// <summary>
@@ -946,6 +1081,10 @@ namespace TitanOrbit.UI
         struct FieldPoolEval
         {
             public string PoolKey;
+            /// <summary>
+            /// Prefab factor already inside Primary and PerExtra.
+            /// The SCALE column divides it back out so the row can show catalog × scale.
+            /// </summary>
             public float Scale;
             public float Primary;
             public float PerExtra;
@@ -980,16 +1119,24 @@ namespace TitanOrbit.UI
         static string DescribeFormula(StatField field, bool multiPool)
         {
             _ = multiPool;
-            string primary = Tint(HexPrimary, "Primary Base");
+            string primary = Tint(HexPrimary, "Base");
             string perExtra = Tint(HexPerExtra, "PerExtra");
+            string scale = Tint(HexScale, "scale");
+            string fleet = Tint(HexFleet, "fleet");
             string levels = field == StatField.BulletSpeed
                 ? Tint(HexAbility, "ability")
                 : Tint(HexMute, "(") + Tint(HexShip, "ship") + Tint(HexMute, "+") + Tint(HexAbility, "ability") + Tint(HexMute, ")");
-            return primary
-                   + Tint(HexMute, " + sum ")
+            // Same multiply the SCALE and FLEET BONUS columns apply on every part row.
+            return Tint(HexMute, "(")
+                   + primary
+                   + Tint(HexMute, " + ")
                    + perExtra
-                   + Tint(HexMute, " x ")
-                   + levels;
+                   + Tint(HexMute, " × ")
+                   + levels
+                   + Tint(HexMute, ") × ")
+                   + scale
+                   + Tint(HexMute, " × ")
+                   + fleet;
         }
 
         /// <summary>
@@ -1161,13 +1308,16 @@ namespace TitanOrbit.UI
         static bool IsMassAffectedField(StatField field) =>
             field is StatField.MoveSpeed or StatField.AccelerationCap or StatField.TurnSpeed;
 
-        /// <summary>Family identity multiplier for this field (unset / 0 → 1).</summary>
+        /// <summary>
+        /// Family multiplier for this field. During a match, home planets are 1×
+        /// and other planets use the seed roll. Unset values become 1.
+        /// </summary>
         static float ReadFamilyMul(ShipFamilyDefinition family, StatField field)
         {
             if (family == null)
                 return 1f;
 
-            ShipFamilySpecialBonuses b = family.specialBonuses;
+            ShipFamilySpecialBonuses b = family.ResolveSpecialBonuses();
             float m = field switch
             {
                 StatField.FirePower => b.firePowerMul,
@@ -1230,6 +1380,493 @@ namespace TitanOrbit.UI
             AppendTint(sb, HexPerExtra, FDetail(moveStep));
             AppendTint(sb, HexMute, " Move (sum PerExtra)");
             sb.AppendLine();
+        }
+
+        /// <summary>
+        /// One chassis barrel used to explain Fire Power × rate of fire.
+        /// Fire Power and rate are after family scalars and before the bullet-type
+        /// rate multiplier. A Titan row already folds copy-count into Fire Power.
+        /// <see cref="XyScale"/> is average |X|+|Y| (damage and bullet size).
+        /// <see cref="RateScale"/> is 1/|Z| (shots per second). Both are 1 when
+        /// this row has no prefab scale (catalog Titans).
+        /// </summary>
+        struct DpsGunRow
+        {
+            public string Name;
+            public float FirePower;
+            public float FireRate;
+            public float XyScale;
+            public float RateScale;
+            public float AxisZ;
+            public bool HasPrefabScale;
+        }
+
+        /// <summary>
+        /// DPS block under the Fire Power parts total.
+        /// The chip is damage per second; the grid total above it is damage per shot.
+        /// This prints weapon scale, then
+        /// <c>Fire Power × rate of fire × this weapon's rate = DPS</c>
+        /// so a 3.75 Fire Power and a 7.31 chip are one multiplication.
+        /// Prefab weapon scale is the lever combat uses: average |X|+|Y| multiplies
+        /// damage, and the bullet grows with that damage. 1/|Z| multiplies fire rate
+        /// (Z 2 is half rate, Z 0.9 is faster than 1). Those factors are already inside
+        /// the parts total — this block shows the multiply instead of leaving it baked in.
+        /// The bullet-type factor is the Rate token on the Multipliers line
+        /// (Plasma, Fireballs, …). It is omitted when that type does not change cadence.
+        /// Called only when the Fire Power details card rebuilds — not every frame.
+        /// </summary>
+        /// <param name="firePowerAbilityLv">Bottom-HUD Fire Power purchases. Mega passes 0.</param>
+        static void AppendFireDpsEquation(
+            StringBuilder sb,
+            in ShipSpeedometerStatTooltips.PartCache parts,
+            in ShipSpeedometerStatTooltips.LiveContext live,
+            int firePowerAbilityLv)
+        {
+            // --- Numbers the player already sees ---
+            // Grid TOTAL is damage per shot. The readout / chip is all-gun DPS.
+            float firePower = Mathf.Max(0f, live.EffectiveStats.firePower);
+            float dps = live.AllGunDps > 0.0001f
+                ? live.AllGunDps
+                : ShipFamilyPowerScoreBreakdown.ComputeSustainedDps(
+                    firePower, live.EffectiveStats.fireRate);
+            if (firePower <= 0.01f || dps <= 0.01f)
+                return;
+
+            // Bullet type (Plasma, …). Rate ×1 is identity — the product skips it.
+            // Fire Power on the grid already includes this type's fire-power scalar.
+            float weaponRate = 1f;
+            float weaponFp = 1f;
+            string weaponName = "Weapon";
+            if (BulletBankCombatLogic.TryGetProfile(live.FireBankIndex, out BulletBankProfile profile)
+                && profile != null)
+            {
+                weaponRate = BulletBankCombatLogic.SafeMul(profile.statModifiers.fireRateMultiplier);
+                weaponFp = BulletBankCombatLogic.SafeMul(profile.statModifiers.firePowerMultiplier);
+                var bank = BulletBankCombatLogic.Bank;
+                if (bank != null)
+                {
+                    string named = bank.GetCategoryName(live.FireBankIndex);
+                    if (!string.IsNullOrEmpty(named))
+                        weaponName = named;
+                }
+            }
+
+            if (weaponRate <= 0.0001f)
+                weaponRate = 1f;
+
+            // Hull shots/s before the bullet type. Multiplying back by the weapon
+            // rate returns the cadence that turns Fire Power into the chip.
+            float liveRate = dps / firePower;
+            float hullRate = liveRate / weaponRate;
+
+            var guns = new List<DpsGunRow>(4);
+            CollectDpsGuns(in parts, in live, firePowerAbilityLv, guns);
+            bool ratesDiffer = GunsHaveDifferentRates(guns);
+            bool scalesDiffer = GunsHaveDifferentScales(guns);
+            // One shared barrel size can be factored out of the hull totals.
+            // Mixed sizes stay on their own rows so we never divide by the wrong axis.
+            float xyScale = 1f;
+            float rateScale = 1f;
+            float axisZ = 1f;
+            bool haveScale = false;
+            if (guns.Count > 0 && guns[0].HasPrefabScale && !scalesDiffer)
+            {
+                xyScale = guns[0].XyScale > 0.0001f ? guns[0].XyScale : 1f;
+                rateScale = guns[0].RateScale > 0.0001f ? guns[0].RateScale : 1f;
+                axisZ = guns[0].AxisZ > 0.0001f ? guns[0].AxisZ : 1f;
+                haveScale = true;
+            }
+            else if (guns.Count == 0)
+            {
+                haveScale = TryReadSharedWeaponScale(in parts, out xyScale, out rateScale, out axisZ);
+            }
+
+            ShipStatTooltipChrome.AppendSectionBanner(sb, "DPS", "FFAA66");
+            AppendTint(sb, HexMute, "Fire Power  ×  rate of fire");
+            if (!Mathf.Approximately(weaponRate, 1f))
+            {
+                AppendTint(sb, HexMute, "  ×  ");
+                AppendTint(sb, "FFAA66", weaponName);
+                AppendTint(sb, HexMute, " rate");
+            }
+
+            sb.AppendLine();
+            // The parts grid's FLEET BONUS column is damage per shot. Fire rate is a
+            // second match roll and it changes this DPS product, so it is named here.
+            AppendFireRateFleetLine(sb, in parts);
+
+            // --- Weapon scale (prefab localScale on the barrel) ---
+            // XY fattens the hit and the bullet. Z divides cadence. Unit scale is
+            // still printed so a ×1 barrel is visible next to rate of fire.
+            if (haveScale && !scalesDiffer)
+                AppendWeaponScaleLine(sb, xyScale, axisZ, rateScale);
+            else if (scalesDiffer)
+            {
+                AppendTint(sb, HexMute, "Weapon scale differs per barrel.");
+                sb.AppendLine();
+            }
+
+            // Per-barrel lines when cadence or size is not one shared number.
+            // Fire Power here includes the bullet type's damage scalar.
+            if (ratesDiffer || scalesDiffer)
+            {
+                AppendTint(sb, HexMute, "Each barrel. The rate below is weighted by Fire Power.");
+                sb.AppendLine();
+                for (int i = 0; i < guns.Count; i++)
+                    AppendGunScaleRow(sb, guns[i], weaponFp);
+            }
+
+            // Factor XY out of damage and 1/Z out of cadence when every barrel shares them.
+            float damageBeforeScale = firePower;
+            float rateBeforeScale = hullRate;
+            if (haveScale && !scalesDiffer)
+            {
+                if (!Mathf.Approximately(xyScale, 1f))
+                    damageBeforeScale = firePower / xyScale;
+                if (!Mathf.Approximately(rateScale, 1f))
+                    rateBeforeScale = hullRate / rateScale;
+            }
+
+            if (haveScale && !scalesDiffer && !Mathf.Approximately(xyScale, 1f))
+            {
+                AppendTint(sb, HexMute, "Fire Power  ");
+                AppendTint(sb, HexPrimary, FEq(damageBeforeScale));
+                AppendTint(sb, HexMute, "  ×  XY ");
+                AppendTint(sb, HexScale, FEq(xyScale));
+                AppendTint(sb, HexMute, "  =  ");
+                AppendTint(sb, HexResult, FResult(firePower));
+                sb.AppendLine();
+            }
+
+            // Rate of fire: catalog cadence × Z scale, then the bullet type when it is not ×1.
+            AppendTint(sb, HexMute, "Rate of fire  ");
+            if (haveScale && !scalesDiffer && !Mathf.Approximately(rateScale, 1f))
+            {
+                AppendTint(sb, HexPrimary, FEq(rateBeforeScale));
+                AppendTint(sb, HexMute, "/s  ×  ");
+                AppendTint(sb, HexScale, FEq(rateScale));
+                AppendTint(sb, HexMute, "  =  ");
+                AppendTint(sb, HexResult, FResult(hullRate));
+                AppendTint(sb, HexMute, "/s");
+            }
+            else
+            {
+                AppendTint(sb, HexResult, FResult(hullRate));
+                AppendTint(sb, HexMute, "/s");
+            }
+
+            if (!Mathf.Approximately(weaponRate, 1f))
+            {
+                AppendTint(sb, HexMute, "  ×  ");
+                AppendTint(sb, "FFAA66", weaponName);
+                sb.Append(" ");
+                AppendTint(sb, HexResult, FResult(weaponRate));
+                AppendTint(sb, HexMute, "  =  ");
+                AppendTint(sb, HexResult, FResult(liveRate));
+                AppendTint(sb, HexMute, "/s");
+            }
+
+            sb.AppendLine();
+
+            AppendTint(sb, HexMute, "Fire Power  ");
+            AppendTint(sb, HexResult, FResult(firePower));
+            AppendTint(sb, HexMute, "  ×  ");
+            if (Mathf.Approximately(weaponRate, 1f) && (scalesDiffer || !haveScale || Mathf.Approximately(rateScale, 1f)))
+                AppendTint(sb, HexMute, "Rate of fire  ");
+            AppendTint(sb, HexResult, FResult(liveRate));
+            AppendTint(sb, HexMute, "/s  =  ");
+            AppendTint(sb, HexResult, FResult(dps));
+            AppendTint(sb, HexMute, " DPS/s");
+            sb.AppendLine();
+        }
+
+        /// <summary>
+        /// One legend line: XY changes damage and bullet size, Z changes fire rate.
+        /// Matches <see cref="ShipComponentAbilityStatsMath.GetWeaponFirePowerScale"/>
+        /// and <see cref="ShipComponentAbilityStatsMath.GetWeaponFireRateScale"/>.
+        /// </summary>
+        static void AppendWeaponScaleLine(StringBuilder sb, float xyScale, float axisZ, float rateScale)
+        {
+            AppendTint(sb, HexMute, "Weapon scale  XY ");
+            AppendTint(sb, HexScale, FEq(xyScale));
+            AppendTint(sb, HexMute, "  Z ");
+            AppendTint(sb, HexScale, FEq(axisZ));
+            sb.AppendLine();
+            AppendTint(sb, HexMute, "XY  damage ×");
+            AppendTint(sb, HexScale, FEq(xyScale));
+            AppendTint(sb, HexMute, "  bullet size ×");
+            AppendTint(sb, HexScale, FEq(xyScale));
+            AppendTint(sb, HexMute, "    Z  fire rate ×");
+            AppendTint(sb, HexScale, FEq(rateScale));
+            sb.AppendLine();
+        }
+
+        /// <summary>
+        /// One barrel whose size or cadence is not the hull's shared number.
+        /// Shows that barrel's XY and Z, then damage and rate with the scale multiplied in.
+        /// </summary>
+        static void AppendGunScaleRow(StringBuilder sb, DpsGunRow gun, float weaponFp)
+        {
+            float xy = gun.XyScale > 0.0001f ? gun.XyScale : 1f;
+            float rateScale = gun.RateScale > 0.0001f ? gun.RateScale : 1f;
+            float shownFp = gun.FirePower * weaponFp;
+            float shownRate = gun.FireRate;
+
+            AppendTint(sb, HexCount, string.IsNullOrEmpty(gun.Name) ? "Gun" : gun.Name);
+            sb.Append("  ");
+            if (gun.HasPrefabScale)
+            {
+                AppendTint(sb, HexMute, "XY ");
+                AppendTint(sb, HexScale, FEq(xy));
+                AppendTint(sb, HexMute, "  Z ");
+                AppendTint(sb, HexScale, FEq(gun.AxisZ > 0.0001f ? gun.AxisZ : 1f));
+                sb.Append("  ");
+            }
+
+            if (gun.HasPrefabScale && !Mathf.Approximately(xy, 1f))
+            {
+                AppendTint(sb, HexPrimary, FEq(shownFp / xy));
+                AppendTint(sb, HexMute, " × ");
+                AppendTint(sb, HexScale, FEq(xy));
+                AppendTint(sb, HexMute, " = ");
+            }
+
+            AppendTint(sb, HexResult, FResult(shownFp));
+
+            AppendTint(sb, HexMute, "   ");
+            if (gun.HasPrefabScale && !Mathf.Approximately(rateScale, 1f))
+            {
+                AppendTint(sb, HexPrimary, FEq(shownRate / rateScale));
+                AppendTint(sb, HexMute, " × ");
+                AppendTint(sb, HexScale, FEq(rateScale));
+                AppendTint(sb, HexMute, " = ");
+            }
+
+            AppendTint(sb, HexResult, FResult(shownRate));
+            AppendTint(sb, HexMute, "/s");
+            sb.AppendLine();
+        }
+
+        /// <summary>
+        /// Reads the first chassis barrel's prefab scale when the DPS gun list is empty.
+        /// False when no weapon transform was cached.
+        /// </summary>
+        static bool TryReadSharedWeaponScale(
+            in ShipSpeedometerStatTooltips.PartCache parts,
+            out float xyScale,
+            out float rateScale,
+            out float axisZ)
+        {
+            xyScale = 1f;
+            rateScale = 1f;
+            axisZ = 1f;
+            if (!parts.Valid || parts.Ids == null)
+                return false;
+
+            int n = parts.Ids.Count;
+            int chassisCount = parts.StoreExtraStartIndex >= 0
+                ? Mathf.Min(n, parts.StoreExtraStartIndex)
+                : n;
+            for (int i = 0; i < chassisCount; i++)
+            {
+                string id = parts.Ids[i];
+                if (string.IsNullOrWhiteSpace(id) || !ShipComponentAbilityStatsMath.IsWeaponComponent(id))
+                    continue;
+
+                ReadWeaponScale(ReadLocalScale(in parts, i), out xyScale, out rateScale, out axisZ);
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Splits a barrel <c>localScale</c> the way
+        /// <see cref="ShipComponentAbilityStatsMath.ScaleStatsByTransform"/> does.
+        /// </summary>
+        static void ReadWeaponScale(Vector3 localScale, out float xyScale, out float rateScale, out float axisZ)
+        {
+            xyScale = ShipComponentAbilityStatsMath.GetWeaponFirePowerScale(localScale);
+            rateScale = ShipComponentAbilityStatsMath.GetWeaponFireRateScale(localScale);
+            axisZ = Mathf.Abs(localScale.z);
+            if (xyScale <= 0.0001f)
+                xyScale = 1f;
+            if (rateScale <= 0.0001f)
+                rateScale = 1f;
+            if (axisZ <= 0.0001f)
+                axisZ = 1f;
+        }
+
+        /// <summary>
+        /// True when two barrels do not share a shots-per-second value.
+        /// A damage-weighted average still closes the DPS line; these rows show why.
+        /// </summary>
+        static bool GunsHaveDifferentRates(List<DpsGunRow> guns)
+        {
+            if (guns == null || guns.Count < 2)
+                return false;
+
+            float first = guns[0].FireRate;
+            for (int i = 1; i < guns.Count; i++)
+            {
+                if (Mathf.Abs(guns[i].FireRate - first) > 0.02f)
+                    return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// True when two barrels do not share XY (damage / bullet size) or Z (fire rate).
+        /// A shared scale can be one multiply on the hull totals. Mixed scales cannot.
+        /// </summary>
+        static bool GunsHaveDifferentScales(List<DpsGunRow> guns)
+        {
+            if (guns == null || guns.Count < 2 || !guns[0].HasPrefabScale)
+                return false;
+
+            float xy = guns[0].XyScale;
+            float rate = guns[0].RateScale;
+            for (int i = 1; i < guns.Count; i++)
+            {
+                if (!guns[i].HasPrefabScale)
+                    return true;
+                if (Mathf.Abs(guns[i].XyScale - xy) > 0.02f
+                    || Mathf.Abs(guns[i].RateScale - rate) > 0.02f)
+                    return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Chassis barrels that feed all-gun DPS. Moon-store guns are skipped —
+        /// a purchase unlocks a bullet type and does not add a barrel.
+        /// Mega hulls walk the catalog instead of the family part cache.
+        /// Rates here are hull cadence (family scalar included, bullet type not yet).
+        /// </summary>
+        static void CollectDpsGuns(
+            in ShipSpeedometerStatTooltips.PartCache parts,
+            in ShipSpeedometerStatTooltips.LiveContext live,
+            int firePowerAbilityLv,
+            List<DpsGunRow> into)
+        {
+            into.Clear();
+            if (live.IsMega)
+            {
+                CollectMegaDpsGuns(in live, into);
+                return;
+            }
+
+            if (!parts.Valid || parts.Ids == null || parts.Stats == null)
+                return;
+
+            int shipLevel = Mathf.Max(1, live.Ship.ShipLevel);
+            int ability = Mathf.Max(0, firePowerAbilityLv);
+            float familyFp = ReadFamilyMul(parts.Family, StatField.FirePower);
+            float familyRate = 1f;
+            if (parts.Family != null)
+            {
+                float rolledRate = parts.Family.ResolveSpecialBonuses().fireRateMul;
+                if (rolledRate > 0.0001f)
+                    familyRate = rolledRate;
+            }
+
+            int n = Mathf.Min(parts.Ids.Count, parts.Stats.Count);
+            int chassisCount = parts.StoreExtraStartIndex >= 0
+                ? Mathf.Min(n, parts.StoreExtraStartIndex)
+                : n;
+
+            for (int i = 0; i < chassisCount; i++)
+            {
+                string id = parts.Ids[i];
+                if (string.IsNullOrWhiteSpace(id) || ShipFamilyPartCalcProfileSet.IsCosmeticPartName(id))
+                    continue;
+                if (!ShipComponentAbilityStatsMath.IsWeaponComponent(id))
+                    continue;
+
+                ShipComponentAbilityStats stats = parts.Stats[i];
+                if (stats.firePower <= 0.01f && stats.firePowerPerExtraLevel <= 0.01f)
+                    continue;
+
+                // Same Extra Level path as all-gun DPS: ship + Fire Power on damage,
+                // ship level only on cadence (buying Fire Power does not speed the gun).
+                float fp = ShipComponentExtraLevelMath.Evaluate(
+                    stats.firePower,
+                    stats.firePowerPerExtraLevel,
+                    shipLevel,
+                    ability,
+                    componentCount: 1,
+                    includeExtraComponentLevels: false);
+                float rate = ShipComponentExtraLevelMath.Evaluate(
+                    stats.fireRate,
+                    stats.fireRatePerExtraLevel,
+                    shipLevel,
+                    abilityLevel: 0,
+                    componentCount: 1,
+                    includeExtraComponentLevels: false);
+                if (fp <= 0.0001f)
+                    continue;
+
+                string name = ResolvePartName(parts.Family, id);
+                ReadWeaponScale(ReadLocalScale(in parts, i), out float xy, out float zRate, out float axisZ);
+                into.Add(new DpsGunRow
+                {
+                    Name = string.IsNullOrWhiteSpace(name) ? id : name,
+                    FirePower = fp * familyFp,
+                    FireRate = Mathf.Max(0f, rate) * familyRate,
+                    XyScale = xy,
+                    RateScale = zRate,
+                    AxisZ = axisZ,
+                    HasPrefabScale = true
+                });
+            }
+        }
+
+        /// <summary>
+        /// Titan barrels from the catalog. Each unique part keeps its own rate;
+        /// copy count scales Fire Power, not shots per second.
+        /// </summary>
+        static void CollectMegaDpsGuns(
+            in ShipSpeedometerStatTooltips.LiveContext live,
+            List<DpsGunRow> into)
+        {
+            var catalog = MegaShipCatalog.Load();
+            if (catalog == null
+                || !catalog.TryGetEntry(live.MegaCatalogIndex, out MegaShipCatalogEntry entry)
+                || entry?.componentCounts == null)
+                return;
+
+            // Planet family combat rolls. Home Titans stay at the catalog gun.
+            ShipFamilySpecialBonuses fleet = MegaShipStatsCalculator.ResolveFleetBonuses(
+                live.Ship.ShipFamilyConfigIndex);
+            float firePowerMul = fleet.firePowerMul > 0.0001f ? fleet.firePowerMul : 1f;
+            float fireRateMul = fleet.fireRateMul > 0.0001f ? fleet.fireRateMul : 1f;
+
+            for (int i = 0; i < entry.componentCounts.Count; i++)
+            {
+                MegaShipComponentCount count = entry.componentCounts[i];
+                if (count == null || count.count <= 0 || string.IsNullOrEmpty(count.displayName))
+                    continue;
+                if (!catalog.TryGetUniqueComponent(count.displayName, out MegaShipComponentEntry unique)
+                    || unique == null)
+                    continue;
+
+                MegaShipPartStats stats = catalog.ResolveRuntimeStats(unique.stats);
+                if (stats.firePower <= 0.01f)
+                    continue;
+
+                into.Add(new DpsGunRow
+                {
+                    Name = count.displayName,
+                    FirePower = stats.firePower * count.count * firePowerMul,
+                    FireRate = Mathf.Max(0f, stats.fireRate) * fireRateMul,
+                    XyScale = 1f,
+                    RateScale = 1f,
+                    AxisZ = 1f,
+                    HasPrefabScale = false
+                });
+            }
         }
 
         /// <summary>
@@ -1410,6 +2047,8 @@ namespace TitanOrbit.UI
             if (abilityIndex == 0)
             {
                 // Chip / power bar use per-gun catalog DPS, not summed-rate × summed-damage.
+                // Rate of fire sits here so Fire Power × shots/s × weapon rate = that chip.
+                AppendFireDpsEquation(sb, in parts, in live, 0);
                 ShipStatTooltipChrome.AppendSectionBanner(sb, "RELATED", "FFAA66");
                 var mega = MegaShipCatalog.Load();
                 float chipDps = live.AllGunDps > 0.0001f
@@ -1870,5 +2509,18 @@ namespace TitanOrbit.UI
         static string F0(float v) => v.ToString("0", CultureInfo.InvariantCulture);
         static string FDetail(float v) => v.ToString("0.####", CultureInfo.InvariantCulture);
         static string FResult(float v) => v.ToString("0.##", CultureInfo.InvariantCulture);
+
+        /// <summary>
+        /// Equation operand. Keeps a third decimal when two decimals would not multiply back
+        /// (1.875 × 2 must still read as the parts total).
+        /// </summary>
+        static string FEq(float v)
+        {
+            string two = v.ToString("0.##", CultureInfo.InvariantCulture);
+            if (float.TryParse(two, NumberStyles.Float, CultureInfo.InvariantCulture, out float rounded)
+                && Mathf.Abs(rounded - v) < 0.001f)
+                return two;
+            return v.ToString("0.###", CultureInfo.InvariantCulture);
+        }
     }
 }

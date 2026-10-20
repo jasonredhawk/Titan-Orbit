@@ -65,13 +65,24 @@ namespace TitanOrbit.NetCode
         }
     }
 
+}
+#endif
+
+namespace TitanOrbit.NetCode
+{
+    using Unity.Entities;
+    using Unity.NetCode;
+    using UnityEngine;
+
     /// <summary>
-    /// Asks the next ClientWorld initialization tick to rebuild the WebSocket driver.
-    /// Doing that from a menu coroutine races <c>NetworkStreamReceiveSystem</c>, which is already
-    /// updating the driver on the player loop. A failed reset used to leave the browser socket
-    /// open, so Play / Join did nothing until a full page refresh.
+    /// Asks the next ClientWorld initialization tick to rebuild the transport driver.
+    /// Doing that from the Join async method races <c>NetworkStreamReceiveSystem</c>.
+    /// After the first match, the old socket is still registered, so an inline
+    /// <c>ResetDriverStore</c> refuses until that connection has actually disconnected.
+    /// A later request replaces an earlier one — Join wins over a stale leave — but the
+    /// init system still closes whatever socket is live before it attaches a new one.
     /// </summary>
-    public static class TitanOrbitWebGlRelayConnect
+    public static class TitanOrbitClientRelayConnect
     {
         /// <summary>What the next initialization tick should do with the client driver.</summary>
         internal enum Op : byte
@@ -89,7 +100,13 @@ namespace TitanOrbit.NetCode
         /// <summary>One pending operation. A later request replaces an earlier one.</summary>
         static Op s_Pending;
 
-        /// <summary>Queue a Relay connect. Replaces a queued idle reset — Join wins over a stale leave.</summary>
+        /// <summary>Set while the init system is closing a socket or rebuilding the driver.</summary>
+        static byte s_Busy;
+
+        /// <summary>True when a leave or join has not finished closing the old socket and rebuilding.</summary>
+        public static bool HasPendingWork => s_Pending != Op.None || s_Busy != 0;
+
+        /// <summary>Queue a Relay connect. Replaces a queued idle reset.</summary>
         public static void Request()
         {
             s_Pending = Op.Connect;
@@ -101,6 +118,10 @@ namespace TitanOrbit.NetCode
         /// </summary>
         public static void RequestIdleReset()
         {
+            // A Join that already queued Connect must not be overwritten by a stale leave
+            // that resumes after the new allocation is stored.
+            if (s_Pending == Op.Connect)
+                return;
             s_Pending = Op.IdleReset;
         }
 
@@ -111,99 +132,137 @@ namespace TitanOrbit.NetCode
             s_Pending = Op.None;
             return op;
         }
+
+        /// <summary>Marks the init system as still closing or rebuilding. Leave waits on this.</summary>
+        internal static void SetBusy(bool busy)
+        {
+            s_Busy = busy ? (byte)1 : (byte)0;
+        }
     }
 
     /// <summary>
-    /// Rebuilds the client WebSocket driver before simulation reads the socket.
-    /// Runs at the end of initialization, ahead of <c>NetworkStreamReceiveSystem</c>.
+    /// Closes the live client socket, then rebuilds the driver, before simulation reads it.
+    /// Runs at the end of initialization, ahead of <c>NetworkStreamReceiveSystem</c>,
+    /// on every player (Editor, desktop, WebGL). Dedicated servers have no client world.
     /// </summary>
-    [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation)]
+    [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation | WorldSystemFilterFlags.ThinClientSimulation)]
     [UpdateInGroup(typeof(InitializationSystemGroup), OrderLast = true)]
     [UpdateBefore(typeof(NetworkStreamReceiveSystem))]
-    public partial struct TitanOrbitWebGlRelayConnectSystem : ISystem
+    public partial struct TitanOrbitClientRelayConnectSystem : ISystem
     {
-        /// <summary>Failed rebuilds this visit. Stops a broken driver from retrying every frame.</summary>
+        /// <summary>Leave or join that is waiting for the old socket to finish closing.</summary>
+        TitanOrbitClientRelayConnect.Op _held;
+
+        /// <summary>Frames spent on this visit. Caps a driver that cannot be rebuilt.</summary>
         byte _attempts;
 
+        /// <summary>Logged once per close so a slow Relay disconnect does not spam the console.</summary>
+        byte _loggedWait;
+
         /// <summary>
-        /// Applies a queued leave-reset or Relay join. Drops stuck connection entities first —
-        /// they are cleanup data, so destroying them in place does not free the socket.
+        /// Disconnects a live socket and waits until receive drops the entity, then swaps the
+        /// driver. Connect runs only after that. Destroying the entity first leaves the old
+        /// Relay connection up on the server, and the new Connect is a second socket on the ship.
         /// </summary>
         public void OnUpdate(ref SystemState state)
         {
-            TitanOrbitWebGlRelayConnect.Op op = TitanOrbitWebGlRelayConnect.Consume();
-            if (op == TitanOrbitWebGlRelayConnect.Op.None)
-                return;
-
-            bool connect = op == TitanOrbitWebGlRelayConnect.Op.Connect;
-            if (connect && !TitanOrbitRelayState.TryGetClientRelay(out _))
+            TitanOrbitClientRelayConnect.Op incoming = TitanOrbitClientRelayConnect.Consume();
+            if (incoming != TitanOrbitClientRelayConnect.Op.None)
             {
-                Debug.LogError("[WebGLClient] Relay connect queued but no client allocation is stored.");
+                _held = incoming;
                 _attempts = 0;
+                _loggedWait = 0;
+            }
+
+            if (_held == TitanOrbitClientRelayConnect.Op.None)
+            {
+                TitanOrbitClientRelayConnect.SetBusy(false);
                 return;
             }
 
-            // --- Drop leftover connections, then swap the driver ---
-            // Receive runs after this system. A dead WebSocket never reports Disconnected, so
-            // the cleanup entity stays forever and ResetDriverStore refuses to run. Releasing
-            // it here, then disposing the driver, closes the JavaScript socket. The next Join
-            // can open a new one on the same page.
-            int released = TitanOrbitSessionManager.ForceReleaseClientConnectionEntities(state.EntityManager);
-            if (released > 0)
+            TitanOrbitClientRelayConnect.SetBusy(true);
+
+            bool connect = _held == TitanOrbitClientRelayConnect.Op.Connect;
+            if (connect && !TitanOrbitRelayState.TryGetClientRelay(out _))
             {
-                Debug.Log("[WebGLClient] Released " + released +
-                          " stale connection(s) before rebuilding the WebSocket driver.");
+                Debug.LogError("[TitanOrbitClient] Relay connect queued but no client allocation is stored.");
+                _held = TitanOrbitClientRelayConnect.Op.IdleReset;
+                connect = false;
+            }
+
+            var em = state.EntityManager;
+
+            // --- Close the old socket before any driver swap ---
+            // Receive runs after this system and is what deletes the connection entity.
+            // Resetting the driver in this same update disposes the socket before that
+            // close is processed, so the server keeps the first connection.
+            int live = TitanOrbitSessionManager.DisconnectLiveClientConnections(em);
+            if (live > 0)
+            {
+                if (_loggedWait == 0)
+                {
+                    _loggedWait = 1;
+                    Debug.Log("[TitanOrbitClient] Disconnecting " + live +
+                              " live socket(s) before rebuilding the driver.");
+                }
+
+                return;
+            }
+
+            int stale = TitanOrbitSessionManager.ReleaseStaleClientConnectionEntities(em);
+            if (stale > 0)
+            {
+                Debug.Log("[TitanOrbitClient] Dropped " + stale +
+                          " connection record(s) that no longer had a socket.");
+                return;
             }
 
             if (!TitanOrbitSessionManager.ResetClientDriverIfNeeded())
             {
-                Requeue(op);
+                _attempts++;
+                if (_attempts >= 8)
+                    GiveUp("Gave up rebuilding the driver after repeated failures.");
                 return;
             }
 
             if (!connect)
             {
-                _attempts = 0;
-                Debug.Log("[WebGLClient] Idle WebSocket driver rebuilt after leave / disconnect.");
+                Finish();
+                Debug.Log("[TitanOrbitClient] Idle driver rebuilt after leave / disconnect.");
                 return;
             }
 
-            World world = state.World;
-            Entity connection = TitanOrbitSessionManager.ConnectRelayClient(world);
+            Entity connection = TitanOrbitSessionManager.ConnectRelayClient(state.World);
             if (connection == Entity.Null)
             {
-                Debug.LogError("[WebGLClient] Relay driver rebuilt but Connect was skipped.");
-                Requeue(op);
+                _attempts++;
+                if (_attempts >= 8)
+                    GiveUp("Relay driver rebuilt but Connect was skipped.");
                 return;
             }
 
-            _attempts = 0;
+            Finish();
             TitanOrbitRelayState.TryGetClientRelay(out var relay);
-            Debug.Log("[WebGLClient] Relay connect issued endpoint=" + relay.Endpoint +
+            Debug.Log("[TitanOrbitClient] Relay connect issued endpoint=" + relay.Endpoint +
                       " isWebSocket=" + relay.IsWebSocket +
                       " isSecure=" + relay.IsSecure +
                       " connection=" + connection.Index);
         }
 
-        /// <summary>
-        /// Puts the same operation back for the next frame, up to a small cap.
-        /// A fresh Play / Join click calls <see cref="TitanOrbitWebGlRelayConnect.Request"/> again.
-        /// </summary>
-        void Requeue(TitanOrbitWebGlRelayConnect.Op op)
+        /// <summary>Stops this visit so a later Join click can queue a fresh connect.</summary>
+        void GiveUp(string message)
         {
-            _attempts++;
-            if (_attempts >= 8)
-            {
-                _attempts = 0;
-                Debug.LogError("[WebGLClient] Gave up rebuilding the WebSocket driver after repeated failures.");
-                return;
-            }
+            Debug.LogError("[TitanOrbitClient] " + message);
+            Finish();
+        }
 
-            if (op == TitanOrbitWebGlRelayConnect.Op.Connect)
-                TitanOrbitWebGlRelayConnect.Request();
-            else
-                TitanOrbitWebGlRelayConnect.RequestIdleReset();
+        /// <summary>Clears the in-progress op so leave's wait can return.</summary>
+        void Finish()
+        {
+            _held = TitanOrbitClientRelayConnect.Op.None;
+            _attempts = 0;
+            _loggedWait = 0;
+            TitanOrbitClientRelayConnect.SetBusy(false);
         }
     }
 }
-#endif

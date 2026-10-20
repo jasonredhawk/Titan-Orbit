@@ -1,4 +1,5 @@
 using TitanOrbit.Core;
+using TitanOrbit.Data;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.NetCode;
@@ -39,6 +40,12 @@ namespace TitanOrbit.ECS
             // [NETCODE] Server owns ghosted ShipState caps; client only mirrors motor/weapon/vitals.
             bool writeGhostedShipState = state.World.IsServer();
 
+            // --- Family rolls for this match ---
+            // Home ships stay 1×. Other planets re-apply once when the seed arrives
+            // (client recipe can land after the first motor write).
+            ShipFamilyMatchBonusSync.PublishFromMap(em);
+            uint bonusSeed = ShipFamilyMatchBonuses.ActiveMatchSeed;
+
             foreach (var (ship, loadout, entity) in SystemAPI.Query<RefRW<ShipState>, RefRO<ShipLoadoutState>>()
                          .WithAll<ShipTag>()
                          .WithEntityAccess())
@@ -64,7 +71,8 @@ namespace TitanOrbit.ECS
                     needsApply = chassis.AppliedShipLevel != ship.ValueRO.ShipLevel
                         || chassis.AppliedBranchIndex != branch
                         || chassis.AppliedShipFamilyConfigIndex != ship.ValueRO.ShipFamilyConfigIndex
-                        || chassis.AppliedAttributeSum != attrSum;
+                        || chassis.AppliedAttributeSum != attrSum
+                        || chassis.AppliedMatchBonusSeed != bonusSeed;
                     if (!needsApply && state.World.IsClient() && IsLocalOwnedShip(em, entity))
                     {
                         // Local owner only — one buffer hash per tick. Ghosted gear updates
@@ -109,7 +117,8 @@ namespace TitanOrbit.ECS
                         && chassis.AppliedBranchIndex == branch
                         && chassis.AppliedShipFamilyConfigIndex == ship.ValueRO.ShipFamilyConfigIndex
                         && chassis.AppliedHullBulletBankIndex == ship.ValueRO.HullBulletBankIndex
-                        && chassis.AppliedAttributeSum == attrSum;
+                        && chassis.AppliedAttributeSum == attrSum
+                        && chassis.AppliedMatchBonusSeed == bonusSeed;
                     if (sameIdentity
                         && !(state.World.IsClient()
                              && IsLocalOwnedShip(em, entity)

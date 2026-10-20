@@ -106,19 +106,16 @@ namespace TitanOrbit.Editor
 
             EditorGUILayout.HelpBox(
                 "Two lists, different jobs:\n" +
-                "• Name Mappings = inventory of unique family-prefixed prefab part names (sorted A→Z).\n" +
-                "• Part Profiles = shared stats per group:\n" +
-                "  Cockpit, Weapon Bullet, Wing, Engine, Thruster, Tail, Hull.\n\n" +
-                "Attribute mesh grow: Global Upgrade Scale Multiplier (top of the asset, default 0.25) " +
-                "dampens ALL bottom-bar upgrade mesh growth on every component after per-part 1/N sharing. " +
-                "Presentation only — not combat stats.\n\n" +
-                "Engine = move/accel + Energy Cap/Regen (power plant). Mesh grow: Movement + Energy attrs.\n" +
-                "Thruster = move/accel + turn. Mesh grow: Movement + Rotation attrs. VFX on thruster mounts.\n" +
-                "Weapons = offense only (Fire Power + Bullet Speed grow). Fin merges into Tail.\n" +
+                "• Name Mappings = one row per prefab part, with that part's own base stats.\n" +
+                "  HyperFalcon_Cockpit and LightFox_Cockpit are independent. Edit a row to change only that part.\n" +
+                "• Part Profiles = template stats per group (Cockpit, Weapon Bullet, Wing, Engine, Thruster, Tail, Hull).\n" +
+                "  They seed a name mapping the first time stats are applied. They do not overwrite a row that already has stats.\n\n" +
+                "Attribute mesh grow still uses the Part Profile (shared per group), damped by Global Upgrade Scale Multiplier.\n\n" +
+                "Engine = move/accel + Energy Cap/Regen (power plant). Thruster = move/accel + turn. VFX on thruster mounts.\n" +
                 "Covers/plates stay in their group with contributesAbilityStats off and VFX off.\n\n" +
                 "1) Discover All Ship Families\n" +
                 "2) Classify with Cursor (optional)\n" +
-                "3) Ensure Profiles / Reset Profiles → Scan Folder on each family.",
+                "3) Write Part Profile stats onto name mappings, then Recalculate on each family.",
                 MessageType.Info);
 
             // --- OVERDRIVE lives on Engine Part Profile rows (ExtraSpeedPercent / ExtraSpeedEnergyDrain) ---
@@ -212,12 +209,45 @@ namespace TitanOrbit.Editor
                     "OK");
             }
 
+            if (GUILayout.Button("Write Part Profile Stats Onto Name Mappings Without Stats"))
+            {
+                Undo.RecordObject(set, "Seed Name Mapping Base Stats");
+                int n = set.SeedNameMappingBaseStatsFromPartProfiles(overwrite: false);
+                EditorUtility.SetDirty(set);
+                AssetDatabase.SaveAssets();
+                EditorUtility.DisplayDialog(
+                    "Name Mappings",
+                    $"Wrote base stats onto {n} name mapping(s).\n" +
+                    "Rows that already had their own stats were left alone.",
+                    "OK");
+            }
+
+            if (GUILayout.Button("Overwrite Name Mapping Stats From Part Profiles"))
+            {
+                if (EditorUtility.DisplayDialog(
+                        "Overwrite Name Mapping Stats",
+                        "Replace every name mapping's base stats with the current Part Profile numbers " +
+                        "(version-adjusted per part name)? Hand edits on individual parts will be lost.",
+                        "Overwrite",
+                        "Cancel"))
+                {
+                    Undo.RecordObject(set, "Overwrite Name Mapping Base Stats");
+                    int n = set.SeedNameMappingBaseStatsFromPartProfiles(overwrite: true);
+                    EditorUtility.SetDirty(set);
+                    AssetDatabase.SaveAssets();
+                    EditorUtility.DisplayDialog(
+                        "Name Mappings",
+                        $"Rewrote base stats on {n} name mapping(s) from Part Profiles.",
+                        "OK");
+                }
+            }
+
             EditorGUILayout.Space(8);
             EditorGUILayout.HelpBox(
-                "Part Profiles: Default Categories filter which stats appear under Base At Version 1 " +
-                "and Per Version Increment (including *Per Level). 0 is kept — it means no extra-level " +
-                "growth. Use Fill Empty Per-Level Fields to bake base × fraction into zeros.\n\n" +
-                "OVERDRIVE ExtraSpeed fields are on the Engine Part Profile (not a global ProfileSet block).",
+                "Part Profiles are the template (Base At Version 1 + Per Version Increment). " +
+                "Open a Name Mapping — for example HyperFalcon_Cockpit — to edit the master numbers for that part. " +
+                "0 on *Per Level means no extra-level growth.\n\n" +
+                "OVERDRIVE ExtraSpeed fields are on the Engine Part Profile (and each engine name mapping).",
                 MessageType.None);
             DrawPropertiesExcluding(serializedObject, "m_Script");
             if (GUI.changed)

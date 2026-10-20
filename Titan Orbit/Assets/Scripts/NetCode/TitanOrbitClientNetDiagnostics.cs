@@ -123,7 +123,9 @@ namespace TitanOrbit.NetCode
         }
 
         /// <summary>
-        /// Heuristic labels — not authoritative, but separates server snapshot pacing from RTT vs client FPS.
+        /// Heuristic labels — not authoritative, but separates a dead command link from
+        /// server snapshot pacing, RTT, and client FPS. A large positive command age
+        /// is a stall even when the snapshot averages still look healthy.
         /// </summary>
         static string InterpretLikelyCause(
             float rttMs,
@@ -134,6 +136,15 @@ namespace TitanOrbit.NetCode
             float clientFps,
             int rollbacks)
         {
+            // --- Commands not acknowledged ---
+            // Healthy dedicated play sits near −2 ticks. A dead or half-open socket
+            // jumps this into the hundreds while snapshot averages still look like
+            // 60 Hz, because those averages lag and EstimatedRTT stays sticky.
+            // Check this before the snapshot-pacing guess so a frozen command age
+            // is not labeled as a slow GCE tick.
+            if (commandAge >= 30f)
+                return "server is not acknowledging commands (link stall — controls are not reaching the match)";
+
             // --- Server / snapshot pacing ---
             // [NETCODE] At 60 Hz sim + 60 Hz network, avgDeltaSimTicks ≈ 1 and avgPacketInterArrival ≈ 16.7 ms.
             bool serverSnapshotsSlow = snapshotSpacingTicks > 1.35f ||

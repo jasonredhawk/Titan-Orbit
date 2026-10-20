@@ -75,6 +75,7 @@ namespace TitanOrbit.Input
         /// Chunk size is ship level + gem-capacity upgrades.
         /// </summary>
         public bool ExpelGemsHeld =>
+            !IsTextEntryFocused() &&
             TryResolveKeyboard(out var keyboard) && keyboard.vKey.isPressed;
 
         /// <summary>
@@ -93,7 +94,7 @@ namespace TitanOrbit.Input
                         if (d is Keyboard kb) { k = kb; break; }
                     }
                 }
-                return k != null && k.tKey.wasPressedThisFrame;
+                return k != null && !IsTextEntryFocused() && k.tKey.wasPressedThisFrame;
             }
         }
 
@@ -102,7 +103,8 @@ namespace TitanOrbit.Input
         {
             get
             {
-                if (cycleBulletAction != null && cycleBulletAction.WasPressedThisFrame()) return true;
+                if (cycleBulletAction != null && cycleBulletAction.WasPressedThisFrame() && !IsTextEntryFocused())
+                    return true;
                 var k = Keyboard.current;
                 if (k == null)
                 {
@@ -111,7 +113,7 @@ namespace TitanOrbit.Input
                         if (d is Keyboard kb) { k = kb; break; }
                     }
                 }
-                return k != null && k.bKey.wasPressedThisFrame;
+                return k != null && !IsTextEntryFocused() && k.bKey.wasPressedThisFrame;
             }
         }
         /// <summary>True when right mouse is held - move in facing direction</summary>
@@ -134,7 +136,7 @@ namespace TitanOrbit.Input
         {
             get
             {
-                if (Application.isMobilePlatform)
+                if (Application.isMobilePlatform || IsTextEntryFocused())
                     return false;
                 return TryResolveKeyboard(out var keyboard) && keyboard.cKey.isPressed;
             }
@@ -153,6 +155,9 @@ namespace TitanOrbit.Input
             // Down Arrow still is. Nothing in the match reads this vector for flight
             // (RMB thrusts); it stays for any caller that wants a planar stick.
             Vector2 move = Vector2.zero;
+            // A focused note / name field must not also steer.
+            if (IsTextEntryFocused())
+                return move;
             if (moveAction != null)
                 move = moveAction.ReadValue<Vector2>();
 
@@ -280,7 +285,9 @@ namespace TitanOrbit.Input
             // --- Space brakes toggle (Left or Right Ctrl) ---
             // Default ON. One Input System edge only — do not also poll legacy GetKeyDown
             // or a single press can flip twice and leave brakes off.
-            if (WasCtrlPressedThisFrame())
+            // A focused text field keeps Ctrl for the caret, not the brake toggle.
+            bool typing = IsTextEntryFocused();
+            if (!typing && WasCtrlPressedThisFrame())
                 spaceBrakesEnabled = !spaceBrakesEnabled;
 
             // --- Shift modifier (Left/Right Shift) ---
@@ -288,8 +295,9 @@ namespace TitanOrbit.Input
             // re-engages at ≥25% energy while Shift stays held; burst speed applies when
             // RMB thrust is also held. MEGAs: no overdrive — same bit locks heading and
             // aims unoccupied auto-guns at the mouse. Desktop only; mobile leaves this false.
+            // Typing in NOTES / the name field must not engage overdrive.
             overdriveHeld = false;
-            if (!Application.isMobilePlatform && Keyboard.current != null)
+            if (!typing && !Application.isMobilePlatform && Keyboard.current != null)
             {
                 overdriveHeld = Keyboard.current.leftShiftKey.isPressed
                     || Keyboard.current.rightShiftKey.isPressed;
@@ -299,8 +307,9 @@ namespace TitanOrbit.Input
             // [TITAN-ORBIT] One key for the whole left-side list. Up/Down (and clicks)
             // move the caret. WasPressedThisFrame so holding Q does not dump the pack.
             // Q is also the FireRocket binding; the keyboard read covers a missing action.
-            bool actionRocket = rocketAction != null && rocketAction.WasPressedThisFrame();
-            bool keyRocket = TryResolveKeyboard(out var keys) && keys.qKey.wasPressedThisFrame;
+            // Skipped while a text field is focused so a note can contain the letter Q.
+            bool actionRocket = !typing && rocketAction != null && rocketAction.WasPressedThisFrame();
+            bool keyRocket = !typing && TryResolveKeyboard(out var keys) && keys.qKey.wasPressedThisFrame;
             rocketPressed = actionRocket || keyRocket;
         }
 
@@ -322,7 +331,7 @@ namespace TitanOrbit.Input
         {
             if (!TryResolveKeyboard(out var keyboard) || !keyboard.spaceKey.isPressed)
                 return false;
-            return !IsTextFieldFocused();
+            return !IsTextEntryFocused();
         }
 
         /// <summary>
@@ -332,8 +341,12 @@ namespace TitanOrbit.Input
         static Type s_tmpInputFieldType;
         static bool s_tmpInputFieldResolved;
 
-        /// <summary>True when the selected UI control is a text entry field.</summary>
-        static bool IsTextFieldFocused()
+        /// <summary>
+        /// True when the selected UI control is a text entry field.
+        /// Gameplay hotkeys (B, Q, V, T, C, Ctrl, Shift) stay quiet so NOTES and the
+        /// name field can take those letters.
+        /// </summary>
+        public static bool IsTextEntryFocused()
         {
             var selected = EventSystem.current != null
                 ? EventSystem.current.currentSelectedGameObject

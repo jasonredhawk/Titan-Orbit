@@ -41,6 +41,13 @@ namespace TitanOrbit.ECS
         /// Orbit purchases / removes change loadout without level/branch change — this forces re-apply.
         /// </summary>
         public int AppliedEquipmentFingerprint;
+
+        /// <summary>
+        /// Match seed whose family roll was written into this hull.
+        /// Zero until map generation publishes a seed. A later seed (client
+        /// recipe arrived after the first apply) forces one more apply.
+        /// </summary>
+        public uint AppliedMatchBonusSeed;
     }
 
     /// <summary>
@@ -304,6 +311,9 @@ namespace TitanOrbit.ECS
             bool queueStructuralChanges,
             bool writeGhostedShipState = true)
         {
+            // Map seed → family rolls. Home index stays 1×; other planets use the roll.
+            ShipFamilyMatchBonusSync.PublishFromMap(em);
+
             // --- Family from ship ghost ---
             // [TITAN-ORBIT] Captured-neutral moon purchases stamp ShipFamilyConfigIndex; resolve with it
             // so Cosmic Shark / etc. stats apply instead of always AstroEagle.
@@ -313,7 +323,8 @@ namespace TitanOrbit.ECS
 
             // --- MEGA hulls: frozen catalog + PerExtra-only moon-store gear ---
             // [TITAN-ORBIT] Unique-component totals stay static. LOADOUT ShipComponent
-            // rows add PerExtra × shipLevel only (no second Base).
+            // rows add PerExtra × shipLevel only (no second Base). The family index
+            // above is the fleet-bonus roll MegaShipStatApplyLogic multiplies in.
             if (em.Exists(shipEntity)
                 && em.HasComponent<MegaShipState>(shipEntity)
                 && em.GetComponentData<MegaShipState>(shipEntity).IsMega)
@@ -686,8 +697,9 @@ namespace TitanOrbit.ECS
                 // [TITAN-ORBIT] OVERDRIVE: ExtraSpeedPercent (speed mul) from engines; absolute OD drain
                 // from effective.extraSpeedEnergyDrain (ship-tier + Move Speed ability steps).
                 TryResolveFamilyForChassisId(chassisId, out ShipFamilyDefinition drainFamily);
+                // Home family resolves to 1×. Other planets use this match's roll.
                 var bonuses = drainFamily != null
-                    ? drainFamily.specialBonuses
+                    ? drainFamily.ResolveSpecialBonuses()
                     : ShipFamilySpecialBonuses.Identity;
                 ShipPropulsionAggregation.ResolveOverdriveFromEngines(
                     drainFamily,
@@ -755,6 +767,7 @@ namespace TitanOrbit.ECS
                     : PlanetShipFamilyAssignment.DefaultBulletBankIndex,
                 AppliedAttributeSum = attributeSum,
                 AppliedEquipmentFingerprint = equipmentFingerprint,
+                AppliedMatchBonusSeed = ShipFamilyMatchBonuses.ActiveMatchSeed,
             };
             if (em.HasComponent<ShipChassisState>(shipEntity))
                 em.SetComponentData(shipEntity, chassisState);

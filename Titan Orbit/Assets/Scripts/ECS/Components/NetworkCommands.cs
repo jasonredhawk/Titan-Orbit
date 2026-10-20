@@ -12,8 +12,10 @@ namespace TitanOrbit.ECS
     /// validate and reply. Handlers: <see cref="TeamManagementSystem"/>,
     /// <see cref="RejoinShipManagementSystem"/>, <see cref="ShipRespawnSystem"/>,
     /// <see cref="PlayerNameServerSystem"/>, <see cref="ShipAccentColorsServerSystem"/>,
-    /// moon orbit store systems, attribute upgrade systems.
+    /// moon orbit store systems, attribute upgrade systems, and
+    /// <see cref="BetaFeedbackServerSystem"/> (beta field notes).
     /// Ghost replication handles continuous state; RPCs handle discrete player actions.
+    /// Adding a command changes the NetCode protocol: client and Linux headless must rebuild together.
     /// </summary>
 
     /// <summary>
@@ -1611,4 +1613,130 @@ namespace TitanOrbit.ECS
     /// and turns on the same unlock a purchase would.
     /// </summary>
     public struct OrbitUnlockedGiftedRpc : IRpcCommand { }
+
+    /// <summary>
+    /// [NETCODE] Client → server: the NOTES screen opened and wants the saved log.
+    /// <see cref="RequestId"/> is echoed on each reply so a second open does not
+    /// mix rows with the first. Handled by <see cref="BetaFeedbackServerSystem"/>.
+    /// </summary>
+    public struct RequestBetaFeedbackListCommand : IRpcCommand
+    {
+        /// <summary>Client-chosen id for this open or refresh. Not a player id.</summary>
+        public byte RequestId;
+    }
+
+    /// <summary>
+    /// [NETCODE] Client → server: one field note. The hull snapshot was taken on the
+    /// client when the NOTES screen opened (ship, gun, level, added ability levels).
+    /// There is no clock field — that snapshot is the stamp. The server appends a line
+    /// to BetaFeedback.log when <see cref="TitanOrbitDebugFlags.BetaFeedbackEnabled"/> is on.
+    /// </summary>
+    public struct SubmitBetaFeedbackCommand : IRpcCommand
+    {
+        /// <summary>Nameplate name at send time.</summary>
+        public FixedString64Bytes PlayerName;
+
+        /// <summary>Family and chassis the player owned when the screen opened.</summary>
+        public FixedString128Bytes ShipName;
+
+        /// <summary>Gun they were firing (B-key bank, or the heal bank).</summary>
+        public FixedString64Bytes GunName;
+
+        /// <summary>Upgrade-ladder level. 0 means they had no hull.</summary>
+        public int ShipLevel;
+
+        /// <summary>Branch within that ship level (0-based).</summary>
+        public int BranchIndex;
+
+        /// <summary>
+        /// Ability purchases above zero, such as "Fire Power 2, Move Speed 1".
+        /// "none" when they had not added any.
+        /// </summary>
+        public FixedString512Bytes Abilities;
+
+        /// <summary>What they typed. May be empty — a snapshot alone is still a note.</summary>
+        public FixedString512Bytes Note;
+    }
+
+    /// <summary>
+    /// [NETCODE] Client → server: remove one saved note by id.
+    /// The server rewrites BetaFeedback.log without that line.
+    /// </summary>
+    public struct DeleteBetaFeedbackCommand : IRpcCommand
+    {
+        /// <summary>Id from <see cref="BetaFeedbackEntryRpc.Id"/>.</summary>
+        public int Id;
+    }
+
+    /// <summary>
+    /// [NETCODE] Server → the client who asked for the log: one saved note.
+    /// Index 0 is the newest of this batch. <see cref="Count"/> is how many rows
+    /// belong to <see cref="RequestId"/> (not the full file, which can be older).
+    /// </summary>
+    public struct BetaFeedbackEntryRpc : IRpcCommand
+    {
+        /// <summary>Same value as <see cref="RequestBetaFeedbackListCommand.RequestId"/>.</summary>
+        public byte RequestId;
+
+        /// <summary>Index of this row in the batch, starting at 0 (newest first).</summary>
+        public int Index;
+
+        /// <summary>How many rows belong to this request.</summary>
+        public int Count;
+
+        /// <summary>Stable id used by <see cref="DeleteBetaFeedbackCommand"/>.</summary>
+        public int Id;
+
+        /// <summary>Name stored with the note.</summary>
+        public FixedString64Bytes PlayerName;
+
+        /// <summary>Hull name stored with the note.</summary>
+        public FixedString128Bytes ShipName;
+
+        /// <summary>Gun name stored with the note.</summary>
+        public FixedString64Bytes GunName;
+
+        /// <summary>Ship level stored with the note.</summary>
+        public int ShipLevel;
+
+        /// <summary>Branch stored with the note.</summary>
+        public int BranchIndex;
+
+        /// <summary>Added ability levels stored with the note.</summary>
+        public FixedString512Bytes Abilities;
+
+        /// <summary>Typed note. May be empty.</summary>
+        public FixedString512Bytes Note;
+    }
+
+    /// <summary>
+    /// [NETCODE] Server → the client who asked for the log: the batch is finished.
+    /// <see cref="Total"/> is every line in the file. <see cref="Shown"/> is how many
+    /// <see cref="BetaFeedbackEntryRpc"/> rows were sent (the newest slice).
+    /// Total −1 means the server checkbox is off, so nothing was read.
+    /// </summary>
+    public struct BetaFeedbackListDoneRpc : IRpcCommand
+    {
+        /// <summary>Same value as <see cref="RequestBetaFeedbackListCommand.RequestId"/>.</summary>
+        public byte RequestId;
+
+        /// <summary>Rows sent in this batch.</summary>
+        public int Shown;
+
+        /// <summary>Lines in the file, or −1 when field notes are off on the server.</summary>
+        public int Total;
+    }
+
+    /// <summary>
+    /// [NETCODE] Server → the client who sent or deleted a note.
+    /// Status: 1 saved, 2 deleted, 3 server checkbox off, 4 id not in the file, 5 file full.
+    /// </summary>
+    public struct BetaFeedbackMutationResultRpc : IRpcCommand
+    {
+        /// <summary>1 saved, 2 deleted, 3 off, 4 missing, 5 file full.</summary>
+        public byte Status;
+
+        /// <summary>New id after a save, or the id the delete named.</summary>
+        public int Id;
+    }
 }

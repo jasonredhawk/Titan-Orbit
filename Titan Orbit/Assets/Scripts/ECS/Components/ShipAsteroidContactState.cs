@@ -11,7 +11,8 @@ namespace TitanOrbit.ECS
     /// <para>
     /// [TITAN-ORBIT] Not ghosted — local predicted / server sim only. Cleared every physics tick
     /// before events run; stays zero when the hull is free of asteroid contacts. Ship↔ship
-    /// contacts set <see cref="InContactHull"/> for presentation coast only.
+    /// contacts set <see cref="InContactHull"/> so the camera can trail. Drive still treats
+    /// hull contacts as Unity Physics.
     /// </para>
     /// </summary>
     public struct ShipAsteroidContactState : IComponentData
@@ -33,5 +34,13 @@ namespace TitanOrbit.ECS
         /// Valid only when <see cref="InContact"/> is 1.
         /// </summary>
         public float3 OutwardNormal;
+
+        /// <summary>
+        /// 1 for the rest of this physics step when the ship is punching through an asteroid
+        /// (remaining health &lt; collision damage). Set by bounce, read by friction so this
+        /// step does not stick the hull or arm next tick's inward-velocity reject.
+        /// Cleared at the end of friction. Not ghosted.
+        /// </summary>
+        public byte PunchThrough;
     }
 }

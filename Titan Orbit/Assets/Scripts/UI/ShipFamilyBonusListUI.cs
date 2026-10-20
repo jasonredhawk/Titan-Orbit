@@ -134,11 +134,10 @@ namespace TitanOrbit.UI
                 return;
             }
 
-            // [TITAN-ORBIT] Fleet Bonuses are ShipFamilyDefinition.specialBonuses only.
-            // Bullet-bank vs-target muls (VS GEMS, VS ASTEROIDS, BANK DAMAGE) are weapon
-            // stats, not family identity — they stay on the weapon rail, not this wheel.
+            // [TITAN-ORBIT] Fleet Bonuses are this match's family roll, not the asset.
+            // Home planets read as 1×. Bullet-bank vs-target muls stay on the weapon rail.
             _rows.Clear();
-            FamilyStatHudCopy.CollectBonusRows(family.specialBonuses, _rows, includeIdentity: true);
+            FamilyStatHudCopy.CollectBonusRows(family.ResolveSpecialBonuses(), _rows, includeIdentity: true);
 
             // [TITAN-ORBIT] Planet roll wins over the family Laserbolt fallback.
             string typeName = BulletBankHudCopy.FormatFamilyTypeName(family, planetOrHullBankIndex);

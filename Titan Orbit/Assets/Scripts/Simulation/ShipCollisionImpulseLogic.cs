@@ -233,6 +233,46 @@ namespace TitanOrbit.Simulation
         }
 
         /// <summary>
+        /// Asteroid breaks on this hit (remaining health &lt; collision damage). Do not reflect.
+        /// Remove <paramref name="speedReduction"/> of the into-rock speed and keep the same
+        /// direction. Tangential slide is unchanged.
+        /// 5 HP / 20 damage → 0.25 → closing speed becomes 75% of incoming.
+        /// 10 HP / 20 damage → 0.50. Health ≥ damage stays on
+        /// <see cref="ApplyInfiniteMassWallImpulse"/> (full bounce).
+        /// </summary>
+        /// <param name="shipVelocity">Ship linear velocity — written when it was closing.</param>
+        /// <param name="normalShipFromBody">Unit normal from the asteroid toward the ship.</param>
+        /// <param name="speedReduction">
+        /// Fraction of into-rock speed to remove, in [0, 1). <c>health / damage</c>.
+        /// </param>
+        /// <returns>True when inbound normal speed was reduced.</returns>
+        public static bool ApplyForwardSpeedReduction(
+            ref float3 shipVelocity,
+            float3 normalShipFromBody,
+            float speedReduction)
+        {
+            float3 n = normalShipFromBody;
+            n.y = 0f;
+            if (math.lengthsq(n) < 1e-8f)
+                return false;
+            n = math.normalize(n);
+
+            float3 vel = shipVelocity;
+            vel.y = 0f;
+            float vn = math.dot(vel, n);
+            // Already leaving the rock — nothing to take off the closing speed.
+            if (vn >= 0f)
+                return false;
+
+            float reduction = math.saturate(speedReduction);
+            // vn is negative. Subtracting n·vn·reduction moves that component toward zero
+            // and does not cross into a rebound (reduction &lt; 1).
+            vel -= n * (vn * reduction);
+            shipVelocity = vel;
+            return true;
+        }
+
+        /// <summary>
         /// Infinite-mass wall that is itself moving (interpolated remote hull, gem moon).
         /// Reflects <paramref name="shipVelocity"/> in the wall's rest frame, then adds the
         /// wall velocity back so only relative closing speed bounces.

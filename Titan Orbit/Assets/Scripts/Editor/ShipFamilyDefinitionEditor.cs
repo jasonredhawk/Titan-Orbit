@@ -108,10 +108,10 @@ namespace TitanOrbit.Editor
             EditorGUILayout.BeginVertical(EditorStyles.helpBox);
             EditorGUILayout.LabelField("Family Special Bonuses", EditorStyles.boldLabel);
             EditorGUILayout.HelpBox(
-                "Multipliers applied after component sum (shared profiles stay project-wide). " +
-                "Values can be below 1 (trade-offs). OVERDRIVE: extraSpeedPercentMul / " +
-                "extraSpeedEnergyDrainMul scale engine ExtraSpeedPercent and ExtraSpeedEnergyDrain. " +
-                "cameraHeightMul is presentation-only (CameraFollowEcs): >1 zooms out, <1 zooms in.",
+                "Editor preview of the old per-ship trade-offs. A running match ignores these. " +
+                "Home-planet ships stay at 1×. Every other planet's family is rolled from the " +
+                "match seed between 0.5 and 2.0. Quit Play Mode before rebaking power scores " +
+                "so the bake keeps these preview numbers.",
                 MessageType.None);
 
             if (GUILayout.Button("Reset Family Bonuses To 1×"))
@@ -275,8 +275,9 @@ namespace TitanOrbit.Editor
             EditorGUILayout.LabelField("Auto Populate From Prefab Folder", EditorStyles.boldLabel);
             EditorGUILayout.HelpBox(
                 "Scans all prefabs in the family folder for child names like 'GalaxyRaptor_Wing2' or 'AstroEagle_Engine_2'. " +
-                "Uses the shared ShipFamilyPartCalcProfileSet (name mappings + part profiles) for stats and VFX flags. " +
-                "Recalculate copies Part Profile numbers onto every component (Energy Cap included) — " +
+                "Uses the shared ShipFamilyPartCalcProfileSet. Each name mapping's base stats are the master for that part; " +
+                "a mapping with no stats yet is seeded from its Part Profile and the numbers are written onto the mapping. " +
+                "Recalculate copies those per-part stats onto every component (Energy Cap included) — " +
                 "it does not rebalance Cap from weapons (Scan Folder still does).",
                 MessageType.Info);
 
@@ -584,7 +585,10 @@ namespace TitanOrbit.Editor
                 def.components.Clear();
 
             var profileSet = ShipFamilyPartCalcProfileSetEditorUtility.FindOrLoadShared();
+            if (profileSet != null)
+                Undo.RecordObject(profileSet, "Write Name Mapping Base Stats");
             int skippedUnmapped = 0;
+            int nameMappingsStamped = 0;
             foreach (var data in scan)
             {
                 string componentId = data.canonicalId;
@@ -635,6 +639,9 @@ namespace TitanOrbit.Editor
                     stats = profileSet != null
                         ? profileSet.SuggestStatsForComponent(componentId, categories)
                         : SuggestStatsForComponent(componentId, type, version, categories);
+                    // Stamp the applied block onto this name so it becomes that part's master.
+                    if (profileSet != null && profileSet.TryWriteAppliedBaseStats(componentId, stats))
+                        nameMappingsStamped++;
                 }
 
                 bool enableVfx = false;
@@ -662,18 +669,25 @@ namespace TitanOrbit.Editor
             def.EnforceComponentStatCategories();
             def.InvalidateComponentStatsLookup();
             EditorUtility.SetDirty(def);
+            if (profileSet != null && nameMappingsStamped > 0)
+            {
+                profileSet.InvalidateLookups();
+                EditorUtility.SetDirty(profileSet);
+            }
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
 
             EditorUtility.DisplayDialog(
                 "Scan Complete",
                 $"Found {scan.Count} unique component(s); wrote {def.components.Count} (skipped {skippedUnmapped} Ignore/unmapped).\n" +
-                "Stats from ShipFamilyPartCalcProfileSet. Engines Cap/Regen; weapons Cap-only (extra storage). VFX flags baked per name.",
+                $"Name mappings newly stamped with those stats: {nameMappingsStamped}.\n" +
+                "Stats come from each name mapping (seeded from the Part Profile when that row had none). " +
+                "Engines Cap/Regen; weapons Cap-only (extra storage). VFX flags baked per name.",
                 "OK");
         }
 
         /// <summary>
-        /// Result of pushing Part Profile stats onto a family's component rows.
+        /// Result of pushing each name mapping's base stats onto a family's component rows.
         /// </summary>
         public struct RecalculateComponentsResult
         {
@@ -683,6 +697,7 @@ namespace TitanOrbit.Editor
             public int updated;
             public int cosmetics;
             public int missingProfile;
+            public int nameMappingsStamped;
             public int totalRows;
         }
 
@@ -744,6 +759,7 @@ namespace TitanOrbit.Editor
                     "Recalculate & Resort",
                     $"Part profiles refreshed: {recalc.profilesUpdated}.\n" +
                     $"Components with ability stats: {recalc.updated}. Cosmetics zeroed: {recalc.cosmetics}.\n" +
+                    $"Name mappings newly stamped with those stats: {recalc.nameMappingsStamped}.\n" +
                     $"Rows without a matching Part Profile: {recalc.missingProfile}.\n" +
                     $"Resorted {resort.resortedUnlocked} unlocked tier(s). " +
                     $"{resort.lockedCount} locked. {resort.trailingNoPrefab} with no prefab appended.",
@@ -754,10 +770,11 @@ namespace TitanOrbit.Editor
         }
 
         /// <summary>
-        /// Pushes Part Profile stats onto every component row (categories + ability numbers + VFX).
+        /// Pushes each name mapping's base stats onto every component row (categories + ability numbers + VFX).
+        /// A mapping with no block yet is seeded from its Part Profile and those numbers are stored on the mapping.
         /// <para>
         /// [TITAN-ORBIT] Unlike Scan Folder, this does <b>not</b> run weapon/engine energy rebalance
-        /// or thruster-turn overrides — Energy Cap / Regen come from the Engine Part Profile.
+        /// or thruster-turn overrides — Energy Cap / Regen come from the part's own stat block.
         /// Writes through SerializedObject so the Inspector refreshes.
         /// </para>
         /// </summary>
@@ -798,10 +815,12 @@ namespace TitanOrbit.Editor
                 EditorUtility.SetDirty(profileSet);
             }
 
-            Undo.RecordObject(def, "Recalculate Component Stats From Profiles");
+            Undo.RecordObject(def, "Recalculate Component Stats From Name Mappings");
+            Undo.RecordObject(profileSet, "Recalculate Component Stats From Name Mappings");
             int updated = 0;
             int cosmetics = 0;
             int missingProfile = 0;
+            int nameMappingsStamped = 0;
 
             for (int i = 0; i < def.components.Count; i++)
             {
@@ -844,6 +863,8 @@ namespace TitanOrbit.Editor
                         categories = ShipFamilyComponentPartKey.InferDefaultStatCategories(componentId);
 
                     stats = profileSet.SuggestStatsForComponent(componentId, categories);
+                    if (profileSet.TryWriteAppliedBaseStats(componentId, stats))
+                        nameMappingsStamped++;
                     updated++;
                 }
 
@@ -877,6 +898,11 @@ namespace TitanOrbit.Editor
 
             def.InvalidateComponentStatsLookup();
             EditorUtility.SetDirty(def);
+            if (nameMappingsStamped > 0)
+            {
+                profileSet.InvalidateLookups();
+                EditorUtility.SetDirty(profileSet);
+            }
             if (saveAssets)
                 AssetDatabase.SaveAssets();
 
@@ -885,6 +911,7 @@ namespace TitanOrbit.Editor
             result.updated = updated;
             result.cosmetics = cosmetics;
             result.missingProfile = missingProfile;
+            result.nameMappingsStamped = nameMappingsStamped;
             result.totalRows = def.components.Count;
 
             if (showDialog)
@@ -893,9 +920,10 @@ namespace TitanOrbit.Editor
                     "Recalculate",
                     $"Part profiles refreshed: {profilesUpdated}.\n" +
                     $"Components with ability stats: {updated}. Cosmetics zeroed: {cosmetics}.\n" +
+                    $"Name mappings newly stamped with those stats: {nameMappingsStamped}.\n" +
                     $"Rows without a matching Part Profile (heuristic seed): {missingProfile}.\n" +
                     $"Total rows: {def.components.Count}.\n\n" +
-                    "Energy Cap/Regen come from the Engine Part Profile (no weapon-based rebalance).",
+                    "Each name mapping is the master for that part. Energy comes from that block (no weapon-based rebalance).",
                     "OK");
             }
 
@@ -1448,7 +1476,7 @@ namespace TitanOrbit.Editor
                         tier.prefab, def, shipLevel, in maxed,
                         out _, out ShipFamilyPowerScoreBreakdown atLevel))
                     tier.powerScoreAtMaxLevel = atLevel.GetUpgradeTreeSortPowerScore();
-                // Extra Level at this chassis's tree level with every HUD ability maxed.
+                // Extra Level at this chassis's tree level with zero ability purchases.
                 ShipFamilyPowerBarNorm.BakeAtShipLevel(tier, def);
             }
 
@@ -1555,6 +1583,7 @@ namespace TitanOrbit.Editor
             switch (category)
             {
                 case ShipComponentStatCategory.Offense:
+                    // Cockpit contributes ramming only. Other offense fields stay on the row at 0.
                     if (string.Equals(type, "Cockpit", StringComparison.OrdinalIgnoreCase))
                     {
                         stats.rammingPower = ShipComponentRammingSuggestions.GetSuggestedRammingPower(version);
@@ -1562,14 +1591,15 @@ namespace TitanOrbit.Editor
                     }
                     else
                     {
-                        stats.firePower = ShipComponentWeaponSuggestions.GetSuggestedFirePower(version);
+                        // Weapons focus on bullet speed. Fire power, range, and rate stay authored too.
                         stats.bulletSpeed = ShipComponentWeaponSuggestions.GetSuggestedBulletSpeed(version);
+                        stats.bulletSpeedPerExtraLevel = ShipComponentWeaponSuggestions.GetSuggestedBulletSpeedPerLevel(version);
+                        stats.firePower = ShipComponentWeaponSuggestions.GetSuggestedFirePower(version);
+                        stats.firePowerPerExtraLevel = ShipComponentWeaponSuggestions.GetSuggestedFirePowerPerLevel(version);
                         stats.bulletRange = ShipComponentWeaponSuggestions.GetSuggestedBulletRange(version);
+                        stats.bulletRangePerExtraLevel = ShipComponentWeaponSuggestions.GetSuggestedBulletRangePerLevel(version);
                         stats.fireRate = ShipComponentWeaponSuggestions.FireRate;
                         stats.fireRatePerExtraLevel = ShipComponentWeaponSuggestions.FireRatePerLevel;
-                        stats.firePowerPerExtraLevel = ShipComponentWeaponSuggestions.GetSuggestedFirePowerPerLevel(version);
-                        stats.bulletSpeedPerExtraLevel = ShipComponentWeaponSuggestions.GetSuggestedBulletSpeedPerLevel(version);
-                        stats.bulletRangePerExtraLevel = ShipComponentWeaponSuggestions.GetSuggestedBulletRangePerLevel(version);
                     }
                     break;
 

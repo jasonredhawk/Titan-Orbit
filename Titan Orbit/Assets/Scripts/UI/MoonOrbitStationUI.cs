@@ -1174,7 +1174,7 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Your Ship bar: Extra Level at current ship level with every HUD ability maxed.
+        /// Your Ship bar: Extra Level at current ship level with zero ability purchases.
         /// MEGA hulls use the static catalog sum (no Extra Level, gem cap 0).
         /// </summary>
         public ShipFamilyPowerScoreBreakdown GetCurrentShipPowerBreakdown()
@@ -1194,7 +1194,7 @@ namespace TitanOrbit.UI
                 : default;
         }
 
-        /// <summary>Tree node bar: Extra Level at the node's ship <paramref name="level"/> with every HUD ability maxed.</summary>
+        /// <summary>Tree node bar: Extra Level at the node's ship <paramref name="level"/> with zero ability purchases.</summary>
         public ShipFamilyPowerScoreBreakdown GetPowerBreakdownForTreeNode(int level, int branchIndex)
         {
             if (!TryGetChassisIdForTreeSlot(level, branchIndex, out string chassisId))
@@ -1316,10 +1316,15 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Display name from family upgradeTree (Hawk, Sparrow, …) — not legacy UpgradeTree.asset labels (2.1).
+        /// Hull title for one moon-dock tree card. Regular L1–L6 names come from the
+        /// family upgrade tree (Hawk, Sparrow, …), not the legacy UpgradeTree.asset
+        /// labels (2.1). A leading family prefix is dropped because the family line
+        /// under the title already shows it ("Astro Eagle Hawk" → "Hawk"). MEGA
+        /// cards keep the catalog name. The bullet-type row is painted separately.
         /// </summary>
         string GetShipDisplayNameForSlot(int level, int branchIndex, string chassisId)
         {
+            // MEGA / Titan row uses the catalog display name, not the family ladder.
             if (MegaShipCatalog.IsMegaChassisId(chassisId)
                 && MegaShipCatalog.TryParseCatalogIndex(chassisId, out ushort megaIndex))
             {
@@ -1328,24 +1333,36 @@ namespace TitanOrbit.UI
                     return mega.GetDisplayName(megaIndex);
             }
 
+            // --- Regular hull: catalog name, then legacy node, then a slot fallback ---
+            string raw = null;
             var config = ShipStatApplyLogic.Config;
             if (config != null && !string.IsNullOrEmpty(chassisId))
             {
                 string treeName = config.GetUpgradeTreeShipNameForChassisId(chassisId);
                 if (!string.IsNullOrEmpty(treeName))
-                    return treeName.Trim();
+                    raw = treeName.Trim();
             }
 
-            if (upgradeTree != null)
+            if (string.IsNullOrEmpty(raw) && upgradeTree != null)
             {
                 var node = upgradeTree.GetNodeForBranch(level, branchIndex);
                 if (node != null && !string.IsNullOrEmpty(node.shipName))
-                    return node.shipName.Trim();
+                    raw = node.shipName.Trim();
             }
 
-            return string.IsNullOrEmpty(chassisId)
-                ? $"Ship {level}.{branchIndex + 1}"
-                : chassisId;
+            if (string.IsNullOrEmpty(raw))
+            {
+                raw = string.IsNullOrEmpty(chassisId)
+                    ? $"Ship {level}.{branchIndex + 1}"
+                    : chassisId;
+            }
+
+            if (level >= 7)
+                return raw;
+
+            // Same family string the card prints under the title. Prefix-only match.
+            return DisplayNameFormatting.StripLeadingFamilyLabel(
+                raw, GetFamilyDisplayNameForSlot(chassisId));
         }
 
         /// <summary>Menu thumbnail for the chassis, or null when the slot has no family/MEGA entry.</summary>

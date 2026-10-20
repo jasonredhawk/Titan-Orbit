@@ -562,8 +562,8 @@ namespace TitanOrbit.UI
         /// <summary>
         /// Paints the left-panel Your Ship card: the hull you are flying, its preview,
         /// and the power bar. The title on the art is the ship name only — the family
-        /// caption already sits above that image. Tree cards in the center keep the
-        /// full "family + name" label.
+        /// caption already sits above that image. Regular tree cards drop the same
+        /// leading family prefix; their family line stays under the title.
         /// </summary>
         private void PopulateCurrentShipDisplayNode(ShipUpgradeTreeNodeUI view, ShipPowerBarStatMaxes maxes)
         {

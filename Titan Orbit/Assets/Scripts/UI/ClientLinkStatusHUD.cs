@@ -1,4 +1,5 @@
 using TitanOrbit.NetCode;
+using TMPro;
 using Unity.Entities;
 using Unity.NetCode;
 using UnityEngine;
@@ -7,22 +8,23 @@ using UnityEngine.UI;
 namespace TitanOrbit.UI
 {
     /// <summary>
-    /// Small signal icon in the top-right, just left of the team leaderboard.
-    /// Three bars: green when the match link is healthy, amber when it is late,
-    /// one red bar when snapshots have stopped. Presentation only — it never
-    /// sends RPCs or changes the connection.
+    /// Small signal icon in the top-right, just left of the team leaderboard, plus a
+    /// top banner when the match link is actually failing. Three bars: green when the
+    /// link is healthy, amber when it is late, one red bar when snapshots have stopped.
+    /// It never sends gameplay RPCs. After a few seconds with no new snapshot it asks
+    /// <see cref="TitanOrbitSessionManager"/> to return to the menu.
     /// <para>
     /// A dead Relay socket often never raises <see cref="ConnectionState.State.Disconnected"/>.
     /// <see cref="TitanOrbitSessionManager.IsClientGameplayReady"/> stays true, so the
-    /// existing drop watcher never runs. Local prediction keeps moving the ship for a
-    /// while, and server-owned ghosts (enemy turrets) freeze on the last snapshot.
-    /// The icon stays up for the whole match so that stall is visible at a glance.
+    /// existing drop watcher never runs. Local prediction keeps moving the ship, and
+    /// server-owned ghosts (enemy turrets) freeze on the last snapshot. The 12×9 pip
+    /// is the glance signal. The banner is the notice a player can actually read,
+    /// including while the orbit station has faded the leaderboard.
     /// </para>
     /// <para>
-    /// It is a child of <see cref="TeamLeaderboardHUD"/>'s panel, not its own canvas.
-    /// A separate overlay drew over the orbit menu and sat in the middle of the screen,
-    /// and it hid whenever the link was fine — so a normal match showed nothing.
-    /// The leaderboard plate fades this icon with the rest of the gameplay HUD.
+    /// The pip is a child of <see cref="TeamLeaderboardHUD"/>'s panel. The banner is
+    /// its own overlay and only exists while commands are unacked or snapshots have
+    /// stopped, so a healthy match does not draw a card over the orbit menu.
     /// </para>
     /// </summary>
     public sealed class ClientLinkStatusHUD : MonoBehaviour
@@ -41,6 +43,13 @@ namespace TitanOrbit.UI
 
             /// <summary>No new server snapshot, or the connection entity is gone. One bar lit red.</summary>
             Lost = 3,
+
+            /// <summary>
+            /// Snapshots are still arriving, but the server has stopped acknowledging
+            /// this client's commands. The ship still flies locally; those controls
+            /// are not landing on the match.
+            /// </summary>
+            Stalled = 4,
         }
 
         /// <summary>How often we read NetCode. Not every frame — the numbers move slowly.</summary>
@@ -59,6 +68,29 @@ namespace TitanOrbit.UI
         /// enough to skip a hitch and short enough that frozen turrets are explained.
         /// </summary>
         const float LostSilenceSeconds = 2f;
+
+        /// <summary>
+        /// How long <see cref="LinkFeel.Lost"/> must hold before we leave the match.
+        /// Two seconds of silence raises the banner; four more seconds returns to the
+        /// menu. Waiting for the transport's ~30s disconnect left the ship flying a
+        /// frozen world with no obvious notice.
+        /// </summary>
+        const float LostHoldBeforeResetSeconds = 4f;
+
+        /// <summary>
+        /// Unacknowledged command age, in simulation ticks, that means the server
+        /// stopped eating this client's input. Healthy dedicated play sits near −2.
+        /// A join hitch can touch the mid-teens, and the ship-visual hold is 8, so
+        /// 30 is past both. A dead session can jump to hundreds of ticks while
+        /// snapshots are still moving — that is this state, not ordinary lag.
+        /// </summary>
+        const float CommandStallTicks = 30f;
+
+        /// <summary>Command age must fall back under this before a stall banner clears.</summary>
+        const float CommandStallClearTicks = 12f;
+
+        /// <summary>Consecutive 0.25s samples above <see cref="CommandStallTicks"/> before the banner.</summary>
+        const int EnterStallSamples = 2;
 
         /// <summary>Round-trip, in milliseconds, that turns the chip on. Ordinary Relay (~70 ms) stays quiet.</summary>
         const float LagRttMs = 200f;
@@ -101,7 +133,10 @@ namespace TitanOrbit.UI
         static readonly Color ConnectedLit = new Color(0.35f, 0.90f, 0.55f, 1f);
         static readonly Color LagLit = new Color(0.95f, 0.72f, 0.28f, 1f);
         static readonly Color LostLit = new Color(0.92f, 0.28f, 0.26f, 1f);
+        static readonly Color StallLit = new Color(0.95f, 0.45f, 0.22f, 1f);
         static readonly Color BarDim = new Color(0.22f, 0.26f, 0.32f, 0.55f);
+        static readonly Color AlertTitle = new Color(0.98f, 0.90f, 0.84f, 1f);
+        static readonly Color AlertBody = new Color(0.88f, 0.92f, 0.98f, 1f);
 
         /// <summary>Client world the cached queries belong to. A new world means the old queries are dead.</summary>
         World _queryWorld;
@@ -139,6 +174,18 @@ namespace TitanOrbit.UI
         /// <summary>What the icon showed last sample. Used so we log the drop once, not every quarter-second.</summary>
         LinkFeel _shown = LinkFeel.Off;
 
+        /// <summary>Consecutive samples with command age at or above <see cref="CommandStallTicks"/>.</summary>
+        int _stallStreak;
+
+        /// <summary>
+        /// Unscaled time when snapshot silence (or a vanished connection) first became
+        /// <see cref="LinkFeel.Lost"/>. Zero while the link can still recover.
+        /// </summary>
+        float _lostSince;
+
+        /// <summary>True after we have already asked the session to return to the menu.</summary>
+        bool _resetRequested;
+
         /// <summary>Leaderboard we last parented under. Cleared when that object is destroyed.</summary>
         TeamLeaderboardHUD _leaderboard;
 
@@ -147,6 +194,18 @@ namespace TitanOrbit.UI
 
         /// <summary>Short, middle, and tall bars. Index 0 is the shortest (left).</summary>
         readonly Image[] _bars = new Image[3];
+
+        /// <summary>Top-of-screen overlay. Built on the first stall or drop, hidden the rest of the time.</summary>
+        GameObject _alertRoot;
+
+        /// <summary>Uppercase alarm title on <see cref="_alertRoot"/>.</summary>
+        TextMeshProUGUI _alertTitle;
+
+        /// <summary>One-line explanation under the title.</summary>
+        TextMeshProUGUI _alertBody;
+
+        /// <summary>Thin top rail. Orange while commands are unacked, red once snapshots stop.</summary>
+        Image _alertRail;
 
         /// <summary>
         /// Creates the hidden runner after the first scene loads. Dedicated server builds
@@ -189,9 +248,11 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// One read of the client connection and the snapshot clock.
-        /// Shows LAG while packets are late, and NO LINK once snapshots stop or the
-        /// connection entity disappears. Clears itself when a new snapshot arrives.
+        /// One read of the client connection, the snapshot clock, and command age.
+        /// Shows LAG while packets are late, LINK STALLED when the server stops
+        /// acknowledging commands, and LINK LOST once snapshots stop. A lost link
+        /// that holds starts the menu reset. A stall does not — snapshots are
+        /// still moving, and kicking the player would be the disconnect itself.
         /// </summary>
         void SampleLink()
         {
@@ -217,13 +278,21 @@ namespace TitanOrbit.UI
             {
                 _lagStreak = 0;
                 _clearStreak = 0;
+                _stallStreak = 0;
+                NoteUnrecoverable(session);
                 Apply(LinkFeel.Lost);
                 return;
             }
 
             if (!ready || !EnsureQueries(world))
             {
-                Apply(_shown == LinkFeel.Lost ? LinkFeel.Lost : LinkFeel.Off);
+                if (_seenSnapshot && _shown == LinkFeel.Lost)
+                {
+                    NoteUnrecoverable(session);
+                    Apply(LinkFeel.Lost);
+                }
+                else
+                    Apply(LinkFeel.Off);
                 return;
             }
 
@@ -234,7 +303,10 @@ namespace TitanOrbit.UI
                 // Still joining — no snapshot yet is normal. A live connection still
                 // shows green. Only a later stall, after we have seen a tick, stays red.
                 if (_seenSnapshot && _shown == LinkFeel.Lost)
+                {
+                    NoteUnrecoverable(session);
                     Apply(LinkFeel.Lost);
+                }
                 else
                     Apply(LinkFeel.Connected);
                 return;
@@ -252,6 +324,8 @@ namespace TitanOrbit.UI
             float rtt = ack.EstimatedRTT;
             float jitter = ack.DeviationRTT;
             float gapMs = timeData.avgPacketInterArrival;
+            // ServerCommandAge is 16.16 fixed-point ticks. Healthy dedicated play sits near −2.
+            float commandAge = ack.ServerCommandAge / 256f;
 
             // --- Link is gone ---
             // The connection component can still say "in game" while the socket is dead.
@@ -260,9 +334,16 @@ namespace TitanOrbit.UI
             {
                 _lagStreak = 0;
                 _clearStreak = 0;
+                _stallStreak = 0;
+                NoteUnrecoverable(session);
                 Apply(LinkFeel.Lost);
                 return;
             }
+
+            // Snapshots moved within the last two seconds. This is not a dead socket.
+            // A command stall can still be up; that banner stays until commands land again.
+            if (!_resetRequested)
+                _lostSince = 0f;
 
             // A new snapshot after a drop means the server is talking again.
             // Fall through so the bars become green or amber instead of vanishing.
@@ -272,6 +353,23 @@ namespace TitanOrbit.UI
                 _lagStreak = 0;
                 _clearStreak = 0;
                 Debug.Log("[ClientLink] Server snapshots resumed.");
+            }
+
+            // --- Commands are not landing ---
+            // Snapshots can keep a ~60 Hz average for several seconds after the
+            // client stops being acknowledged. That is the stretch where flight
+            // feels broken and the pip still looks fine.
+            if (commandAge >= CommandStallTicks)
+                _stallStreak++;
+            else if (commandAge < CommandStallClearTicks)
+                _stallStreak = 0;
+
+            bool stalled = _stallStreak >= EnterStallSamples
+                || (_shown == LinkFeel.Stalled && commandAge >= CommandStallClearTicks);
+            if (stalled)
+            {
+                Apply(LinkFeel.Stalled);
+                return;
             }
 
             bool late = silence >= LagSilenceSeconds
@@ -311,6 +409,27 @@ namespace TitanOrbit.UI
             Apply(LinkFeel.Connected);
         }
 
+        /// <summary>
+        /// Starts the menu reset once a dead link has held long enough to skip a hitch.
+        /// A command stall does not call this. Snapshots are still arriving, and
+        /// ending the session would disconnect a player the server is still talking to.
+        /// </summary>
+        /// <param name="session">Live session. Already known to be in a match.</param>
+        void NoteUnrecoverable(TitanOrbitSessionManager session)
+        {
+            if (_resetRequested)
+                return;
+
+            float now = Time.unscaledTime;
+            if (_lostSince <= 0f)
+                _lostSince = now;
+            if (now - _lostSince < LostHoldBeforeResetSeconds)
+                return;
+
+            _resetRequested = true;
+            session.NotifyDedicatedLinkUnrecoverable();
+        }
+
         /// <summary>Forgets snapshot memory when the match ends so the next join starts clean.</summary>
         void ResetMatchMemory()
         {
@@ -320,12 +439,16 @@ namespace TitanOrbit.UI
             _lastSnapshotAdvanceTime = 0f;
             _lagStreak = 0;
             _clearStreak = 0;
+            _stallStreak = 0;
+            _lostSince = 0f;
+            _resetRequested = false;
         }
 
         /// <summary>
-        /// Shows or hides the signal pip and repaints the bars when the state changes.
+        /// Shows or hides the signal pip and the failure banner.
+        /// The banner is shown even when the leaderboard pip cannot be built yet.
         /// </summary>
-        /// <param name="feel">Off, connected, late, or dropped.</param>
+        /// <param name="feel">Off, connected, late, stalled, or dropped.</param>
         void Apply(LinkFeel feel)
         {
             if (feel == LinkFeel.Off)
@@ -333,40 +456,70 @@ namespace TitanOrbit.UI
                 _shown = LinkFeel.Off;
                 if (_icon != null && _icon.activeSelf)
                     _icon.SetActive(false);
+                HideAlert();
                 return;
             }
 
-            // Leaderboard may not exist yet (loading). Do not latch the color
-            // until the pip actually exists, or a later sample would skip the build.
-            if (!EnsureIcon())
-                return;
-
             bool changed = feel != _shown;
-            if (feel == LinkFeel.Lost && changed)
+            if (changed && feel == LinkFeel.Lost)
             {
                 Debug.LogWarning(
                     "[ClientLink] No live server link. Local flight can continue on prediction; " +
                     "server ghosts such as enemy turrets stay on the last snapshot.");
             }
+            else if (changed && feel == LinkFeel.Stalled)
+            {
+                Debug.LogWarning(
+                    "[ClientLink] Server stopped acknowledging ship commands. " +
+                    "Prediction is still running; controls may not be reaching the match.");
+            }
 
             _shown = feel;
-            if (!_icon.activeSelf)
-                _icon.SetActive(true);
-            if (changed)
+            // Leaderboard may not exist yet. The banner does not wait on it —
+            // the pip is parented there and fades with the station UI.
+            if (EnsureIcon())
+            {
+                if (!_icon.activeSelf)
+                    _icon.SetActive(true);
                 PaintBars(feel);
+            }
+
+            if (feel == LinkFeel.Lost || feel == LinkFeel.Stalled)
+                ShowAlert(feel);
+            else
+                HideAlert();
         }
 
         /// <summary>
-        /// Lights the bars for one state. Connected fills all three, lag fills two,
-        /// a drop leaves only the shortest bar.
+        /// Lights the bars for one state. Connected fills all three, lag and a
+        /// command stall fill two, a drop leaves only the shortest bar.
         /// </summary>
-        /// <param name="feel">Connected, lag, or lost. Off is not painted.</param>
+        /// <param name="feel">Connected, lag, stalled, or lost. Off is not painted.</param>
         void PaintBars(LinkFeel feel)
         {
-            Color lit = feel == LinkFeel.Lost ? LostLit
-                : feel == LinkFeel.Lag ? LagLit
-                : ConnectedLit;
-            int litCount = feel == LinkFeel.Lost ? 1 : feel == LinkFeel.Lag ? 2 : 3;
+            Color lit;
+            int litCount;
+            if (feel == LinkFeel.Lost)
+            {
+                lit = LostLit;
+                litCount = 1;
+            }
+            else if (feel == LinkFeel.Stalled)
+            {
+                lit = StallLit;
+                litCount = 2;
+            }
+            else if (feel == LinkFeel.Lag)
+            {
+                lit = LagLit;
+                litCount = 2;
+            }
+            else
+            {
+                lit = ConnectedLit;
+                litCount = 3;
+            }
+
             for (int i = 0; i < _bars.Length; i++)
             {
                 if (_bars[i] != null)
@@ -375,9 +528,134 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
+        /// Puts the failure card on screen. Built once, then only the words and the
+        /// rail color change. Sits above the orbit station (sort 200) and under the
+        /// loading overlay (sort 500), so a station menu cannot hide it and a
+        /// scene load still covers it.
+        /// </summary>
+        /// <param name="feel"><see cref="LinkFeel.Lost"/> or <see cref="LinkFeel.Stalled"/>.</param>
+        void ShowAlert(LinkFeel feel)
+        {
+            EnsureAlert();
+            if (!_alertRoot.activeSelf)
+                _alertRoot.SetActive(true);
+
+            if (feel == LinkFeel.Stalled)
+            {
+                _alertRail.color = StallLit;
+                _alertTitle.text = "LINK STALLED";
+                _alertBody.text = "SERVER IS NOT TAKING YOUR CONTROLS";
+                return;
+            }
+
+            _alertRail.color = LostLit;
+            _alertTitle.text = "LINK LOST";
+            _alertBody.text = _resetRequested
+                ? "RETURNING TO THE MENU — JOIN THE MATCH AGAIN"
+                : "MATCH SERVER STOPPED ANSWERING";
+        }
+
+        /// <summary>Hides the failure card. Healthy play and the main menu leave it off.</summary>
+        void HideAlert()
+        {
+            if (_alertRoot != null && _alertRoot.activeSelf)
+                _alertRoot.SetActive(false);
+        }
+
+        /// <summary>
+        /// Builds the top banner the first time the link fails. Its own canvas, not a
+        /// child of the leaderboard — that plate fades while the orbit station is open,
+        /// which is when a tiny pip is easiest to miss.
+        /// </summary>
+        void EnsureAlert()
+        {
+            if (_alertRoot != null)
+                return;
+
+            _alertRoot = new GameObject("LinkAlert", typeof(RectTransform));
+            _alertRoot.transform.SetParent(transform, false);
+
+            var canvas = _alertRoot.AddComponent<Canvas>();
+            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            canvas.sortingOrder = 280;
+            var scaler = _alertRoot.AddComponent<CanvasScaler>();
+            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            scaler.referenceResolution = new Vector2(1920f, 1080f);
+            scaler.matchWidthOrHeight = 0.5f;
+
+            var plateGo = new GameObject("Plate", typeof(RectTransform), typeof(Image));
+            plateGo.transform.SetParent(_alertRoot.transform, false);
+            var plateRt = plateGo.GetComponent<RectTransform>();
+            plateRt.anchorMin = new Vector2(0.22f, 1f);
+            plateRt.anchorMax = new Vector2(0.78f, 1f);
+            plateRt.pivot = new Vector2(0.5f, 1f);
+            plateRt.anchoredPosition = new Vector2(0f, -10f);
+            plateRt.sizeDelta = new Vector2(0f, 58f);
+            var plate = plateGo.GetComponent<Image>();
+            plate.color = new Color(PlateFill.r, PlateFill.g, PlateFill.b, 0.94f);
+            plate.raycastTarget = false;
+
+            var railGo = new GameObject("Rail", typeof(RectTransform), typeof(Image));
+            railGo.transform.SetParent(plateGo.transform, false);
+            var railRt = railGo.GetComponent<RectTransform>();
+            railRt.anchorMin = new Vector2(0f, 1f);
+            railRt.anchorMax = new Vector2(1f, 1f);
+            railRt.pivot = new Vector2(0.5f, 1f);
+            railRt.sizeDelta = new Vector2(0f, 2f);
+            _alertRail = railGo.GetComponent<Image>();
+            _alertRail.color = LostLit;
+            _alertRail.raycastTarget = false;
+
+            _alertTitle = CreateAlertLine(plateGo.transform, "Title", 16f, FontStyles.Bold, AlertTitle, -8f, 20f);
+            _alertBody = CreateAlertLine(plateGo.transform, "Body", 13f, FontStyles.Normal, AlertBody, -30f, 18f);
+        }
+
+        /// <summary>
+        /// One centered telemetry line on the failure card.
+        /// </summary>
+        /// <param name="parent">Plate the line sits on.</param>
+        /// <param name="objectName">Child name, for the hierarchy.</param>
+        /// <param name="fontSize">Point size.</param>
+        /// <param name="style">Bold for the title, regular for the line under it.</param>
+        /// <param name="color">Title is warm near-white; the body is the cockpit ice color.</param>
+        /// <param name="top">Y offset down from the plate's top edge.</param>
+        /// <param name="height">Line height in canvas pixels.</param>
+        /// <returns>The label, ready for text.</returns>
+        static TextMeshProUGUI CreateAlertLine(
+            Transform parent,
+            string objectName,
+            float fontSize,
+            FontStyles style,
+            Color color,
+            float top,
+            float height)
+        {
+            var go = new GameObject(objectName, typeof(RectTransform), typeof(TextMeshProUGUI));
+            go.transform.SetParent(parent, false);
+            var rt = go.GetComponent<RectTransform>();
+            rt.anchorMin = new Vector2(0f, 1f);
+            rt.anchorMax = new Vector2(1f, 1f);
+            rt.pivot = new Vector2(0.5f, 1f);
+            rt.anchoredPosition = new Vector2(0f, top);
+            rt.sizeDelta = new Vector2(-16f, height);
+
+            var tmp = go.GetComponent<TextMeshProUGUI>();
+            if (TMP_Settings.defaultFontAsset != null)
+                tmp.font = TMP_Settings.defaultFontAsset;
+            tmp.fontSize = fontSize;
+            tmp.fontStyle = style;
+            tmp.color = color;
+            tmp.alignment = TextAlignmentOptions.Center;
+            tmp.enableWordWrapping = false;
+            tmp.overflowMode = TextOverflowModes.Ellipsis;
+            tmp.raycastTarget = false;
+            return tmp;
+        }
+
+        /// <summary>
         /// Builds the pip on the leaderboard's top-left, just outside the plate.
-        /// No extra canvas — a private overlay was the wide banner in the middle
-        /// of the screen, including during load.
+        /// The pip has no canvas of its own. The failure card is <c>LinkAlert</c>,
+        /// a separate overlay that stays hidden until the link stalls or drops.
         /// </summary>
         /// <returns>False when the leaderboard panel is not in the scene yet.</returns>
         bool EnsureIcon()

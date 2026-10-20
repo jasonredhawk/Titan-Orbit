@@ -135,6 +135,9 @@ namespace TitanOrbit.Game
             {
                 if (IsOpen)
                     Hide();
+                // Main Menu has no pause card. Escape still closes field notes.
+                if (WasEscapePressedThisFrame() && BetaFeedbackHotkeyGate.NotesCardOpen)
+                    BetaFeedbackHotkeyGate.CloseRequested = true;
                 return;
             }
 
@@ -143,6 +146,13 @@ namespace TitanOrbit.Game
 
             if (!WasEscapePressedThisFrame())
                 return;
+
+            // Field notes are open: close that card and leave the pause card alone.
+            if (BetaFeedbackHotkeyGate.NotesCardOpen)
+            {
+                BetaFeedbackHotkeyGate.CloseRequested = true;
+                return;
+            }
 
             // Same-frame close from Resume / backdrop must not reopen.
             if (Time.frameCount <= _ignoreEscapeUntilFrame)

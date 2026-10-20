@@ -8,9 +8,10 @@ using UnityEngine;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// One bullet-impact instance per burning body. Each damage-over-time tick re-emits the
-    /// bank burst at the hit point and parents it so the fire follows a moving ship or rock.
-    /// Cosmetic only — ticks still come from the server burn HitRpc.
+    /// One bullet-impact instance per burning asteroid. Each damage-over-time tick
+    /// (<see cref="BulletVfxDriver"/> Sequence-0 burn HitRpc) restarts that impact at the
+    /// hit point and parents it so the burst follows the rock. Ships use
+    /// <see cref="ShipStatusLoopVfxApplier"/> instead. Cosmetic only.
     /// </summary>
     public static class BurnImpactLoop
     {
@@ -59,7 +60,7 @@ namespace TitanOrbit.Game
                 }
 
                 Place(live.Go, parent, worldPos);
-                VfxUrpCompat.ReplayParticleBursts(live.Go);
+                VfxUrpCompat.ReplayImpactAnimation(live.Go);
                 live.Parent = parent;
                 live.HadParent = parent != null;
                 live.LastPulse = now;
@@ -128,6 +129,8 @@ namespace TitanOrbit.Game
         {
             BulletImpactAttach.TryResolveAtLogicalPoint(
                 logicalHit, preferNonShip, out parent, out worldPos);
+            if (parent != null && !parent.gameObject.activeInHierarchy)
+                parent = null;
             if (parent == null && ToroidalDisplay.TryGetReferencePosition(out Vector3 reference))
                 worldPos = ToroidalDisplay.ToDisplayPosition(logicalHit, reference);
             return true;
@@ -161,9 +164,9 @@ namespace TitanOrbit.Game
             if (parent != null)
                 go.transform.SetParent(parent, true);
             MuteAudio(go);
-            if (!go.activeSelf)
-                go.SetActive(true);
-            VfxUrpCompat.SetParticleSystemsLooping(go, true);
+            // Inactive rent: Prepare enables the shell and plays the authored one-shot.
+            // Later ticks rewind that same shell — they do not force main.loop.
+            VfxUrpCompat.PrepareVfxInstance(go);
             return true;
         }
 
