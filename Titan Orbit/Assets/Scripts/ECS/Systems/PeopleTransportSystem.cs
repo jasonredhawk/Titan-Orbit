@@ -146,6 +146,7 @@ namespace TitanOrbit.ECS
             {
                 if (shipState.ValueRO.IsDead || shipState.ValueRO.AwaitingTeamSelection)
                 {
+                    // Seats are gone. Death presentation scatters the parked meshes on the client.
                     orbit.ValueRW.IsTransferringPeople = false;
                     PeopleTransportEscortLogic.ClearAll(state.EntityManager, shipEntity);
                     continue;

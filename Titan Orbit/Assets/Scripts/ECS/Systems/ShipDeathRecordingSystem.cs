@@ -66,8 +66,9 @@ namespace TitanOrbit.ECS
                 // Clamp only — world gem burst already happened during the killing damage pulses.
                 shipState.ValueRW.CurrentGems = 0f;
 
-                // Cargo still aboard dies with the hull. Unload hops that already left
-                // the ship keep flying in PeopleTransportSimulationSystem.
+                // Cargo still aboard dies with the hull. Seats are cleared here; the client
+                // presenter bursts those parked meshes outward instead of deleting them.
+                // Unload hops that already left the ship keep flying in PeopleTransportSimulationSystem.
                 shipState.ValueRW.CurrentPeople = 0;
                 PeopleTransportEscortLogic.ClearAll(state.EntityManager, entity);
                 kinematics.ValueRW.Velocity = Unity.Mathematics.float3.zero;

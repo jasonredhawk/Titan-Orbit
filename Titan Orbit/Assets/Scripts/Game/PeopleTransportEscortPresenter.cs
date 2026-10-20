@@ -20,6 +20,10 @@ namespace TitanOrbit.Game
     /// attack / defense / mining drones — no escort ghosts, pose is
     /// <see cref="PeopleTransportMath.EvaluateEscortSwarmPose"/>.
     /// In-flight seats are the hop VFX, not this presenter.
+    /// When the owning ship explodes, parked meshes burst and fly outward
+    /// instead of being destroyed in place. Launch uses the death word already
+    /// ghosted on the ship (<see cref="ShipDeathVfxState.Packed"/>), same as hull
+    /// chunks — no extra RPC or ghost field. Sim still drops the seats.
     /// </summary>
     [DefaultExecutionOrder(67020)]
     public sealed class PeopleTransportEscortPresenter : MonoBehaviour
@@ -28,6 +32,8 @@ namespace TitanOrbit.Game
         const float LiftY = 0.28f;
         /// <summary>At most 12 orbs, and only when the parked layout changes.</summary>
         const int MaxSpawnsPerFrame = 12;
+        /// <summary>Cosmetic coast. Hull chunks live until respawn; escorts are small and leave sooner.</summary>
+        const float ScatterLifetime = 2.4f;
 
         struct PackedSeat
         {
@@ -41,6 +47,20 @@ namespace TitanOrbit.Game
             public byte SeatId;
             public float Amount;
             public GameObject Instance;
+        }
+
+        struct ScatteringEscort
+        {
+            public GameObject Instance;
+            public float3 Position;
+            public float3 Velocity;
+            public float3 SpinDegPerSec;
+            public Vector3 BaseScale;
+            public float Age;
+            public float LinearDrag;
+            public float AngularDrag;
+            public bool Planar;
+            public bool Wrap;
         }
 
         sealed class ShipEscortGroup
@@ -61,6 +81,7 @@ namespace TitanOrbit.Game
         readonly List<int> _aliveIds = new List<int>(8);
         readonly List<int> _removeIds = new List<int>(8);
         readonly List<SlotVisual> _visualsScratch = new List<SlotVisual>(12);
+        readonly List<ScatteringEscort> _scattering = new List<ScatteringEscort>(16);
 
         World _cachedQueryWorld;
         EntityQuery _shipQuery;
@@ -108,6 +129,14 @@ namespace TitanOrbit.Game
         {
             if (!TitanOrbitDedicatedServerAutoBoot.ShouldRunClientPresentation())
                 return;
+
+            // Dying escorts keep flying even when ship queries are skipped this frame.
+            ToroidalMapEcs.TryGetMapSize(out float scatterMapW, out float scatterMapH);
+            TickScattering(
+                Time.deltaTime,
+                ToroidalMapEcs.IsValidMapSize(scatterMapW, scatterMapH),
+                scatterMapW,
+                scatterMapH);
             // [TITAN-ORBIT] Moon-dock land-prepare Instantiates can raise ShouldSkipShipEntityQueries.
             // Fully landed: drop parked orbs (orbit menu owns that state). Still approaching:
             // carry them with the hull so they do not freeze in orbit.
@@ -151,11 +180,19 @@ namespace TitanOrbit.Game
                     continue;
 
                 var shipState = em.GetComponentData<ShipState>(ship);
-                if (shipState.IsDead || shipState.AwaitingTeamSelection)
-                    continue;
-
                 int netId = em.GetComponentData<GhostOwner>(ship).NetworkId;
                 if (netId == 0)
+                    continue;
+
+                // Death: burst parked meshes with the hull. Do this before the moon-dock
+                // and range culls, which still delete escorts that are simply not drawn.
+                if (shipState.IsDead)
+                {
+                    ExplodeParkedEscorts(ship, em);
+                    continue;
+                }
+
+                if (shipState.AwaitingTeamSelection)
                     continue;
 
                 // Parked troop orbs vanish with the hull once this ship is fully moon-docked.
@@ -597,6 +634,10 @@ namespace TitanOrbit.Game
             }
         }
 
+        /// <summary>
+        /// Range cull, moon dock, and team select. Ship death does not use this —
+        /// <see cref="ExplodeParkedEscorts"/> bursts those meshes.
+        /// </summary>
         void DestroyGroup(int netId)
         {
             if (!_groups.TryGetValue(netId, out var group))
@@ -610,6 +651,224 @@ namespace TitanOrbit.Game
             _groups.Remove(netId);
         }
 
+        /// <summary>
+        /// Launch every parked escort mesh on a dying ship. Idempotent: the group is
+        /// removed on the first call, so the hull breakup and this presenter can both
+        /// ask in the same frame. In-flight hops are not in this group.
+        /// Motion is <see cref="ShipDeathDebrisMath.ComputeClusterLaunch"/> from the
+        /// existing packed death word. Nothing is replicated for the scatter.
+        /// </summary>
+        public static void ExplodeParkedEscorts(Entity ship, EntityManager em)
+        {
+            if (s_Instance == null || ship == Entity.Null || !em.Exists(ship))
+                return;
+            if (!em.HasComponent<ShipState>(ship) || !em.GetComponentData<ShipState>(ship).IsDead)
+                return;
+            if (!em.HasComponent<GhostOwner>(ship))
+                return;
+
+            int netId = em.GetComponentData<GhostOwner>(ship).NetworkId;
+            if (netId == 0)
+                return;
+            s_Instance.ExplodeGroup(netId, ship, em);
+        }
+
+        void ExplodeGroup(int netId, Entity ship, EntityManager em)
+        {
+            if (!_groups.TryGetValue(netId, out var group) || group.Visuals.Count == 0)
+            {
+                _groups.Remove(netId);
+                return;
+            }
+
+            // Take the group off the live set before spawning bursts so a second call
+            // this frame cannot launch the same meshes again.
+            _groups.Remove(netId);
+
+            bool haveMap = ToroidalMapEcs.TryGetMapSize(out float mapW, out float mapH)
+                           && ToroidalMapEcs.IsValidMapSize(mapW, mapH);
+            bool haveShipPos = TryGetShipPresentation(
+                em, ship, netId, out Vector3 shipPos, out _, out float shipScale);
+            if (!haveShipPos)
+                shipPos = CentroidOf(group);
+
+            // Same 4-byte death word the hull chunks unpack. If it has not arrived yet,
+            // the ship network id is a stable fallback — still no extra egress.
+            // Ship velocity is left at zero: death recording already clears it, and a
+            // predicted leftover would make only the local client diverge.
+            uint packed = 0;
+            if (em.HasComponent<ShipDeathVfxState>(ship))
+                packed = em.GetComponentData<ShipDeathVfxState>(ship).Packed;
+            if (packed == 0)
+                packed = ShipDeathVfxState.Pack((uint)netId, float2.zero, 0f);
+
+            float hullRadius = BodyCollisionMath.GetShipHullRadiusWorld(math.max(0.25f, shipScale));
+            TeamId team = em.HasComponent<ShipState>(ship)
+                ? em.GetComponentData<ShipState>(ship).Team
+                : TeamId.None;
+
+            for (int i = 0; i < group.Visuals.Count; i++)
+            {
+                SlotVisual vis = group.Visuals[i];
+                if (vis.Instance == null)
+                    continue;
+
+                var plate = vis.Instance.GetComponent<PeopleTransportNameplate>();
+                if (plate != null)
+                    plate.enabled = false;
+
+                Vector3 world = vis.Instance.transform.position;
+                float3 offset = EscortOffsetFromShip(shipPos, world, haveMap, mapW, mapH);
+                bool launched = ShipDeathDebrisDriver.TryLaunchTroopTransport(
+                    packed,
+                    vis.SeatId,
+                    offset,
+                    hullRadius,
+                    float3.zero,
+                    out float3 velocity,
+                    out float3 spin,
+                    out float linearDrag,
+                    out float angularDrag,
+                    out bool planar);
+                if (!launched)
+                    FallbackLaunch(vis.SeatId, offset, out velocity, out spin, out linearDrag, out angularDrag, out planar);
+
+                Vector3 lossy = vis.Instance.transform.lossyScale;
+                float extent = math.max(math.abs(lossy.x), math.max(math.abs(lossy.y), math.abs(lossy.z)));
+                float burstScale = math.clamp(extent * 4.2f, 0.7f, 1.75f);
+                ShipDeathDebrisDriver.PlayTroopTransportBurst(world, team, burstScale);
+
+                bool wrap = haveMap
+                            && math.abs(world.x) <= mapW * 0.5f + 0.01f
+                            && math.abs(world.z) <= mapH * 0.5f + 0.01f;
+                _scattering.Add(new ScatteringEscort
+                {
+                    Instance = vis.Instance,
+                    Position = world,
+                    Velocity = velocity,
+                    SpinDegPerSec = spin,
+                    BaseScale = vis.Instance.transform.localScale,
+                    Age = 0f,
+                    LinearDrag = linearDrag,
+                    AngularDrag = angularDrag,
+                    Planar = planar,
+                    Wrap = wrap,
+                });
+            }
+
+            group.Visuals.Clear();
+        }
+
+        static Vector3 CentroidOf(ShipEscortGroup group)
+        {
+            Vector3 sum = Vector3.zero;
+            int count = 0;
+            for (int i = 0; i < group.Visuals.Count; i++)
+            {
+                if (group.Visuals[i].Instance == null)
+                    continue;
+                sum += group.Visuals[i].Instance.transform.position;
+                count++;
+            }
+
+            return count > 0 ? sum / count : Vector3.zero;
+        }
+
+        /// <summary>Shortest XZ offset from the ship to this escort. Y is the visual height.</summary>
+        static float3 EscortOffsetFromShip(
+            Vector3 shipPos,
+            Vector3 world,
+            bool haveMap,
+            float mapW,
+            float mapH)
+        {
+            Vector3 raw = haveMap
+                ? DroneSwarmLogic.ToroidalOffsetXZ(
+                    new Vector3(shipPos.x, 0f, shipPos.z),
+                    new Vector3(world.x, 0f, world.z),
+                    mapW,
+                    mapH)
+                : new Vector3(world.x - shipPos.x, 0f, world.z - shipPos.z);
+            return new float3(raw.x, world.y - shipPos.y, raw.z);
+        }
+
+        /// <summary>
+        /// Used only when the debris driver is not up. Seat index picks a heading so
+        /// the transports still leave on different rays. No clock, no network.
+        /// </summary>
+        static void FallbackLaunch(
+            int seatId,
+            float3 offset,
+            out float3 velocity,
+            out float3 spinDegPerSec,
+            out float linearDrag,
+            out float angularDrag,
+            out bool planar)
+        {
+            float3 dir = new float3(offset.x, 0f, offset.z);
+            if (math.lengthsq(dir) < 0.02f)
+            {
+                float ang = (seatId + 0.5f) * (math.PI * 2f / 12f);
+                math.sincos(ang, out float s, out float c);
+                dir = new float3(c, 0f, s);
+            }
+            else
+                dir = math.normalize(dir);
+
+            velocity = dir * 12f;
+            spinDegPerSec = new float3(0f, seatId % 2 == 0 ? 180f : -180f, 0f);
+            linearDrag = 0.72f;
+            angularDrag = 0.35f;
+            planar = false;
+        }
+
+        void TickScattering(float dt, bool haveMap, float mapW, float mapH)
+        {
+            if (dt <= 0f || _scattering.Count == 0)
+                return;
+
+            for (int i = _scattering.Count - 1; i >= 0; i--)
+            {
+                ScatteringEscort fly = _scattering[i];
+                if (fly.Instance == null)
+                {
+                    _scattering.RemoveAt(i);
+                    continue;
+                }
+
+                fly.Age += dt;
+                if (fly.Age >= ScatterLifetime)
+                {
+                    Destroy(fly.Instance);
+                    _scattering.RemoveAt(i);
+                    continue;
+                }
+
+                // Same damping as hull chunks. Planar deaths stay on the map.
+                ShipDeathDebrisMath.IntegrateDrag(
+                    ref fly.Velocity,
+                    ref fly.SpinDegPerSec,
+                    dt,
+                    fly.LinearDrag,
+                    fly.AngularDrag);
+                fly.Position += fly.Velocity * dt;
+                if (fly.Planar)
+                    fly.Position.y = fly.Instance.transform.position.y;
+                if (fly.Wrap && haveMap)
+                    fly.Position = ToroidalMapEcs.Wrap(fly.Position, mapW, mapH);
+
+                float remain = 1f - fly.Age / ScatterLifetime;
+                float shrink = remain < 0.28f ? math.lerp(0.2f, 1f, remain / 0.28f) : 1f;
+                fly.Instance.transform.position = fly.Position;
+                fly.Instance.transform.localScale = fly.BaseScale * shrink;
+                fly.Instance.transform.rotation = Quaternion.Euler(
+                    fly.SpinDegPerSec.x * dt,
+                    fly.SpinDegPerSec.y * dt,
+                    fly.SpinDegPerSec.z * dt) * fly.Instance.transform.rotation;
+                _scattering[i] = fly;
+            }
+        }
+
         void ClearAll()
         {
             _removeIds.Clear();
@@ -617,6 +876,18 @@ namespace TitanOrbit.Game
                 _removeIds.Add(key);
             for (int i = 0; i < _removeIds.Count; i++)
                 DestroyGroup(_removeIds[i]);
+            ClearScattering();
+        }
+
+        void ClearScattering()
+        {
+            for (int i = 0; i < _scattering.Count; i++)
+            {
+                if (_scattering[i].Instance != null)
+                    Destroy(_scattering[i].Instance);
+            }
+
+            _scattering.Clear();
         }
 
         void EnsureQueries(World world)

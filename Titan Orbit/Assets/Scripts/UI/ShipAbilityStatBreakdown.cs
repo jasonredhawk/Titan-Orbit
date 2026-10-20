@@ -1003,9 +1003,9 @@ namespace TitanOrbit.UI
         /// <summary>
         /// One FLEET BONUS cell. <paramref name="mul"/> is the match roll already
         /// resolved for this stat (1 when the family does not change it).
-        /// Ice green <c>+%</c> adds and amber <c>-%</c> reduces inside ±40%.
-        /// At or past that cut the cell turns electric teal or crimson, matching the
-        /// Orbit Menu Fleet Bonuses wheel. Muted <c>×1</c> is stock.
+        /// Ice green <c>+%</c> adds under +40%; electric teal is a gain at or past +40%.
+        /// Amber <c>-%</c> reduces a loss milder than −20%; crimson is a loss at or past −20%.
+        /// Those cuts match the Orbit Menu Fleet Bonuses wheel. Muted <c>×1</c> is stock.
         /// </summary>
         static void AppendFleetBonusCell(StringBuilder sb, float mul)
         {
@@ -1030,7 +1030,7 @@ namespace TitanOrbit.UI
             if (signed > 0.05f)
             {
                 text = "+" + signed.ToString("0.#", CultureInfo.InvariantCulture) + "%";
-                // Same ±40% cut as the Fleet Bonuses wheel (teal / crimson past the line).
+                // Same cuts as the Fleet Bonuses wheel (teal at +40%, crimson at −20%).
                 hex = FamilyStatHudCopy.HexForSignedPercent(signed);
                 return;
             }

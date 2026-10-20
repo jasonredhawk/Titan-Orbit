@@ -19,6 +19,8 @@ namespace TitanOrbit.Game
     /// Client-only: clones prefab components on a dying ship, groups nearby ones into
     /// 2–5 rigid chunks, and flies those chunks as non-interactive debris until respawn.
     /// Fire/V2 one-shots retrigger at torn contacts (parts that used to touch).
+    /// Parked troop transports burst and fly off from the same <see cref="TryBegin"/>
+    /// call; their meshes live on <see cref="PeopleTransportEscortPresenter"/>.
     /// Chunks bounce off ship / asteroid ghosts with toroidal sphere math (no PhysicsCollider,
     /// nothing on the server). Motion is seeded from <see cref="ShipDeathVfxState.Packed"/>
     /// so all clients match when that ghost word has arrived; if it is still 0 we still
@@ -169,7 +171,63 @@ namespace TitanOrbit.Game
             if (em.HasComponent<ShipDeathVfxState>(ship))
                 packed = em.GetComponentData<ShipDeathVfxState>(ship).Packed;
 
+            // Parked troop transports explode with the hull, even if the wreck snapshot
+            // fails. Same frame as this breakup. The presenter no-ops if it also sees IsDead.
+            PeopleTransportEscortPresenter.ExplodeParkedEscorts(ship, em);
+
             return s_instance.Begin(ship, proxy, em, packed);
+        }
+
+        /// <summary>True when ship wreckage is allowed to leave the map plane.</summary>
+        public static bool ExplodesInFull3D =>
+            s_instance == null || s_instance._settings == null || s_instance._settings.ExplodeInFull3D;
+
+        /// <summary>
+        /// Troop-transport launch, same formula as a hull chunk. <paramref name="packed"/> is
+        /// <see cref="ShipDeathVfxState.Packed"/> (already on the ship ghost). Seat index
+        /// picks this transport's draw. No new snapshot data.
+        /// </summary>
+        public static bool TryLaunchTroopTransport(
+            uint packed,
+            int seatId,
+            float3 offsetFromCenter,
+            float hullRadius,
+            float3 shipVelocity,
+            out float3 velocity,
+            out float3 spinDegPerSec,
+            out float linearDrag,
+            out float angularDrag,
+            out bool planar)
+        {
+            velocity = float3.zero;
+            spinDegPerSec = float3.zero;
+            linearDrag = 0.72f;
+            angularDrag = 0.35f;
+            planar = false;
+            if (s_instance == null || s_instance._settings == null)
+                return false;
+
+            uint word = packed != 0 ? packed : 1u;
+            ShipDeathVfxState.Unpack(word, out uint seed, out float2 impulseDir, out float power01);
+            if (seed == 0)
+                seed = 1;
+
+            ShipDeathDebrisMath.ComputeClusterLaunch(
+                seed,
+                seatId,
+                offsetFromCenter,
+                impulseDir,
+                power01,
+                math.max(0.25f, hullRadius),
+                shipVelocity,
+                s_instance._settings,
+                out velocity,
+                out spinDegPerSec);
+
+            linearDrag = s_instance._settings.LinearDrag;
+            angularDrag = s_instance._settings.AngularDrag;
+            planar = !s_instance._settings.ExplodeInFull3D;
+            return true;
         }
 
         /// <summary>True when this ship already has flying debris (hide the live hull).</summary>
@@ -662,6 +720,33 @@ namespace TitanOrbit.Game
                 pitch,
                 scale,
                 BulletVisualFactory.DefaultImpactDuration);
+        }
+
+        /// <summary>
+        /// Muted team Fire/V2 burst for one troop transport dying with the ship.
+        /// Spawned at the mesh's current world pose (already presentation space).
+        /// Audio stays off — <see cref="AudioManager.PlayShipDeathSound"/> covers the moment.
+        /// </summary>
+        public static void PlayTroopTransportBurst(Vector3 worldPosition, TeamId team, float scale)
+        {
+            if (s_instance == null || TitanOrbitDebugFlags.IsolateDisableImpactVfx)
+                return;
+            s_instance.PlayEscortDeathBurst(worldPosition, team, scale);
+        }
+
+        void PlayEscortDeathBurst(Vector3 worldPosition, TeamId team, float scale)
+        {
+            GameObject prefab = PickExplosionPrefab(team);
+            if (prefab == null)
+                return;
+            if (!BulletOneShotVfxPool.TryRent(prefab, out GameObject go) || go == null)
+                return;
+
+            go.transform.SetPositionAndRotation(worldPosition, Quaternion.identity);
+            VfxUrpCompat.ApplyImpactVisualScale(go, math.clamp(scale, 0.35f, 2.2f));
+            MuteAudio(go);
+            VfxUrpCompat.PrepareVfxInstance(go);
+            BulletOneShotVfxPool.ScheduleReturn(go, 1.5f);
         }
 
         /// <summary>

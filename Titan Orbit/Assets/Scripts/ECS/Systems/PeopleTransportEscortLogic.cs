@@ -523,7 +523,10 @@ namespace TitanOrbit.ECS
             return -1f;
         }
 
-        /// <summary>Drop every escort orb (death / respawn).</summary>
+        /// <summary>
+        /// Drop every escort seat (death / respawn / team select). Sim only —
+        /// parked meshes scatter on the client when the ship explodes.
+        /// </summary>
         public static void ClearAll(EntityManager em, Entity ship)
         {
             if (!em.HasBuffer<PeopleEscortVitalElement>(ship))
