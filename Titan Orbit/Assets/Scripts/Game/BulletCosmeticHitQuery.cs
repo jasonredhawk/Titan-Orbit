@@ -1051,10 +1051,22 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Lifts a play-plane tracer toward a nearby MEGA hull midline so the slug
-        /// meets the 3D mesh instead of sliding through it at Y=0.
+        /// Lifts a tracer toward a nearby MEGA hull midline so the slug meets that
+        /// mesh. The shooter's own hull is skipped — its cannon height is a separate
+        /// visual offset and must not be pulled down to the box center.
         /// </summary>
-        public static bool TryGetMegaFlightLiftY(float3 logicalPos, out float hullMidY, out float blend)
+        public static bool TryGetMegaFlightLiftY(float3 logicalPos, out float hullMidY, out float blend) =>
+            TryGetMegaFlightLiftY(logicalPos, 0, out hullMidY, out blend);
+
+        /// <summary>
+        /// Same as <see cref="TryGetMegaFlightLiftY(float3, out float, out float)"/> but
+        /// ignores the firing ship so a tall turret keeps its cannon Y.
+        /// </summary>
+        public static bool TryGetMegaFlightLiftY(
+            float3 logicalPos,
+            int excludeOwnerNetworkId,
+            out float hullMidY,
+            out float blend)
         {
             hullMidY = 0f;
             blend = 0f;
@@ -1063,6 +1075,8 @@ namespace TitanOrbit.Game
             {
                 var o = Obstacles[i];
                 if (o.Kind != ObstacleKind.Ship || !o.HasOrientedBox)
+                    continue;
+                if (excludeOwnerNetworkId > 0 && o.OwnerNetworkId == excludeOwnerNetworkId)
                     continue;
 
                 float3 boxCenter = o.LogicalCenter;

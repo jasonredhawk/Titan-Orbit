@@ -930,9 +930,11 @@ namespace TitanOrbit.ECS
                 : weaponCfg.BulletLifetime;
 
             // Missiles and the Rockets bank keep each weapon's own base.
-            // Every other ship bullet compares its fire power to 3.
+            // Every other bullet, Titan guns included, divides by the bullet
+            // bank asset reference. Snipers divide by 50 instead.
             bool fixedBulletReference = mount.WeaponKind != ShipWeaponKind.Missile
                 && !RocketHomingFire.IsRocketBank(bankIndex);
+            bool sniperVisual = mount.WeaponKind == ShipWeaponKind.Sniper;
             var plan = BulletShotMath.Build(
                 fireOrigin,
                 fireForward,
@@ -952,7 +954,8 @@ namespace TitanOrbit.ECS
                 categoryUpgradeScale,
                 shipPeakDps,
                 shipReferenceDps,
-                fixedBulletReference);
+                fixedBulletReference,
+                sniperVisual);
 
             byte homing = 0;
             float turnSpeedDeg = 0f;

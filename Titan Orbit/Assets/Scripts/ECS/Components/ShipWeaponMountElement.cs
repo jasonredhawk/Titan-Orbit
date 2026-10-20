@@ -34,6 +34,14 @@ namespace TitanOrbit.ECS
         /// </summary>
         public float3 LocalPosition;
 
+        /// <summary>
+        /// Prefab-unit offset from <see cref="LocalPosition"/> to the cannon mesh tip,
+        /// in the mount's local frame (barrel forward is +Z). Zero on regular ships.
+        /// <see cref="ShipWeaponPose"/> rotates it with <see cref="LocalRotation"/> so a
+        /// turning turret fires from the tip, not the yaw pivot.
+        /// </summary>
+        public float3 MuzzleTipLocal;
+
         /// <summary>[UNITY] Local rotation of the mount relative to hull.</summary>
         public quaternion LocalRotation;
 
@@ -205,8 +213,13 @@ namespace TitanOrbit.ECS
             // server bullets spawned ~4u beside the visible hull while client tracers used live
             // GO muzzles on the scaled mesh — player had to aim ~20° off to land hits.
             float ecsScale = math.max(0.25f, shipTransform.Scale);
+            // Pivot plus the cannon tip, swung by the live turret yaw. Regular mounts
+            // leave MuzzleTipLocal at zero and stay on the baked muzzle.
+            float3 localMuzzle = mount.LocalPosition;
+            if (math.lengthsq(mount.MuzzleTipLocal) > 1e-8f)
+                localMuzzle += math.mul(mount.LocalRotation, mount.MuzzleTipLocal);
             float3 presentationLocal =
-                mount.LocalPosition * (BodyCollisionMath.ShipPresentationScale * ecsScale);
+                localMuzzle * (BodyCollisionMath.ShipPresentationScale * ecsScale);
             fireOrigin = shipTransform.Position + math.rotate(shipTransform.Rotation, presentationLocal);
 
             // --- Hull-relative cannon forward ---

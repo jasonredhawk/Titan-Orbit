@@ -384,6 +384,9 @@ namespace TitanOrbit.UI
             }
 
             cache.Propulsion = default;
+            // Titans are not a family chassis. Fleet rolls are the purchase planet's
+            // ShipFamilyConfigIndex (MegaShipStatsCalculator.ResolveFleetBonuses),
+            // read when the ability card builds — not this cache.
             cache.Family = null;
             cache.ChassisId = chassisId;
             cache.ShipLevel = shipLevel;

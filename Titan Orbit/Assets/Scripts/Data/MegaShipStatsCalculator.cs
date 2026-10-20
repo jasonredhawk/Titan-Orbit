@@ -231,8 +231,9 @@ namespace TitanOrbit.Data
         /// <summary>
         /// Fleet bonuses for the ship family a Titan was bought with.
         /// Home slot (config index 0) is exactly 1× during a match. Every other
-        /// planet's family uses this match's roll (half to double). With no match
-        /// seed yet, this is the family's authored preview multipliers — the same
+        /// planet's family uses this match's bell-curve roll (centered on 1×, tails
+        /// half to double). With no match seed yet, this is the family's authored
+        /// preview multipliers — the same
         /// numbers a regular hull on that planet would use.
         /// </summary>
         /// <param name="familyConfigIndex">

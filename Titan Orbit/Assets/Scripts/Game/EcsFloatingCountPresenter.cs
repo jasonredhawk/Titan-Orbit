@@ -692,13 +692,19 @@ namespace TitanOrbit.Game
         /// Null = +Damage only (legacy / non-authoritative path).
         /// </param>
         /// <param name="impactWorldPosition">Display-space hit point from the tracer / HitRpc.</param>
+        /// <param name="sustainDepletedEstimate">
+        /// Laser beams only. Keep adding after the client HP estimate hits 0 until the
+        /// rock is actually destroyed. Bullet HitRpc must leave this false so a sniper
+        /// overkill does not stack on a baseline PollAsteroids already zeroed.
+        /// </param>
         /// <returns>True when a popup was spawned.</returns>
         public static bool TryNotifyLocalAsteroidBulletHit(
             Entity asteroidEntity,
             float damage,
             TeamId ownerTeam,
             float? authoritativeRemainingHealth = null,
-            Vector3? impactWorldPosition = null)
+            Vector3? impactWorldPosition = null,
+            bool sustainDepletedEstimate = false)
         {
             // [TITAN-ORBIT] Isolation F2 — skip floats to see if Instantiates/UI drives the step.
             if (TitanOrbitDebugFlags.IsolateDisableFloatingCounts)
@@ -741,12 +747,19 @@ namespace TitanOrbit.Game
                 // Killing blow: the bullet can exceed the rock. PollAsteroids (Update)
                 // already showed the HP actually removed and zeroed the baseline.
                 // A later HitRpc must not add the full sniper damage on top.
+                // Laser slices are the exception — the seed-HP estimate hits 0 while
+                // the server is still burning, and the streak must keep moving until
+                // AsteroidDestroyedRpc actually pops the rock.
                 if (remainingHealth.Value <= 0.01f &&
                     presenter._asteroidHealth.TryGetValue(asteroidEntity, out float trackedBefore))
                 {
                     if (trackedBefore <= 0.01f)
-                        return false;
-                    shownDamage = Mathf.Min(damage, trackedBefore);
+                    {
+                        if (!sustainDepletedEstimate || state.IsDestroyed)
+                            return false;
+                    }
+                    else
+                        shownDamage = Mathf.Min(damage, trackedBefore);
                 }
 
                 // Align PollAsteroids baseline so a late ghost snapshot does not double-popup.
@@ -917,8 +930,10 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Presentation damage for a live cannon-laser beam. Lasers never send
-        /// <c>BulletHitRpc</c> (a per-tick RPC per barrel would hitch the ~60 Hz step),
-        /// so the client beam driver reports <c>firePower × fireRate × ramp × dt</c> here.
+        /// <c>BulletHitRpc</c> (a per-tick RPC per barrel would hitch the ~60 Hz step).
+        /// The beam driver passes one slice per new
+        /// <c>CannonLaserBurnSequence</c> step (server tick × ramped DPS) so the
+        /// streak stays on the same timeline as <c>AsteroidDestroyedRpc</c>.
         /// Ships reuse <see cref="TryNotifyShipBulletHit"/> (card resist + optimistic hull).
         /// Asteroids reuse the mining float, local shots only — same rule as bullet HitRpc.
         /// Same-team / heal beams are ignored (heal still comes from <see cref="PollShips"/>).
@@ -972,21 +987,22 @@ namespace TitanOrbit.Game
                 return false;
 
             var rock = em.GetComponentData<AsteroidState>(target);
-            if (rock.IsDestroyed)
+            // Seed-hydrated Health stays at spawn until DestroyRpc. A local DPS
+            // integral used to hit 0 while the rock was still alive, and the
+            // shared bullet gate then froze the streak until the pop (~a round
+            // trip later). Keep adding replicated slices until that destroy.
+            float tracked = presenter.PeekTrackedAsteroidHealth(target, rock.Health);
+            if (rock.IsDestroyed && tracked <= 0.01f)
                 return false;
 
-            // Seed-hydrated Health stays at spawn until DestroyRpc. Keep adding
-            // to the damage streak after the client estimate hits 0 — gating on
-            // remaining paused the counter until PollAsteroids snapped spawn HP
-            // back, then the same popup jumped again right before the rock popped.
-            float tracked = presenter.PeekTrackedAsteroidHealth(target, rock.Health);
             float remaining = math.max(0f, tracked - slice);
             return TryNotifyLocalAsteroidBulletHit(
                 target,
                 slice,
                 ownerTeam,
                 authoritativeRemainingHealth: remaining,
-                impactWorldPosition: impactDisplayPos);
+                impactWorldPosition: impactDisplayPos,
+                sustainDepletedEstimate: !rock.IsDestroyed);
         }
 
         /// <summary>

@@ -215,10 +215,13 @@ namespace TitanOrbit.ECS.Authoring
 
                     ShipChassisPrefabBakeUtility.GetHullRootLocalPose(
                         hullRoot, mount.transform, out float3 localPos, out quaternion localRot);
+                    quaternion planarRot = ShipChassisPrefabBakeUtility.ToPlanarYawLocalRotation(localRot);
                     mounts.Add(new ShipWeaponMountElement
                     {
                         LocalPosition = localPos,
-                        LocalRotation = ShipChassisPrefabBakeUtility.ToPlanarYawLocalRotation(localRot),
+                        MuzzleTipLocal = ShipChassisPrefabBakeUtility.MeasureMuzzleTipLocal(
+                            hullRoot, mount.transform, planarRot),
+                        LocalRotation = planarRot,
                         DirectionAngleDeg = mount.DirectionAngleDeg,
                         CannonIndex = mount.CannonIndex,
                     });
@@ -236,10 +239,13 @@ namespace TitanOrbit.ECS.Authoring
 
                         ShipChassisPrefabBakeUtility.GetHullRootLocalPose(
                             hullRoot, t, out float3 localPos, out quaternion localRot);
+                        quaternion planarRot = ShipChassisPrefabBakeUtility.ToPlanarYawLocalRotation(localRot);
                         mounts.Add(new ShipWeaponMountElement
                         {
                             LocalPosition = localPos,
-                            LocalRotation = ShipChassisPrefabBakeUtility.ToPlanarYawLocalRotation(localRot),
+                            MuzzleTipLocal = ShipChassisPrefabBakeUtility.MeasureMuzzleTipLocal(
+                                hullRoot, t, planarRot),
+                            LocalRotation = planarRot,
                             DirectionAngleDeg = 0f,
                             CannonIndex = mounts.Length,
                         });

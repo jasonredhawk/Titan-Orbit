@@ -110,7 +110,7 @@ namespace TitanOrbit.Editor
             EditorGUILayout.HelpBox(
                 "Editor preview of the old per-ship trade-offs. A running match ignores these. " +
                 "Home-planet ships stay at 1×. Every other planet's family is rolled from the " +
-                "match seed between 0.5 and 2.0. Quit Play Mode before rebaking power scores " +
+                "match seed on a bell curve centered on 1× (tails 0.5 to 2.0). Quit Play Mode before rebaking power scores " +
                 "so the bake keeps these preview numbers.",
                 MessageType.None);
 

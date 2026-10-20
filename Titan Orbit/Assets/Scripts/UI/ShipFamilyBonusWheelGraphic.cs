@@ -10,8 +10,10 @@ namespace TitanOrbit.UI
     /// Each spoke is one <see cref="FamilyStatHudCopy.BonusRow"/> (MOVE, RAM, …).
     /// The ice ring is the stock 1.00× base; spokes past the ring are boosts,
     /// spokes short of the ring are penalties. Spokes pack on the left / right
-    /// so titles are not stacked at 12 and 6. Colour follows the power-bar
-    /// category (MOVE cyan, COMBAT orange, HULL green, ENERGY gold, HOLD purple).
+    /// so titles are not stacked at 12 and 6. A live spoke is coloured by how
+    /// large the roll is: ice green or amber inside ±40%, electric teal or crimson
+    /// past that. Stock 1× spokes stay a washed category tint. Camera zoom
+    /// stays ice — height is neither a boost nor a penalty.
     /// <para>
     /// Line-only: rings and spokes, no filled wedges. The mesh stops inside
     /// <see cref="LabelBand"/> so <see cref="ShipFamilyBonusListUI"/> can sit a
@@ -203,17 +205,20 @@ namespace TitanOrbit.UI
                 float length = radius * frac;
                 float hub = radius * 0.14f;
                 Color spoke = ColorForSpoke(row);
-                float thick = row.IsIdentity ? 1.05f : 2.0f;
+                // Extreme tails are a hair thicker so a ±40% roll reads before the label.
+                bool extreme = !row.IsIdentity && !row.IsNeutral
+                    && Mathf.Abs(row.SignedPercent) >= FamilyStatHudCopy.ExtremeSignedPercent;
+                float thick = row.IsIdentity ? 1.05f : (extreme ? 2.45f : 2.0f);
                 Vector2 dir = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle));
                 Vector2 a = center + dir * hub;
                 Vector2 b = center + dir * length;
                 AddLineQuad(vh, a, b, spoke, thick);
 
-                // Tip cap — boost green / penalty amber so length polarity is obvious.
+                // Tip cap uses the same tier colour as the spoke so the end of the line matches the percent.
                 if (!row.IsIdentity)
                 {
                     Color tip = ColorForTip(row);
-                    AddDisc(vh, b, row.IsIdentity ? 1.2f : 2.1f, tip, 8);
+                    AddDisc(vh, b, extreme ? 3.15f : 2.1f, tip, 8);
                 }
             }
         }
@@ -289,16 +294,26 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Stock 1.00× keeps the category hue but washed out. Live spokes use
-        /// the full power-bar tone. Not a flat grey.
+        /// Stock 1.00× keeps a washed category hue. A live gain or loss uses the
+        /// magnitude tier (ice green, amber, electric teal, crimson). Camera zoom
+        /// stays ice. Not a flat grey.
         /// </summary>
         public static Color ColorForSpoke(in FamilyStatHudCopy.BonusRow row)
         {
-            Color c = ColorForCategory(row.Category);
             if (row.IsIdentity)
-                return MuteCategory(c);
-            c.a = 0.90f;
-            return c;
+                return MuteCategory(ColorForCategory(row.Category));
+
+            // --- Good / bad tier ---
+            // [TITAN-ORBIT] Category still decides which side-arc the spoke sits on.
+            // The line itself answers "how big is this roll?"
+            if (FamilyStatHudCopy.TryGetMagnitudeColor(row, out Color tier))
+            {
+                tier.a = 0.92f;
+                return tier;
+            }
+
+            // Camera height — neither a boost nor a penalty.
+            return new Color(0.62f, 0.78f, 0.95f, 0.90f);
         }
 
         /// <summary>Washes a category colour toward the void so 1.00× stays tinted, not grey.</summary>
@@ -309,15 +324,17 @@ namespace TitanOrbit.UI
             return muted;
         }
 
-        /// <summary>Tip colour: boost green, penalty amber, camera ice.</summary>
+        /// <summary>
+        /// Tip colour. Same tier as the spoke: ice green / amber for a regular
+        /// roll, electric teal / crimson at or past ±<see cref="FamilyStatHudCopy.ExtremeSignedPercent"/>.
+        /// Camera zoom stays ice.
+        /// </summary>
         static Color ColorForTip(in FamilyStatHudCopy.BonusRow row)
         {
+            if (FamilyStatHudCopy.TryGetMagnitudeColor(row, out Color tier))
+                return tier;
             if (row.IsNeutral)
                 return new Color(0.62f, 0.78f, 0.95f, 1f);
-            if (row.IsBoost)
-                return new Color(0.35f, 0.98f, 0.62f, 1f);
-            if (row.IsPenalty)
-                return new Color(0.95f, 0.72f, 0.32f, 1f);
             return ColorForCategory(row.Category);
         }
 

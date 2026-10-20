@@ -35,6 +35,22 @@ namespace TitanOrbit.Simulation
         }
 
         /// <summary>
+        /// Size divisor for a sniper only. Every other bullet, Titan guns included,
+        /// divides fire power by <see cref="BulletVfxBank.BulletReferenceFirePower"/>
+        /// on the bullet bank asset. The sniper does not.
+        /// </summary>
+        public const float SniperVisualReferenceFirePower = 50f;
+
+        /// <summary>
+        /// Tracer scale for a sniper, before the bank global multiply.
+        /// Fire power ÷ <see cref="SniperVisualReferenceFirePower"/>.
+        /// </summary>
+        public static float ComputeSniperShotScale(float firePower)
+        {
+            return firePower / SniperVisualReferenceFirePower;
+        }
+
+        /// <summary>
         /// Kept for call-site compatibility only — speed no longer drives visual size.
         /// </summary>
         public const float DefaultReferenceBulletSpeed = 20f;

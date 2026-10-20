@@ -24,6 +24,10 @@ namespace TitanOrbit.UI
     /// MEGA hulls skip Extra Level on catalog parts and show static unique-component
     /// sums (no +per-buy). Equipped moon-store gear adds PerExtra × shipLevel only
     /// (no Base) and appears in a GEAR section on Titan cards.
+    /// Those Titan numbers include the purchase planet's fleet roll (home world ×1,
+    /// every other family this match's bell curve). The MEGA part cache has no family
+    /// asset, so the roll is <see cref="MegaShipStatsCalculator.ResolveFleetBonuses"/>
+    /// on <c>ShipState.ShipFamilyConfigIndex</c> — the same multiply the motor applies.
     /// The Fire Power card prints rate of fire in the DPS product so a parts total
     /// (damage per shot) and the chip (damage per second) multiply in view.
     /// Token colours are shared: violet = start scale, amber = part count N, steel = Primary,
@@ -999,8 +1003,9 @@ namespace TitanOrbit.UI
         /// <summary>
         /// One FLEET BONUS cell. <paramref name="mul"/> is the match roll already
         /// resolved for this stat (1 when the family does not change it).
-        /// Green <c>+%</c> adds, amber <c>-%</c> reduces, muted <c>×1</c> is stock.
-        /// Colours match the Orbit Menu Fleet Bonuses wheel.
+        /// Ice green <c>+%</c> adds and amber <c>-%</c> reduces inside ±40%.
+        /// At or past that cut the cell turns electric teal or crimson, matching the
+        /// Orbit Menu Fleet Bonuses wheel. Muted <c>×1</c> is stock.
         /// </summary>
         static void AppendFleetBonusCell(StringBuilder sb, float mul)
         {
@@ -1025,14 +1030,15 @@ namespace TitanOrbit.UI
             if (signed > 0.05f)
             {
                 text = "+" + signed.ToString("0.#", CultureInfo.InvariantCulture) + "%";
-                hex = FamilyStatHudCopy.HexBoost;
+                // Same ±40% cut as the Fleet Bonuses wheel (teal / crimson past the line).
+                hex = FamilyStatHudCopy.HexForSignedPercent(signed);
                 return;
             }
 
             if (signed < -0.05f)
             {
                 text = "-" + Mathf.Abs(signed).ToString("0.#", CultureInfo.InvariantCulture) + "%";
-                hex = FamilyStatHudCopy.HexPenalty;
+                hex = FamilyStatHudCopy.HexForSignedPercent(signed);
                 return;
             }
 
@@ -1045,17 +1051,29 @@ namespace TitanOrbit.UI
         /// damage per shot, so its FLEET BONUS column cannot also be cadence.
         /// Prints even at ×1 so a stock rate is visible next to a damage bonus.
         /// Called only when the Fire Power details card rebuilds — not every frame.
+        /// Titans read the purchase planet via <see cref="ResolveMegaFleet"/> —
+        /// their part cache has no family asset, so <c>parts.Family</c> would always
+        /// print ×1 while the shots-per-second number already includes the roll.
+        /// A family or gear bullet that brings its own rate prints ×1, matching the shot.
         /// </summary>
         static void AppendFireRateFleetLine(
             StringBuilder sb,
-            in ShipSpeedometerStatTooltips.PartCache parts)
+            in ShipSpeedometerStatTooltips.PartCache parts,
+            in ShipSpeedometerStatTooltips.LiveContext live)
         {
+            // --- Which roll this cadence actually used ---
             float rateMul = 1f;
-            if (parts.Family != null)
+            if (live.IsMega)
             {
-                float rolled = parts.Family.ResolveSpecialBonuses().fireRateMul;
-                if (rolled > 0.0001f)
-                    rateMul = rolled;
+                bool replacesRate = TryReadSelectedFamilyGun(
+                        in live, out _, out _, out _, out _, out float familyRate)
+                    && familyRate > 0.01f;
+                if (!replacesRate)
+                    rateMul = ReadFireRateMul(ResolveMegaFleet(in live));
+            }
+            else if (parts.Family != null)
+            {
+                rateMul = ReadFireRateMul(parts.Family.ResolveSpecialBonuses());
             }
 
             FormatFleetBonus(rateMul, out string text, out string hex);
@@ -1311,31 +1329,93 @@ namespace TitanOrbit.UI
         /// <summary>
         /// Family multiplier for this field. During a match, home planets are 1×
         /// and other planets use the seed roll. Unset values become 1.
+        /// Regular hulls pass the chassis family. Titans pass
+        /// <see cref="ResolveMegaFleet"/> instead — their part cache leaves Family null.
         /// </summary>
         static float ReadFamilyMul(ShipFamilyDefinition family, StatField field)
         {
             if (family == null)
                 return 1f;
 
-            ShipFamilySpecialBonuses b = family.ResolveSpecialBonuses();
+            return ReadBonusFieldMul(family.ResolveSpecialBonuses(), field);
+        }
+
+        /// <summary>
+        /// Fleet bonuses for the planet a Titan was bought on.
+        /// Home slot is 1×. Every other family is this match's roll.
+        /// Same call as <see cref="MegaShipStatsCalculator.ApplyFleetBonuses"/>,
+        /// so the card and the motor share one number.
+        /// </summary>
+        static ShipFamilySpecialBonuses ResolveMegaFleet(in ShipSpeedometerStatTooltips.LiveContext live)
+        {
+            return MegaShipStatsCalculator.ResolveFleetBonuses(live.Ship.ShipFamilyConfigIndex);
+        }
+
+        /// <summary>
+        /// One Titan stat's fleet multiplier. Zero or negative authored rolls become 1
+        /// so an unset asset cannot wipe the card.
+        /// </summary>
+        static float ReadMegaFleetMul(in ShipSpeedometerStatTooltips.LiveContext live, StatField field)
+        {
+            return ReadBonusFieldMul(ResolveMegaFleet(in live), field);
+        }
+
+        /// <summary>
+        /// Fire-rate roll. Not a <see cref="StatField"/> — cadence has its own multiplier
+        /// next to fire power. Unset becomes 1.
+        /// </summary>
+        static float ReadFireRateMul(in ShipFamilySpecialBonuses bonuses)
+        {
+            return bonuses.fireRateMul > 0.0001f ? bonuses.fireRateMul : 1f;
+        }
+
+        /// <summary>
+        /// Maps one chip field onto the family's authored multiplier.
+        /// Shared by regular hulls and Titan cards so both print the same roll.
+        /// </summary>
+        static float ReadBonusFieldMul(in ShipFamilySpecialBonuses bonuses, StatField field)
+        {
             float m = field switch
             {
-                StatField.FirePower => b.firePowerMul,
-                StatField.BulletSpeed => b.bulletSpeedMul,
-                StatField.HealthCap => b.healthCapMul,
-                StatField.HealthRegen => b.healthRegenMul,
-                StatField.EnergyCap => b.energyCapMul,
-                StatField.EnergyRegen => b.energyRegenMul,
-                StatField.MoveSpeed => b.moveSpeedMul,
-                StatField.TurnSpeed => b.turnSpeedMul,
-                StatField.MaxGems => b.maxGemsMul,
-                StatField.MaxPeople => b.maxPeopleMul,
-                StatField.AccelerationCap => b.accelerationMul,
-                StatField.BulletRange => b.bulletRangeMul,
-                StatField.RammingPower => b.rammingMul,
+                StatField.FirePower => bonuses.firePowerMul,
+                StatField.BulletSpeed => bonuses.bulletSpeedMul,
+                StatField.HealthCap => bonuses.healthCapMul,
+                StatField.HealthRegen => bonuses.healthRegenMul,
+                StatField.EnergyCap => bonuses.energyCapMul,
+                StatField.EnergyRegen => bonuses.energyRegenMul,
+                StatField.MoveSpeed => bonuses.moveSpeedMul,
+                StatField.TurnSpeed => bonuses.turnSpeedMul,
+                StatField.MaxGems => bonuses.maxGemsMul,
+                StatField.MaxPeople => bonuses.maxPeopleMul,
+                StatField.AccelerationCap => bonuses.accelerationMul,
+                StatField.BulletRange => bonuses.bulletRangeMul,
+                StatField.RammingPower => bonuses.rammingMul,
                 _ => 1f
             };
             return m > 0.0001f ? m : 1f;
+        }
+
+        /// <summary>
+        /// Fleet percent beside a Titan catalog number, then the product the row adds.
+        /// <paramref name="each"/> is one copy before the roll. <paramref name="copies"/>
+        /// is how many of those copies add (1 when the hull keeps the fastest, not the sum).
+        /// The percent is per family, so it does not stack — each row's arrow is that row only.
+        /// ×1 with a single copy prints the percent and skips the arrow, because the catalog
+        /// number is already the add.
+        /// </summary>
+        static void AppendMegaFleetProduct(StringBuilder sb, float each, int copies, float fleetMul)
+        {
+            float mul = fleetMul > 0.0001f ? fleetMul : 1f;
+            int n = copies > 0 ? copies : 1;
+            sb.Append(' ');
+            FormatFleetBonus(mul, out string text, out string hex);
+            AppendTint(sb, hex, text);
+            if (n > 1 || Mathf.Abs(mul - 1f) > 0.0005f)
+            {
+                sb.Append("  ");
+                AppendTint(sb, HexMute, "-> ");
+                AppendTint(sb, HexResult, FResult(each * n * mul));
+            }
         }
 
         static void AppendMoveAbilityCard(
@@ -1518,7 +1598,7 @@ namespace TitanOrbit.UI
             sb.AppendLine();
             // The parts grid's FLEET BONUS column is damage per shot. Fire rate is a
             // second match roll and it changes this DPS product, so it is named here.
-            AppendFireRateFleetLine(sb, in parts);
+            AppendFireRateFleetLine(sb, in parts, in live);
 
             // --- Weapon scale (prefab localScale on the barrel) ---
             // XY fattens the hit and the bullet. Z divides cadence. Unit scale is
@@ -2070,7 +2150,9 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// MEGA details card: catalog part sums only. No Extra Level, no Lv / +next,
-        /// no ability purchases. Cruise speed uses fastest authored Move + extra% of the rest.
+        /// no ability purchases. Cruise speed uses fastest authored Move + extra% of the rest,
+        /// then the purchase planet's move roll. Every other stat prints that same roll
+        /// beside the catalog number so the arrow matches the chip.
         /// </summary>
         static void AppendMegaAbilityCard(
             StringBuilder sb,
@@ -2128,10 +2210,10 @@ namespace TitanOrbit.UI
             }
 
             if (field == StatField.FirePower)
-                AppendMegaGunFirepowerGrid(sb, in parts, in live);
+                AppendMegaGunFirepowerGrid(sb, in live);
             else
                 AppendMegaCatalogParts(sb, in live, field, unit);
-            AppendMegaGearParts(sb, in parts, field, unit, live.Ship.ShipLevel);
+            AppendMegaGearParts(sb, in parts, in live, field, unit);
             AppendTotalLine(sb, chipVal, unit);
 
             if (abilityIndex == 0)
@@ -2173,23 +2255,22 @@ namespace TitanOrbit.UI
         /// <summary>
         /// Fire Power parts grid for Titan guns. Same columns as a regular ship
         /// (PART, ROLE, BASE, PERX, ×LV, SCALE, FLEET BONUS, ADD). Each copy is its own row.
-        /// The default Titan bank lists each gun part at its catalog firepower.
-        /// A family or gear bank lists that weapon at maxed level 7 (ship 7 + ability 7).
-        /// Lasers, missiles, and snipers stay off this grid.
+        /// The default Titan bank lists each gun part at its catalog firepower times the
+        /// purchase planet's fire-power roll. A family or gear bank lists that weapon at
+        /// maxed level 7 (ship 7 + ability 7) and prints ×1 in FLEET BONUS — that shot
+        /// replaces catalog damage, so the planet roll stays on the Titan's own guns.
+        /// Lasers, missiles, and snipers stay off this grid and show the roll on their own line.
         /// Rebuilds when the selected bullet bank changes.
         /// </summary>
         static void AppendMegaGunFirepowerGrid(
             StringBuilder sb,
-            in ShipSpeedometerStatTooltips.PartCache parts,
             in ShipSpeedometerStatTooltips.LiveContext live)
         {
-            float fleet = 1f;
-            if (parts.Family != null)
-            {
-                float rolled = parts.Family.ResolveSpecialBonuses().firePowerMul;
-                if (rolled > 0.0001f)
-                    fleet = rolled;
-            }
+            // --- Purchase-planet roll, not the part-cache family ---
+            // [TITAN-ORBIT] The MEGA part cache leaves Family null (the hull is not a
+            // family chassis). Reading that asset always printed ×1 while ADD and the
+            // chip already included the motor's roll. ResolveFleetBonuses is that roll.
+            float fleet = ReadMegaFleetMul(in live, StatField.FirePower);
 
             var catalog = MegaShipCatalog.Load();
             MegaShipCatalogEntry entry = null;
@@ -2211,6 +2292,10 @@ namespace TitanOrbit.UI
                 ShipStatTooltipChrome.AppendGridRule(sb);
                 if (familyGun)
                 {
+                    // This bank's damage is the family weapon, not catalog × fleet.
+                    // The column still prints ×1 so the multiply is visible as identity.
+                    AppendTint(sb, HexMute, "Family weapon keeps its own damage. Fleet fire power stays on the Titan gun.");
+                    sb.AppendLine();
                     int copies = haveEntry ? CountBulletGuns(catalog, entry) : 1;
                     WriteMegaGunCopies(
                         sb,
@@ -2263,7 +2348,7 @@ namespace TitanOrbit.UI
                 }
             }
 
-            bool wroteOther = haveEntry && AppendMegaNonGunFirepowerLines(sb, catalog, entry);
+            bool wroteOther = haveEntry && AppendMegaNonGunFirepowerLines(sb, catalog, entry, fleet);
             if (!wroteGun && !wroteOther)
                 sb.AppendLine("<color=#5B7A94>No contributing parts.</color>");
         }
@@ -2412,11 +2497,15 @@ namespace TitanOrbit.UI
         /// <summary>
         /// Lasers and other non-gun weapons that still have firepower.
         /// Copy count is not a multiplier here — each part keeps its own shot.
+        /// <paramref name="fleetMul"/> is the purchase planet's fire-power roll.
+        /// Those barrels keep the catalog shot times that roll (the family-weapon
+        /// override does not replace them).
         /// </summary>
         static bool AppendMegaNonGunFirepowerLines(
             StringBuilder sb,
             MegaShipCatalog catalog,
-            MegaShipCatalogEntry entry)
+            MegaShipCatalogEntry entry,
+            float fleetMul)
         {
             bool wrote = false;
             for (int i = 0; i < entry.componentCounts.Count; i++)
@@ -2442,6 +2531,8 @@ namespace TitanOrbit.UI
                 wrote = true;
                 sb.Append(count.displayName).Append("  ");
                 AppendTint(sb, HexResult, FDetail(each));
+                // One shot, then the planet roll. Copies are not a second multiply.
+                AppendMegaFleetProduct(sb, each, 1, fleetMul);
                 sb.Append(" ");
                 AppendTint(sb, HexMute, "Fire");
                 sb.AppendLine();
@@ -2452,7 +2543,10 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// Lists unique MEGA parts that contribute <paramref name="field"/>, grouped by name.
-        /// Values are raw catalog numbers — hull defaults/minimums apply only to the TOTAL.
+        /// The first number is the catalog value. The fleet percent beside it is the
+        /// purchase planet's roll for this stat, and the arrow is catalog × copies × that roll.
+        /// Bullet speed and range keep the fastest part (copies do not add). Hull
+        /// defaults/minimums still apply only to the TOTAL, after this list.
         /// </summary>
         static void AppendMegaCatalogParts(
             StringBuilder sb,
@@ -2470,6 +2564,10 @@ namespace TitanOrbit.UI
                 return;
             }
 
+            // Same roll on every row. Summing the arrows equals sum(parts) × fleet.
+            // Speed and range take the fastest arrow instead — copies of one gun do not add.
+            float fleetMul = ReadMegaFleetMul(in live, field);
+            bool fastestWins = field is StatField.BulletSpeed or StatField.BulletRange;
             bool wrote = false;
             for (int i = 0; i < entry.componentCounts.Count; i++)
             {
@@ -2494,13 +2592,13 @@ namespace TitanOrbit.UI
                     AppendTint(sb, HexMute, unitLabel);
                 }
 
-                if (count.count > 1)
+                if (fastestWins && count.count > 1)
                 {
-                    sb.Append("  ");
-                    AppendTint(sb, HexMute, "-> ");
-                    AppendTint(sb, HexResult, FResult(each * count.count));
+                    sb.Append(" ");
+                    AppendTint(sb, HexMute, "fastest");
                 }
 
+                AppendMegaFleetProduct(sb, each, fastestWins ? 1 : count.count, fleetMul);
                 sb.AppendLine();
             }
 
@@ -2510,15 +2608,16 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// Lists equipped moon-store ship components that contribute
-        /// <paramref name="field"/> after PerExtra × <paramref name="shipLevel"/> (no Base).
-        /// Hidden when the Titan has no LOADOUT gear for this chip.
+        /// <paramref name="field"/> after PerExtra × Titan tier (no Base), then the
+        /// purchase planet's fleet roll. Hidden when the Titan has no LOADOUT gear
+        /// for this chip. Each store row is one copy — the arrow is that copy × fleet.
         /// </summary>
         static void AppendMegaGearParts(
             StringBuilder sb,
             in ShipSpeedometerStatTooltips.PartCache parts,
+            in ShipSpeedometerStatTooltips.LiveContext live,
             StatField field,
-            string unitLabel,
-            int shipLevel)
+            string unitLabel)
         {
             if (!parts.Valid
                 || parts.Ids == null
@@ -2531,7 +2630,10 @@ namespace TitanOrbit.UI
             if (start < 0 || start >= parts.Ids.Count)
                 return;
 
-            int level = Mathf.Max(1, shipLevel);
+            int level = Mathf.Max(1, live.Ship.ShipLevel);
+            // Gear is folded into the hull sum, then the whole hull is rolled.
+            // Showing the roll on this line keeps it in the same multiply as catalog parts.
+            float fleetMul = ReadMegaFleetMul(in live, field);
             bool wroteHeader = false;
             int n = Mathf.Min(parts.Ids.Count, parts.Stats.Count);
             for (int i = start; i < n; i++)
@@ -2553,7 +2655,7 @@ namespace TitanOrbit.UI
                 if (!wroteHeader)
                 {
                     ShipStatTooltipChrome.AppendSectionBanner(sb, "GEAR", "FFAA66");
-                    AppendTint(sb, HexMute, "LOADOUT extras add PerExtra x Titan tier (no Base)");
+                    AppendTint(sb, HexMute, "LOADOUT extras add PerExtra x Titan tier (no Base), then fleet");
                     sb.AppendLine();
                     wroteHeader = true;
                 }
@@ -2572,13 +2674,17 @@ namespace TitanOrbit.UI
                     AppendTint(sb, HexMute, unitLabel);
                 }
 
+                AppendMegaFleetProduct(sb, value, 1, fleetMul);
                 sb.AppendLine();
             }
         }
 
         /// <summary>
-        /// MEGA cruise: fastest authored Move + extra% of the rest — same as
-        /// <see cref="MegaShipComponentInventory.CombineEngineCruise"/>.
+        /// MEGA cruise: fastest Move + extra% of the rest — same as
+        /// <see cref="MegaShipComponentInventory.CombineEngineCruise"/> — after each
+        /// part's speed is multiplied by the purchase planet's move roll.
+        /// The formula is linear, so rolling every part then combining matches
+        /// combining the catalog speeds and rolling the result once.
         /// Every unique part with moveSpeed is listed (wing / hull / cockpit / engine / …).
         /// </summary>
         static void AppendMegaMoveCard(
@@ -2598,6 +2704,8 @@ namespace TitanOrbit.UI
                 return;
             }
 
+            // One roll for every Move part. Home Titans stay ×1.
+            float moveFleet = ReadMegaFleetMul(in live, StatField.MoveSpeed);
             float extraPercent = catalog.GetExtraEngineSpeedPercent();
             var moves = new List<float>(8);
             for (int i = 0; i < entry.componentCounts.Count; i++)
@@ -2610,14 +2718,24 @@ namespace TitanOrbit.UI
                     || !MegaShipComponentInventory.ContributesCruiseMove(unique.stats))
                     continue;
 
+                float rawMove = unique.stats.moveSpeed;
+                float afterFleet = rawMove * moveFleet;
                 for (int n = 0; n < count.count; n++)
-                    moves.Add(unique.stats.moveSpeed);
+                    moves.Add(afterFleet);
 
                 AppendTint(sb, HexCount, count.count.ToString(CultureInfo.InvariantCulture) + "x");
                 sb.Append(" ").Append(count.displayName).Append("  ");
-                AppendTint(sb, HexResult, FDetail(unique.stats.moveSpeed));
+                AppendTint(sb, HexResult, FDetail(rawMove));
                 sb.Append(" ");
                 AppendTint(sb, HexMute, unique.partType);
+                if (count.count > 1)
+                {
+                    sb.Append(" ");
+                    AppendTint(sb, HexMute, "each");
+                }
+
+                // Arrow is one copy after the roll. Copies stay separate inputs to cruise.
+                AppendMegaFleetProduct(sb, rawMove, 1, moveFleet);
                 sb.AppendLine();
             }
 
@@ -2625,18 +2743,20 @@ namespace TitanOrbit.UI
             AppendTint(sb, HexMute, "fastest + ");
             AppendTint(sb, HexPerExtra, (extraPercent * 100f).ToString("0.##", CultureInfo.InvariantCulture) + "%");
             AppendTint(sb, HexMute, " of other Move parts");
+            if (Mathf.Abs(moveFleet - 1f) > 0.0005f)
+                AppendTint(sb, HexMute, "  (after fleet)");
             sb.AppendLine();
             float combined = MegaShipComponentInventory.CombineEngineCruise(moves, extraPercent);
             if (combined > 0.0001f)
             {
-                AppendTint(sb, HexMute, "raw  ");
+                AppendTint(sb, HexMute, "cruise  ");
                 AppendTint(sb, HexResult, FResult(combined));
                 sb.AppendLine();
             }
 
             AppendMegaCatalogParts(sb, in live, StatField.AccelerationCap, "Accel");
-            AppendMegaGearParts(sb, in parts, StatField.MoveSpeed, "Move", live.Ship.ShipLevel);
-            AppendMegaGearParts(sb, in parts, StatField.AccelerationCap, "Accel", live.Ship.ShipLevel);
+            AppendMegaGearParts(sb, in parts, in live, StatField.MoveSpeed, "Move");
+            AppendMegaGearParts(sb, in parts, in live, StatField.AccelerationCap, "Accel");
             AppendTurnMassTax(sb, live);
             AppendTotalLine(sb, chipVal, "Move");
         }

@@ -7,7 +7,8 @@ namespace TitanOrbit.Data
     /// <summary>
     /// Match-scoped family multipliers. A new game rolls these once from the map seed.
     /// Home-planet ships stay at exactly 1×. Every other planet's family slot gets its
-    /// own roll in [0.5, 2.0] (half fire rate, double damage, and so on).
+    /// own bell-curve roll in [0.5, 2.0]: most stats land around 1×, and the rare
+    /// tails reach half and double.
     /// <para>
     /// The numbers on <see cref="ShipFamilyDefinition.specialBonuses"/> are the editor
     /// preview. Once a match seed is published, combat, motors, and the fleet-bonus UI
@@ -30,6 +31,14 @@ namespace TitanOrbit.Data
         /// placement or bullet-bank random sequence.
         /// </summary>
         const uint StreamSalt = 0xF4A11B05u;
+
+        /// <summary>
+        /// Width of the bell, in natural-log units. Half (0.5) and double (2) are
+        /// the same factor away from 1, and <c>ln(2) / 3</c> places both limits
+        /// three standard deviations out. About two-thirds of rolls then sit
+        /// between roughly 0.79× and 1.26×. Anything past the limits is clamped.
+        /// </summary>
+        const float LogSigma = 0.23104906f;
 
         /// <summary>Map seed for the live match. Zero means "no match yet" (editor / menu).</summary>
         static uint s_MatchSeed;
@@ -57,8 +66,8 @@ namespace TitanOrbit.Data
             ShipFamilyPowerBarNorm.InvalidateCache();
             Debug.Log(
                 "[ShipFamilyMatchBonuses] Match seed " + matchSeed +
-                " — home ships stay 1×, other families rolled " +
-                MinMultiplier.ToString("0.0") + "–" + MaxMultiplier.ToString("0.0") + ".");
+                " — home ships stay 1×, other families use a bell curve around 1× (tails " +
+                MinMultiplier.ToString("0.0") + "–" + MaxMultiplier.ToString("0.0") + ").");
         }
 
         /// <summary>
@@ -117,8 +126,9 @@ namespace TitanOrbit.Data
 
         /// <summary>
         /// Deterministic bonuses for one non-home family slot.
-        /// Each multiplier is a thousandth in [0.5, 2.0], inclusive.
-        /// Field order is part of the seed contract — do not reorder the assigns.
+        /// Each multiplier is a thousandth in [0.5, 2.0], drawn from a bell
+        /// curve centered on 1× (<see cref="NextMul"/>). Field order is part of
+        /// the seed contract — do not reorder the assigns.
         /// </summary>
         public static ShipFamilySpecialBonuses Roll(uint matchSeed, int familyConfigIndex)
         {
@@ -153,12 +163,36 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Thousandths from 0.500 through 2.000. <c>NextInt</c>'s upper bound is exclusive,
-        /// so 2001 includes 2.0.
+        /// One fleet multiplier for the current match.
+        /// A flat <c>NextInt</c> across [0.5, 2] made a 2× roll as common as 1×
+        /// and pulled the average up to 1.25. This draws a bell instead: the
+        /// center (median) is 1×, and the low and high limits are the tails.
         /// </summary>
+        /// <returns>A thousandth in [<see cref="MinMultiplier"/>, <see cref="MaxMultiplier"/>].</returns>
         static float NextMul(ref Random rng)
         {
-            int thousandths = rng.NextInt(500, 2001);
+            // --- Bell in "times" space ---
+            // [STANDARD] Box-Muller turns two uniform draws into one normal sample
+            // (mean 0, standard deviation 1). Two draws per stat keep the server
+            // and the client on the same sequence.
+            // [TITAN-ORBIT] Exponentiating that sample makes a bell whose median
+            // is exactly 1×. Because ln(0.5) = -ln(2), three standard deviations
+            // land on half and on double together.
+            float u1 = math.max(rng.NextFloat(), 1e-6f);
+            float u2 = rng.NextFloat();
+            float z = math.sqrt(-2f * math.log(u1)) * math.cos((2f * math.PI) * u2);
+            float mul = math.exp(z * LogSigma);
+
+            // --- Hard limits ---
+            // A normal curve never truly ends. Clamp the far tails so a roll
+            // cannot leave the 0.5–2 band the rest of the game already assumes.
+            mul = math.clamp(mul, MinMultiplier, MaxMultiplier);
+
+            // --- Thousandths ---
+            // Same discrete grid the old flat roll used, so the HUD percent and
+            // the server/client hash cannot drift by a float crumb.
+            int thousandths = (int)math.round(mul * 1000f);
+            thousandths = math.clamp(thousandths, 500, 2000);
             return thousandths / 1000f;
         }
 

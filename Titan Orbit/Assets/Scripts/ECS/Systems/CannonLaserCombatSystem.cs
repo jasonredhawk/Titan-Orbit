@@ -337,7 +337,7 @@ namespace TitanOrbit.ECS
 
             float rampSeconds = ResolveLockRampSeconds(
                 mega, mountIndex, target, aimPoint, ship.Team, mapW, mapH, moonElapsed,
-                canBurn: true, cycleActive: true, gunners);
+                canBurn: true, cycleActive: true, gunners, out bool restarted);
             float rampMul = CannonLaserMath.ComputeRampMultiplier(rampSeconds);
             if (!_gemCarry.TryGetValue(target, out float carry))
                 carry = 0f;
@@ -348,6 +348,22 @@ namespace TitanOrbit.ECS
                 heal, acquireRange, mapW, mapH, moonElapsed, serverElapsed,
                 gemPrefab, gemSpawnServerTime, ref carry, mega);
             _gemCarry[target] = carry;
+
+            // Apply can AddComponent (first ship hit stamps attribution, a pad
+            // ensures its regen buffer). That structural change invalidates
+            // every DynamicBuffer handle. Writing the reset through the
+            // pre-hit gunners buffer dropped it, while _lastLaserLock already
+            // named the new subject — the next tick treated the stale max as
+            // charge on that new target and never returned to 50%.
+            if (EntityManager.HasBuffer<MegaShipGunnerSlotElement>(mega))
+                gunners = EntityManager.GetBuffer<MegaShipGunnerSlotElement>(mega);
+            if (EntityManager.HasBuffer<MegaShipAutoAimSlotElement>(mega))
+                aims = EntityManager.GetBuffer<MegaShipAutoAimSlotElement>(mega);
+
+            // Count this slice even when it is the one that empties the target.
+            // The kill check below parks the beam; the sequence must already
+            // include the killing tick so the client float ends with the pop.
+            BumpBurnSequence(gunners, mountIndex);
 
             if (!IsLiveLockTarget(target))
             {
@@ -369,7 +385,7 @@ namespace TitanOrbit.ECS
             WriteLaserRamp(
                 gunners,
                 mountIndex,
-                CannonLaserMath.StepRampSeconds(rampSeconds, dt, reset: false, charging: true));
+                CannonLaserMath.StepRampSeconds(rampSeconds, dt, reset: restarted, charging: true));
         }
 
         /// <summary>
@@ -671,8 +687,10 @@ namespace TitanOrbit.ECS
             double moonElapsed,
             bool canBurn,
             bool cycleActive,
-            DynamicBuffer<MegaShipGunnerSlotElement> gunners)
+            DynamicBuffer<MegaShipGunnerSlotElement> gunners,
+            out bool restarted)
         {
+            restarted = false;
             float current = 0f;
             if (gunners.IsCreated && mountIndex >= 0 && mountIndex < gunners.Length)
                 current = math.max(0f, gunners[mountIndex].CannonLaserRampSeconds);
@@ -680,6 +698,7 @@ namespace TitanOrbit.ECS
             if (!cycleActive)
             {
                 ForgetLaserLock(mega, mountIndex);
+                restarted = true;
                 return 0f;
             }
 
@@ -691,9 +710,16 @@ namespace TitanOrbit.ECS
             {
                 focus = CannonLaserHitApply.ResolvePlanetFocus(
                     EntityManager, target, team, aimPoint, mapW, mapH, moonElapsed);
-                // Aim not on a living pad or moon yet — do not treat that as a retarget.
+                // Aim not on a living pad or moon yet. Keep charge only while
+                // this is still the same planet — a maxed ramp from the previous
+                // ship or rock must not carry onto the new world.
                 if (focus == CannonLaserHitApply.FocusWholeEntity)
-                    return current;
+                {
+                    var pending = new LaserRampKey { Ship = mega, Mount = mountIndex };
+                    if (_lastLaserLock.TryGetValue(pending, out LaserLockId samePlanet)
+                        && samePlanet.Target == target)
+                        return current;
+                }
             }
 
             var key = new LaserRampKey { Ship = mega, Mount = mountIndex };
@@ -701,6 +727,7 @@ namespace TitanOrbit.ECS
             if (!_lastLaserLock.TryGetValue(key, out LaserLockId previous) || !previous.Equals(id))
             {
                 _lastLaserLock[key] = id;
+                restarted = true;
                 return 0f;
             }
 
@@ -717,6 +744,22 @@ namespace TitanOrbit.ECS
 
             var slot = gunners[mountIndex];
             slot.CannonLaserRampSeconds = math.max(0f, rampSeconds);
+            gunners[mountIndex] = slot;
+        }
+
+        /// <summary>
+        /// One applied slice. Later aim / ramp writes copy the whole slot, so
+        /// this stays set when the killing tick parks the beam.
+        /// </summary>
+        static void BumpBurnSequence(
+            DynamicBuffer<MegaShipGunnerSlotElement> gunners,
+            int mountIndex)
+        {
+            if (!gunners.IsCreated || mountIndex < 0 || mountIndex >= gunners.Length)
+                return;
+
+            var slot = gunners[mountIndex];
+            slot.CannonLaserBurnSequence++;
             gunners[mountIndex] = slot;
         }
 

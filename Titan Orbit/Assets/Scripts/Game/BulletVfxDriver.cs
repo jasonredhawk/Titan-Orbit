@@ -64,6 +64,11 @@ namespace TitanOrbit.Game
             public int OwnerNetworkId;
             public float3 LogicalPos;
             public float3 SpawnPos;
+            /// <summary>
+            /// World Y of the drawn cannon at fire time. Logical flight stays on Y = 0
+            /// with the server. Only the tracer transform uses this.
+            /// </summary>
+            public float VisualMuzzleY;
             public float3 Velocity;
             /// <summary>
             /// Seconds left before cosmetic despawn. When the spawn request Lifetime is ≤ 0
@@ -122,17 +127,27 @@ namespace TitanOrbit.Game
             /// <summary>Cached so a seam snap does not GetComponentsInChildren every frame.</summary>
             public TrailRenderer Trail;
             /// <summary>
-            /// Side-by-side Titan shells after the primary <see cref="Go"/>.
+            /// Extra Titan shells after the primary <see cref="Go"/>, one per other cannon on this turret.
             /// Null when this shot is one bullet. Presentation only — the server round is still one.
             /// </summary>
             public GameObject[] SplitExtras;
             /// <summary>How many visuals this shot draws, including <see cref="Go"/>. 1 = single bullet.</summary>
             public int SplitVisualCount;
             /// <summary>
-            /// Root scale for every shell. Equals <see cref="ScaleMultiplier"/> for a single bullet.
-            /// Split shots store the equal share (full scale ÷ floor(fire power ÷ Bullet Reference Fire Power)).
+            /// Root scale for every shell before that cannon's hierarchy scale.
+            /// Always the full shot size (fire power ÷ the bank reference). Cannon count does not divide it.
             /// </summary>
             public float SplitVisualScale;
+            /// <summary>
+            /// Shot-local offset from the logical muzzle to each shell.
+            /// Set from each cannon's mesh. Null places the one shell on the logical muzzle.
+            /// </summary>
+            public Vector3[] SplitLocalOffsets;
+            /// <summary>
+            /// Local-scale chain of each turret mesh, from that mesh up to the ship root.
+            /// Null keeps 1, the same size a regular ship bullet uses.
+            /// </summary>
+            public float[] SplitMeshScales;
         }
 
         /// <summary>
@@ -434,17 +449,18 @@ namespace TitanOrbit.Game
                 }
 
                 // --- Display pose ---
-                // Keep mount-height Y — unwrap helpers are XZ-only; restore after.
-                float mountY = displayLogical.y;
+                // Logical flight is the server plane (Y = 0). The shell is drawn at the
+                // cannon height captured when the shot spawned.
                 int stableKey = unchecked((int)t.Sequence) ^ (t.OwnerNetworkId * 397);
                 Vector3 displayPos = ResolveTracerDisplayPosition(
                     ref t, displayLogical, hasRef, reference, stableKey, dt,
                     t.HasPrevTick ? math.saturate(t.TickCarry / RocketPresentationTickDt) : 1f);
                 Vector3 prevDisplay = t.Go.transform.position;
 
-                displayPos.y = ResolveTracerFlightDisplayY(t.SpawnPos.y, t.Traveled);
-                if (BulletCosmeticHitQuery.TryGetMegaFlightLiftY(displayLogical, out float megaY, out float lift))
-                    displayPos.y = math.lerp(displayPos.y, megaY, lift);
+                displayPos.y = t.VisualMuzzleY;
+                if (BulletCosmeticHitQuery.TryGetMegaFlightLiftY(
+                        displayLogical, t.OwnerNetworkId, out float megaY, out float lift))
+                    displayPos.y = math.lerp(t.VisualMuzzleY, megaY, lift);
                 bool snapped = (displayPos - prevDisplay).sqrMagnitude > 40f * 40f;
                 if (snapped)
                     ResetTrail(in t);
@@ -1113,11 +1129,14 @@ namespace TitanOrbit.Game
             if (ShouldPreferServerMegaAim(in req, adopted.Velocity))
             {
                 adopted.Velocity = req.Velocity;
-                adopted.LogicalPos = req.SpawnPosition;
-                adopted.SpawnPos = req.SpawnPosition;
-                adopted.PrevLogicalPos = req.SpawnPosition;
+                float3 planar = PlanarFlightPos(req.SpawnPosition);
+                adopted.LogicalPos = planar;
+                adopted.SpawnPos = planar;
+                adopted.PrevLogicalPos = planar;
                 adopted.PrevVelocity = req.Velocity;
                 adopted.Traveled = 0f;
+                if (math.abs(adopted.VisualMuzzleY) < 0.001f)
+                    adopted.VisualMuzzleY = ResolveVisualCannonY(in req);
             }
             adopted.Sequence = req.Sequence;
             adopted.IsAnticipation = false;
@@ -1125,18 +1144,8 @@ namespace TitanOrbit.Game
             adopted.MountIndex = req.MountIndex;
             adopted.BankIndex = req.BankIndex;
             adopted.ScaleMultiplier = req.ScaleMultiplier > 0f ? req.ScaleMultiplier : adopted.ScaleMultiplier;
-            if (adopted.SplitVisualCount > 1 && adopted.ScaleMultiplier > 0f)
-            {
-                float reference = math.max(0.01f, BulletVisualScale.ResolveFixedBulletReferenceDamage());
-                BulletVisualScale.ResolveTitanSplitCounts(
-                    adopted.ScaleMultiplier * reference, reference, out int trueCount, out _);
-                adopted.SplitVisualScale = BulletVisualScale.ComputeTitanSplitShellScale(
-                    adopted.ScaleMultiplier, trueCount);
-            }
-            else
-            {
-                adopted.SplitVisualScale = adopted.ScaleMultiplier;
-            }
+            // Cannon count does not shrink the shell. Each mesh keeps the full shot size.
+            adopted.SplitVisualScale = adopted.ScaleMultiplier;
             adopted.Damage = req.Damage;
             adopted.FirePowerLive = req.FirePowerLive;
             adopted.FirePowerBase = req.FirePowerBase;
@@ -1317,22 +1326,33 @@ namespace TitanOrbit.Game
             int bankIndex = math.max(0, req.BankIndex);
             float scaleMul = req.ScaleMultiplier > 0f ? req.ScaleMultiplier : 1f;
             float bulletSpeed = math.length(req.Velocity);
-            // Full scale stays on the logical tracer (hit pad). Shells draw the share.
+            // Server / cosmetic sweep stays on the hit plane. The shell is drawn at the cannon.
+            float cannonY = ResolveVisualCannonY(in req);
+            float3 logicalSpawn = PlanarFlightPos(req.SpawnPosition);
+            Vector3 spawnDisplay = logicalSpawn;
+            if (!req.IsDisplaySpace && ToroidalDisplay.TryGetReferencePosition(out var reference))
+                spawnDisplay = ToroidalDisplay.ToDisplayPosition(logicalSpawn, reference);
+            spawnDisplay.y = cannonY;
+
+            Quaternion rot = math.lengthsq(req.Velocity) > 0.0001f
+                ? Quaternion.LookRotation(((Vector3)req.Velocity).normalized, Vector3.up)
+                : Quaternion.identity;
+
+            // Full shot size on every shell. Extra shells exist only when this turret has more cannons.
             float drawScale = scaleMul;
             int splitCount = 1;
-            if (TryResolveTitanSplit(in req, scaleMul, out int spawnSplit, out float eachScale))
+            Vector3[] muzzleLocalOffsets = null;
+            float[] muzzleMeshScales = null;
+            if (TryResolveTurretMuzzles(
+                    in req, spawnDisplay, rot, scaleMul,
+                    out int turretCount, out float turretScale, out Vector3[] turretOffsets))
             {
-                drawScale = eachScale;
-                splitCount = spawnSplit;
+                drawScale = turretScale;
+                splitCount = turretCount;
+                muzzleLocalOffsets = turretOffsets;
+                muzzleMeshScales = s_TurretShellScales;
+                s_TurretShellScales = null;
             }
-
-            Vector3 spawnDisplay = req.SpawnPosition;
-            float mountY = req.SpawnPosition.y;
-            if (!req.IsDisplaySpace && ToroidalDisplay.TryGetReferencePosition(out var reference))
-                spawnDisplay = ToroidalDisplay.ToDisplayPosition(req.SpawnPosition, reference);
-            // Muzzle flash stays on the drawn barrel. Tracer Y drops to the play plane in Advance
-            // (MEGA barrels sit high — keeping that Y for the whole flight pierced 3D bodies).
-            spawnDisplay.y = mountY;
 
             // --- Muzzle flash at fire origin ---
             // Every shot plays it, including nose-touch. Skipping when a 0.5u probe
@@ -1381,9 +1401,6 @@ namespace TitanOrbit.Game
                 VfxUrpCompat.EnsureAuthoredProjectileVisual(go, projectilePrefab);
             }
 
-            Quaternion rot = math.lengthsq(req.Velocity) > 0.0001f
-                ? Quaternion.LookRotation(((Vector3)req.Velocity).normalized, Vector3.up)
-                : Quaternion.identity;
             go.transform.SetPositionAndRotation(spawnDisplay, rot);
 
             // Scale the tracer ROOT (same as muzzle/impact). Scaling only the visual child
@@ -1423,8 +1440,9 @@ namespace TitanOrbit.Game
                 Go = go,
                 Sequence = req.Sequence,
                 OwnerNetworkId = req.OwnerNetworkId,
-                LogicalPos = req.SpawnPosition,
-                SpawnPos = req.SpawnPosition,
+                LogicalPos = logicalSpawn,
+                SpawnPos = logicalSpawn,
+                VisualMuzzleY = cannonY,
                 Velocity = req.Velocity,
                 // [TITAN-ORBIT] Lifetime <= 0 = distance-only (PD); ship guns keep a positive timer.
                 RemainingLifetime = ResolveTracerLifetime(req.Lifetime),
@@ -1450,14 +1468,16 @@ namespace TitanOrbit.Game
                 Trail = go.GetComponentInChildren<TrailRenderer>(true),
                 SplitExtras = splitExtras,
                 SplitVisualCount = splitCount,
-                // Hit sweep keeps ScaleMultiplier (the full shot). Shells draw the share.
+                // Hit sweep keeps ScaleMultiplier (the full shot). Each shell draws that same size.
                 SplitVisualScale = drawScale,
+                SplitLocalOffsets = muzzleLocalOffsets,
+                SplitMeshScales = muzzleMeshScales,
             };
 
-            if (splitCount > 1)
+            if (splitCount > 1 || muzzleLocalOffsets != null)
                 PlaceTracerShells(in tracer, spawnDisplay, rot);
 
-            // Enable after the side-by-side pose so trails do not streak from the pool origin.
+            // Enable after the cannon pose so trails do not streak from the pool origin.
             // Audio on before enable so a shell that was a silent sibling can PlayOnAwake again.
             SetShellAudioEnabled(go, true);
             VfxUrpCompat.PrepareVfxInstance(go);
@@ -1480,7 +1500,7 @@ namespace TitanOrbit.Game
             // (incoming remote rockets included — no local-owner check).
             if (req.Homing != 0 && TryGetObserverHullDisplay(out float3 hull))
             {
-                tracer.PrevLogicalPos = req.SpawnPosition;
+                tracer.PrevLogicalPos = logicalSpawn;
                 tracer.PrevVelocity = req.Velocity;
                 tracer.PrevHullDisplay = hull;
                 tracer.CurrHullDisplay = hull;
@@ -1504,28 +1524,36 @@ namespace TitanOrbit.Game
         bool _oneShotPoolPrewarmQueued;
 
         /// <summary>
-        /// Maps server/RPC Lifetime onto cosmetic RemainingLifetime.
-        /// Positive values keep the ship-gun timer (clamped so tiny floats do not despawn instantly).
-        /// Lifetime ≤ 0 means distance-only cull (planetary defense) — RemainingLifetime = +∞ so
-        /// the age check never fires and MaxDistance alone ends the tracer.
+        /// Hit-plane copy of a spawn. Server collision already ignores barrel height;
+        /// cosmetic sweeps use this so they stay on that same Y = 0 plane.
         /// </summary>
-        /// <param name="lifetimeSeconds">Authoritative Lifetime from the spawn request / RPC.</param>
-        /// <returns>Seconds for RemainingLifetime, or <see cref="float.PositiveInfinity"/> when unused.</returns>
-        /// <summary>
-        /// Display Y for a flying tracer. Regular muzzles already sit on the play plane.
-        /// MEGA barrels are high on a tall hull — if we keep that Y (or lift to hull-top)
-        /// the slug visually tunnels 3D rocks / moons / ships while XZ collision and
-        /// attached impact VFX stay on the surface. Drop onto Y=0 after leaving the barrel.
-        /// </summary>
-        static float ResolveTracerFlightDisplayY(float muzzleY, float traveled)
+        static float3 PlanarFlightPos(float3 pos)
         {
-            if (math.abs(muzzleY) < 0.75f)
-                return muzzleY;
+            pos.y = 0f;
+            return pos;
+        }
 
-            const float dropDistance = 3.5f;
-            float t = math.saturate(traveled / dropDistance);
-            t = t * t * (3f - 2f * t);
-            return math.lerp(muzzleY, 0f, t);
+        /// <summary>
+        /// World Y of the cannon this shot is leaving. Presentation only.
+        /// Titans read the live cannon-mesh tip. Every other hull reads the live
+        /// weapon transform (BankPivot included). Misses stay on the play plane.
+        /// </summary>
+        static float ResolveVisualCannonY(in BulletVfxBridge.SpawnRequest req)
+        {
+            if (req.MountIndex < 0)
+                return 0f;
+
+            var world = EcsGameBridge.ClientWorld;
+            if (world == null || !world.IsCreated)
+                return 0f;
+
+            EntityManager em = world.EntityManager;
+            if (!BulletMuzzlePresentation.TryResolveShooterHull(
+                    em, req.OwnerNetworkId, req.MountIndex, out Entity hull, out int mountIndex))
+                return 0f;
+            if (!BulletMuzzlePresentation.TryGetVisualCannonHeight(em, hull, mountIndex, out float worldY))
+                return 0f;
+            return worldY;
         }
 
         /// <summary>
@@ -1542,15 +1570,34 @@ namespace TitanOrbit.Game
             int bankIndex = math.max(0, t.BankIndex);
             float visual = BulletVisualFactory.GetBulletVisualScale(_bank, scaleMul, bankIndex)
                 * ResolveMegaCameraVisualScale();
-            var scale = Vector3.one * math.max(0.05f, visual);
-            t.Go.transform.localScale = scale;
+            ApplyShellScale(t.Go, visual, MeshScaleAt(in t, 0));
             if (t.SplitExtras == null)
                 return;
             for (int i = 0; i < t.SplitExtras.Length; i++)
             {
                 if (t.SplitExtras[i] != null)
-                    t.SplitExtras[i].transform.localScale = scale;
+                    ApplyShellScale(t.SplitExtras[i], visual, MeshScaleAt(in t, i + 1));
             }
+        }
+
+        /// <summary>
+        /// Regular bullets use 1. A turret shell multiplies by the firing mesh's local-scale
+        /// chain up to the ship root — the presentation scale on the root is already in the
+        /// world position, so it is not applied again here.
+        /// </summary>
+        static float MeshScaleAt(in Tracer t, int index)
+        {
+            if (t.SplitMeshScales == null || index < 0 || index >= t.SplitMeshScales.Length)
+                return 1f;
+            float scale = t.SplitMeshScales[index];
+            return scale > 0.01f ? scale : 1f;
+        }
+
+        static void ApplyShellScale(GameObject shell, float visual, float meshScale)
+        {
+            if (shell == null)
+                return;
+            shell.transform.localScale = Vector3.one * math.max(0.05f, visual * meshScale);
         }
 
         /// <summary>
@@ -1567,6 +1614,12 @@ namespace TitanOrbit.Game
             return math.clamp(height / referenceHeight, 1f, 4f);
         }
 
+        /// <summary>
+        /// Maps server/RPC Lifetime onto cosmetic RemainingLifetime.
+        /// Positive values keep the ship-gun timer (clamped so tiny floats do not despawn instantly).
+        /// Lifetime ≤ 0 means distance-only cull (planetary defense) — RemainingLifetime = +∞ so
+        /// the age check never fires and MaxDistance alone ends the tracer.
+        /// </summary>
         static float ResolveTracerLifetime(float lifetimeSeconds)
         {
             // [TITAN-ORBIT] Mirror BulletSimulationSystem: Lifetime <= 0 skips the age timer.
@@ -2001,20 +2054,29 @@ namespace TitanOrbit.Game
                 BulletTracerPool.Return(t.Go);
         }
 
+        static readonly List<Vector3> s_TurretMuzzleScratch = new List<Vector3>(8);
+        static readonly List<float> s_TurretMuzzleScales = new List<float>(8);
+        static readonly List<Transform> s_CannonScratch = new List<Transform>(8);
+
         /// <summary>
-        /// Titan catalog switch: floor(fire power ÷ Bullet Reference Fire Power) shells, each an equal share.
-        /// Off, or not a Titan bullet, leaves the single full-power shell.
-        /// Missiles stay one visual. The server round and its hit are unchanged.
+        /// One shell per real cannon mesh under this turret. Named gun / cannon / bullet
+        /// objects are containers; the shell sits on one mesh inside and keeps the full
+        /// shot size times that mesh's hierarchy scale. Still one server bullet.
         /// </summary>
-        static bool TryResolveTitanSplit(
+        static bool TryResolveTurretMuzzles(
             in BulletVfxBridge.SpawnRequest req,
+            Vector3 spawnDisplay,
+            Quaternion shotRotation,
             float fullScale,
             out int spawnCount,
-            out float eachScale)
+            out float eachScale,
+            out Vector3[] localOffsets)
         {
             spawnCount = 1;
             eachScale = fullScale;
-            if (fullScale <= 0.01f || req.Homing != 0 || RocketHomingFire.IsRocketBank(req.BankIndex))
+            localOffsets = null;
+            if (fullScale <= 0.01f || req.Homing != 0 || req.MountIndex < 0
+                || RocketHomingFire.IsRocketBank(req.BankIndex))
                 return false;
 
             MegaShipCatalog catalog = MegaShipCatalog.Load();
@@ -2022,16 +2084,380 @@ namespace TitanOrbit.Game
                 return false;
             if (!IsTitanShooter(req.OwnerNetworkId))
                 return false;
-
-            float reference = math.max(0.01f, BulletVisualScale.ResolveFixedBulletReferenceDamage());
-            // This shot's ScaleMultiplier is fire power ÷ the bank reference.
-            BulletVisualScale.ResolveTitanSplitCounts(
-                fullScale * reference, reference, out int trueCount, out spawnCount);
-            if (trueCount <= 1)
+            if (!TryCollectTurretMuzzlePositions(req.OwnerNetworkId, req.MountIndex, s_TurretMuzzleScratch, s_TurretMuzzleScales))
                 return false;
 
-            eachScale = BulletVisualScale.ComputeTitanSplitShellScale(fullScale, trueCount);
-            return spawnCount > 1;
+            int count = s_TurretMuzzleScratch.Count;
+            if (count <= 0)
+                return false;
+
+            // The shell that owns the tracer is the cannon this shot is leaving.
+            int lead = 0;
+            float leadSq = float.MaxValue;
+            for (int i = 0; i < count; i++)
+            {
+                float sq = (s_TurretMuzzleScratch[i] - spawnDisplay).sqrMagnitude;
+                if (sq < leadSq)
+                {
+                    leadSq = sq;
+                    lead = i;
+                }
+            }
+
+            if (lead != 0)
+            {
+                Vector3 swapPoint = s_TurretMuzzleScratch[0];
+                s_TurretMuzzleScratch[0] = s_TurretMuzzleScratch[lead];
+                s_TurretMuzzleScratch[lead] = swapPoint;
+                float swapScale = s_TurretMuzzleScales[0];
+                s_TurretMuzzleScales[0] = s_TurretMuzzleScales[lead];
+                s_TurretMuzzleScales[lead] = swapScale;
+            }
+
+            localOffsets = new Vector3[count];
+            // Every cannon draws the full shot. Its own hierarchy scale is applied later.
+            s_TurretShellScales = new float[count];
+            Quaternion inv = Quaternion.Inverse(shotRotation);
+            for (int i = 0; i < count; i++)
+            {
+                localOffsets[i] = inv * (s_TurretMuzzleScratch[i] - spawnDisplay);
+                s_TurretShellScales[i] = s_TurretMuzzleScales[i];
+            }
+
+            spawnCount = count;
+            eachScale = fullScale;
+            return true;
+        }
+
+        /// <summary>
+        /// Display-space tip of the cannon mesh this Titan mount is firing.
+        /// Named gun / cannon / bullet objects are not the muzzle — the leading mesh
+        /// corner along <paramref name="aimForward"/> is. The yaw pivot is not used.
+        /// </summary>
+        public static bool TryGetLiveFiringTip(
+            EntityManager em,
+            Entity shipEntity,
+            int mountIndex,
+            float3 aimForward,
+            out float3 tip,
+            out float3 hullDisplay)
+        {
+            tip = default;
+            hullDisplay = default;
+            if (!em.Exists(shipEntity))
+                return false;
+
+            EcsWorldVisualizer visualizer = EcsWorldVisualizer.Active;
+            if (visualizer == null || !visualizer.TryGetProxy(shipEntity, out GameObject proxy) || proxy == null)
+                return false;
+
+            MegaShipWeaponVisualBinding binding = MegaShipWeaponVisualBinding.Ensure(proxy, shipEntity);
+            if (binding == null || binding.YawRoots == null
+                || mountIndex < 0 || mountIndex >= binding.YawRoots.Length)
+                return false;
+
+            Transform start = binding.Barrels != null
+                && mountIndex < binding.Barrels.Length
+                && binding.Barrels[mountIndex] != null
+                ? binding.Barrels[mountIndex]
+                : binding.YawRoots[mountIndex];
+            Transform turret = FindTurretRoot(start, proxy.transform);
+            if (turret == null)
+                turret = start;
+
+            // The drawn barrel, not the yaw pivot. Aim is only a fallback when that
+            // forward is degenerate — the tip has to follow the mesh that is turning.
+            Vector3 forward = start.forward;
+            forward.y = 0f;
+            if (forward.sqrMagnitude < 1e-6f)
+                forward = new Vector3(aimForward.x, 0f, aimForward.z);
+            forward.y = 0f;
+            if (forward.sqrMagnitude < 1e-6f)
+                forward = Vector3.forward;
+            else
+                forward.Normalize();
+
+            var best = new MeshPick();
+            WalkMeshes(turret, proxy.transform, 0, turret.position, forward, ref best);
+            if (!best.Found)
+                return false;
+
+            tip = best.Point;
+            hullDisplay = proxy.transform.position;
+            return true;
+        }
+
+        /// <summary>Per-shell world scale captured with the muzzle list. Read once in CreateTracer.</summary>
+        static float[] s_TurretShellScales;
+
+        /// <summary>
+        /// One world point and world scale per cannon. Empty named objects are skipped.
+        /// </summary>
+        static bool TryCollectTurretMuzzlePositions(int ownerNetworkId, int mountIndex, List<Vector3> into, List<float> scales)
+        {
+            into.Clear();
+            scales.Clear();
+            var world = EcsGameBridge.ClientWorld;
+            if (world == null || !world.IsCreated)
+                return false;
+
+            EntityManager em = world.EntityManager;
+            if (!BulletMuzzlePresentation.TryResolveShooterHull(
+                    em, ownerNetworkId, mountIndex, out Entity hull, out _))
+                return false;
+
+            EcsWorldVisualizer visualizer = EcsWorldVisualizer.Active;
+            if (visualizer == null || !visualizer.TryGetProxy(hull, out GameObject proxy) || proxy == null)
+                return false;
+
+            MegaShipWeaponVisualBinding binding = MegaShipWeaponVisualBinding.Ensure(proxy, hull);
+            if (binding == null || binding.YawRoots == null
+                || mountIndex < 0 || mountIndex >= binding.YawRoots.Length)
+                return false;
+
+            Transform start = binding.Barrels != null
+                && mountIndex < binding.Barrels.Length
+                && binding.Barrels[mountIndex] != null
+                ? binding.Barrels[mountIndex]
+                : binding.YawRoots[mountIndex];
+            Transform turret = FindTurretRoot(start, proxy.transform);
+            if (turret == null)
+                return false;
+
+            EmitCannonMuzzles(turret, proxy.transform, into, scales);
+            return into.Count > 0;
+        }
+
+        /// <summary>
+        /// Outermost object named like a turret (Turret, Turret 1, Turret 3) under this barrel.
+        /// Stops at the Turrets folder so one shot does not pick up every gun on the hull.
+        /// </summary>
+        static Transform FindTurretRoot(Transform start, Transform hull)
+        {
+            Transform found = null;
+            Transform t = start;
+            while (t != null && t != hull)
+            {
+                if (IsTurretsFolder(t.name))
+                    break;
+                if (NameContains(t.name, "turret"))
+                    found = t;
+                t = t.parent;
+            }
+
+            return found;
+        }
+
+        /// <summary>The hull folder that holds every turret, not one gun.</summary>
+        static bool IsTurretsFolder(string name)
+        {
+            if (string.IsNullOrEmpty(name))
+                return false;
+            if (string.Equals(name, "Turrets", System.StringComparison.OrdinalIgnoreCase))
+                return true;
+            return name.EndsWith("_Turrets", System.StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// One muzzle per cannon. Named gun / cannon / bullet objects are containers:
+        /// the walk keeps going, and the shell is placed on a single mesh inside that cannon.
+        /// Four mesh parts on one cannon still produce one shell.
+        /// </summary>
+        static void EmitCannonMuzzles(Transform turret, Transform hull, List<Vector3> into, List<float> scales)
+        {
+            s_CannonScratch.Clear();
+            CollectLeafCannons(turret, true, s_CannonScratch);
+            for (int i = 0; i < s_CannonScratch.Count; i++)
+            {
+                if (!TryPickFiringMesh(s_CannonScratch[i], hull, out Vector3 point, out float meshScale))
+                    continue;
+                into.Add(point);
+                scales.Add(meshScale);
+            }
+        }
+
+        /// <summary>
+        /// Deepest cannon / bullet / gun object in each branch. A parent named Gun with a
+        /// child named Cannon is not itself a cannon — the child is.
+        /// </summary>
+        static bool CollectLeafCannons(Transform node, bool isRoot, List<Transform> into)
+        {
+            if (node == null || !node.gameObject.activeInHierarchy)
+                return false;
+            if (!isRoot && node.name == ShipFamilyPartMatch.OriginalStashName)
+                return false;
+
+            bool deeper = false;
+            int childCount = node.childCount;
+            for (int i = 0; i < childCount; i++)
+            {
+                if (CollectLeafCannons(node.GetChild(i), false, into))
+                    deeper = true;
+            }
+
+            if (!isRoot && !deeper && IsMuzzleKeyword(node.name))
+            {
+                into.Add(node);
+                return true;
+            }
+
+            return deeper || (!isRoot && IsMuzzleKeyword(node.name));
+        }
+
+        /// <summary>
+        /// One mesh under <paramref name="cannon"/>. Empty transforms are ignored.
+        /// A mesh ends the walk. Several meshes under one cannon still yield one shell:
+        /// the one furthest along the cannon forward.
+        /// Scale is the local-scale chain from that mesh up to the ship root.
+        /// </summary>
+        static bool TryPickFiringMesh(Transform cannon, Transform hull, out Vector3 point, out float meshScale)
+        {
+            point = default;
+            meshScale = 1f;
+            if (cannon == null)
+                return false;
+
+            Vector3 forward = cannon.forward;
+            forward.y = 0f;
+            if (forward.sqrMagnitude < 1e-6f)
+                forward = Vector3.forward;
+            else
+                forward.Normalize();
+
+            var best = new MeshPick();
+            WalkMeshes(cannon, hull, 0, cannon.position, forward, ref best);
+            if (!best.Found)
+                return false;
+
+            point = best.Point;
+            meshScale = best.Scale;
+            return true;
+        }
+
+        struct MeshPick
+        {
+            public bool Found;
+            public Vector3 Point;
+            public float Scale;
+            public int Depth;
+            public float Forward;
+        }
+
+        static void WalkMeshes(
+            Transform node, Transform hull, int depth, Vector3 origin, Vector3 forward, ref MeshPick best)
+        {
+            if (node == null || !node.gameObject.activeInHierarchy)
+                return;
+            if (depth > 0 && node.name == ShipFamilyPartMatch.OriginalStashName)
+                return;
+
+            if (TryReadMesh(node, hull, forward, out Vector3 point, out float scale))
+            {
+                float ahead = Vector3.Dot(point - origin, forward);
+                // One shell per cannon. Nested meshes still count — the base housing must
+                // not hide the barrel — and the leading tip along the cannon wins.
+                bool better = !best.Found || ahead > best.Forward;
+                if (better)
+                {
+                    best.Found = true;
+                    best.Point = point;
+                    best.Scale = scale;
+                    best.Depth = depth;
+                    best.Forward = ahead;
+                }
+            }
+
+            int childCount = node.childCount;
+            for (int i = 0; i < childCount; i++)
+                WalkMeshes(node.GetChild(i), hull, depth + 1, origin, forward, ref best);
+        }
+
+        /// <summary>
+        /// True when this object has a real mesh. The point is the mesh corner furthest
+        /// along <paramref name="forward"/> — the cannon tip, not the pivot or the bounds center.
+        /// </summary>
+        static bool TryReadMesh(Transform node, Transform hull, Vector3 forward, out Vector3 point, out float meshScale)
+        {
+            point = default;
+            meshScale = 1f;
+            if (node == null)
+                return false;
+
+            MeshFilter filter = node.GetComponent<MeshFilter>();
+            SkinnedMeshRenderer skinned = node.GetComponent<SkinnedMeshRenderer>();
+            Mesh mesh = filter != null ? filter.sharedMesh : null;
+            if (mesh == null && skinned != null)
+                mesh = skinned.sharedMesh;
+            if (mesh == null)
+                return false;
+
+            if (!TryMeshCornerAlong(node, mesh, forward, out point))
+                point = node.position;
+
+            meshScale = LocalScaleUntil(node, hull);
+            return true;
+        }
+
+        /// <summary>World-space corner of <paramref name="mesh"/> furthest along <paramref name="forward"/>.</summary>
+        static bool TryMeshCornerAlong(Transform node, Mesh mesh, Vector3 forward, out Vector3 tip)
+        {
+            tip = node.position;
+            if (node == null || mesh == null)
+                return false;
+
+            Bounds local = mesh.bounds;
+            Vector3 center = local.center;
+            Vector3 extents = local.extents;
+            float best = float.NegativeInfinity;
+            for (int i = 0; i < 8; i++)
+            {
+                Vector3 corner = center + new Vector3(
+                    (i & 1) == 0 ? -extents.x : extents.x,
+                    (i & 2) == 0 ? -extents.y : extents.y,
+                    (i & 4) == 0 ? -extents.z : extents.z);
+                Vector3 world = node.TransformPoint(corner);
+                float d = Vector3.Dot(world, forward);
+                if (d > best)
+                {
+                    best = d;
+                    tip = world;
+                }
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Product of local scales from <paramref name="node"/> up to, but not including, the ship root.
+        /// Regular muzzle placement already bakes the root presentation scale into the world position
+        /// (the bounds center used here). Multiplying the shell by that root scale again would shrink it.
+        /// </summary>
+        static float LocalScaleUntil(Transform node, Transform stopExclusive)
+        {
+            float mul = 1f;
+            Transform walk = node;
+            while (walk != null && walk != stopExclusive)
+            {
+                Vector3 s = walk.localScale;
+                mul *= (math.abs(s.x) + math.abs(s.y) + math.abs(s.z)) / 3f;
+                walk = walk.parent;
+            }
+
+            return math.max(0.01f, mul);
+        }
+
+        /// <summary>Cannon, bullet, or gun. No other words count as a muzzle.</summary>
+        static bool IsMuzzleKeyword(string name)
+        {
+            return NameContains(name, "cannon")
+                || NameContains(name, "bullet")
+                || NameContains(name, "gun");
+        }
+
+        static bool NameContains(string name, string keyword)
+        {
+            return !string.IsNullOrEmpty(name)
+                && name.IndexOf(keyword, System.StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         /// <summary>True when this NetworkId is a live Titan hull. No extra network field.</summary>
@@ -2090,24 +2516,30 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Centers the row on the logical tracer. Slot 0 is the primary shell.
-        /// Neighbor gap is drawn size ÷ <see cref="BulletVfxBank.BulletReferenceFirePower"/>.
+        /// Puts each shell on the cannon mesh it left. A shot with no cannon offsets
+        /// stays as one shell on the logical muzzle.
         /// </summary>
         static void PlaceTracerShells(in Tracer t, Vector3 center, Quaternion rotation)
         {
-            int count = t.SplitVisualCount > 0 ? t.SplitVisualCount : 1;
-            float spacing = 0f;
-            if (count > 1 && t.Go != null)
+            if (t.SplitLocalOffsets != null && t.SplitLocalOffsets.Length > 0)
             {
-                float reference = BulletVisualScale.ResolveFixedBulletReferenceDamage();
-                spacing = BulletVisualScale.ComputeTitanSplitShellSpacing(
-                    t.Go.transform.localScale.x, reference);
+                PlaceTurretMuzzleShells(in t, center, rotation);
+                return;
             }
 
-            float mid = (count - 1) * 0.5f;
-            Vector3 right = rotation * Vector3.right;
             if (t.Go != null)
-                t.Go.transform.SetPositionAndRotation(center + right * ((0f - mid) * spacing), rotation);
+                t.Go.transform.SetPositionAndRotation(center, rotation);
+        }
+
+        /// <summary>
+        /// Keeps each shell on the barrel it left. Offsets were captured from those
+        /// nested objects at fire time and ride the shot's heading.
+        /// </summary>
+        static void PlaceTurretMuzzleShells(in Tracer t, Vector3 center, Quaternion rotation)
+        {
+            Vector3[] offsets = t.SplitLocalOffsets;
+            if (t.Go != null && offsets.Length > 0)
+                t.Go.transform.SetPositionAndRotation(center + rotation * offsets[0], rotation);
 
             if (t.SplitExtras == null)
                 return;
@@ -2115,10 +2547,10 @@ namespace TitanOrbit.Game
             for (int i = 0; i < t.SplitExtras.Length; i++)
             {
                 GameObject extra = t.SplitExtras[i];
-                if (extra == null)
+                int slot = i + 1;
+                if (extra == null || slot >= offsets.Length)
                     continue;
-                float slot = (i + 1) - mid;
-                extra.transform.SetPositionAndRotation(center + right * (slot * spacing), rotation);
+                extra.transform.SetPositionAndRotation(center + rotation * offsets[slot], rotation);
             }
         }
 

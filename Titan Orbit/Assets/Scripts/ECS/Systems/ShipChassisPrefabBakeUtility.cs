@@ -241,12 +241,14 @@ namespace TitanOrbit.ECS
 
                 Transform poseSource = bestAuth != null ? bestAuth.transform : body;
                 GetHullRootLocalPose(root, poseSource, out float3 localPos, out quaternion localRot);
+                quaternion planarRot = ToPlanarYawLocalRotation(localRot);
 
                 dst.Add(new ShipWeaponMountBakeData
                 {
                     LocalPosition = localPos,
+                    MuzzleTipLocal = MeasureMuzzleTipLocal(root, body, poseSource, planarRot),
                     // Planar yaw only — pitched meshes must not collapse ShipWeaponPose aim to +Z.
-                    LocalRotation = ToPlanarYawLocalRotation(localRot),
+                    LocalRotation = planarRot,
                     DirectionAngleDeg = bestAuth != null ? bestAuth.DirectionAngleDeg : 0f,
                     // Prefer authored index; EnsureUniqueCannonIndices fixes all-zero prefabs.
                     CannonIndex = bestAuth != null ? bestAuth.CannonIndex : bi,
@@ -377,6 +379,156 @@ namespace TitanOrbit.ECS
                 m.CannonIndex = i;
                 mounts[i] = m;
             }
+        }
+
+        /// <summary>
+        /// Mount-local offset from <paramref name="poseSource"/> to the leading tip of a cannon
+        /// mesh under it. Zero unless this body is a turret or cannon — regular weapon markers
+        /// stay on their authored muzzle. The tip is the mesh corner furthest along the barrel,
+        /// so a turning turret fires from that end instead of the yaw pivot.
+        /// </summary>
+        public static float3 MeasureMuzzleTipLocal(
+            Transform hullRoot,
+            Transform poseSource,
+            quaternion planarLocalRot)
+        {
+            return MeasureMuzzleTipLocal(hullRoot, poseSource, poseSource, planarLocalRot);
+        }
+
+        /// <summary>
+        /// Same as <see cref="MeasureMuzzleTipLocal(Transform, Transform, quaternion)"/> but the
+        /// mesh search starts at <paramref name="searchRoot"/> while the offset is still from
+        /// <paramref name="poseSource"/> (the baked pivot).
+        /// </summary>
+        public static float3 MeasureMuzzleTipLocal(
+            Transform hullRoot,
+            Transform searchRoot,
+            Transform poseSource,
+            quaternion planarLocalRot)
+        {
+            if (hullRoot == null || searchRoot == null || poseSource == null
+                || !HierarchyHasTurretOrCannon(searchRoot))
+                return float3.zero;
+
+            Vector3 forward = poseSource.forward;
+            forward.y = 0f;
+            if (forward.sqrMagnitude < 1e-6f)
+                forward = Vector3.forward;
+            else
+                forward.Normalize();
+
+            if (!TryFurthestMeshTip(searchRoot, forward, out Vector3 tipWorld))
+                return float3.zero;
+
+            Vector3 tipHull = hullRoot.InverseTransformPoint(tipWorld);
+            Vector3 pivotHull = hullRoot.InverseTransformPoint(poseSource.position);
+            float3 delta = (Vector3)(tipHull - pivotHull);
+            if (math.lengthsq(delta) < 0.0004f)
+                return float3.zero;
+
+            return math.mul(math.inverse(planarLocalRot), delta);
+        }
+
+        static bool HierarchyHasTurretOrCannon(Transform root)
+        {
+            Transform[] all = root.GetComponentsInChildren<Transform>(true);
+            for (int i = 0; i < all.Length; i++)
+            {
+                Transform t = all[i];
+                if (t == null || IsUnderOriginalStash(t, root))
+                    continue;
+                string name = t.name;
+                if (NameHas(name, "turret") || NameHas(name, "cannon"))
+                    return true;
+            }
+
+            return false;
+        }
+
+        static bool TryFurthestMeshTip(Transform root, Vector3 forward, out Vector3 tip)
+        {
+            tip = default;
+            bool found = false;
+            float best = float.NegativeInfinity;
+            Transform[] all = root.GetComponentsInChildren<Transform>(true);
+            for (int i = 0; i < all.Length; i++)
+            {
+                Transform t = all[i];
+                if (t == null || IsUnderOriginalStash(t, root))
+                    continue;
+                if (!TryMeshTip(t, forward, out Vector3 point, out float ahead))
+                    continue;
+                if (!found || ahead > best)
+                {
+                    found = true;
+                    best = ahead;
+                    tip = point;
+                }
+            }
+
+            return found;
+        }
+
+        static bool TryMeshTip(Transform node, Vector3 forward, out Vector3 tip, out float ahead)
+        {
+            tip = default;
+            ahead = 0f;
+            Mesh mesh = null;
+            MeshFilter filter = node.GetComponent<MeshFilter>();
+            if (filter != null)
+                mesh = filter.sharedMesh;
+            if (mesh == null)
+            {
+                SkinnedMeshRenderer skinned = node.GetComponent<SkinnedMeshRenderer>();
+                if (skinned != null)
+                    mesh = skinned.sharedMesh;
+            }
+
+            if (mesh == null)
+                return false;
+
+            Bounds local = mesh.bounds;
+            Vector3 center = local.center;
+            Vector3 extents = local.extents;
+            float best = float.NegativeInfinity;
+            Vector3 bestPoint = node.position;
+            for (int i = 0; i < 8; i++)
+            {
+                Vector3 corner = center + new Vector3(
+                    (i & 1) == 0 ? -extents.x : extents.x,
+                    (i & 2) == 0 ? -extents.y : extents.y,
+                    (i & 4) == 0 ? -extents.z : extents.z);
+                Vector3 world = node.TransformPoint(corner);
+                float d = Vector3.Dot(world, forward);
+                if (d > best)
+                {
+                    best = d;
+                    bestPoint = world;
+                }
+            }
+
+            tip = bestPoint;
+            ahead = best;
+            return true;
+        }
+
+        static bool IsUnderOriginalStash(Transform node, Transform stop)
+        {
+            Transform walk = node;
+            while (walk != null && walk != stop)
+            {
+                if (walk.name == ShipFamilyPartMatch.OriginalStashName)
+                    return true;
+                walk = walk.parent;
+            }
+
+            return false;
+        }
+
+        static bool NameHas(string name, string keyword)
+        {
+            return !string.IsNullOrEmpty(name)
+                && name.IndexOf(keyword, System.StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         /// <summary>

@@ -285,11 +285,11 @@ namespace TitanOrbit.Data
 
         [Header("Titan bullet visual")]
         [Tooltip(
-            "One switch for every Titan. On: a bullet draws floor(fire power ÷ Bullet Reference Fire Power) " +
-            "smaller bullets side by side. That same Bullet VFX Bank field sets the gap. " +
-            "Each visual is an equal share of the shot, so two shells that have not reached the next " +
-            "multiple of that reference are larger than two that landed exactly on it. Still one round — damage and the hit stay on the single server bullet. " +
-            "Off: one bullet sized by the full fire power. Missiles and lasers are unchanged.")]
+            "One switch for every Titan. On: each real cannon or gun mesh under a turret fires one shell " +
+            "at the full shot size (fire power ÷ Bullet Reference Fire Power), times that mesh's own scale. " +
+            "Empty objects named gun, cannon, or bullet are skipped. Cannon count does not divide the size, " +
+            "and fire power does not add extra shells. Still one round — damage and the hit stay on the " +
+            "single server bullet. Off: one bullet sized by the full fire power. Missiles and lasers are unchanged.")]
         public bool splitShotBulletVisual = true;
 
         [Header("Unique components")]

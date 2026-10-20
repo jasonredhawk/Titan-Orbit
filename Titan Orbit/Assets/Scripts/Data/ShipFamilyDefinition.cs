@@ -112,7 +112,8 @@ namespace TitanOrbit.Data
         [Tooltip(
             "Editor preview only. A live match does not use these numbers. " +
             "Home-planet ships are always 1×. Every other planet's family is rolled " +
-            "from the match seed between 0.5 and 2.0 (ShipFamilyMatchBonuses).")]
+            "from the match seed on a bell curve centered on 1×, tails 0.5 to 2.0 " +
+            "(ShipFamilyMatchBonuses).")]
         public ShipFamilySpecialBonuses specialBonuses = ShipFamilySpecialBonuses.Identity;
 
         [Header("Bullets")]

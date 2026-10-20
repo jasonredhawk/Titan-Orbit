@@ -13,9 +13,10 @@ namespace TitanOrbit.UI
     /// so the L1–L6 hull cards keep the rest of the row.
     /// <para>
     /// Ice ring = stock 1.00×. Spokes past the ring are boosts, spokes short of
-    /// the ring are penalties. Stock spokes stay muted; live ones take category
-    /// colour (washed, not grey). Spoke tips stay horizontal: name only at 1×,
-    /// name plus signed percent when the family actually changes the stat.
+    /// the ring are penalties. Stock spokes stay muted. A live percent is ice
+    /// green or amber until ±40%, then electric teal or crimson. Spoke titles stay
+    /// horizontal: name only at 1×, name plus signed percent when the family
+    /// actually changes the stat.
     /// Titles sit on a fixed outer orbit; only the spoke length follows the value.
     /// </para>
     /// Both plates ignore the tree VerticalLayoutGroup
@@ -401,10 +402,9 @@ namespace TitanOrbit.UI
                 label.color = ShipFamilyBonusWheelGraphic.MuteCategory(cat);
             else if (row.IsNeutral)
                 label.color = NeutralValue;
-            else if (row.IsBoost)
-                label.color = new Color(0.35f, 0.98f, 0.62f, 1f);
-            else if (row.IsPenalty)
-                label.color = new Color(0.95f, 0.72f, 0.32f, 1f);
+            else if (FamilyStatHudCopy.TryGetMagnitudeColor(row, out Color tier))
+                // Same ±40% palette as the spoke: ice green, amber, electric teal, crimson.
+                label.color = tier;
             else
                 label.color = cat;
 
@@ -454,7 +454,10 @@ namespace TitanOrbit.UI
                 // Percent plus the sentence that explains the spoke. Built here
                 // so pointer-enter only assigns text it already has.
                 hover.BodyCopy = FamilyStatHudCopy.FormatSpokeHoverBody(row);
-                hover.Accent = ShipFamilyBonusWheelGraphic.ColorForCategory(row.Category);
+                // Stripe matches the spoke: teal / crimson on an extreme roll, category tint on a 1× spoke.
+                hover.Accent = FamilyStatHudCopy.TryGetMagnitudeColor(row, out Color accent)
+                    ? accent
+                    : (row.IsNeutral ? NeutralValue : cat);
             }
         }
 
@@ -528,7 +531,7 @@ namespace TitanOrbit.UI
             if (_spokeTip.BodyLabel != null)
                 _spokeTip.BodyLabel.text = string.IsNullOrEmpty(spoke.BodyCopy) ? string.Empty : spoke.BodyCopy;
 
-            // Stripe follows the wheel category (move / combat / hull / energy / hold).
+            // Stripe follows the spoke colour (tier on a live bonus, category on a 1× spoke).
             ShipStatTooltipChrome.ApplyAccent(in _spokeTip, spoke.Accent);
 
             var self = spoke.transform as RectTransform;
@@ -766,7 +769,10 @@ namespace TitanOrbit.UI
             /// </summary>
             public string BodyCopy;
 
-            /// <summary>Category stripe colour (move, combat, hull, energy, hold).</summary>
+            /// <summary>
+            /// Stripe colour. A live bonus uses its magnitude tier (ice green, amber,
+            /// electric teal, crimson). A 1× spoke keeps the power-bar category tint.
+            /// </summary>
             public Color Accent;
 
             /// <summary>[UNITY] Pointer entered the short tag.</summary>

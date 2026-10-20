@@ -58,6 +58,8 @@ namespace TitanOrbit.Simulation
         /// Bullets scale as this shot's fire power ÷ the Bullet VFX Bank reference
         /// (<see cref="BulletVisualScale.ResolveFixedBulletReferenceDamage"/>, default 4).
         /// <paramref name="useFixedBulletReference"/> false keeps the per-weapon base (missiles).
+        /// <paramref name="sniperVisual"/> divides fire power by 50.
+        /// Every other bullet uses the bullet bank asset reference.
         /// </summary>
         public static BulletShotPlan Build(
             float3 fireOrigin,
@@ -77,7 +79,8 @@ namespace TitanOrbit.Simulation
             float categoryUpgradeScale,
             float shipPeakDps = 0f,
             float shipReferenceDps = 0f,
-            bool useFixedBulletReference = true)
+            bool useFixedBulletReference = true,
+            bool sniperVisual = false)
         {
             // Fire power before the bullet-type multiplier. Type changes hit damage, not size.
             float bulletDamage = damage;
@@ -90,13 +93,22 @@ namespace TitanOrbit.Simulation
                 firePowerExtras);
             float fireRateMul = fireRate / math.max(0.1f, hullFireRate);
 
-            // Bullets: fire power ÷ the Bullet VFX Bank reference (default 4).
+            // Bullets, Titan guns included: fire power ÷ the bullet bank asset
+            // reference (Bullet Reference Fire Power, live value 4).
+            // A sniper is the one exception: fire power ÷ 50.
             // Missiles keep each weapon's own base. Lasers never reach this builder.
             _ = authoredBulletScale;
             _ = categoryUpgradeScale;
             _ = referenceSpeed;
             float visualScale;
-            if (useFixedBulletReference)
+            if (sniperVisual)
+            {
+                _ = shipPeakDps;
+                _ = shipReferenceDps;
+                _ = referenceDamage;
+                visualScale = BulletVisualScale.ComputeSniperShotScale(bulletDamage);
+            }
+            else if (useFixedBulletReference)
             {
                 _ = shipPeakDps;
                 _ = shipReferenceDps;

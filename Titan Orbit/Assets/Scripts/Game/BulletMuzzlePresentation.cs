@@ -73,6 +73,50 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// World Y of the drawn cannon for a visual tracer. Does not write components,
+        /// spawn positions, or velocities. Server bullets and hit tests stay on Y = 0;
+        /// the caller adds this only to the rendered shell.
+        /// </summary>
+        /// <remarks>
+        /// Titans: live cannon-mesh tip (the mesh corner furthest along the barrel),
+        /// so a tall turret does not fire from the yaw pivot.
+        /// Every other hull: the live weapon transform's world Y, including BankPivot lift.
+        /// If the drawn hull is missing, the baked mount height is used the same way.
+        /// </remarks>
+        public static bool TryGetVisualCannonHeight(
+            EntityManager em,
+            Entity shipEntity,
+            int mountIndex,
+            out float worldY)
+        {
+            worldY = 0f;
+            if (!em.Exists(shipEntity) || mountIndex < 0)
+                return false;
+
+            // Titans — mesh tip on the turning barrel, not the play plane.
+            if (IsMegaHull(em, shipEntity))
+            {
+                if (!TryResolveMuzzle(em, shipEntity, mountIndex, out float3 titanOrigin, out _, out _, out _))
+                    return false;
+                worldY = titanOrigin.y;
+                return true;
+            }
+
+            // Every other ship — the same live barrel the muzzle flash uses.
+            if (TryResolveLiveWeaponMuzzle(
+                    em, shipEntity, mountIndex, out float3 liveOrigin, out _, out _))
+            {
+                worldY = liveOrigin.y;
+                return true;
+            }
+
+            if (!TryResolveMuzzle(em, shipEntity, mountIndex, out float3 origin, out _, out _, out _))
+                return false;
+            worldY = origin.y;
+            return true;
+        }
+
+        /// <summary>
         /// Resolves world muzzle origin/forward for one mount index on the local ship.
         /// Live GO path: tip position + unbanked planar forward of that weapon component.
         /// </summary>
@@ -383,6 +427,16 @@ namespace TitanOrbit.Game
                 float3 shipLogical = em.GetComponentData<LocalTransform>(shipEntity).Position;
                 fireOrigin = ToLogicalMuzzle(fireOrigin, shipLogical, shipTransform.Position);
                 isDisplaySpace = false;
+            }
+
+            // Drawn cannon tip. The baked mount is the yaw pivot, which stays put while the
+            // barrel turns, so the flash and the tracer were leaving from the turret base.
+            if (BulletVfxDriver.TryGetLiveFiringTip(
+                    em, shipEntity, mountIndex, fireForward, out float3 visualTip, out float3 proxyHull)
+                && em.HasComponent<LocalTransform>(shipEntity))
+            {
+                float3 shipLogical = em.GetComponentData<LocalTransform>(shipEntity).Position;
+                fireOrigin = ToLogicalMuzzle(visualTip, shipLogical, proxyHull);
             }
 
             shipVel = GetLocalShipVelocity(em, shipEntity, shipTransform.Position);

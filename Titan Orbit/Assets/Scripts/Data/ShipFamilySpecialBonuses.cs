@@ -8,8 +8,8 @@ namespace TitanOrbit.Data
     /// Multipliers applied after prefab component sum + aggregation.
     /// Defaults are 1 (no change). The asset field is the editor preview.
     /// A live match ignores those fixed numbers: home-planet ships stay at 1×, and
-    /// every other planet's family is rolled in [0.5, 2.0] by
-    /// <see cref="ShipFamilyMatchBonuses"/>.
+    /// every other planet's family is a bell-curve roll centered on 1× and
+    /// clamped to [0.5, 2.0] by <see cref="ShipFamilyMatchBonuses"/>.
     /// extraSpeedPercentMul / extraSpeedEnergyDrainMul scale engine-authored OVERDRIVE
     /// ExtraSpeedPercent and ExtraSpeedEnergyDrain (absolute OD energy/sec).
     /// <see cref="cameraHeightMul"/> is presentation-only (CameraFollowEcs) — it does not

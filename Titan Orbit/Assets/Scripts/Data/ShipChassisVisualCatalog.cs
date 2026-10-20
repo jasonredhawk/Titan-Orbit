@@ -36,6 +36,8 @@ namespace TitanOrbit.Data
     public struct ShipWeaponMountBakeData
     {
         public float3 LocalPosition;
+        /// <summary>Mount-local offset from <see cref="LocalPosition"/> to the cannon mesh tip. Zero when unused.</summary>
+        public float3 MuzzleTipLocal;
         public quaternion LocalRotation;
         public float DirectionAngleDeg;
         public int CannonIndex;

@@ -5,6 +5,7 @@ using TitanOrbit.Core;
 using TitanOrbit.Data;
 using TitanOrbit.ECS;
 using TitanOrbit.Generation;
+using TitanOrbit.NetCode;
 using TitanOrbit.Simulation;
 using Unity.Entities;
 using Unity.Mathematics;
@@ -21,8 +22,10 @@ namespace TitanOrbit.Game
     /// Shift mouse-aim follows the cursor, then clips to the first collider along
     /// that segment via <see cref="BulletCosmeticHitQuery"/> (same spheres / MEGA
     /// parts as tracers) so the line stops on the hull instead of tunneling through
-    /// to the mouse. While a lock is burning, this driver reports <c>DPS × dt</c>
-    /// to <see cref="EcsFloatingCountPresenter"/>. Lasers stay hidden while the
+    /// to the mouse. While a lock is burning, this driver reports each replicated
+    /// <see cref="MegaShipGunnerSlotElement.CannonLaserBurnSequence"/> step to
+    /// <see cref="EcsFloatingCountPresenter"/> — not a local <c>Time.deltaTime</c>
+    /// guess, which reached 0 HP before the asteroid pop. Lasers stay hidden while the
     /// 10% recharge lockout is latched.
     /// Beam width tracks the 50%→300% DPS ramp so the line starts thin and fattens.
     /// Beams stay on while a live lock (or Shift mouse-aim) is burning.
@@ -78,7 +81,24 @@ namespace TitanOrbit.Game
             /// until the first resolved subject so a late aim does not wipe charge.
             /// </summary>
             public int RampFocus = int.MinValue;
+            /// <summary>False until this pooled beam has seen one burn-sequence snapshot.</summary>
+            public bool BurnSequenceReady;
+            /// <summary>Last <see cref="MegaShipGunnerSlotElement.CannonLaserBurnSequence"/> already shown.</summary>
+            public uint LastBurnSequence;
         }
+
+        /// <summary>
+        /// First snapshot of a pooled beam. A short lead-in is the start of this
+        /// burn; a large value is a barrel we just started watching mid-match.
+        /// </summary>
+        const uint MaxBurnLeadInTicks = 8;
+
+        /// <summary>
+        /// In-progress catch-up. A hitch can deliver about a second of server
+        /// ticks at once — those still belong on the streak. A full uint wrap
+        /// (sequence reset) is larger than this and is dropped.
+        /// </summary>
+        const uint MaxBurnCatchUpTicks = 90;
 
         /// <summary>
         /// One looping hum for every live cannon beam. Clip is Archanor
@@ -369,6 +389,10 @@ namespace TitanOrbit.Game
                 // tracking hid the first auto-lock until a Shift mouse-aim.
                 if (!localMouseAim && !tracking && !sticky && !localFiring)
                 {
+                    // Kill snapshot clears the lock in the same tick it counts the
+                    // last slice. Report that slice before the beam (and its sticky
+                    // aim) is dropped, or the streak freezes a snapshot early.
+                    ReportReplicatedBurn(em, binding.ShipEntity, team, mounts[m], gunners[m], key, Entity.Null, default);
                     HideMountImmediate(key);
                     continue;
                 }
@@ -378,6 +402,7 @@ namespace TitanOrbit.Game
                         localFiring && !localMouseAim, out Vector3 muzzle, out Vector3 end,
                         out Entity beamHit))
                 {
+                    ReportReplicatedBurn(em, binding.ShipEntity, team, mounts[m], gunners[m], key, Entity.Null, default);
                     HideMountImmediate(key);
                     continue;
                 }
@@ -386,6 +411,11 @@ namespace TitanOrbit.Game
                     continue;
 
                 RememberStickyLock(em, slot, gunners[m], beamHit, end);
+                // Server burn ticks, including a slice that lands the same snapshot
+                // the beam is too short to draw. Local Time.deltaTime used to reach
+                // 0 HP a round-trip before AsteroidDestroyedRpc froze the streak.
+                ReportReplicatedBurn(
+                    em, binding.ShipEntity, team, mounts[m], gunners[m], key, beamHit, end);
                 slot.LastUsed = now;
                 slot.LastSeenLive = now;
                 if (SilenceVendorAudio(slot.Root))
@@ -407,29 +437,54 @@ namespace TitanOrbit.Game
                 ApplyVendorLength(slot.Vendor, toEnd.magnitude);
                 SetBeamShown(slot, true);
                 ApplyVendorLinePose(slot, muzzle, end);
-
-                // --- Floating damage (same channels as BulletHitRpc) ---
-                // [TITAN-ORBIT] Hitscan has no tracer / HitRpc. Asteroids are
-                // seed-hydrated (GhostId 0), so resolve the rock from the clipped
-                // beam contact — same surface fit bullets use — not TargetGhostId.
-                TryNotifyBeamDamageFloat(
-                    binding.ShipEntity, team, mounts[m], gunners[m], end, beamHit, rampSeconds);
             }
         }
 
         /// <summary>
-        /// Pushes this frame's cannon DPS onto the same floating-count path bullets use.
-        /// Lasers never send <c>BulletHitRpc</c>; the live beam is the presentation hook.
+        /// Applies new server burn ticks to the floating damage streak.
+        /// <paramref name="clippedHit"/> wins; otherwise the beam's last sticky
+        /// aim point is used so a lock that died this snapshot still gets its slice.
+        /// </summary>
+        void ReportReplicatedBurn(
+            EntityManager em,
+            Entity shooter,
+            TeamId ownerTeam,
+            in ShipWeaponMountElement mount,
+            in MegaShipGunnerSlotElement gunner,
+            BeamKey key,
+            Entity clippedHit,
+            Vector3 impactDisplayPos)
+        {
+            if (!_live.TryGetValue(key, out BeamSlot slot) || slot == null)
+                return;
+            if (!TryConsumeReplicatedBurnTicks(slot, gunner.CannonLaserBurnSequence, out uint burnTicks))
+                return;
+
+            if (clippedHit == Entity.Null
+                && impactDisplayPos.sqrMagnitude < 1e-4f
+                && (math.abs(slot.StickyAimX) > 0.01f || math.abs(slot.StickyAimZ) > 0.01f))
+            {
+                impactDisplayPos = new Vector3(slot.StickyAimX, 0f, slot.StickyAimZ);
+            }
+
+            TryNotifyBeamDamageFloat(
+                em, shooter, ownerTeam, in mount, in gunner, impactDisplayPos, clippedHit, burnTicks);
+        }
+
+        /// <summary>
+        /// Turns new server burn ticks into one floating-count slice.
+        /// Lasers never send <c>BulletHitRpc</c>; the replicated sequence is the hook.
         /// Asteroids have no <c>GhostInstance</c> — prefer the clipped contact entity.
         /// </summary>
         static void TryNotifyBeamDamageFloat(
+            EntityManager em,
             Entity shooter,
             TeamId ownerTeam,
             in ShipWeaponMountElement mount,
             in MegaShipGunnerSlotElement slot,
             Vector3 impactDisplayPos,
             Entity clippedHit,
-            float rampSeconds)
+            uint burnTicks)
         {
             Entity target = clippedHit;
             if (target == Entity.Null && slot.TargetGhostId != 0)
@@ -439,13 +494,55 @@ namespace TitanOrbit.Game
             if (target == Entity.Null)
                 return;
 
-            // Slice = firePower × fireRate × ramp × dt (same DPS the server applies).
-            float slice = ResolveLaserSlice(in mount, rampSeconds) * Time.deltaTime;
+            // One server tick of ramped DPS per new sequence step. Top-killer +5%
+            // matches CannonLaserCombatSystem so the total is not short of the pop.
+            float tickDt = 1f / TitanOrbitServerTickRateSystem.SimulationHz;
+            float slice = ResolveLaserSlice(in mount, slot.CannonLaserRampSeconds) * tickDt * burnTicks;
+            if (em.Exists(shooter) && em.HasComponent<GhostOwner>(shooter))
+            {
+                int net = em.GetComponentData<GhostOwner>(shooter).NetworkId;
+                slice = TeamCommandRoleRules.ScaleFirePower(
+                    slice, ShipTopOfTeamRoles.IsKiller(ownerTeam, net));
+            }
+
             if (slice <= 0.01f)
                 return;
 
             EcsFloatingCountPresenter.TryNotifyLaserBeamSlice(
                 shooter, target, slice, ownerTeam, impactDisplayPos);
+        }
+
+        /// <summary>
+        /// New server slices since the last beam frame. The first snapshot of a
+        /// fresh barrel counts a short lead-in; a large jump is a resync.
+        /// </summary>
+        static bool TryConsumeReplicatedBurnTicks(BeamSlot slot, uint sequence, out uint ticks)
+        {
+            ticks = 0;
+            if (slot == null)
+                return false;
+
+            if (!slot.BurnSequenceReady)
+            {
+                slot.BurnSequenceReady = true;
+                if (sequence == 0 || sequence > MaxBurnLeadInTicks)
+                {
+                    slot.LastBurnSequence = sequence;
+                    return false;
+                }
+
+                slot.LastBurnSequence = sequence;
+                ticks = sequence;
+                return true;
+            }
+
+            uint delta = sequence - slot.LastBurnSequence;
+            slot.LastBurnSequence = sequence;
+            if (delta == 0 || delta > MaxBurnCatchUpTicks)
+                return false;
+
+            ticks = delta;
+            return true;
         }
 
         /// <summary>
@@ -786,9 +883,10 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Local owner predicts per-barrel charge. Restarts at 50% when the burn
-        /// subject changes: a new lock entity, or another pad / moon on the same
-        /// planet. A clipped rock in front of that lock is not a new target.
-        /// Remotes read the ghosted slot seconds.
+        /// subject changes: a new lock entity, another pad / moon on the same
+        /// planet, or the next body after the lock dies. A clipped rock in front
+        /// of a still-live lock is not a new target. Remotes read the ghosted
+        /// slot seconds (Clamp, so a server reset to 0 snaps).
         /// </summary>
         static float ResolveBeamRampSeconds(
             EntityManager em,
@@ -804,50 +902,95 @@ namespace TitanOrbit.Game
             if (!localOwner)
                 return math.max(0f, gunner.CannonLaserRampSeconds);
 
-            if (MegaShipWeaponVisualTargets.TryGetLockEntity(
+            bool gunnerLive = MegaShipWeaponVisualTargets.IsLiveLock(
+                em, gunner.TargetGhostId, gunner.AimWorldX, gunner.AimWorldZ);
+            bool resolved = MegaShipWeaponVisualTargets.TryGetLockEntity(
                     em, gunner.TargetGhostId, gunner.AimWorldX, gunner.AimWorldZ, out Entity lockEnt)
-                && lockEnt != Entity.Null)
-            {
-                int focus = CannonLaserHitApply.FocusWholeEntity;
-                bool haveSubject = !em.HasComponent<PlanetState>(lockEnt);
-                if (!haveSubject)
-                {
-                    float aimX = gunner.AimWorldX;
-                    float aimZ = gunner.AimWorldZ;
-                    if (math.abs(aimX) + math.abs(aimZ) > 0.05f)
-                    {
-                        double moonElapsed = 0d;
-                        PlanetGemMoonOrbitClock.TryGetElapsedSeconds(
-                            out moonElapsed, includeTickFraction: true);
-                        focus = CannonLaserHitApply.ResolvePlanetFocus(
-                            em, lockEnt, team, new float3(aimX, 0f, aimZ), mapW, mapH, moonElapsed);
-                        haveSubject = focus != CannonLaserHitApply.FocusWholeEntity;
-                    }
-                }
+                && lockEnt != Entity.Null
+                && MegaShipWeaponVisualTargets.IsLiveVisualTarget(em, lockEnt);
 
-                bool newEntity = slot.RampTarget != Entity.Null && slot.RampTarget != lockEnt;
-                bool newSubject = haveSubject
-                    && slot.RampTarget == lockEnt
+            // Committed subject. Prefer the live gunner lock. Once that lock is
+            // gone, the body the beam is actually on is the new target — waiting
+            // on a stale AimWorld left a maxed ramp stuck after every kill.
+            Entity subject = Entity.Null;
+            int focus = CannonLaserHitApply.FocusWholeEntity;
+            bool haveFocus = false;
+            if (resolved && gunnerLive)
+                subject = lockEnt;
+            else if (!gunnerLive
+                     && beamHit != Entity.Null
+                     && MegaShipWeaponVisualTargets.IsLiveVisualTarget(em, beamHit))
+                subject = beamHit;
+
+            if (subject != Entity.Null)
+                haveFocus = TryResolveRampFocus(
+                    em, subject, team, gunner.AimWorldX, gunner.AimWorldZ, mapW, mapH, out focus);
+
+            bool reset = gunner.TargetGhostId != 0
+                         && slot.RampGhostId != 0
+                         && gunner.TargetGhostId != slot.RampGhostId;
+            if (subject != Entity.Null)
+            {
+                bool newEntity = slot.RampTarget != Entity.Null && slot.RampTarget != subject;
+                bool newFocus = haveFocus
+                    && slot.RampTarget == subject
                     && slot.RampFocus != int.MinValue
                     && slot.RampFocus != focus;
-                if (newEntity || newSubject)
-                    slot.LocalRampSeconds = 0f;
-                slot.RampTarget = lockEnt;
-                slot.RampGhostId = gunner.TargetGhostId;
-                if (haveSubject)
+                // Lookup never named a body for the whole climb. The first body
+                // we can name at the cap is a new target, not a late aim on the
+                // one we already charged (that resolve lands before the cap).
+                bool cappedWithoutSubject = slot.RampTarget == Entity.Null
+                    && slot.LocalRampSeconds >= CannonLaserMath.RampDurationSeconds - 0.001f;
+                if (newEntity || newFocus || cappedWithoutSubject)
+                    reset = true;
+                slot.RampTarget = subject;
+                if (haveFocus)
                     slot.RampFocus = focus;
+                else if (newEntity || cappedWithoutSubject)
+                    slot.RampFocus = int.MinValue;
             }
 
-            bool haveLock = lockEnt != Entity.Null
+            if (gunner.TargetGhostId != 0)
+                slot.RampGhostId = gunner.TargetGhostId;
+
+            bool haveLock = subject != Entity.Null
+                            || (gunnerLive && lockEnt != Entity.Null)
                             || beamHit != Entity.Null
                             || MegaShipWeaponAim.IsTrackingAim(in gunner);
-            float shown = slot.LocalRampSeconds;
+            float shown = reset ? 0f : slot.LocalRampSeconds;
             slot.LocalRampSeconds = CannonLaserMath.StepRampSeconds(
                 shown,
                 Time.deltaTime,
-                reset: false,
-                charging: charging && haveLock);
+                reset: reset,
+                charging: charging && haveLock && !reset);
             return shown;
+        }
+
+        /// <summary>
+        /// Pad slot + 1 or moon focus for a planet lock. Ships and asteroids are
+        /// the whole entity (<see cref="CannonLaserHitApply.FocusWholeEntity"/>).
+        /// </summary>
+        static bool TryResolveRampFocus(
+            EntityManager em,
+            Entity subject,
+            TeamId team,
+            float aimX,
+            float aimZ,
+            float mapW,
+            float mapH,
+            out int focus)
+        {
+            focus = CannonLaserHitApply.FocusWholeEntity;
+            if (subject == Entity.Null || !em.HasComponent<PlanetState>(subject))
+                return true;
+            if (math.abs(aimX) + math.abs(aimZ) <= 0.05f)
+                return false;
+
+            double moonElapsed = 0d;
+            PlanetGemMoonOrbitClock.TryGetElapsedSeconds(out moonElapsed, includeTickFraction: true);
+            focus = CannonLaserHitApply.ResolvePlanetFocus(
+                em, subject, team, new float3(aimX, 0f, aimZ), mapW, mapH, moonElapsed);
+            return focus != CannonLaserHitApply.FocusWholeEntity;
         }
 
         void ResetRampsForShip(int shipIndex)
@@ -868,6 +1011,8 @@ namespace TitanOrbit.Game
             slot.RampTarget = Entity.Null;
             slot.RampGhostId = 0;
             slot.RampFocus = int.MinValue;
+            slot.BurnSequenceReady = false;
+            slot.LastBurnSequence = 0;
         }
 
         static bool TryFindLocalAutoLock(

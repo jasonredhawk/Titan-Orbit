@@ -170,5 +170,15 @@ namespace TitanOrbit.ECS
         /// </summary>
         [GhostField(Quantization = 100, Smoothing = SmoothingAction.Clamp)]
         public float CannonLaserRampSeconds;
+
+        /// <summary>
+        /// Increments once per server tick this barrel actually applies a laser slice.
+        /// Clients turn the delta into the floating damage number. A local
+        /// <c>Time.deltaTime</c> estimate reaches 0 HP a round-trip before
+        /// <c>AsteroidDestroyedRpc</c>, so the counter used to freeze while the
+        /// rock was still on screen.
+        /// </summary>
+        [GhostField]
+        public uint CannonLaserBurnSequence;
     }
 }
