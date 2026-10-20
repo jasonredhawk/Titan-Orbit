@@ -157,21 +157,19 @@ namespace TitanOrbit.UI
                     unitSuffix = " DPS/s";
                     if (live.IsMega)
                     {
-                        // Catalog barrel DPS, then the planet family's fire rolls.
-                        // Purchased weapons are not added; the selected bullet type
-                        // scales AllGunDps before this read (that path already includes
-                        // the family rolls). Home Titans stay at the catalog DPS.
-                        var mega = MegaShipCatalog.Load();
-                        value = mega != null
-                            ? mega.GetPowerBreakdown(live.MegaCatalogIndex).GetDisplayDps()
-                            : ShipFamilyPowerScoreBreakdown.ComputeSustainedDps(eff.firePower, eff.fireRate);
-                        ShipFamilySpecialBonuses fleet = MegaShipStatsCalculator.ResolveFleetBonuses(
-                            live.Ship.ShipFamilyConfigIndex);
-                        float firePowerMul = fleet.firePowerMul > 0.0001f ? fleet.firePowerMul : 1f;
-                        float fireRateMul = fleet.fireRateMul > 0.0001f ? fleet.fireRateMul : 1f;
-                        value *= firePowerMul * fireRateMul;
-                        if (live.AllGunDps > 0.0001f)
-                            value = live.AllGunDps;
+                        // Each cycled gun uses the selected bullet type's damage and
+                        // rate. Catalog DPS stays only when that sum cannot be built.
+                        value = SumMegaSelectedDps(in live);
+                        if (value <= 0.0001f)
+                        {
+                            var mega = MegaShipCatalog.Load();
+                            value = mega != null
+                                ? mega.GetPowerBreakdown(live.MegaCatalogIndex).GetDisplayDps()
+                                : ShipFamilyPowerScoreBreakdown.ComputeSustainedDps(eff.firePower, eff.fireRate);
+                            if (live.AllGunDps > 0.0001f)
+                                value = live.AllGunDps;
+                        }
+
                         nextStep = 0f;
                     }
                     else if (live.AllGunDps > 0.0001f)
@@ -1426,11 +1424,23 @@ namespace TitanOrbit.UI
         {
             // --- Numbers the player already sees ---
             // Grid TOTAL is damage per shot. The readout / chip is all-gun DPS.
+            // Titans replace the catalog product with the selected bullet type:
+            // that type's damage and its own shots per second, per gun barrel.
             float firePower = Mathf.Max(0f, live.EffectiveStats.firePower);
             float dps = live.AllGunDps > 0.0001f
                 ? live.AllGunDps
                 : ShipFamilyPowerScoreBreakdown.ComputeSustainedDps(
                     firePower, live.EffectiveStats.fireRate);
+            if (live.IsMega)
+            {
+                SumMegaSelectedVolley(in live, out float volleyDamage, out float selectedDps);
+                if (selectedDps > 0.0001f)
+                {
+                    firePower = volleyDamage > 0.01f ? volleyDamage : firePower;
+                    dps = selectedDps;
+                }
+            }
+
             if (firePower <= 0.01f || dps <= 0.01f)
                 return;
 
@@ -1455,6 +1465,14 @@ namespace TitanOrbit.UI
 
             if (weaponRate <= 0.0001f)
                 weaponRate = 1f;
+
+            // Titan volley numbers already include this bullet type's damage and rate.
+            // Leaving the profile multipliers here would apply them a second time.
+            if (live.IsMega)
+            {
+                weaponRate = 1f;
+                weaponFp = 1f;
+            }
 
             // Hull shots/s before the bullet type. Multiplying back by the weapon
             // rate returns the cadence that turns Fire Power into the chip.
@@ -1485,7 +1503,12 @@ namespace TitanOrbit.UI
 
             ShipStatTooltipChrome.AppendSectionBanner(sb, "DPS", "FFAA66");
             AppendTint(sb, HexMute, "Fire Power  ×  rate of fire");
-            if (!Mathf.Approximately(weaponRate, 1f))
+            if (live.IsMega && !string.IsNullOrEmpty(weaponName))
+            {
+                AppendTint(sb, HexMute, "  ·  ");
+                AppendTint(sb, "FFAA66", weaponName);
+            }
+            else if (!Mathf.Approximately(weaponRate, 1f))
             {
                 AppendTint(sb, HexMute, "  ×  ");
                 AppendTint(sb, "FFAA66", weaponName);
@@ -1826,8 +1849,10 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Titan barrels from the catalog. Each unique part keeps its own rate;
-        /// copy count scales Fire Power, not shots per second.
+        /// Titan barrels from the catalog. Cycled guns take the selected bullet
+        /// type's damage and fire rate (family level-7, or the catalog gun).
+        /// Copy count scales Fire Power, not shots per second. Lasers and other
+        /// authored banks keep their own rate and are not retuned by the B-key.
         /// </summary>
         static void CollectMegaDpsGuns(
             in ShipSpeedometerStatTooltips.LiveContext live,
@@ -1840,10 +1865,22 @@ namespace TitanOrbit.UI
                 return;
 
             // Planet family combat rolls. Home Titans stay at the catalog gun.
+            // A family or gear bullet replaces gun damage and rate; fleet stays
+            // on the default gun only, matching the shot override.
             ShipFamilySpecialBonuses fleet = MegaShipStatsCalculator.ResolveFleetBonuses(
                 live.Ship.ShipFamilyConfigIndex);
             float firePowerMul = fleet.firePowerMul > 0.0001f ? fleet.firePowerMul : 1f;
             float fireRateMul = fleet.fireRateMul > 0.0001f ? fleet.fireRateMul : 1f;
+            bool familyGun = TryReadSelectedFamilyGun(
+                in live, out _, out _, out _, out float familyFirepower, out float familyFireRate);
+            float bankFp = 1f;
+            float bankRate = 1f;
+            if (BulletBankCombatLogic.TryGetProfile(live.FireBankIndex, out BulletBankProfile profile)
+                && profile != null)
+            {
+                bankFp = BulletBankCombatLogic.SafeMul(profile.statModifiers.firePowerMultiplier);
+                bankRate = BulletBankCombatLogic.SafeMul(profile.statModifiers.fireRateMultiplier);
+            }
 
             for (int i = 0; i < entry.componentCounts.Count; i++)
             {
@@ -1858,17 +1895,65 @@ namespace TitanOrbit.UI
                 if (stats.firePower <= 0.01f)
                     continue;
 
+                bool cycledGun = IsBulletGunPart(unique);
+                float shot;
+                float rate;
+                if (cycledGun && familyGun)
+                {
+                    shot = familyFirepower * bankFp;
+                    float partRate = familyFireRate > 0.01f
+                        ? familyFireRate
+                        : stats.fireRate * fireRateMul;
+                    rate = partRate * bankRate;
+                }
+                else if (cycledGun)
+                {
+                    shot = stats.firePower * firePowerMul * bankFp;
+                    rate = Mathf.Max(0f, stats.fireRate) * fireRateMul * bankRate;
+                }
+                else
+                {
+                    shot = stats.firePower * firePowerMul;
+                    rate = Mathf.Max(0f, stats.fireRate) * fireRateMul;
+                }
+
                 into.Add(new DpsGunRow
                 {
                     Name = count.displayName,
-                    FirePower = stats.firePower * count.count * firePowerMul,
-                    FireRate = Mathf.Max(0f, stats.fireRate) * fireRateMul,
+                    FirePower = shot * count.count,
+                    FireRate = rate,
                     XyScale = 1f,
                     RateScale = 1f,
                     AxisZ = 1f,
                     HasPrefabScale = false
                 });
             }
+        }
+
+        /// <summary>
+        /// Selected-bullet volley: damage per shot across barrels, and sustained DPS.
+        /// Gun barrels use the current bullet type. Other weapons keep their own rate.
+        /// </summary>
+        static void SumMegaSelectedVolley(
+            in ShipSpeedometerStatTooltips.LiveContext live,
+            out float volleyDamage,
+            out float dps)
+        {
+            var guns = new List<DpsGunRow>(4);
+            CollectMegaDpsGuns(in live, guns);
+            volleyDamage = 0f;
+            dps = 0f;
+            for (int i = 0; i < guns.Count; i++)
+            {
+                volleyDamage += guns[i].FirePower;
+                dps += guns[i].FirePower * Mathf.Max(0f, guns[i].FireRate);
+            }
+        }
+
+        static float SumMegaSelectedDps(in ShipSpeedometerStatTooltips.LiveContext live)
+        {
+            SumMegaSelectedVolley(in live, out _, out float dps);
+            return dps;
         }
 
         /// <summary>
@@ -2055,13 +2140,18 @@ namespace TitanOrbit.UI
                 // Rate of fire sits here so Fire Power × shots/s × weapon rate = that chip.
                 AppendFireDpsEquation(sb, in parts, in live, 0);
                 ShipStatTooltipChrome.AppendSectionBanner(sb, "RELATED", "FFAA66");
-                var mega = MegaShipCatalog.Load();
-                float chipDps = live.AllGunDps > 0.0001f
-                    ? live.AllGunDps
-                    : mega != null
-                        ? mega.GetPowerBreakdown(live.MegaCatalogIndex).GetDisplayDps()
-                        : ShipFamilyPowerScoreBreakdown.ComputeSustainedDps(
-                            live.EffectiveStats.firePower, live.EffectiveStats.fireRate);
+                float chipDps = SumMegaSelectedDps(in live);
+                if (chipDps <= 0.0001f)
+                {
+                    var mega = MegaShipCatalog.Load();
+                    chipDps = live.AllGunDps > 0.0001f
+                        ? live.AllGunDps
+                        : mega != null
+                            ? mega.GetPowerBreakdown(live.MegaCatalogIndex).GetDisplayDps()
+                            : ShipFamilyPowerScoreBreakdown.ComputeSustainedDps(
+                                live.EffectiveStats.firePower, live.EffectiveStats.fireRate);
+                }
+
                 sb.Append("Chip DPS  ").Append(FResult(chipDps)).Append("/s").AppendLine();
                 float dps = live.Weapon.BulletDamage * live.Weapon.FireRate;
                 sb.Append("Hull avg  ").Append(FResult(live.Weapon.BulletDamage)).Append("/hit  ");
@@ -2082,10 +2172,10 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// Fire Power parts grid for Titan guns. Same columns as a regular ship
-        /// (BASE, PERX, ×LV, SCALE, FLEET BONUS, ADD) plus ×N, how many of that gun fire.
+        /// (PART, ROLE, BASE, PERX, ×LV, SCALE, FLEET BONUS, ADD). Each copy is its own row.
         /// The default Titan bank lists each gun part at its catalog firepower.
         /// A family or gear bank lists that weapon at maxed level 7 (ship 7 + ability 7).
-        /// Lasers, missiles, and snipers stay off this grid and are not multiplied by copy count.
+        /// Lasers, missiles, and snipers stay off this grid.
         /// Rebuilds when the selected bullet bank changes.
         /// </summary>
         static void AppendMegaGunFirepowerGrid(
@@ -2108,24 +2198,24 @@ namespace TitanOrbit.UI
                 && entry?.componentCounts != null;
 
             bool familyGun = TryReadSelectedFamilyGun(
-                in live, out string familyName, out float familyBase, out float familyPer);
+                in live, out string familyName, out float familyBase, out float familyPer, out _, out _);
 
             ShipStatTooltipChrome.AppendSectionBanner(sb, "PARTS", "5B9BD5");
-            sb.AppendLine(DescribeFormula(StatField.FirePower, false)
-                + Tint(HexMute, " × ")
-                + Tint(HexCount, "guns"));
+            sb.AppendLine(DescribeFormula(StatField.FirePower, false));
 
             bool wroteGun = false;
             float running = 0f;
             if (familyGun || (haveEntry && CatalogHasBulletGun(catalog, entry)))
             {
-                AppendGunPartsCalcHeader(sb);
+                AppendPartsCalcHeader(sb);
                 ShipStatTooltipChrome.AppendGridRule(sb);
                 if (familyGun)
                 {
                     int copies = haveEntry ? CountBulletGuns(catalog, entry) : 1;
-                    running += AppendGunCalcRow(
+                    WriteMegaGunCopies(
                         sb,
+                        ref wroteGun,
+                        ref running,
                         string.IsNullOrEmpty(familyName) ? "Weapon" : familyName,
                         familyBase,
                         familyPer,
@@ -2133,9 +2223,8 @@ namespace TitanOrbit.UI
                         MegaShipStatApplyLogic.TitanFamilyWeaponShipLevel,
                         MegaShipStatApplyLogic.TitanFamilyWeaponAbilityLevel,
                         1f,
-                        fleet,
+                        1f,
                         copies);
-                    wroteGun = true;
                 }
                 else
                 {
@@ -2151,8 +2240,10 @@ namespace TitanOrbit.UI
                         if (each <= 0.0001f)
                             continue;
 
-                        running += AppendGunCalcRow(
+                        WriteMegaGunCopies(
                             sb,
+                            ref wroteGun,
+                            ref running,
                             count.displayName,
                             each,
                             0f,
@@ -2162,14 +2253,13 @@ namespace TitanOrbit.UI
                             1f,
                             fleet,
                             count.count);
-                        wroteGun = true;
                     }
                 }
 
                 if (wroteGun)
                 {
                     ShipStatTooltipChrome.AppendGridRule(sb);
-                    AppendGunGridTotal(sb, running);
+                    AppendGridTotal(sb, running, "Fire");
                 }
             }
 
@@ -2186,11 +2276,15 @@ namespace TitanOrbit.UI
             in ShipSpeedometerStatTooltips.LiveContext live,
             out string name,
             out float baseFirePower,
-            out float perExtra)
+            out float perExtra,
+            out float firepower,
+            out float fireRate)
         {
             name = null;
             baseFirePower = 0f;
             perExtra = 0f;
+            firepower = 0f;
+            fireRate = 0f;
             World world = EcsGameBridge.GetLocalPlayerShipWorld();
             if (world == null || !world.IsCreated)
                 return false;
@@ -2203,7 +2297,7 @@ namespace TitanOrbit.UI
 
             if (!MegaShipStatApplyLogic.TryResolveTitanFamilyWeaponFirepower(
                     em, ship, live.FireBankIndex,
-                    out _, out baseFirePower, out perExtra, out _, out _, out _))
+                    out firepower, out baseFirePower, out perExtra, out fireRate, out _, out _))
                 return false;
 
             var bank = BulletBankCombatLogic.Bank;
@@ -2254,8 +2348,8 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// One gun row. ADD is (Base + PerExtra × levels) × scale × fleet × copies.
-        /// Default Titan guns pass <paramref name="useLevels"/> false so Extra Level stays out.
+        /// One barrel, same columns as <see cref="AppendStatCalcGrid"/>.
+        /// The first barrel is PRI; every further copy is GUN. ADD is one shot.
         /// </summary>
         static float AppendGunCalcRow(
             StringBuilder sb,
@@ -2267,58 +2361,52 @@ namespace TitanOrbit.UI
             int abilityLv,
             float scale,
             float fleet,
-            int copies)
+            bool primary)
         {
             float scaleMul = scale > 0.0001f ? scale : 1f;
             float fleetMul = fleet > 0.0001f ? fleet : 1f;
-            int n = copies > 0 ? copies : 1;
             float levels = useLevels ? shipSteps + abilityLv : 0f;
-            float add = (catalogBase + catalogPer * levels) * scaleMul * fleetMul * n;
+            float add = (catalogBase + catalogPer * levels) * scaleMul * fleetMul;
+            string role = primary ? "PRI" : "GUN";
+            string roleHex = primary ? HexPrimary : HexCount;
 
             AppendGridRowOpen(
-                sb, name, HexPrimary, "GUN", HexCount,
+                sb, name, roleHex, role, roleHex,
                 FGrid(catalogBase), HexPrimary,
-                useLevels ? FGrid(catalogPer) : "-", HexMute);
+                useLevels ? FGrid(catalogPer) : "-", useLevels ? HexPerExtra : HexMute);
             if (useLevels)
                 AppendGridLevelsCell(sb, false, shipSteps, abilityLv);
             else
                 AppendGridCell(sb, HexMute, "-", GridLvW, right: true);
             AppendGridCell(sb, HexScale, FormatScaleColumn(scaleMul), GridScaleW, right: true);
             AppendFleetBonusCell(sb, fleetMul);
-            AppendGridCell(sb, HexCount, "×" + n.ToString(CultureInfo.InvariantCulture), GridRoleW, right: true);
             AppendGridCell(sb, HexResult, FGrid(add), GridNumW, right: true);
             sb.AppendLine();
             return add;
         }
 
-        static void AppendGunPartsCalcHeader(StringBuilder sb)
+        static void WriteMegaGunCopies(
+            StringBuilder sb,
+            ref bool wroteGun,
+            ref float running,
+            string name,
+            float catalogBase,
+            float catalogPer,
+            bool useLevels,
+            int shipSteps,
+            int abilityLv,
+            float scale,
+            float fleet,
+            int copies)
         {
-            AppendGridCell(sb, HexMute, "PART", GridNameW, right: false);
-            AppendGridCell(sb, HexMute, "ROLE", GridRoleW, right: true);
-            AppendGridCell(sb, HexMute, "BASE", GridNumW, right: true);
-            AppendGridCell(sb, HexMute, "PERX", GridNumW, right: true);
-            AppendGridCell(sb, HexMute, "xLV", GridLvW, right: true);
-            AppendGridCell(sb, HexMute, "SCALE", GridScaleW, right: true);
-            AppendGridCell(sb, HexMute, "FLEET BONUS", GridFleetW, right: true);
-            AppendGridCell(sb, HexMute, "×N", GridRoleW, right: true);
-            AppendGridCell(sb, HexMute, "ADD", GridNumW, right: true);
-            sb.AppendLine();
-        }
-
-        static void AppendGunGridTotal(StringBuilder sb, float total)
-        {
-            AppendGridCell(sb, HexMute, "TOTAL", GridNameW, right: false);
-            AppendGridCell(sb, HexMute, "", GridRoleW, right: true);
-            AppendGridCell(sb, HexMute, "", GridNumW, right: true);
-            AppendGridCell(sb, HexMute, "", GridNumW, right: true);
-            AppendGridCell(sb, HexMute, "", GridLvW, right: true);
-            AppendGridCell(sb, HexMute, "", GridScaleW, right: true);
-            AppendGridCell(sb, HexMute, "", GridFleetW, right: true);
-            AppendGridCell(sb, HexMute, "", GridRoleW, right: true);
-            AppendGridCell(sb, HexResult, FGrid(total), GridNumW, right: true);
-            sb.Append(" ");
-            AppendTint(sb, HexMute, "Fire");
-            sb.AppendLine();
+            int n = copies > 0 ? copies : 1;
+            for (int c = 0; c < n; c++)
+            {
+                bool primary = !wroteGun && c == 0;
+                running += AppendGunCalcRow(
+                    sb, name, catalogBase, catalogPer, useLevels, shipSteps, abilityLv, scale, fleet, primary);
+                wroteGun = true;
+            }
         }
 
         /// <summary>

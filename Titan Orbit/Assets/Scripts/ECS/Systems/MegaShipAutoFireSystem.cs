@@ -203,6 +203,13 @@ namespace TitanOrbit.ECS
 
                 float3 shooterVel = ReadPlanarVelocity(mega);
                 int shipLevel = math.max(1, ship.ShipLevel);
+                // Selected family or gear bullet. Lead must use this muzzle speed,
+                // not the catalog gun left on the mount. 0 keeps the mount speed.
+                // Fire rate changes cadence at the shot, not the intercept.
+                bool familyGun = MegaShipStatApplyLogic.TryResolveTitanFamilyWeaponFirepower(
+                    EntityManager, mega, bankIndex,
+                    out _, out _, out _,
+                    out _, out float familyBulletSpeed, out float familyBulletRange);
 
                 bool ownerShift = IsOwnerShiftHeld(mega);
                 bool ownerWantsFire = OwnerWantsFire(mega);
@@ -351,7 +358,10 @@ namespace TitanOrbit.ECS
                     var mount = mounts[m];
                     float3 muzzle = ResolveMuzzle(xf, mount);
                     float3 barrelFwd = MegaShipWeaponAim.GetBarrelForward(in xf, in mount);
+                    bool cycledGun = familyGun && ShipWeaponKind.UsesCycledBulletBank(mount);
                     float acquireRange = ResolveMountRange(mount, in weapon);
+                    if (cycledGun && familyBulletRange > 0.5f)
+                        acquireRange = familyBulletRange;
                     // Projectiles must acquire inside travel range. A +8 pad here
                     // locked rocks the sniper could not reach — no hit, no float.
                     float keepRange = isCannon
@@ -362,7 +372,8 @@ namespace TitanOrbit.ECS
                     float leadBulletSpeed = isCannon
                         ? 0f
                         : ResolveLeadBulletSpeed(
-                            in weapon, in mount, mountBank, shipLevel);
+                            in weapon, in mount, mountBank, shipLevel,
+                            cycledGun ? familyBulletSpeed : 0f);
                     // Live lock sticks (no closer-target steal). Dead / out of
                     // keep-range falls through to a fresh closest-target search.
                     bool hadLock = slot.Target != Entity.Null && slot.Target != mega;
@@ -1203,6 +1214,8 @@ namespace TitanOrbit.ECS
         /// <summary>
         /// Muzzle-relative bullet speed after the same bank modifiers Phase B applies.
         /// Lead must use this value or the intercept systematically under- or over-leads.
+        /// A cycled Titan gun on a family or gear bank passes that weapon's level-7
+        /// speed in <paramref name="selectedBulletSpeed"/>; 0 keeps the mount's catalog speed.
         /// Titan missiles use the mount's catalog Weapon Missile <c>bulletSpeed</c>
         /// (same as <see cref="RocketHomingFire"/>).
         /// </summary>
@@ -1210,7 +1223,8 @@ namespace TitanOrbit.ECS
             in ShipWeaponConfig weapon,
             in ShipWeaponMountElement mount,
             int bankIndex,
-            int shipLevel)
+            int shipLevel,
+            float selectedBulletSpeed)
         {
             if (RocketHomingFire.IsRocketBank(bankIndex))
             {
@@ -1219,9 +1233,13 @@ namespace TitanOrbit.ECS
                     RocketHomingFire.ResolveFlightSpeed(shipLevel, mount.BulletSpeed));
             }
 
+            float mountSpeed = mount.BulletSpeed;
+            if (selectedBulletSpeed > 0.01f)
+                mountSpeed = selectedBulletSpeed;
+
             float speed = math.max(
                 PlanetaryDefenseAimMath.MinBulletSpeed,
-                BulletShotMath.ResolveMuzzleSpeed(mount.BulletSpeed, weapon.BulletSpeed));
+                BulletShotMath.ResolveMuzzleSpeed(mountSpeed, weapon.BulletSpeed));
             float damage = 1f;
             float maxDistance = 1f;
             float lifetime = 0f;
