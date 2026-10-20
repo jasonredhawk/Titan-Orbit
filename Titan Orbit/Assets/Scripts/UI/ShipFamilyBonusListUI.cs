@@ -14,7 +14,7 @@ namespace TitanOrbit.UI
     /// <para>
     /// Ice ring = stock 1.00×. Spokes past the ring are boosts, spokes short of
     /// the ring are penalties. Stock spokes stay muted. A live percent is ice
-    /// green or amber until ±40%, then electric teal or crimson. Spoke titles stay
+    /// green under +40% and amber under a −20% loss, then electric teal or crimson. Spoke titles stay
     /// horizontal: name only at 1×, name plus signed percent when the family
     /// actually changes the stat.
     /// Titles sit on a fixed outer orbit; only the spoke length follows the value.
@@ -403,7 +403,7 @@ namespace TitanOrbit.UI
             else if (row.IsNeutral)
                 label.color = NeutralValue;
             else if (FamilyStatHudCopy.TryGetMagnitudeColor(row, out Color tier))
-                // Same ±40% palette as the spoke: ice green, amber, electric teal, crimson.
+                // Same cuts as the spoke: ice green under +40%, teal at +40%, amber under −20%, crimson at −20%.
                 label.color = tier;
             else
                 label.color = cat;

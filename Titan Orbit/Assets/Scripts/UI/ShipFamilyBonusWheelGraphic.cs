@@ -11,8 +11,9 @@ namespace TitanOrbit.UI
     /// The ice ring is the stock 1.00× base; spokes past the ring are boosts,
     /// spokes short of the ring are penalties. Spokes pack on the left / right
     /// so titles are not stacked at 12 and 6. A live spoke is coloured by how
-    /// large the roll is: ice green or amber inside ±40%, electric teal or crimson
-    /// past that. Stock 1× spokes stay a washed category tint. Camera zoom
+    /// large the roll is: ice green under +40% and amber under a −20% loss,
+    /// electric teal or crimson once a roll crosses those cuts.
+    /// Stock 1× spokes stay a washed category tint. Camera zoom
     /// stays ice — height is neither a boost nor a penalty.
     /// <para>
     /// Line-only: rings and spokes, no filled wedges. The mesh stops inside
@@ -205,9 +206,9 @@ namespace TitanOrbit.UI
                 float length = radius * frac;
                 float hub = radius * 0.14f;
                 Color spoke = ColorForSpoke(row);
-                // Extreme tails are a hair thicker so a ±40% roll reads before the label.
+                // Extreme tails are a hair thicker so a +40% gain or a −20% loss reads before the label.
                 bool extreme = !row.IsIdentity && !row.IsNeutral
-                    && Mathf.Abs(row.SignedPercent) >= FamilyStatHudCopy.ExtremeSignedPercent;
+                    && FamilyStatHudCopy.IsExtremeSignedPercent(row.SignedPercent);
                 float thick = row.IsIdentity ? 1.05f : (extreme ? 2.45f : 2.0f);
                 Vector2 dir = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle));
                 Vector2 a = center + dir * hub;
@@ -326,7 +327,7 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// Tip colour. Same tier as the spoke: ice green / amber for a regular
-        /// roll, electric teal / crimson at or past ±<see cref="FamilyStatHudCopy.ExtremeSignedPercent"/>.
+        /// roll, electric teal at or past +40% and crimson at or past −20%.
         /// Camera zoom stays ice.
         /// </summary>
         static Color ColorForTip(in FamilyStatHudCopy.BonusRow row)

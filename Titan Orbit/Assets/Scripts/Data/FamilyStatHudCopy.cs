@@ -85,14 +85,21 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Absolute signed percent that marks an extreme fleet roll.
-        /// Match bonuses are a bell around 1× — most land inside roughly ±25%.
-        /// A spoke at or past ±40% (about 1.40× or 0.60×, and the far drain tails)
-        /// leaves the everyday band, so the wheel, the percent, and the hover
-        /// switch to the extreme palette. Camera zoom never uses this cut:
-        /// height is neither a boost nor a penalty.
+        /// Signed percent that marks an extreme fleet gain. +40% and above is
+        /// electric teal; a smaller gain stays ice green. Losses do not use this
+        /// cut — they switch to crimson at <see cref="ExtremeLossSignedPercent"/>.
+        /// Camera zoom never uses either cut: height is neither a boost nor a penalty.
         /// </summary>
-        public const float ExtremeSignedPercent = 40f;
+        public const float ExtremeGainSignedPercent = 40f;
+
+        /// <summary>
+        /// Loss magnitude that marks an extreme fleet penalty. A signed percent
+        /// at or below −20% is crimson; a milder loss (for example −12%) stays amber.
+        /// Gains ignore this and use <see cref="ExtremeGainSignedPercent"/> instead.
+        /// The two cuts are intentionally different: a −20% roll is already a
+        /// sharp trade-off, while a +20% gain is still an everyday buff.
+        /// </summary>
+        public const float ExtremeLossSignedPercent = 20f;
 
         /// <summary>TMP hex for a regular gain (ice green). Paired with <see cref="ColorBoost"/>.</summary>
         public const string HexBoost = "59FA9E";
@@ -102,14 +109,14 @@ namespace TitanOrbit.Data
 
         /// <summary>
         /// TMP hex for an extreme gain (electric teal). Used when the signed percent
-        /// is at least <see cref="ExtremeSignedPercent"/>. Teal, not gold: gold sat
+        /// is at least <see cref="ExtremeGainSignedPercent"/>. Teal, not gold: gold sat
         /// too close to the regular-loss amber. Paired with <see cref="ColorExtremeBoost"/>.
         /// </summary>
         public const string HexExtremeBoost = "1AF0DE";
 
         /// <summary>
         /// TMP hex for an extreme trade-off (crimson). Used when the signed percent
-        /// is at or below −<see cref="ExtremeSignedPercent"/>. Paired with <see cref="ColorExtremePenalty"/>.
+        /// is at or below −<see cref="ExtremeLossSignedPercent"/>. Paired with <see cref="ColorExtremePenalty"/>.
         /// </summary>
         public const string HexExtremePenalty = "FF4D5A";
 
@@ -460,7 +467,7 @@ namespace TitanOrbit.Data
         /// <summary>
         /// TMP hex for a cell value. Stock is muted, camera zoom stays ice,
         /// and a live gain or loss picks the regular or extreme palette from
-        /// <see cref="ExtremeSignedPercent"/>.
+        /// <see cref="ExtremeGainSignedPercent"/> and <see cref="ExtremeLossSignedPercent"/>.
         /// </summary>
         public static string HexForRow(in BonusRow row)
         {
@@ -474,18 +481,19 @@ namespace TitanOrbit.Data
         /// <summary>
         /// TMP hex for one signed fleet percent that is already player-facing
         /// (drain has been flipped so a saving is positive).
-        /// At or past ±<see cref="ExtremeSignedPercent"/> the tail colours win;
-        /// smaller gains stay ice green and smaller losses stay amber.
+        /// A gain at or past +<see cref="ExtremeGainSignedPercent"/> is teal.
+        /// A loss at or past −<see cref="ExtremeLossSignedPercent"/> is crimson.
+        /// Smaller gains stay ice green and smaller losses stay amber.
         /// Inside the ±0.05% dead zone this returns the muted 1× hex.
         /// </summary>
-        /// <param name="signedPercent">Percent the player reads. +12 is a gain, −20 is a loss.</param>
+        /// <param name="signedPercent">Percent the player reads. +12 is a mild gain, −12 is a mild loss.</param>
         public static string HexForSignedPercent(float signedPercent)
         {
             // --- Extreme tails ---
-            // Checked before the everyday band so +40% is teal, not ice green.
-            if (signedPercent >= ExtremeSignedPercent)
+            // Gains and losses use different cuts: +40% is teal, −20% is already crimson.
+            if (signedPercent >= ExtremeGainSignedPercent)
                 return HexExtremeBoost;
-            if (signedPercent <= -ExtremeSignedPercent)
+            if (signedPercent <= -ExtremeLossSignedPercent)
                 return HexExtremePenalty;
 
             // --- Everyday band ---
@@ -497,9 +505,25 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
+        /// True when a player-facing signed percent is an extreme fleet roll.
+        /// Gains cross at +<see cref="ExtremeGainSignedPercent"/> (teal).
+        /// Losses cross at −<see cref="ExtremeLossSignedPercent"/> (crimson).
+        /// A −12% loss is still regular amber; a −20% loss is extreme.
+        /// </summary>
+        /// <param name="signedPercent">Percent the player reads. Drain is already flipped.</param>
+        public static bool IsExtremeSignedPercent(float signedPercent)
+        {
+            if (signedPercent >= ExtremeGainSignedPercent)
+                return true;
+            if (signedPercent <= -ExtremeLossSignedPercent)
+                return true;
+            return false;
+        }
+
+        /// <summary>
         /// Vertex colour for a live good or bad fleet bonus on the wheel.
-        /// Same cut as <see cref="HexForSignedPercent"/>: ice green / amber inside
-        /// ±<see cref="ExtremeSignedPercent"/>, electric teal / crimson outside it.
+        /// Same cuts as <see cref="HexForSignedPercent"/>: ice green under +40%,
+        /// electric teal at or past that, amber under a −20% loss, crimson at or past it.
         /// </summary>
         /// <param name="row">Spoke already collected by <see cref="CollectBonusRows"/>.</param>
         /// <param name="color">Tier colour. Unchanged when this returns false.</param>
@@ -513,7 +537,7 @@ namespace TitanOrbit.Data
             if (row.IsIdentity || row.IsNeutral || (!row.IsBoost && !row.IsPenalty))
                 return false;
 
-            bool extreme = Mathf.Abs(row.SignedPercent) >= ExtremeSignedPercent;
+            bool extreme = IsExtremeSignedPercent(row.SignedPercent);
             if (row.IsPenalty)
                 color = extreme ? ColorExtremePenalty : ColorPenalty;
             else
