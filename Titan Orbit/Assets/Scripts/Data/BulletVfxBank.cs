@@ -22,7 +22,7 @@ namespace TitanOrbit.Data
     /// <list type="bullet">
     /// <item><b>Global Visual Scale Multiplier</b> (bank) — shrink/grow every bullet VFX.</item>
     /// <item><b>Upgrade Visual Scale Multiplier</b> — not applied. Tracer size is
-    /// fire power ÷ reference fire power (7.5 / 3 = 2.5), then the global scale.</item>
+    /// fire power ÷ <b>Bullet Reference Fire Power</b> (default 4), then the global scale.</item>
     /// <item><b>Per-category</b> multipliers are not applied to tracer size.</item>
     /// </list>
     /// Drawn size is that fire-power ratio times <b>Global Visual Scale Multiplier</b>.
@@ -66,8 +66,12 @@ namespace TitanOrbit.Data
         [FormerlySerializedAs("visualScaleMultiplier")]
         [SerializeField] float globalVisualScaleMultiplier = 0.25f;
 
-        [Tooltip("Not applied. Tracer size is fire power ÷ reference fire power, then Global Visual Scale.")]
+        [Tooltip("Not applied. Tracer size is fire power ÷ Bullet Reference Fire Power, then Global Visual Scale.")]
         [SerializeField] float upgradeVisualScaleMultiplier = 0.5f;
+
+        [Tooltip("Ship-bullet tracer size is this shot's fire power divided by this number. Missiles, lasers, turrets, and ramming do not use it.")]
+        [Min(0.01f)]
+        [SerializeField] float bulletReferenceFirePower = 4f;
 
         /// <summary>Bank-wide global VFX size on spawned instances.</summary>
         public float GlobalVisualScaleMultiplier => Mathf.Max(0.05f, globalVisualScaleMultiplier);
@@ -77,6 +81,13 @@ namespace TitanOrbit.Data
         /// then <see cref="GlobalVisualScaleMultiplier"/>.
         /// </summary>
         public float UpgradeVisualScaleMultiplier => Mathf.Clamp01(upgradeVisualScaleMultiplier);
+
+        /// <summary>
+        /// Divisor for ship-bullet tracer size: fire power ÷ this.
+        /// Inspector field on this asset. A missing or non-positive value uses 4.
+        /// </summary>
+        public float BulletReferenceFirePower =>
+            bulletReferenceFirePower > 0.01f ? bulletReferenceFirePower : 4f;
 
         /// <summary>[LEGACY] Alias of <see cref="GlobalVisualScaleMultiplier"/> for older call sites.</summary>
         public float VisualScaleMultiplier => GlobalVisualScaleMultiplier;

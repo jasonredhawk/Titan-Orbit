@@ -1,11 +1,12 @@
+using TitanOrbit.Data;
 using Unity.Burst;
 using Unity.Mathematics;
 
 namespace TitanOrbit.Simulation
 {
     /// <summary>
-    /// Tracer size is fire power ÷ reference fire power. A shot at 7.5 against a
-    /// base of 3 is 2.5. The bank global scale is applied when the tracer is drawn.
+    /// Tracer size is fire power ÷ the Bullet VFX Bank reference (default 4).
+    /// The bank global scale is applied when the tracer is drawn.
     /// Bullet type, bullet speed, and the old upgrade blend do not change it.
     /// </summary>
     [BurstCompile]
@@ -15,11 +16,23 @@ namespace TitanOrbit.Simulation
         public const float DefaultReferenceBulletDamage = 8f;
 
         /// <summary>
-        /// Ship-bullet tracer reference. Every gun and bullet type uses this, not the
-        /// barrel's own catalog base. Drawn size is fire power ÷ this, then the bank global.
-        /// Missiles, lasers, turrets, and ramming do not use it.
+        /// Fallback ship-bullet tracer reference when <see cref="BulletVfxBank"/> is missing.
+        /// The live value is <see cref="BulletVfxBank.BulletReferenceFirePower"/> on
+        /// Resources/BulletVfxBank (default 4). Missiles, lasers, turrets, and ramming do not use it.
         /// </summary>
-        public const float FixedBulletReferenceDamage = 3f;
+        public const float FixedBulletReferenceDamage = 4f;
+
+        /// <summary>
+        /// Reference the shot math divides by. Reads the Bullet VFX Bank field so the
+        /// Inspector value is the one in play. Falls back to <see cref="FixedBulletReferenceDamage"/>.
+        /// </summary>
+        public static float ResolveFixedBulletReferenceDamage()
+        {
+            BulletVfxBank bank = BulletVfxBank.LoadDefault();
+            if (bank == null)
+                return FixedBulletReferenceDamage;
+            return bank.BulletReferenceFirePower;
+        }
 
         /// <summary>
         /// Kept for call-site compatibility only — speed no longer drives visual size.
@@ -95,7 +108,7 @@ namespace TitanOrbit.Simulation
         }
 
         /// <summary>
-        /// Fire power ÷ reference fire power. 7.5 against a base of 3 is 2.5.
+        /// Fire power ÷ reference fire power. The reference is the Bullet VFX Bank field (default 4).
         /// Speed, the bank upgrade knob, and category upgrade are not inputs.
         /// Bank global scale is applied later in <see cref="Entities.BulletVisualFactory"/>.
         /// </summary>

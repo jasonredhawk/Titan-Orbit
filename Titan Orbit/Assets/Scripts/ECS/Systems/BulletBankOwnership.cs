@@ -596,6 +596,24 @@ namespace TitanOrbit.ECS
         {
             baseFirePower = 0f;
             perExtraLevel = 0f;
+            if (!TryGetFamilyWeaponCatalogStats(em, shipEntity, bankIndex, out ShipComponentAbilityStats stats))
+                return false;
+            baseFirePower = stats.firePower;
+            perExtraLevel = stats.firePowerPerExtraLevel;
+            return true;
+        }
+
+        /// <summary>
+        /// Authored family-weapon stat block for this bank, before Extra Level.
+        /// Gear-slot guns use that part. The inherited planet gun uses the family's Weapon row.
+        /// </summary>
+        public static bool TryGetFamilyWeaponCatalogStats(
+            EntityManager em,
+            Entity shipEntity,
+            int bankIndex,
+            out ShipComponentAbilityStats stats)
+        {
+            stats = default;
             if (shipEntity == Entity.Null || em == default || !em.Exists(shipEntity) || bankIndex < 0)
                 return false;
 
@@ -620,13 +638,12 @@ namespace TitanOrbit.ECS
                     if (ResolveEquippedWeaponBank(em, item, id, config, hullBank) != bankIndex)
                         continue;
                     if (!ShipFamilyStatsCalculator.TryResolveComponentStats(
-                            null, id, out ShipComponentAbilityStats stats))
+                            null, id, out ShipComponentAbilityStats part))
                         continue;
-                    if (stats.firePower <= 0.01f && stats.firePowerPerExtraLevel <= 0.01f)
+                    if (part.firePower <= 0.01f && part.firePowerPerExtraLevel <= 0.01f)
                         continue;
 
-                    baseFirePower = stats.firePower;
-                    perExtraLevel = stats.firePowerPerExtraLevel;
+                    stats = part;
                     return true;
                 }
             }
@@ -643,8 +660,7 @@ namespace TitanOrbit.ECS
             if (fleet.firePower <= 0.01f && fleet.firePowerPerExtraLevel <= 0.01f)
                 return false;
 
-            baseFirePower = fleet.firePower;
-            perExtraLevel = fleet.firePowerPerExtraLevel;
+            stats = fleet;
             return true;
         }
 

@@ -55,7 +55,8 @@ namespace TitanOrbit.Simulation
 
         /// <summary>
         /// One ship/MEGA shot: bank modifiers, visual scale, Starblast velocity.
-        /// Bullets scale as this shot's fire power ÷ <see cref="BulletVisualScale.FixedBulletReferenceDamage"/>.
+        /// Bullets scale as this shot's fire power ÷ the Bullet VFX Bank reference
+        /// (<see cref="BulletVisualScale.ResolveFixedBulletReferenceDamage"/>, default 4).
         /// <paramref name="useFixedBulletReference"/> false keeps the per-weapon base (missiles).
         /// </summary>
         public static BulletShotPlan Build(
@@ -89,7 +90,7 @@ namespace TitanOrbit.Simulation
                 firePowerExtras);
             float fireRateMul = fireRate / math.max(0.1f, hullFireRate);
 
-            // Bullets: fire power ÷ 3. A 7.5 shot is 2.5, then the bank global at draw time.
+            // Bullets: fire power ÷ the Bullet VFX Bank reference (default 4).
             // Missiles keep each weapon's own base. Lasers never reach this builder.
             _ = authoredBulletScale;
             _ = categoryUpgradeScale;
@@ -100,7 +101,7 @@ namespace TitanOrbit.Simulation
                 _ = shipPeakDps;
                 _ = shipReferenceDps;
                 _ = referenceDamage;
-                visualScale = bulletDamage / BulletVisualScale.FixedBulletReferenceDamage;
+                visualScale = bulletDamage / math.max(0.01f, BulletVisualScale.ResolveFixedBulletReferenceDamage());
             }
             else
             {

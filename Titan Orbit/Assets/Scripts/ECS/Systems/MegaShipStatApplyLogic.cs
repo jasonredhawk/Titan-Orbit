@@ -63,6 +63,9 @@ namespace TitanOrbit.ECS
             public float Firepower;
             public float Base;
             public float PerExtra;
+            public float FireRate;
+            public float BulletSpeed;
+            public float BulletRange;
         }
 
         static FamilyWeaponFirepowerCache s_FamilyWeaponFirepowerCache;
@@ -77,7 +80,9 @@ namespace TitanOrbit.ECS
         /// for that bank. Toggling to a ship-family weapon or a gear-slot weapon uses that
         /// weapon's own base and per-extra, evaluated as a fully maxed level-7 ship:
         /// <c>base + perExtra × (7 + 7) = base + perExtra × 14</c>.
-        /// Base 3 and per-extra 0.75 is 13.5. Regular ships never call this.
+        /// Base 3 and per-extra 0.75 is 13.5. Bullet speed, fire rate, and bullet range
+        /// use that same maxed ship (<see cref="ShipAbilityLevelCounts.Maxed"/> at level 7)
+        /// through each stat's own Extra Level rule. Regular ships never call this.
         /// </remarks>
         /// <param name="em">World that owns <paramref name="shipEntity"/>.</param>
         /// <param name="shipEntity">Titan whose B-key bank is firing.</param>
@@ -85,6 +90,9 @@ namespace TitanOrbit.ECS
         /// <param name="firepower">Level-7 family firepower, or 0 when this shot keeps the catalog gun.</param>
         /// <param name="baseFirePower">Authored family-weapon base (before Extra Level).</param>
         /// <param name="perExtraLevel">Authored fire power per Extra Level.</param>
+        /// <param name="fireRate">Maxed level-7 fire rate. 0 when this bank keeps the asset rate.</param>
+        /// <param name="bulletSpeed">Maxed level-7 muzzle speed. 0 when this bank keeps the asset speed.</param>
+        /// <param name="bulletRange">Maxed level-7 travel range. 0 when this bank keeps the asset range.</param>
         /// <returns>True when <paramref name="bankIndex"/> is a family weapon and not the Titan's own default gun.</returns>
         public static bool TryResolveTitanFamilyWeaponFirepower(
             EntityManager em,
@@ -92,11 +100,17 @@ namespace TitanOrbit.ECS
             int bankIndex,
             out float firepower,
             out float baseFirePower,
-            out float perExtraLevel)
+            out float perExtraLevel,
+            out float fireRate,
+            out float bulletSpeed,
+            out float bulletRange)
         {
             firepower = 0f;
             baseFirePower = 0f;
             perExtraLevel = 0f;
+            fireRate = 0f;
+            bulletSpeed = 0f;
+            bulletRange = 0f;
 
             // Regular hulls, and a Titan still on its catalog Bullets, keep the mount value.
             if (!em.Exists(shipEntity)
@@ -124,22 +138,32 @@ namespace TitanOrbit.ECS
                 firepower = s_FamilyWeaponFirepowerCache.Firepower;
                 baseFirePower = s_FamilyWeaponFirepowerCache.Base;
                 perExtraLevel = s_FamilyWeaponFirepowerCache.PerExtra;
+                fireRate = s_FamilyWeaponFirepowerCache.FireRate;
+                bulletSpeed = s_FamilyWeaponFirepowerCache.BulletSpeed;
+                bulletRange = s_FamilyWeaponFirepowerCache.BulletRange;
                 return true;
             }
 
-            bool ok = BulletBankOwnership.TryGetFamilyWeaponFirepowerParts(
-                em, shipEntity, bankIndex, out baseFirePower, out perExtraLevel);
+            bool ok = BulletBankOwnership.TryGetFamilyWeaponCatalogStats(
+                em, shipEntity, bankIndex, out ShipComponentAbilityStats raw);
             if (ok)
             {
-                // base + perExtra × 14. Example: 3 + 0.75 × 14 = 13.5.
-                firepower = ShipComponentExtraLevelMath.Evaluate(
-                    baseFirePower,
-                    perExtraLevel,
+                baseFirePower = raw.firePower;
+                perExtraLevel = raw.firePowerPerExtraLevel;
+                // Level 7 with every ability at 7. Fire power is base + perExtra × 14.
+                // Bullet speed uses ability level only. Fire rate and range use ship level.
+                var maxed = ShipAbilityLevelCounts.Maxed(TitanFamilyWeaponAbilityLevel);
+                ShipComponentAbilityStats leveled = ShipComponentExtraLevelMath.EvaluatePool(
+                    raw,
+                    1,
                     TitanFamilyWeaponShipLevel,
-                    abilityLevel,
-                    componentCount: 1,
-                    includeExtraComponentLevels: false);
-                firepower = math.max(0.1f, firepower);
+                    in maxed,
+                    isWeaponPool: true,
+                    includeBase: true);
+                firepower = math.max(0.1f, leveled.firePower);
+                fireRate = leveled.fireRate;
+                bulletSpeed = leveled.bulletSpeed;
+                bulletRange = leveled.bulletRange;
             }
 
             s_FamilyWeaponFirepowerCache = new FamilyWeaponFirepowerCache
@@ -153,6 +177,9 @@ namespace TitanOrbit.ECS
                 Firepower = firepower,
                 Base = baseFirePower,
                 PerExtra = perExtraLevel,
+                FireRate = fireRate,
+                BulletSpeed = bulletSpeed,
+                BulletRange = bulletRange,
             };
             return ok;
         }

@@ -4,7 +4,9 @@ using System.Globalization;
 using System.Text;
 using TitanOrbit.Data;
 using TitanOrbit.ECS;
+using TitanOrbit.Game;
 using TitanOrbit.Simulation;
+using Unity.Entities;
 using UnityEngine;
 
 namespace TitanOrbit.UI
@@ -2040,7 +2042,10 @@ namespace TitanOrbit.UI
                 return;
             }
 
-            AppendMegaCatalogParts(sb, in live, field, unit);
+            if (field == StatField.FirePower)
+                AppendMegaGunFirepowerGrid(sb, in parts, in live);
+            else
+                AppendMegaCatalogParts(sb, in live, field, unit);
             AppendMegaGearParts(sb, in parts, field, unit, live.Ship.ShipLevel);
             AppendTotalLine(sb, chipVal, unit);
 
@@ -2073,6 +2078,288 @@ namespace TitanOrbit.UI
             {
                 AppendTurnMassTax(sb, live);
             }
+        }
+
+        /// <summary>
+        /// Fire Power parts grid for Titan guns. Same columns as a regular ship
+        /// (BASE, PERX, ×LV, SCALE, FLEET BONUS, ADD) plus ×N, how many of that gun fire.
+        /// The default Titan bank lists each gun part at its catalog firepower.
+        /// A family or gear bank lists that weapon at maxed level 7 (ship 7 + ability 7).
+        /// Lasers, missiles, and snipers stay off this grid and are not multiplied by copy count.
+        /// Rebuilds when the selected bullet bank changes.
+        /// </summary>
+        static void AppendMegaGunFirepowerGrid(
+            StringBuilder sb,
+            in ShipSpeedometerStatTooltips.PartCache parts,
+            in ShipSpeedometerStatTooltips.LiveContext live)
+        {
+            float fleet = 1f;
+            if (parts.Family != null)
+            {
+                float rolled = parts.Family.ResolveSpecialBonuses().firePowerMul;
+                if (rolled > 0.0001f)
+                    fleet = rolled;
+            }
+
+            var catalog = MegaShipCatalog.Load();
+            MegaShipCatalogEntry entry = null;
+            bool haveEntry = catalog != null
+                && catalog.TryGetEntry(live.MegaCatalogIndex, out entry)
+                && entry?.componentCounts != null;
+
+            bool familyGun = TryReadSelectedFamilyGun(
+                in live, out string familyName, out float familyBase, out float familyPer);
+
+            ShipStatTooltipChrome.AppendSectionBanner(sb, "PARTS", "5B9BD5");
+            sb.AppendLine(DescribeFormula(StatField.FirePower, false)
+                + Tint(HexMute, " × ")
+                + Tint(HexCount, "guns"));
+
+            bool wroteGun = false;
+            float running = 0f;
+            if (familyGun || (haveEntry && CatalogHasBulletGun(catalog, entry)))
+            {
+                AppendGunPartsCalcHeader(sb);
+                ShipStatTooltipChrome.AppendGridRule(sb);
+                if (familyGun)
+                {
+                    int copies = haveEntry ? CountBulletGuns(catalog, entry) : 1;
+                    running += AppendGunCalcRow(
+                        sb,
+                        string.IsNullOrEmpty(familyName) ? "Weapon" : familyName,
+                        familyBase,
+                        familyPer,
+                        useLevels: true,
+                        MegaShipStatApplyLogic.TitanFamilyWeaponShipLevel,
+                        MegaShipStatApplyLogic.TitanFamilyWeaponAbilityLevel,
+                        1f,
+                        fleet,
+                        copies);
+                    wroteGun = true;
+                }
+                else
+                {
+                    for (int i = 0; i < entry.componentCounts.Count; i++)
+                    {
+                        MegaShipComponentCount count = entry.componentCounts[i];
+                        if (count == null || count.count <= 0 || string.IsNullOrEmpty(count.displayName))
+                            continue;
+                        if (!catalog.TryGetUniqueComponent(count.displayName, out MegaShipComponentEntry unique)
+                            || !IsBulletGunPart(unique))
+                            continue;
+                        float each = unique.stats.firePower;
+                        if (each <= 0.0001f)
+                            continue;
+
+                        running += AppendGunCalcRow(
+                            sb,
+                            count.displayName,
+                            each,
+                            0f,
+                            useLevels: false,
+                            0,
+                            0,
+                            1f,
+                            fleet,
+                            count.count);
+                        wroteGun = true;
+                    }
+                }
+
+                if (wroteGun)
+                {
+                    ShipStatTooltipChrome.AppendGridRule(sb);
+                    AppendGunGridTotal(sb, running);
+                }
+            }
+
+            bool wroteOther = haveEntry && AppendMegaNonGunFirepowerLines(sb, catalog, entry);
+            if (!wroteGun && !wroteOther)
+                sb.AppendLine("<color=#5B7A94>No contributing parts.</color>");
+        }
+
+        /// <summary>
+        /// Selected family or gear gun, before the copy count. False on the Titan's own bullet bank,
+        /// which keeps each gun part's catalog firepower.
+        /// </summary>
+        static bool TryReadSelectedFamilyGun(
+            in ShipSpeedometerStatTooltips.LiveContext live,
+            out string name,
+            out float baseFirePower,
+            out float perExtra)
+        {
+            name = null;
+            baseFirePower = 0f;
+            perExtra = 0f;
+            World world = EcsGameBridge.GetLocalPlayerShipWorld();
+            if (world == null || !world.IsCreated)
+                return false;
+
+            EntityManager em = world.EntityManager;
+            if (!LocalShipEntitySeed.TryGetSeededShip(em, out Entity ship)
+                || ship == Entity.Null
+                || !em.Exists(ship))
+                return false;
+
+            if (!MegaShipStatApplyLogic.TryResolveTitanFamilyWeaponFirepower(
+                    em, ship, live.FireBankIndex,
+                    out _, out baseFirePower, out perExtra, out _, out _, out _))
+                return false;
+
+            var bank = BulletBankCombatLogic.Bank;
+            if (bank != null)
+                name = bank.GetCategoryName(live.FireBankIndex);
+            return true;
+        }
+
+        static bool IsBulletGunPart(MegaShipComponentEntry unique)
+        {
+            if (unique == null || unique.isLaser)
+                return false;
+            string partType = unique.partType;
+            if (ShipFamilyPartTypes.IsWeaponCannonProfile(partType))
+                return false;
+            if (string.Equals(partType, ShipFamilyPartTypes.WeaponMissile, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(partType, ShipFamilyPartTypes.WeaponSniper, StringComparison.OrdinalIgnoreCase))
+                return false;
+            if (string.Equals(partType, ShipFamilyPartTypes.WeaponBullet, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(partType, "Weapon", StringComparison.OrdinalIgnoreCase))
+                return true;
+            return unique.isWeapon && string.IsNullOrEmpty(partType);
+        }
+
+        static bool CatalogHasBulletGun(MegaShipCatalog catalog, MegaShipCatalogEntry entry)
+        {
+            return CountBulletGuns(catalog, entry) > 0;
+        }
+
+        static int CountBulletGuns(MegaShipCatalog catalog, MegaShipCatalogEntry entry)
+        {
+            if (catalog == null || entry?.componentCounts == null)
+                return 0;
+            int n = 0;
+            for (int i = 0; i < entry.componentCounts.Count; i++)
+            {
+                MegaShipComponentCount count = entry.componentCounts[i];
+                if (count == null || count.count <= 0 || string.IsNullOrEmpty(count.displayName))
+                    continue;
+                if (!catalog.TryGetUniqueComponent(count.displayName, out MegaShipComponentEntry unique)
+                    || !IsBulletGunPart(unique)
+                    || unique.stats.firePower <= 0.0001f)
+                    continue;
+                n += count.count;
+            }
+
+            return n;
+        }
+
+        /// <summary>
+        /// One gun row. ADD is (Base + PerExtra × levels) × scale × fleet × copies.
+        /// Default Titan guns pass <paramref name="useLevels"/> false so Extra Level stays out.
+        /// </summary>
+        static float AppendGunCalcRow(
+            StringBuilder sb,
+            string name,
+            float catalogBase,
+            float catalogPer,
+            bool useLevels,
+            int shipSteps,
+            int abilityLv,
+            float scale,
+            float fleet,
+            int copies)
+        {
+            float scaleMul = scale > 0.0001f ? scale : 1f;
+            float fleetMul = fleet > 0.0001f ? fleet : 1f;
+            int n = copies > 0 ? copies : 1;
+            float levels = useLevels ? shipSteps + abilityLv : 0f;
+            float add = (catalogBase + catalogPer * levels) * scaleMul * fleetMul * n;
+
+            AppendGridRowOpen(
+                sb, name, HexPrimary, "GUN", HexCount,
+                FGrid(catalogBase), HexPrimary,
+                useLevels ? FGrid(catalogPer) : "-", HexMute);
+            if (useLevels)
+                AppendGridLevelsCell(sb, false, shipSteps, abilityLv);
+            else
+                AppendGridCell(sb, HexMute, "-", GridLvW, right: true);
+            AppendGridCell(sb, HexScale, FormatScaleColumn(scaleMul), GridScaleW, right: true);
+            AppendFleetBonusCell(sb, fleetMul);
+            AppendGridCell(sb, HexCount, "×" + n.ToString(CultureInfo.InvariantCulture), GridRoleW, right: true);
+            AppendGridCell(sb, HexResult, FGrid(add), GridNumW, right: true);
+            sb.AppendLine();
+            return add;
+        }
+
+        static void AppendGunPartsCalcHeader(StringBuilder sb)
+        {
+            AppendGridCell(sb, HexMute, "PART", GridNameW, right: false);
+            AppendGridCell(sb, HexMute, "ROLE", GridRoleW, right: true);
+            AppendGridCell(sb, HexMute, "BASE", GridNumW, right: true);
+            AppendGridCell(sb, HexMute, "PERX", GridNumW, right: true);
+            AppendGridCell(sb, HexMute, "xLV", GridLvW, right: true);
+            AppendGridCell(sb, HexMute, "SCALE", GridScaleW, right: true);
+            AppendGridCell(sb, HexMute, "FLEET BONUS", GridFleetW, right: true);
+            AppendGridCell(sb, HexMute, "×N", GridRoleW, right: true);
+            AppendGridCell(sb, HexMute, "ADD", GridNumW, right: true);
+            sb.AppendLine();
+        }
+
+        static void AppendGunGridTotal(StringBuilder sb, float total)
+        {
+            AppendGridCell(sb, HexMute, "TOTAL", GridNameW, right: false);
+            AppendGridCell(sb, HexMute, "", GridRoleW, right: true);
+            AppendGridCell(sb, HexMute, "", GridNumW, right: true);
+            AppendGridCell(sb, HexMute, "", GridNumW, right: true);
+            AppendGridCell(sb, HexMute, "", GridLvW, right: true);
+            AppendGridCell(sb, HexMute, "", GridScaleW, right: true);
+            AppendGridCell(sb, HexMute, "", GridFleetW, right: true);
+            AppendGridCell(sb, HexMute, "", GridRoleW, right: true);
+            AppendGridCell(sb, HexResult, FGrid(total), GridNumW, right: true);
+            sb.Append(" ");
+            AppendTint(sb, HexMute, "Fire");
+            sb.AppendLine();
+        }
+
+        /// <summary>
+        /// Lasers and other non-gun weapons that still have firepower.
+        /// Copy count is not a multiplier here — each part keeps its own shot.
+        /// </summary>
+        static bool AppendMegaNonGunFirepowerLines(
+            StringBuilder sb,
+            MegaShipCatalog catalog,
+            MegaShipCatalogEntry entry)
+        {
+            bool wrote = false;
+            for (int i = 0; i < entry.componentCounts.Count; i++)
+            {
+                MegaShipComponentCount count = entry.componentCounts[i];
+                if (count == null || count.count <= 0 || string.IsNullOrEmpty(count.displayName))
+                    continue;
+                if (!catalog.TryGetUniqueComponent(count.displayName, out MegaShipComponentEntry unique)
+                    || unique == null
+                    || IsBulletGunPart(unique))
+                    continue;
+
+                float each = unique.stats.firePower;
+                if (each <= 0.0001f)
+                    continue;
+
+                if (!wrote)
+                {
+                    AppendTint(sb, HexMute, "Other weapons keep their own shot");
+                    sb.AppendLine();
+                }
+
+                wrote = true;
+                sb.Append(count.displayName).Append("  ");
+                AppendTint(sb, HexResult, FDetail(each));
+                sb.Append(" ");
+                AppendTint(sb, HexMute, "Fire");
+                sb.AppendLine();
+            }
+
+            return wrote;
         }
 
         /// <summary>

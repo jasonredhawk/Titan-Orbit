@@ -52,7 +52,7 @@ namespace TitanOrbit.Entities
 
         /// <summary>
         /// Drawn tracer size = fire-power scale × the one bank-wide global.
-        /// <paramref name="scaleMultiplier"/> is fire power ÷ reference (7.5 / 3 = 2.5).
+        /// <paramref name="scaleMultiplier"/> is fire power ÷ the Bullet VFX Bank reference (default 4).
         /// Bullet type does not change size.
         /// </summary>
         /// <param name="bankIndex">Unused. Kept so existing call sites still compile.</param>

@@ -477,7 +477,7 @@ namespace TitanOrbit.ECS
                                      shipState.ValueRO.Team, ghostOwner.ValueRO.NetworkId);
 
                 // Missile tracers still share one hull ratio. Bullets use this shot's
-                // fire power ÷ 3 inside BulletShotMath.
+                // fire power ÷ the Bullet VFX Bank reference inside BulletShotMath.
                 SumPeakFirepowerDps(mounts, bankIndex, out float shipPeakDps, out float shipReferenceDps);
                 shipPeakDps = TeamCommandRoleRules.ScaleFirePower(shipPeakDps, topKiller);
 
@@ -607,7 +607,8 @@ namespace TitanOrbit.ECS
             // a maxed level-7 ship: base + perExtra × 14. Regular ships never enter.
             bool titanFamilyGun = MegaShipStatApplyLogic.TryResolveTitanFamilyWeaponFirepower(
                 state.EntityManager, mega, fallbackBankIndex,
-                out float titanFamilyFirePower, out float titanFamilyBase, out float titanFamilyPer);
+                out float titanFamilyFirePower, out float titanFamilyBase, out float titanFamilyPer,
+                out float titanFamilyFireRate, out float titanFamilyBulletSpeed, out float titanFamilyBulletRange);
             for (int n = 0; n < orderCount && shotCount < s_ShotScratch.Length; n++)
             {
                 int i = order[n];
@@ -645,16 +646,20 @@ namespace TitanOrbit.ECS
                     continue;
 
                 int shotBank = ShotBankIndex(mount, fallbackBankIndex);
+                bool familyGunBarrel = titanFamilyGun && ShipWeaponKind.UsesCycledBulletBank(mount);
+                float shotRate = mount.FireRate;
+                if (familyGunBarrel && titanFamilyFireRate > 0.01f)
+                    shotRate = titanFamilyFireRate;
                 float interval = ShipWeaponFireLogic.SingularProjectileInterval(
-                    mount.FireRate, weaponCfg.FireRate,
+                    shotRate, weaponCfg.FireRate,
                     BulletBankCombatLogic.SingularFireRateMultiplier(shotBank));
                 mount.FireCooldown = interval;
                 mounts[i] = mount;
                 spend -= cost;
                 // Guns follow the B-key bank. Cannons, missiles, and snipers keep
-                // the catalog firepower written on the mount.
+                // the catalog numbers written on the mount.
                 float shotDamage = mount.FirePower;
-                if (titanFamilyGun && ShipWeaponKind.UsesCycledBulletBank(mount))
+                if (familyGunBarrel)
                     shotDamage = titanFamilyFirePower;
                 s_ShotScratch[shotCount++] = new ShipWeaponFireLogic.MountShot
                 {
@@ -685,7 +690,7 @@ namespace TitanOrbit.ECS
                 return;
 
             // Missile tracers still share one hull ratio. Bullets use this shot's
-            // fire power ÷ 3 inside BulletShotMath.
+            // fire power ÷ the Bullet VFX Bank reference inside BulletShotMath.
             SumPeakFirepowerDps(mounts, fallbackBankIndex, out float shipPeakDps, out float shipReferenceDps);
             shipPeakDps = TeamCommandRoleRules.ScaleFirePower(shipPeakDps, topKiller);
 
@@ -726,6 +731,15 @@ namespace TitanOrbit.ECS
                     fireMount.FirePower = titanFamilyFirePower;
                     fireMount.ReferenceFirePower = math.max(0.1f, titanFamilyBase);
                     fireMount.FirePowerPerExtraLevel = math.max(0f, titanFamilyPer);
+                    if (titanFamilyFireRate > 0.01f)
+                    {
+                        fireMount.FireRate = titanFamilyFireRate;
+                        fireMount.ReferenceFireRate = titanFamilyFireRate;
+                    }
+                    if (titanFamilyBulletSpeed > 0.01f)
+                        fireMount.BulletSpeed = titanFamilyBulletSpeed;
+                    if (titanFamilyBulletRange > 0.5f)
+                        fireMount.BulletRange = titanFamilyBulletRange;
                 }
                 if (shiftMouseAim
                     && MegaShipWeaponAim.TryGetMuzzleDirToMousePoint(
