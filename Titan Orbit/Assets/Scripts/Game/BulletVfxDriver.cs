@@ -121,6 +121,18 @@ namespace TitanOrbit.Game
             public ClientBulletStretchVisual Stretch;
             /// <summary>Cached so a seam snap does not GetComponentsInChildren every frame.</summary>
             public TrailRenderer Trail;
+            /// <summary>
+            /// Side-by-side Titan shells after the primary <see cref="Go"/>.
+            /// Null when this shot is one bullet. Presentation only — the server round is still one.
+            /// </summary>
+            public GameObject[] SplitExtras;
+            /// <summary>How many visuals this shot draws, including <see cref="Go"/>. 1 = single bullet.</summary>
+            public int SplitVisualCount;
+            /// <summary>
+            /// Root scale for every shell. Equals <see cref="ScaleMultiplier"/> for a single bullet.
+            /// Split shots store the equal share (full scale ÷ floor(fire power ÷ Bullet Reference Fire Power)).
+            /// </summary>
+            public float SplitVisualScale;
         }
 
         /// <summary>
@@ -429,16 +441,18 @@ namespace TitanOrbit.Game
                     ref t, displayLogical, hasRef, reference, stableKey, dt,
                     t.HasPrevTick ? math.saturate(t.TickCarry / RocketPresentationTickDt) : 1f);
                 Vector3 prevDisplay = t.Go.transform.position;
-                if ((displayPos - prevDisplay).sqrMagnitude > 40f * 40f)
-                    ResetTrail(in t);
 
                 displayPos.y = ResolveTracerFlightDisplayY(t.SpawnPos.y, t.Traveled);
                 if (BulletCosmeticHitQuery.TryGetMegaFlightLiftY(displayLogical, out float megaY, out float lift))
                     displayPos.y = math.lerp(displayPos.y, megaY, lift);
-                t.Go.transform.position = displayPos;
-                if (math.lengthsq(displayVel) > 0.0001f)
-                    t.Go.transform.rotation = Quaternion.LookRotation(((Vector3)displayVel).normalized, Vector3.up);
+                bool snapped = (displayPos - prevDisplay).sqrMagnitude > 40f * 40f;
+                if (snapped)
+                    ResetTrail(in t);
+                Quaternion flightRot = math.lengthsq(displayVel) > 0.0001f
+                    ? Quaternion.LookRotation(((Vector3)displayVel).normalized, Vector3.up)
+                    : t.Go.transform.rotation;
                 ApplyTracerRootScale(in t);
+                PlaceTracerShells(in t, displayPos, flightRot);
 
                 if (t.Stretch != null)
                 {
@@ -1111,6 +1125,18 @@ namespace TitanOrbit.Game
             adopted.MountIndex = req.MountIndex;
             adopted.BankIndex = req.BankIndex;
             adopted.ScaleMultiplier = req.ScaleMultiplier > 0f ? req.ScaleMultiplier : adopted.ScaleMultiplier;
+            if (adopted.SplitVisualCount > 1 && adopted.ScaleMultiplier > 0f)
+            {
+                float reference = math.max(0.01f, BulletVisualScale.ResolveFixedBulletReferenceDamage());
+                BulletVisualScale.ResolveTitanSplitCounts(
+                    adopted.ScaleMultiplier * reference, reference, out int trueCount, out _);
+                adopted.SplitVisualScale = BulletVisualScale.ComputeTitanSplitShellScale(
+                    adopted.ScaleMultiplier, trueCount);
+            }
+            else
+            {
+                adopted.SplitVisualScale = adopted.ScaleMultiplier;
+            }
             adopted.Damage = req.Damage;
             adopted.FirePowerLive = req.FirePowerLive;
             adopted.FirePowerBase = req.FirePowerBase;
@@ -1291,6 +1317,14 @@ namespace TitanOrbit.Game
             int bankIndex = math.max(0, req.BankIndex);
             float scaleMul = req.ScaleMultiplier > 0f ? req.ScaleMultiplier : 1f;
             float bulletSpeed = math.length(req.Velocity);
+            // Full scale stays on the logical tracer (hit pad). Shells draw the share.
+            float drawScale = scaleMul;
+            int splitCount = 1;
+            if (TryResolveTitanSplit(in req, scaleMul, out int spawnSplit, out float eachScale))
+            {
+                drawScale = eachScale;
+                splitCount = spawnSplit;
+            }
 
             Vector3 spawnDisplay = req.SpawnPosition;
             float mountY = req.SpawnPosition.y;
@@ -1311,7 +1345,7 @@ namespace TitanOrbit.Game
                 _bank,
                 bankIndex,
                 team,
-                scaleMul * cameraScale,
+                drawScale * cameraScale,
                 pianoLive,
                 req.FirePowerBase,
                 req.FirePowerPerExtra);
@@ -1338,7 +1372,7 @@ namespace TitanOrbit.Game
                 go = new GameObject("BulletTracer");
                 BulletVisualFactory.BuildVisual(
                     go.transform, _bank, bankIndex, team, BulletShape.Sphere,
-                    scaleMul, bulletSpeed, req.Damage, noTrail: false);
+                    drawScale, bulletSpeed, req.Damage, noTrail: false);
             }
             else if (projectilePrefab != null)
             {
@@ -1359,17 +1393,21 @@ namespace TitanOrbit.Game
             GameObject visual = go.transform.childCount > 0
                 ? go.transform.GetChild(0).gameObject
                 : go;
-            float visualScale = BulletVisualFactory.GetBulletVisualScale(_bank, scaleMul, bankIndex)
+            float visualScale = BulletVisualFactory.GetBulletVisualScale(_bank, drawScale, bankIndex)
                                 * cameraScale;
             if (projectilePrefab == null)
                 BulletVisualFactory.ApplyColorToVisual(visual, BulletVisualFactory.GetTeamBulletColor(team));
-            // Root scale is the ship's fire power. Bullet type does not change it.
+            // Root scale is this shell's share of fire power. Bullet type does not change it.
             VfxUrpCompat.ApplyImpactVisualScale(go, visualScale, lockUniformParticleSize: true);
-            VfxUrpCompat.PrepareVfxInstance(go);
-            BulletVisualFactory.SetAudioPitchInHierarchy(
-                go, BulletVisualFactory.GetFirePowerSoundPitch(
-                    pianoLive, req.FirePowerBase, req.FirePowerPerExtra),
-                spawnDisplay);
+
+            GameObject[] splitExtras = null;
+            if (splitCount > 1)
+            {
+                splitExtras = RentSplitExtras(
+                    projectilePrefab, splitCount - 1, bankIndex, team,
+                    drawScale, visualScale, bulletSpeed, req.Damage);
+                splitCount = 1 + (splitExtras != null ? splitExtras.Length : 0);
+            }
 
             // Length stays at the prefab size. Stretch-in-flight (0.5 → 2) made a held
             // burst look like small, medium, and large bullets. DPS scale is the root.
@@ -1410,7 +1448,33 @@ namespace TitanOrbit.Game
                 AcquireRange = req.AcquireRange,
                 Stretch = stretch,
                 Trail = go.GetComponentInChildren<TrailRenderer>(true),
+                SplitExtras = splitExtras,
+                SplitVisualCount = splitCount,
+                // Hit sweep keeps ScaleMultiplier (the full shot). Shells draw the share.
+                SplitVisualScale = drawScale,
             };
+
+            if (splitCount > 1)
+                PlaceTracerShells(in tracer, spawnDisplay, rot);
+
+            // Enable after the side-by-side pose so trails do not streak from the pool origin.
+            // Audio on before enable so a shell that was a silent sibling can PlayOnAwake again.
+            SetShellAudioEnabled(go, true);
+            VfxUrpCompat.PrepareVfxInstance(go);
+            BulletVisualFactory.SetAudioPitchInHierarchy(
+                go, BulletVisualFactory.GetFirePowerSoundPitch(
+                    pianoLive, req.FirePowerBase, req.FirePowerPerExtra),
+                spawnDisplay);
+            if (splitExtras != null)
+            {
+                for (int s = 0; s < splitExtras.Length; s++)
+                {
+                    if (splitExtras[s] == null)
+                        continue;
+                    SetShellAudioEnabled(splitExtras[s], false);
+                    VfxUrpCompat.PrepareVfxInstance(splitExtras[s]);
+                }
+            }
 
             // Seed observer-hull samples so the first frame can already ride the camera
             // (incoming remote rockets included — no local-owner check).
@@ -1464,16 +1528,29 @@ namespace TitanOrbit.Game
             return math.lerp(muzzleY, 0f, t);
         }
 
-        /// <summary>Root scale is the fire-power size. Bullet type does not change it.</summary>
+        /// <summary>
+        /// Root scale is this shell's share of fire power. A single bullet uses the full shot.
+        /// Bullet type does not change it. Split siblings share that same scale.
+        /// </summary>
         void ApplyTracerRootScale(in Tracer t)
         {
             if (t.Go == null)
                 return;
-            float scaleMul = t.ScaleMultiplier > 0f ? t.ScaleMultiplier : 1f;
+            float scaleMul = t.SplitVisualScale > 0f
+                ? t.SplitVisualScale
+                : (t.ScaleMultiplier > 0f ? t.ScaleMultiplier : 1f);
             int bankIndex = math.max(0, t.BankIndex);
             float visual = BulletVisualFactory.GetBulletVisualScale(_bank, scaleMul, bankIndex)
                 * ResolveMegaCameraVisualScale();
-            t.Go.transform.localScale = Vector3.one * math.max(0.05f, visual);
+            var scale = Vector3.one * math.max(0.05f, visual);
+            t.Go.transform.localScale = scale;
+            if (t.SplitExtras == null)
+                return;
+            for (int i = 0; i < t.SplitExtras.Length; i++)
+            {
+                if (t.SplitExtras[i] != null)
+                    t.SplitExtras[i].transform.localScale = scale;
+            }
         }
 
         /// <summary>
@@ -1892,15 +1969,177 @@ namespace TitanOrbit.Game
         {
             if (t.Trail != null)
                 t.Trail.Clear();
+            if (t.SplitExtras == null)
+                return;
+            for (int i = 0; i < t.SplitExtras.Length; i++)
+            {
+                GameObject extra = t.SplitExtras[i];
+                if (extra == null)
+                    continue;
+                TrailRenderer trail = extra.GetComponentInChildren<TrailRenderer>(true);
+                if (trail != null)
+                    trail.Clear();
+            }
         }
 
         /// <summary>
         /// Returns the tracer shell to <see cref="BulletTracerPool"/> (or Destroy if foreign).
+        /// Split siblings are the same kind of shell — still one logical bullet.
         /// </summary>
         static void DestroyTracerGo(in Tracer t)
         {
+            if (t.SplitExtras != null)
+            {
+                for (int i = 0; i < t.SplitExtras.Length; i++)
+                {
+                    if (t.SplitExtras[i] != null)
+                        BulletTracerPool.Return(t.SplitExtras[i]);
+                }
+            }
+
             if (t.Go != null)
                 BulletTracerPool.Return(t.Go);
+        }
+
+        /// <summary>
+        /// Titan catalog switch: floor(fire power ÷ Bullet Reference Fire Power) shells, each an equal share.
+        /// Off, or not a Titan bullet, leaves the single full-power shell.
+        /// Missiles stay one visual. The server round and its hit are unchanged.
+        /// </summary>
+        static bool TryResolveTitanSplit(
+            in BulletVfxBridge.SpawnRequest req,
+            float fullScale,
+            out int spawnCount,
+            out float eachScale)
+        {
+            spawnCount = 1;
+            eachScale = fullScale;
+            if (fullScale <= 0.01f || req.Homing != 0 || RocketHomingFire.IsRocketBank(req.BankIndex))
+                return false;
+
+            MegaShipCatalog catalog = MegaShipCatalog.Load();
+            if (catalog == null || !catalog.splitShotBulletVisual)
+                return false;
+            if (!IsTitanShooter(req.OwnerNetworkId))
+                return false;
+
+            float reference = math.max(0.01f, BulletVisualScale.ResolveFixedBulletReferenceDamage());
+            // This shot's ScaleMultiplier is fire power ÷ the bank reference.
+            BulletVisualScale.ResolveTitanSplitCounts(
+                fullScale * reference, reference, out int trueCount, out spawnCount);
+            if (trueCount <= 1)
+                return false;
+
+            eachScale = BulletVisualScale.ComputeTitanSplitShellScale(fullScale, trueCount);
+            return spawnCount > 1;
+        }
+
+        /// <summary>True when this NetworkId is a live Titan hull. No extra network field.</summary>
+        static bool IsTitanShooter(int ownerNetworkId)
+        {
+            var world = EcsGameBridge.ClientWorld;
+            if (world == null || !world.IsCreated)
+                return false;
+
+            EntityManager em = world.EntityManager;
+            if (!BulletMuzzlePresentation.TryResolveShooterHull(
+                    em, ownerNetworkId, 0, out Entity hull, out _))
+                return false;
+
+            return em.HasComponent<MegaShipState>(hull)
+                && em.GetComponentData<MegaShipState>(hull).IsMega;
+        }
+
+        /// <summary>
+        /// Extra pooled shells for a split shot. They stay inactive until the caller places them.
+        /// </summary>
+        GameObject[] RentSplitExtras(
+            GameObject projectilePrefab,
+            int extraCount,
+            int bankIndex,
+            TeamId team,
+            float drawScale,
+            float visualScale,
+            float bulletSpeed,
+            float damage)
+        {
+            if (extraCount <= 0)
+                return null;
+
+            var extras = new GameObject[extraCount];
+            for (int i = 0; i < extraCount; i++)
+            {
+                if (!BulletTracerPool.TryRent(projectilePrefab, out GameObject shell, out _) || shell == null)
+                {
+                    shell = new GameObject("BulletTracer");
+                    BulletVisualFactory.BuildVisual(
+                        shell.transform, _bank, bankIndex, team, BulletShape.Sphere,
+                        drawScale, bulletSpeed, damage, noTrail: false);
+                }
+                else if (projectilePrefab != null)
+                {
+                    VfxUrpCompat.EnsureAuthoredProjectileVisual(shell, projectilePrefab);
+                }
+
+                VfxUrpCompat.ApplyImpactVisualScale(shell, visualScale, lockUniformParticleSize: true);
+                SetShellAudioEnabled(shell, false);
+                extras[i] = shell;
+            }
+
+            return extras;
+        }
+
+        /// <summary>
+        /// Centers the row on the logical tracer. Slot 0 is the primary shell.
+        /// Neighbor gap is drawn size ÷ <see cref="BulletVfxBank.BulletReferenceFirePower"/>.
+        /// </summary>
+        static void PlaceTracerShells(in Tracer t, Vector3 center, Quaternion rotation)
+        {
+            int count = t.SplitVisualCount > 0 ? t.SplitVisualCount : 1;
+            float spacing = 0f;
+            if (count > 1 && t.Go != null)
+            {
+                float reference = BulletVisualScale.ResolveFixedBulletReferenceDamage();
+                spacing = BulletVisualScale.ComputeTitanSplitShellSpacing(
+                    t.Go.transform.localScale.x, reference);
+            }
+
+            float mid = (count - 1) * 0.5f;
+            Vector3 right = rotation * Vector3.right;
+            if (t.Go != null)
+                t.Go.transform.SetPositionAndRotation(center + right * ((0f - mid) * spacing), rotation);
+
+            if (t.SplitExtras == null)
+                return;
+
+            for (int i = 0; i < t.SplitExtras.Length; i++)
+            {
+                GameObject extra = t.SplitExtras[i];
+                if (extra == null)
+                    continue;
+                float slot = (i + 1) - mid;
+                extra.transform.SetPositionAndRotation(center + right * (slot * spacing), rotation);
+            }
+        }
+
+        /// <summary>
+        /// Split siblings must not each play the prefab shot. The primary shell and
+        /// <see cref="AudioManager"/> keep the one fire sound.
+        /// </summary>
+        static void SetShellAudioEnabled(GameObject root, bool enabled)
+        {
+            if (root == null)
+                return;
+
+            AudioSource[] sources = root.GetComponentsInChildren<AudioSource>(true);
+            for (int i = 0; i < sources.Length; i++)
+            {
+                if (sources[i] == null)
+                    continue;
+                if (!enabled)
+                    sources[i].Stop();
+                sources[i].enabled = enabled;
+            }
         }
 
         void RemoveAtSwap(int index)

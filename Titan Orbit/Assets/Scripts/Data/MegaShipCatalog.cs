@@ -283,6 +283,15 @@ namespace TitanOrbit.Data
 
         static MegaShipCatalog s_instance;
 
+        [Header("Titan bullet visual")]
+        [Tooltip(
+            "One switch for every Titan. On: a bullet draws floor(fire power ÷ Bullet Reference Fire Power) " +
+            "smaller bullets side by side. That same Bullet VFX Bank field sets the gap. " +
+            "Each visual is an equal share of the shot, so two shells that have not reached the next " +
+            "multiple of that reference are larger than two that landed exactly on it. Still one round — damage and the hit stay on the single server bullet. " +
+            "Off: one bullet sized by the full fire power. Missiles and lasers are unchanged.")]
+        public bool splitShotBulletVisual = true;
+
         [Header("Unique components")]
         [Tooltip("One row per part name across all MEGA prefabs (Armor1, TurretBarrel, …). Edit here; every ship that uses the name picks it up on Refresh.")]
         public List<MegaShipComponentEntry> uniqueComponents = new List<MegaShipComponentEntry>();

@@ -132,6 +132,63 @@ namespace TitanOrbit.Simulation
         }
 
         /// <summary>
+        /// Most side-by-side shells one Titan shot will draw.
+        /// A high-power sniper would otherwise rent dozens of tracers. Past this, the
+        /// extras are dropped and each drawn shell keeps the uncapped share.
+        /// </summary>
+        public const int TitanSplitMaxVisuals = 12;
+
+        /// <summary>
+        /// How many visuals a Titan split shot wants, and how many to actually spawn.
+        /// <paramref name="trueCount"/> is floor(fire power ÷ <paramref name="referenceFirePower"/>), at least 1.
+        /// That reference is <see cref="BulletVfxBank.BulletReferenceFirePower"/>.
+        /// <paramref name="spawnCount"/> is that count clamped to <see cref="TitanSplitMaxVisuals"/>.
+        /// </summary>
+        [BurstCompile]
+        public static void ResolveTitanSplitCounts(
+            float firepower,
+            float referenceFirePower,
+            out int trueCount,
+            out int spawnCount)
+        {
+            trueCount = 1;
+            float reference = math.max(0.01f, referenceFirePower);
+            if (firepower >= reference)
+            {
+                int count = (int)math.floor((firepower + 0.001f) / reference);
+                if (count > 1)
+                    trueCount = count;
+            }
+
+            spawnCount = trueCount > TitanSplitMaxVisuals ? TitanSplitMaxVisuals : trueCount;
+        }
+
+        /// <summary>
+        /// Center-to-center gap for one step in a Titan split row.
+        /// Drawn shell size ÷ <see cref="BulletVfxBank.BulletReferenceFirePower"/>.
+        /// The same reference sets the shell count, so one Inspector edit moves the whole row.
+        /// </summary>
+        [BurstCompile]
+        public static float ComputeTitanSplitShellSpacing(float drawnShellScale, float referenceFirePower)
+        {
+            float reference = math.max(0.01f, referenceFirePower);
+            return drawnShellScale / reference;
+        }
+
+        /// <summary>
+        /// Root scale for one shell in a split shot. <paramref name="fullShotScale"/> is
+        /// the single-bullet size (fire power ÷ the Bullet VFX Bank reference).
+        /// Dividing by <paramref name="trueCount"/> gives each shell an equal share,
+        /// so a 14-power pair is larger than a 10-power pair.
+        /// </summary>
+        [BurstCompile]
+        public static float ComputeTitanSplitShellScale(float fullShotScale, int trueCount)
+        {
+            int n = trueCount < 1 ? 1 : trueCount;
+            return fullShotScale / n;
+        }
+
+        /// <summary>
         /// Per-shot tracer scale before the bank global: fire power ÷ reference fire power.
         /// </summary>
         /// <param name="categoryUpgradeVisualScaleMultiplier">Unused. See <see cref="ComputeUpgradeScaleMultiplier"/>.</param>
