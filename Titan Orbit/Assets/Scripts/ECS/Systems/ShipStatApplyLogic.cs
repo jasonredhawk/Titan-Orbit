@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using TitanOrbit;
 using TitanOrbit.Core;
 using TitanOrbit.Data;
@@ -384,18 +385,18 @@ namespace TitanOrbit.ECS
             ShipComponentAbilityStats chassisBaseline;
             if (partSum.MatchedComponentIds != null && partSum.MatchedComponentIds.Count > 0)
             {
-                chassisBaseline = ShipComponentExtraLevelMath.AggregateAndEvaluate(
+                // Each part already includes its fleet. Do not ApplySpecialBonuses
+                // on this sum — that would roll the hull bonus over a purchased part.
+                ShipFamilyDefinition evalFamily = null;
+                TryResolveFamilyForChassisId(chassisId, out evalFamily);
+                chassisBaseline = EvaluatePartsWithGearFleet(
                     partSum.MatchedComponentIds,
                     partSum.PerComponentStats,
                     shipLevel,
                     in abilityCounts,
-                    partSum.StoreExtraStartIndex);
-                chassisBaseline = ShipComponentExtraLevelMath.ApplyMobilityPenalties(chassisBaseline, shipLevel);
-                if (TryResolveFamilyForChassisId(chassisId, out ShipFamilyDefinition evalFamily) && evalFamily != null)
-                {
-                    chassisBaseline = evalFamily.ApplyStatFallbacks(chassisBaseline);
-                    chassisBaseline = evalFamily.ApplySpecialBonuses(chassisBaseline);
-                }
+                    partSum.StoreExtraStartIndex,
+                    evalFamily,
+                    partSum.ComponentFleetFamilyIndex);
             }
             else
             {
@@ -621,19 +622,16 @@ namespace TitanOrbit.ECS
                     ShipComponentAbilityStats stock;
                     if (partSum.MatchedComponentIds != null && partSum.MatchedComponentIds.Count > 0)
                     {
-                        stock = ShipComponentExtraLevelMath.AggregateAndEvaluate(
+                        ShipFamilyDefinition stockFamily = null;
+                        TryResolveFamilyForChassisId(chassisId, out stockFamily);
+                        stock = EvaluatePartsWithGearFleet(
                             partSum.MatchedComponentIds,
                             partSum.PerComponentStats,
                             shipLevel,
                             in stockCounts,
-                            partSum.StoreExtraStartIndex);
-                        stock = ShipComponentExtraLevelMath.ApplyMobilityPenalties(stock, shipLevel);
-                        if (TryResolveFamilyForChassisId(chassisId, out ShipFamilyDefinition stockFamily)
-                            && stockFamily != null)
-                        {
-                            stock = stockFamily.ApplyStatFallbacks(stock);
-                            stock = stockFamily.ApplySpecialBonuses(stock);
-                        }
+                            partSum.StoreExtraStartIndex,
+                            stockFamily,
+                            partSum.ComponentFleetFamilyIndex);
                     }
                     else
                     {
@@ -801,6 +799,8 @@ namespace TitanOrbit.ECS
                         hash = hash * 31 + e.StampedBulletBankPlusOne;
                         // Origin planet changes the loadout caption even when stats do not.
                         hash = hash * 31 + e.SourcePlanetId;
+                        // Purchase-family fleet changes this part's contribution.
+                        hash = hash * 31 + e.SourceFamilyConfigIndex;
                         hash = hash * 31 + e.ComponentId.GetHashCode();
                     }
                 }
@@ -890,20 +890,9 @@ namespace TitanOrbit.ECS
                 tier.prefab, family, shipLevel: 1, applyPropulsionAndWeaponRules: false);
 
             // --- Optional moon-store equipment appended into the same part lists ---
-            var extraIds = new System.Collections.Generic.List<string>(4);
-            if (em.HasBuffer<EquippedEquipmentElement>(shipEntity))
-            {
-                var buf = em.GetBuffer<EquippedEquipmentElement>(shipEntity);
-                for (int i = 0; i < buf.Length; i++)
-                {
-                    var e = buf[i];
-                    if ((StoreItemType)e.ItemType != StoreItemType.ShipComponent)
-                        continue;
-                    string id = e.ComponentId.ToString();
-                    if (!string.IsNullOrWhiteSpace(id))
-                        extraIds.Add(id);
-                }
-            }
+            // Pre-resolved so a missing catalog id cannot shift the fleet stamp.
+            ShipComponentStoreVisualScaleLogic.CollectExtraComponents(
+                em, shipEntity, out List<string> extraIds, out List<int> extraFamilies);
 
             if (extraIds.Count > 0)
             {
@@ -916,7 +905,98 @@ namespace TitanOrbit.ECS
                 ShipFamilyStatsCalculator.ApplySharedAggregationRules(ref sum, family, shipLevel: 1);
             }
 
+            StampComponentFleetFamilies(ref sum, extraFamilies);
+
             return sum.MatchedComponentIds != null && sum.MatchedComponentIds.Count > 0;
+        }
+
+        /// <summary>
+        /// Writes <see cref="ShipFamilyStatsCalculator.SumResult.ComponentFleetFamilyIndex"/>.
+        /// Chassis rows are −1 (hull roll). Store rows copy the purchase stamp in order.
+        /// </summary>
+        static void StampComponentFleetFamilies(
+            ref ShipFamilyStatsCalculator.SumResult sum,
+            List<int> extraFamilies)
+        {
+            int count = sum.PerComponentStats != null ? sum.PerComponentStats.Count : 0;
+            if (sum.ComponentFleetFamilyIndex == null)
+                sum.ComponentFleetFamilyIndex = new System.Collections.Generic.List<int>(count);
+            else
+                sum.ComponentFleetFamilyIndex.Clear();
+
+            int extraStart = sum.StoreExtraStartIndex;
+            int extraI = 0;
+            for (int i = 0; i < count; i++)
+            {
+                if (extraStart != int.MaxValue && i >= extraStart
+                    && extraFamilies != null && extraI < extraFamilies.Count)
+                {
+                    sum.ComponentFleetFamilyIndex.Add(extraFamilies[extraI]);
+                    extraI++;
+                }
+                else
+                {
+                    sum.ComponentFleetFamilyIndex.Add(-1);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Extra-Level the part list, then scale each part by its own fleet roll.
+        /// Hull rows use <paramref name="hullFamily"/>. A purchased part uses the
+        /// family slot in <paramref name="componentFleetFamilyIndex"/> (0 = home, 1×).
+        /// −1 on a row means the hull roll. The sum is not multiplied again.
+        /// </summary>
+        public static ShipComponentAbilityStats EvaluatePartsWithGearFleet(
+            System.Collections.Generic.IReadOnlyList<string> ids,
+            System.Collections.Generic.IReadOnlyList<ShipComponentAbilityStats> stats,
+            int shipLevel,
+            in ShipAbilityLevelCounts abilities,
+            int storeExtraStartIndex,
+            ShipFamilyDefinition hullFamily,
+            System.Collections.Generic.IReadOnlyList<int> componentFleetFamilyIndex)
+        {
+            int count = stats != null ? stats.Count : 0;
+            var fleets = new System.Collections.Generic.List<ShipFamilySpecialBonuses>(count);
+            ShipFamilySpecialBonuses hullFleet = hullFamily != null
+                ? hullFamily.ResolveSpecialBonuses()
+                : ShipFamilySpecialBonuses.Identity;
+            for (int i = 0; i < count; i++)
+            {
+                int familyIndex = -1;
+                if (componentFleetFamilyIndex != null && i < componentFleetFamilyIndex.Count)
+                    familyIndex = componentFleetFamilyIndex[i];
+                // −1: this row is chassis. 0+: the moon the part was bought at.
+                fleets.Add(familyIndex >= 0
+                    ? MegaShipStatsCalculator.ResolveFleetBonuses(familyIndex)
+                    : hullFleet);
+            }
+
+            ShipComponentAbilityStats evaluated = ShipComponentExtraLevelMath.AggregateAndEvaluate(
+                ids, stats, shipLevel, in abilities, storeExtraStartIndex, fleets);
+            evaluated = ShipComponentExtraLevelMath.ApplyMobilityPenalties(evaluated, shipLevel);
+            if (hullFamily != null)
+                evaluated = ApplyHullFallbacksWithFleet(evaluated, hullFamily);
+            return evaluated;
+        }
+
+        /// <summary>
+        /// Fills stats that no part authored, then scales only those fills by the
+        /// hull fleet. Parts already carry their own roll, so this does not
+        /// multiply a purchased engine a second time.
+        /// </summary>
+        public static ShipComponentAbilityStats ApplyHullFallbacksWithFleet(
+            ShipComponentAbilityStats stats,
+            ShipFamilyDefinition family)
+        {
+            if (family == null)
+                return stats;
+
+            ShipComponentAbilityStats fallback = family.GetEffectiveDefaultFallbackStats();
+            ShipFamilySpecialBonuses fleet = family.ResolveSpecialBonuses();
+            if (!fleet.IsIdentity)
+                fallback = fleet.Apply(fallback);
+            return ShipComponentAbilityStatsMath.WithZeroStatFallbacks(stats, fallback);
         }
 
         /// <summary>

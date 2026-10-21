@@ -27,6 +27,13 @@ namespace TitanOrbit.Data
             /// </summary>
             public List<Vector3> PerComponentLocalScales;
             /// <summary>
+            /// Parallel to <see cref="PerComponentStats"/>. −1 means this row uses the
+            /// hull family's fleet roll. Zero or higher is a purchased part's
+            /// <c>SourceFamilyConfigIndex</c> (0 = home, exactly 1×).
+            /// </summary>
+            public List<int> ComponentFleetFamilyIndex;
+
+            /// <summary>
             /// First index in <see cref="MatchedComponentIds"/> that is a moon-store extra.
             /// <see cref="int.MaxValue"/> when the hull has no store gear. Extra Level scores
             /// these rows with the chassis; the highest base of each type is the primary.

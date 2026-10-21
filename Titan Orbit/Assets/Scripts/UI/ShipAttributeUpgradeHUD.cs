@@ -1684,20 +1684,16 @@ namespace TitanOrbit.UI
 
                 if (parts.Valid && parts.Ids != null && parts.Ids.Count > 0)
                 {
-                    effective = ShipComponentExtraLevelMath.AggregateAndEvaluate(
+                    ShipFamilyDefinition family = null;
+                    ShipStatApplyLogic.TryResolveFamilyForChassisId(chassisId, out family);
+                    effective = ShipStatApplyLogic.EvaluatePartsWithGearFleet(
                         parts.Ids,
                         parts.Stats,
                         ship.ShipLevel,
                         in abilityCounts,
-                        parts.StoreExtraStartIndex);
-                    effective = ShipComponentExtraLevelMath.ApplyMobilityPenalties(effective, ship.ShipLevel);
-                    ShipFamilyDefinition family = null;
-                    if (ShipStatApplyLogic.TryResolveFamilyForChassisId(chassisId, out family)
-                        && family != null)
-                    {
-                        effective = family.ApplyStatFallbacks(effective);
-                        effective = family.ApplySpecialBonuses(effective);
-                    }
+                        parts.StoreExtraStartIndex,
+                        family,
+                        parts.ComponentFleetFamilyIndex);
 
                     ApplyLocalCardStatModifiers(chassisId, ref effective);
 
@@ -1910,13 +1906,16 @@ namespace TitanOrbit.UI
         {
             megaStats = default;
             megaDps = 0f;
-            var extraIds = CollectLocalStoreComponentIds();
-            if (!MegaShipStatsCalculator.TrySumForCatalogIndex(
-                    megaIndex, extraIds, shipLevel, out megaStats))
+            var extraIds = new List<string>(4);
+            var gearFamilies = new List<int>(4);
+            CollectLocalStoreComponents(extraIds, gearFamilies);
+            if (!MegaShipStatsCalculator.TrySumForCatalogIndex(megaIndex, out megaStats))
                 return false;
 
-            // Same fleet roll the server wrote onto the hull. Home Titans stay 1×.
+            // Titan roll on the catalog hull only. Each purchased part adds its own.
             megaStats = MegaShipStatsCalculator.ApplyFleetBonuses(megaStats, familyConfigIndex);
+            MegaShipStatsCalculator.AddEquippedStoreComponents(
+                ref megaStats, extraIds, shipLevel, gearFamilies);
 
             // Catalog barrels only. A purchased weapon does not add DPS; the
             // selected bullet type's modifiers scale this after the snapshot fills.
@@ -1935,20 +1934,34 @@ namespace TitanOrbit.UI
         /// Equipped moon-store ship-component ids on the local owner. Empty when the
         /// seed is missing (Join Team Instantiates) — chips then show catalog-only.
         /// </summary>
-        static List<string> CollectLocalStoreComponentIds()
+        static void CollectLocalStoreComponents(List<string> extraIds, List<int> gearFamilies)
         {
+            extraIds.Clear();
+            gearFamilies.Clear();
             var world = EcsGameBridge.GetLocalPlayerShipWorld();
             if (world == null || !world.IsCreated)
-                return new List<string>(0);
+                return;
 
             var em = world.EntityManager;
             if (!LocalShipEntitySeed.TryGetSeededShip(em, out Entity ship)
                 || ship == Entity.Null
                 || !em.Exists(ship))
-                return new List<string>(0);
+                return;
 
-            ShipComponentStoreVisualScaleLogic.CollectExtraComponentIds(em, ship, out var extraIds);
-            return extraIds;
+            ShipComponentStoreVisualScaleLogic.CollectExtraComponents(
+                em, ship, out List<string> ids, out List<int> families);
+            if (ids != null)
+                extraIds.AddRange(ids);
+            if (families != null)
+                gearFamilies.AddRange(families);
+        }
+
+        static List<string> CollectLocalStoreComponentIds()
+        {
+            var ids = new List<string>(4);
+            var families = new List<int>(4);
+            CollectLocalStoreComponents(ids, families);
+            return ids;
         }
 
         static bool TryGetLocalHullComponentSize(out float componentSize)

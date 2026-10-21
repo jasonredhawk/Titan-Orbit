@@ -33,6 +33,12 @@ namespace TitanOrbit.Entities
         /// </summary>
         public int sourcePlanetId;
 
+        /// <summary>
+        /// Ghost <c>SourceFamilyConfigIndex</c>. The fleet roll for this part.
+        /// 0 is home or a buy from before the stamp (no component bonus).
+        /// </summary>
+        public byte sourceFamilyConfigIndex;
+
         // --- Local transform (ship hull space) ---
         public float localPosX;
         public float localPosY;

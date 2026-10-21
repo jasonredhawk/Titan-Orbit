@@ -108,10 +108,10 @@ namespace TitanOrbit.Editor
             EditorGUILayout.BeginVertical(EditorStyles.helpBox);
             EditorGUILayout.LabelField("Family Special Bonuses", EditorStyles.boldLabel);
             EditorGUILayout.HelpBox(
-                "Editor preview of the old per-ship trade-offs. A running match ignores these. " +
-                "Home-planet ships stay at 1×. Every other planet's family is rolled from the " +
-                "match seed on a bell curve centered on 1× (tails 0.5 to 2.0). Quit Play Mode before rebaking power scores " +
-                "so the bake keeps these preview numbers.",
+                "Authored fleet multipliers. A running match keeps these, then replaces 3 to 6 " +
+                "of them from the match seed on a bell curve centered on 1× (tails 0.5 to 2.0). " +
+                "Home-planet ships stay at 1×. Quit Play Mode before rebaking power scores " +
+                "so the bake keeps these authored numbers.",
                 MessageType.None);
 
             if (GUILayout.Button("Reset Family Bonuses To 1×"))

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Text;
 using TitanOrbit.Core;
 using UnityEngine;
@@ -107,7 +108,8 @@ namespace TitanOrbit.Data
             if (entry == null)
                 return default;
             // [TITAN-ORBIT] Solo store-card preview: Extra Level with count 1 + weapon divide when needed.
-            // Family special bonuses are baked into the number (not shown as a per-tile increment).
+            // Family fleet is baked into the power number. The gear card text shows
+            // the catalog value and this adjusted value side by side.
             ShipComponentAbilityStats effective = GetEffectiveStatsAtShipLevel(
                 entry.stats, shipLevel, entry.componentId);
             if (family != null)
@@ -219,26 +221,35 @@ namespace TitanOrbit.Data
             if (entry == null)
                 return string.Empty;
 
-            ShipComponentAbilityStats s = GetEffectiveStatsForDisplay(
+            ShipComponentAbilityStats adjusted = GetEffectiveStatsForDisplay(
                 entry, shipLevel, family, planetOrHullBankIndex);
+            ShipComponentAbilityStats original = BulletBankProfileUtility.ApplyProfileToComponentStats(
+                GetEffectiveStatsAtShipLevel(entry.stats, shipLevel, entry.componentId),
+                entry, family, planetOrHullBankIndex);
+
             var lines = new List<string>(maxLines);
             // --- Pick top non-zero stats in fixed priority order ---
-            TryAddLine(lines, "Fire", s.firePower, maxLines);
-            TryAddLine(lines, "Bullet", s.bulletSpeed, maxLines);
-            TryAddLine(lines, "Range", s.bulletRange, maxLines);
-            TryAddLine(lines, "Fire rate", s.fireRate, maxLines);
-            TryAddLine(lines, "Ram", s.rammingPower, maxLines);
-            TryAddLine(lines, "Health", s.healthCap, maxLines);
-            TryAddLine(lines, "Regen", s.healthRegen, maxLines);
-            TryAddLine(lines, "Energy", s.energyCap, maxLines);
-            TryAddLine(lines, "E.Regen", s.energyRegen, maxLines);
-            TryAddLine(lines, "Speed", s.moveSpeed, maxLines);
-            TryAddLine(lines, "Accel", s.accelerationCap, maxLines);
+            TryAddFleetLine(lines, "Fire", original.firePower, adjusted.firePower, maxLines);
+            TryAddFleetLine(lines, "Bullet", original.bulletSpeed, adjusted.bulletSpeed, maxLines);
+            TryAddFleetLine(lines, "Range", original.bulletRange, adjusted.bulletRange, maxLines);
+            TryAddFleetLine(lines, "Fire rate", original.fireRate, adjusted.fireRate, maxLines);
+            TryAddFleetLine(lines, "Ram", original.rammingPower, adjusted.rammingPower, maxLines);
+            TryAddFleetLine(lines, "Health", original.healthCap, adjusted.healthCap, maxLines);
+            TryAddFleetLine(lines, "Regen", original.healthRegen, adjusted.healthRegen, maxLines);
+            TryAddFleetLine(lines, "Energy", original.energyCap, adjusted.energyCap, maxLines);
+            TryAddFleetLine(lines, "E.Regen", original.energyRegen, adjusted.energyRegen, maxLines);
+            TryAddFleetLine(lines, "Speed", original.moveSpeed, adjusted.moveSpeed, maxLines);
+            TryAddFleetLine(lines, "Accel", original.accelerationCap, adjusted.accelerationCap, maxLines);
             // Added gear contributes Turn PerExtra × ship level, not the part's Turn Base.
-            TryAddLine(lines, "Turn", GetAddedGearTurnGain(entry, shipLevel, family), maxLines);
-            TryAddLine(lines, "Gems", s.maxGems, maxLines);
-            TryAddLine(lines, "Tractor", s.tractorBeamDistance, maxLines);
-            TryAddLine(lines, "Troops", s.maxPeople, maxLines);
+            TryAddFleetLine(
+                lines,
+                "Turn",
+                GetAddedGearTurnGain(entry, shipLevel, family, applyFamilyFleet: false),
+                GetAddedGearTurnGain(entry, shipLevel, family, applyFamilyFleet: true),
+                maxLines);
+            TryAddFleetLine(lines, "Gems", original.maxGems, adjusted.maxGems, maxLines);
+            TryAddFleetLine(lines, "Tractor", original.tractorBeamDistance, adjusted.tractorBeamDistance, maxLines);
+            TryAddFleetLine(lines, "Troops", original.maxPeople, adjusted.maxPeople, maxLines);
 
             if (lines.Count == 0)
                 return "No stat bonus";
@@ -296,9 +307,19 @@ namespace TitanOrbit.Data
             if (entry == null)
                 return string.Empty;
 
-            // Extra Level + family specials + bank multipliers — same numbers as the power bar.
-            ShipComponentAbilityStats s = GetEffectiveStatsForDisplay(
-                entry, shipLevel, family, planetOrHullBankIndex);
+            // Extra Level + bullet bank. Fleet is applied next so the card can
+            // show the catalog number and the moon-adjusted number side by side.
+            ShipComponentAbilityStats leveled = GetEffectiveStatsAtShipLevel(
+                entry.stats, shipLevel, entry.componentId);
+            ShipFamilySpecialBonuses fleet = family != null
+                ? family.ResolveSpecialBonuses()
+                : ShipFamilySpecialBonuses.Identity;
+            ShipComponentAbilityStats original = BulletBankProfileUtility.ApplyProfileToComponentStats(
+                leveled, entry, family, planetOrHullBankIndex);
+            ShipComponentAbilityStats adjusted = fleet.IsIdentity
+                ? original
+                : BulletBankProfileUtility.ApplyProfileToComponentStats(
+                    fleet.Apply(leveled), entry, family, planetOrHullBankIndex);
             entry.EnsureStatCategories();
             if (entry.statCategories == null || entry.statCategories.Count == 0)
                 entry.statCategories = ShipFamilyComponentPartKey.InferDefaultStatCategories(entry.componentId);
@@ -314,54 +335,64 @@ namespace TitanOrbit.Data
             TryQueueWeaponBulletType(lines, entry, family, planetOrHullBankIndex);
 
             // --- Offense / Health / Energy (full gain = authored; they sum) ---
-            TryQueue(lines, s.firePower, "Fire Power", 0);
-            TryQueue(lines, s.bulletSpeed, "Bullet Speed", 1);
-            TryQueue(lines, s.bulletRange, "Bullet Range", 1);
-            TryQueue(lines, s.fireRate, "Fire Rate", 1);
-            TryQueue(lines, s.rammingPower, "Ramming", 0);
-            TryQueue(lines, s.healthCap, "Health Cap", 2);
-            TryQueue(lines, s.healthRegen, "Health Regen", 3);
-            TryQueue(lines, s.energyCap, "Energy Cap", 4);
-            TryQueue(lines, s.energyRegen, "Energy Regen", 5);
+            TryQueueFleet(lines, original.firePower, adjusted.firePower, "Fire Power", 0, richText);
+            TryQueueFleet(lines, original.bulletSpeed, adjusted.bulletSpeed, "Bullet Speed", 1, richText);
+            TryQueueFleet(lines, original.bulletRange, adjusted.bulletRange, "Bullet Range", 1, richText);
+            TryQueueFleet(lines, original.fireRate, adjusted.fireRate, "Fire Rate", 1, richText);
+            TryQueueFleet(lines, original.rammingPower, adjusted.rammingPower, "Ramming", 0, richText);
+            TryQueueFleet(lines, original.healthCap, adjusted.healthCap, "Health Cap", 2, richText);
+            TryQueueFleet(lines, original.healthRegen, adjusted.healthRegen, "Health Regen", 3, richText);
+            TryQueueFleet(lines, original.energyCap, adjusted.energyCap, "Energy Cap", 4, richText);
+            TryQueueFleet(lines, original.energyRegen, adjusted.energyRegen, "Energy Regen", 5, richText);
 
-            // --- Movement: base on the part + cumulative hull change from aggregation ---
+            // --- Movement: catalog number, then the fleet-adjusted number ---
             if (isPropulsion)
             {
                 TryGetPropulsionCumulativeGain(
                     family, entry, shipLevel, out float cumulativeMove, out float cumulativeAccel);
 
-                TryQueueBaseAndCumulative(lines, s.moveSpeed, cumulativeMove, "Move", 6);
-                TryQueueBaseAndCumulative(lines, s.accelerationCap, cumulativeAccel, "Accel", 6);
+                TryQueueFleetOrHull(lines, original.moveSpeed, adjusted.moveSpeed, cumulativeMove, "Move", 6, richText);
+                TryQueueFleetOrHull(lines, original.accelerationCap, adjusted.accelerationCap, cumulativeAccel, "Accel", 6, richText);
             }
             else
             {
-                TryQueue(lines, s.moveSpeed, "Move", 6);
-                TryQueue(lines, s.accelerationCap, "Accel", 6);
+                TryQueueFleet(lines, original.moveSpeed, adjusted.moveSpeed, "Move", 6, richText);
+                TryQueueFleet(lines, original.accelerationCap, adjusted.accelerationCap, "Accel", 6, richText);
             }
 
             // Same extra-part rule as Move / Accel: the hull keeps its Turn Base.
             // Buying this piece adds only its Turn PerExtra × ship level.
-            float turnGain = GetAddedGearTurnGain(entry, shipLevel, family);
-            TryQueueBaseAndCumulative(lines, s.turnSpeed, turnGain, "Turn", 7);
+            float turnOriginal = GetAddedGearTurnGain(entry, shipLevel, family, applyFamilyFleet: false);
+            float turnAdjusted = GetAddedGearTurnGain(entry, shipLevel, family, applyFamilyFleet: true);
+            TryQueueFleetOrHull(lines, original.turnSpeed, adjusted.turnSpeed, turnAdjusted, "Turn", 7, richText);
 
             // [TITAN-ORBIT] Absolute OVERDRIVE energy/sec on engines (not a multiplier of ExtraSpeedPercent).
+            // More drain is worse, so a +% on this line is amber, not green.
             if (isEngine)
-                TryQueue(lines, s.extraSpeedEnergyDrain, "Overdrive Drain/s", 4);
-
-            if (isEngine && s.extraSpeedPercent > 0.0001f)
-            {
-                float pct = s.extraSpeedPercent * 100f;
-                TryQueueNote(
+                TryQueueFleet(
                     lines,
-                    $"Overdrive +{FormatStatValue(pct)}% speed/thrust",
-                    6);
+                    original.extraSpeedEnergyDrain,
+                    adjusted.extraSpeedEnergyDrain,
+                    "Overdrive Drain/s",
+                    4,
+                    richText,
+                    higherIsBetter: false);
+
+            if (isEngine && adjusted.extraSpeedPercent > 0.0001f)
+            {
+                float pctOriginal = original.extraSpeedPercent * 100f;
+                float pctAdjusted = adjusted.extraSpeedPercent * 100f;
+                string od = TryBuildFleetArrow(pctOriginal, pctAdjusted, richText, higherIsBetter: true, out string odArrow)
+                    ? $"Overdrive +{FormatStatValue(pctOriginal)}%{odArrow} speed/thrust"
+                    : $"Overdrive +{FormatStatValue(pctAdjusted)}% speed/thrust";
+                TryQueueNote(lines, od, 6);
             }
 
             // --- Capacity ---
-            TryQueue(lines, s.maxGems, "Gem Cap", 8);
-            TryQueue(lines, s.tractorBeamDistance, "Tractor Dist", 8);
-            TryQueue(lines, s.tractorBeamPower, "Tractor Power", 8);
-            TryQueue(lines, s.maxPeople, "Troop Cap", 9);
+            TryQueueFleet(lines, original.maxGems, adjusted.maxGems, "Gem Cap", 8, richText);
+            TryQueueFleet(lines, original.tractorBeamDistance, adjusted.tractorBeamDistance, "Tractor Dist", 8, richText);
+            TryQueueFleet(lines, original.tractorBeamPower, adjusted.tractorBeamPower, "Tractor Power", 8, richText);
+            TryQueueFleet(lines, original.maxPeople, adjusted.maxPeople, "Troop Cap", 9, richText);
 
             if (lines.Count == 0)
                 return richText ? "<color=#888888>—</color>" : "No stat bonus";
@@ -404,7 +435,8 @@ namespace TitanOrbit.Data
         public static float GetAddedGearTurnGain(
             ShipFamilyComponentEntry entry,
             int shipLevel,
-            ShipFamilyDefinition family = null)
+            ShipFamilyDefinition family = null,
+            bool applyFamilyFleet = true)
         {
             if (entry == null)
                 return 0f;
@@ -422,7 +454,7 @@ namespace TitanOrbit.Data
             var wrapped = default(ShipComponentAbilityStats);
             wrapped.turnSpeed = gain;
             wrapped = ShipComponentExtraLevelMath.ApplyMobilityPenalties(wrapped, level);
-            if (family != null)
+            if (applyFamilyFleet && family != null)
                 wrapped = family.ApplySpecialBonuses(wrapped);
             return Mathf.Max(0f, wrapped.turnSpeed);
         }
@@ -560,6 +592,104 @@ namespace TitanOrbit.Data
             TryQueueNote(lines, "Bullet Type  " + typeName, 1);
         }
 
+        /// <summary>
+        /// Gear-card line. When this moon's fleet roll changes the number, the
+        /// player sees the catalog value, then the adjusted value, then +% or −%.
+        /// A 1× roll stays a single number.
+        /// </summary>
+        static void TryQueueFleet(
+            List<AbilityLine> lines,
+            float original,
+            float adjusted,
+            string label,
+            int colorIndex,
+            bool richText,
+            bool higherIsBetter = true)
+        {
+            if (Mathf.Abs(original) < 0.05f && Mathf.Abs(adjusted) < 0.05f)
+                return;
+
+            string text = $"+{FormatStatValue(Mathf.Abs(original) >= 0.05f ? original : adjusted)} {label}";
+            if (TryBuildFleetArrow(original, adjusted, richText, higherIsBetter, out string arrow))
+                text = $"+{FormatStatValue(original)} {label}{arrow}";
+
+            lines.Add(new AbilityLine
+            {
+                Text = text,
+                ColorIndex = colorIndex,
+            });
+        }
+
+        /// <summary>
+        /// Same as <see cref="TryQueueFleet"/>, and when hull aggregation changes
+        /// the gain (extra engines do not add a second Base) appends that hull number.
+        /// </summary>
+        static void TryQueueFleetOrHull(
+            List<AbilityLine> lines,
+            float original,
+            float adjusted,
+            float hullGain,
+            string label,
+            int colorIndex,
+            bool richText)
+        {
+            bool fleet = TryBuildFleetArrow(original, adjusted, richText, higherIsBetter: true, out string arrow);
+            bool hullDiffers = Mathf.Abs(hullGain - adjusted) >= 0.05f && Mathf.Abs(hullGain) >= 0.05f;
+            if (!fleet)
+            {
+                TryQueueBaseAndCumulative(lines, original, hullGain, label, colorIndex);
+                return;
+            }
+
+            if (Mathf.Abs(original) < 0.05f && Mathf.Abs(adjusted) < 0.05f && !hullDiffers)
+                return;
+
+            string text = $"+{FormatStatValue(original)} {label}{arrow}";
+            if (hullDiffers)
+                text += $" · hull +{FormatStatValue(hullGain)}";
+
+            lines.Add(new AbilityLine
+            {
+                Text = text,
+                ColorIndex = colorIndex,
+            });
+        }
+
+        /// <summary>
+        /// <c> → +11.5 +15%</c> when the fleet roll moves the number.
+        /// The percent keeps the line's stat colour. <paramref name="higherIsBetter"/>
+        /// is retained so drain callers stay source-compatible; it no longer recolors.
+        /// </summary>
+        static bool TryBuildFleetArrow(
+            float original,
+            float adjusted,
+            bool richText,
+            bool higherIsBetter,
+            out string arrow)
+        {
+            arrow = string.Empty;
+            if (Mathf.Abs(original) < 0.0001f)
+                return false;
+            if (Mathf.Abs(adjusted - original) < 0.05f)
+                return false;
+
+            float signed = ((adjusted / original) - 1f) * 100f;
+            if (Mathf.Abs(signed) <= 0.05f)
+                return false;
+
+            string body = Mathf.Abs(signed).ToString("0.#", CultureInfo.InvariantCulture);
+            string pct = signed > 0f ? "+" + body + "%" : "-" + body + "%";
+            _ = higherIsBetter;
+            if (richText)
+                arrow = " → +" + FormatStatValue(adjusted) + " " + pct;
+            else
+            {
+                arrow = " → +" + FormatStatValue(adjusted) + " (" + pct + ")";
+            }
+
+            return true;
+        }
+
         static void TryQueue(List<AbilityLine> lines, float value, string label, int colorIndex)
         {
             if (Mathf.Abs(value) < 0.05f)
@@ -645,6 +775,17 @@ namespace TitanOrbit.Data
             }
         }
 
+        private static void TryAddFleetLine(
+            List<string> lines, string label, float original, float adjusted, int maxLines)
+        {
+            if (lines.Count >= maxLines || (Mathf.Abs(original) < 0.05f && Mathf.Abs(adjusted) < 0.05f))
+                return;
+            if (TryBuildFleetArrow(original, adjusted, richText: false, higherIsBetter: true, out string arrow))
+                lines.Add($"{label} +{FormatStatValue(original)}{arrow}");
+            else
+                lines.Add($"{label} +{FormatStatValue(Mathf.Abs(adjusted) >= 0.05f ? adjusted : original)}");
+        }
+
         private static void TryAddLine(List<string> lines, string label, float value, int maxLines)
         {
             if (lines.Count >= maxLines || Mathf.Abs(value) < 0.05f)
@@ -660,7 +801,8 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Full Extra Level hover copy for compact GEAR tiles. Numbers already include family muls.
+        /// Full Extra Level hover copy for compact GEAR tiles.
+        /// A fleet roll prints the catalog number, then the adjusted number.
         /// One short formula line — not the full hull essay.
         /// </summary>
         public static string BuildExtraLevelTooltipRichText(
@@ -676,15 +818,21 @@ namespace TitanOrbit.Data
             sb.Append("<b>EXTRA LEVEL</b>\n");
             bool weapon = ShipComponentAbilityStats.IsWeaponComponent(entry.componentId);
             bool propulsion = ShipComponentAbilityStats.IsPropulsionComponent(entry.componentId);
-            ShipComponentAbilityStats s = GetEffectiveStatsForDisplay(
+            ShipComponentAbilityStats adjusted = GetEffectiveStatsForDisplay(
                 entry, shipLevel, family, planetOrHullBankIndex);
+            ShipComponentAbilityStats original = BulletBankProfileUtility.ApplyProfileToComponentStats(
+                GetEffectiveStatsAtShipLevel(entry.stats, shipLevel, entry.componentId),
+                entry, family, planetOrHullBankIndex);
             int lv = Mathf.Max(1, shipLevel);
 
-            void Line(string label, float value, bool abilityOnly)
+            void Line(string label, float before, float after, bool abilityOnly)
             {
-                if (Mathf.Abs(value) < 0.05f)
+                if (Mathf.Abs(before) < 0.05f && Mathf.Abs(after) < 0.05f)
                     return;
-                sb.Append('+').Append(FormatStatValue(value)).Append(' ').Append(label);
+                if (TryBuildFleetArrow(before, after, richText: true, higherIsBetter: true, out string arrow))
+                    sb.Append('+').Append(FormatStatValue(before)).Append(' ').Append(label).Append(arrow);
+                else
+                    sb.Append('+').Append(FormatStatValue(after)).Append(' ').Append(label);
                 sb.Append("  <color=#7EC8FF>·  Extra Lv ");
                 if (abilityOnly)
                     sb.Append("(ability only)</color>\n");
@@ -694,23 +842,27 @@ namespace TitanOrbit.Data
                     sb.Append("(Base + PerExtra × shipLv)</color>\n");
             }
 
-            Line("Fire Power", s.firePower, false);
-            Line("Fire Rate", s.fireRate, false);
-            Line("Bullet Range", s.bulletRange, false);
-            Line("Bullet Speed", s.bulletSpeed, weapon);
-            Line("Health", s.healthCap, false);
-            Line("Energy", s.energyCap, false);
-            Line("Move", s.moveSpeed, false);
-            Line("Accel", s.accelerationCap, false);
-            float turnGain = GetAddedGearTurnGain(entry, lv, family);
-            if (Mathf.Abs(turnGain) >= 0.05f)
+            Line("Fire Power", original.firePower, adjusted.firePower, false);
+            Line("Fire Rate", original.fireRate, adjusted.fireRate, false);
+            Line("Bullet Range", original.bulletRange, adjusted.bulletRange, false);
+            Line("Bullet Speed", original.bulletSpeed, adjusted.bulletSpeed, weapon);
+            Line("Health", original.healthCap, adjusted.healthCap, false);
+            Line("Energy", original.energyCap, adjusted.energyCap, false);
+            Line("Move", original.moveSpeed, adjusted.moveSpeed, false);
+            Line("Accel", original.accelerationCap, adjusted.accelerationCap, false);
+            float turnBefore = GetAddedGearTurnGain(entry, lv, family, applyFamilyFleet: false);
+            float turnGain = GetAddedGearTurnGain(entry, lv, family, applyFamilyFleet: true);
+            if (Mathf.Abs(turnBefore) >= 0.05f || Mathf.Abs(turnGain) >= 0.05f)
             {
-                sb.Append('+').Append(FormatStatValue(turnGain)).Append(" Turn");
+                if (TryBuildFleetArrow(turnBefore, turnGain, richText: true, higherIsBetter: true, out string turnArrow))
+                    sb.Append('+').Append(FormatStatValue(turnBefore)).Append(" Turn").Append(turnArrow);
+                else
+                    sb.Append('+').Append(FormatStatValue(turnGain)).Append(" Turn");
                 sb.Append("  <color=#7EC8FF>·  Extra Lv (PerExtra × shipLv)</color>\n");
             }
-            Line("Ramming", s.rammingPower, false);
-            Line("Gem Cap", s.maxGems, false);
-            Line("Troop Cap", s.maxPeople, false);
+            Line("Ramming", original.rammingPower, adjusted.rammingPower, false);
+            Line("Gem Cap", original.maxGems, adjusted.maxGems, false);
+            Line("Troop Cap", original.maxPeople, adjusted.maxPeople, false);
 
             if (propulsion)
             {

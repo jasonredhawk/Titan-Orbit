@@ -10,10 +10,9 @@ namespace TitanOrbit.UI
     /// Each spoke is one <see cref="FamilyStatHudCopy.BonusRow"/> (MOVE, RAM, …).
     /// The ice ring is the stock 1.00× base; spokes past the ring are boosts,
     /// spokes short of the ring are penalties. Spokes pack on the left / right
-    /// so titles are not stacked at 12 and 6. A live spoke is coloured by how
-    /// large the roll is: ice green under +40% and amber under a −20% loss,
-    /// electric teal or crimson once a roll crosses those cuts.
-    /// Stock 1× spokes stay a washed category tint. Camera zoom
+    /// so titles are not stacked at 12 and 6. A live spoke keeps its stat colour
+    /// (Fire Power stays offense orange, Health stays green, and so on).
+    /// Stock 1× spokes stay a washed version of that same colour. Camera zoom
     /// stays ice — height is neither a boost nor a penalty.
     /// <para>
     /// Line-only: rings and spokes, no filled wedges. The mesh stops inside
@@ -215,7 +214,7 @@ namespace TitanOrbit.UI
                 Vector2 b = center + dir * length;
                 AddLineQuad(vh, a, b, spoke, thick);
 
-                // Tip cap uses the same tier colour as the spoke so the end of the line matches the percent.
+                // Tip cap uses the same stat colour as the spoke.
                 if (!row.IsIdentity)
                 {
                     Color tip = ColorForTip(row);
@@ -295,26 +294,21 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Stock 1.00× keeps a washed category hue. A live gain or loss uses the
-        /// magnitude tier (ice green, amber, electric teal, crimson). Camera zoom
-        /// stays ice. Not a flat grey.
+        /// Stock 1.00× keeps a washed category hue. A live spoke uses that same
+        /// hue at full strength (offense orange, defense green, and so on).
+        /// Camera zoom stays ice. Not a flat grey, and not a good/bad recolor.
         /// </summary>
         public static Color ColorForSpoke(in FamilyStatHudCopy.BonusRow row)
         {
             if (row.IsIdentity)
                 return MuteCategory(ColorForCategory(row.Category));
 
-            // --- Good / bad tier ---
-            // [TITAN-ORBIT] Category still decides which side-arc the spoke sits on.
-            // The line itself answers "how big is this roll?"
-            if (FamilyStatHudCopy.TryGetMagnitudeColor(row, out Color tier))
-            {
-                tier.a = 0.92f;
-                return tier;
-            }
+            if (row.IsNeutral)
+                return new Color(0.62f, 0.78f, 0.95f, 0.90f);
 
-            // Camera height — neither a boost nor a penalty.
-            return new Color(0.62f, 0.78f, 0.95f, 0.90f);
+            Color c = ColorForCategory(row.Category);
+            c.a = 0.92f;
+            return c;
         }
 
         /// <summary>Washes a category colour toward the void so 1.00× stays tinted, not grey.</summary>
@@ -326,17 +320,16 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Tip colour. Same tier as the spoke: ice green / amber for a regular
-        /// roll, electric teal at or past +40% and crimson at or past −20%.
+        /// Tip colour. Same stat hue as the spoke, full brightness.
         /// Camera zoom stays ice.
         /// </summary>
         static Color ColorForTip(in FamilyStatHudCopy.BonusRow row)
         {
-            if (FamilyStatHudCopy.TryGetMagnitudeColor(row, out Color tier))
-                return tier;
             if (row.IsNeutral)
                 return new Color(0.62f, 0.78f, 0.95f, 1f);
-            return ColorForCategory(row.Category);
+            Color c = ColorForCategory(row.Category);
+            c.a = 1f;
+            return c;
         }
 
         /// <summary>Power-bar HUD tones so the wheel matches the hull-card bars.</summary>

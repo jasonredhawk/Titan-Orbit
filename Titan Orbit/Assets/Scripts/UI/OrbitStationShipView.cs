@@ -216,6 +216,8 @@ namespace TitanOrbit.Entities
                         stampedBulletBankPlusOne = e.StampedBulletBankPlusOne,
                         // [TITAN-ORBIT] World the row was bought at. 0 on older ghosts.
                         sourcePlanetId = e.SourcePlanetId,
+                        // Fleet roll travels with the part, not with the hull's family.
+                        sourceFamilyConfigIndex = e.SourceFamilyConfigIndex,
                         bufferIndex = i,
                     });
                 }

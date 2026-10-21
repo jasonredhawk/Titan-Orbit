@@ -1470,6 +1470,8 @@ namespace TitanOrbit.ECS
             var buffer = em.GetBuffer<EquippedEquipmentElement>(shipEntity);
 
             byte stampedBank = 0;
+            // Docked moon's family. Home is 0 (1×). A later dock does not change this.
+            ResolveDroneSource(em, shipEntity, out byte sourceFamily, out byte dockBank);
             if (!string.IsNullOrWhiteSpace(componentId))
             {
                 // [TITAN-ORBIT] Ghost the gun this purchase adds to B-key.
@@ -1478,7 +1480,6 @@ namespace TitanOrbit.ECS
                 // Fireballs onto a Ring dock — two planets can share a family and
                 // roll different guns. A unique authored bank still wins inside
                 // ResolveBankIndexForComponent.
-                ResolveDroneSource(em, shipEntity, out _, out byte dockBank);
                 int bank = BulletBankProfileUtility.ResolveBankIndexForComponent(
                     componentId, null, dockBank);
                 stampedBank = BulletBankOwnership.ToStampedBulletBankPlusOne(bank);
@@ -1496,6 +1497,8 @@ namespace TitanOrbit.ECS
                 // Same moon id drones get — a Cosmic Shark engine bought at Kryos stays "Kryos"
                 // even after the ship docks somewhere else.
                 SourcePlanetId = ResolvePurchasePlanetId(em, shipEntity),
+                // This part's fleet roll. The hull's family does not replace it.
+                SourceFamilyConfigIndex = sourceFamily,
             });
             return true;
         }

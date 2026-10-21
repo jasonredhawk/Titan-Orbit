@@ -1700,7 +1700,8 @@ namespace TitanOrbit.Game
                 {
                     if (family.cameraFollowSettings != null)
                         desired = family.cameraFollowSettings;
-                    // Home worlds stay at 1×. Other planets use this match's camera roll.
+                    // Home worlds stay at 1×. Other planets keep the authored height unless
+                    // this match's 3–6 rolled fields include camera height.
                     heightMul = family.ResolveSpecialBonuses().ResolveCameraHeightMul();
                 }
             }

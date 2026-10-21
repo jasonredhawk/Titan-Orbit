@@ -374,12 +374,20 @@ namespace TitanOrbit.Data
         /// First moon-store extra index. Primary is the highest base in the pool, not the newest buy.
         /// <see cref="int.MaxValue"/> when the hull has no store gear.
         /// </param>
+        /// <param name="perComponentFleet">
+        /// One fleet roll per part, parallel to <paramref name="perComponentStats"/>.
+        /// Null keeps every part unscaled (callers that still multiply the sum).
+        /// Applied after this part's Base / PerExtra choice, so a bonus cannot
+        /// steal primary from another part. A bought engine's +15% stays on that
+        /// engine. It does not multiply the hull or the next component.
+        /// </param>
         public static ShipComponentAbilityStats AggregateAndEvaluate(
             IReadOnlyList<string> componentIds,
             IReadOnlyList<ShipComponentAbilityStats> perComponentStats,
             int shipLevel,
             in ShipAbilityLevelCounts attrs,
-            int storeExtraStartIndex = int.MaxValue)
+            int storeExtraStartIndex = int.MaxValue,
+            IReadOnlyList<ShipFamilySpecialBonuses> perComponentFleet = null)
         {
             var total = default(ShipComponentAbilityStats);
             if (componentIds == null || perComponentStats == null)
@@ -457,6 +465,15 @@ namespace TitanOrbit.Data
                         includeExtraComponentLevels: true,
                         includeBase: gi == bestTurnIndex);
                     evaluated.turnSpeedPerExtraLevel = rawTurn.turnSpeedPerExtraLevel;
+
+                    // This part's fleet only. Chassis rows carry the hull roll.
+                    // Store rows carry the moon they were bought at.
+                    if (perComponentFleet != null && gi < perComponentFleet.Count)
+                    {
+                        ShipFamilySpecialBonuses partFleet = perComponentFleet[gi];
+                        if (!partFleet.IsIdentity)
+                            evaluated = partFleet.Apply(evaluated);
+                    }
 
                     if (weapon)
                     {

@@ -83,6 +83,12 @@ namespace TitanOrbit.UI
             /// </summary>
             public List<Vector3> LocalScales;
 
+            /// <summary>
+            /// Parallel to <see cref="Ids"/>. −1 is a chassis part (hull fleet).
+            /// Zero or higher is a purchased part's family slot (0 = home, 1×).
+            /// </summary>
+            public List<int> ComponentFleetFamilyIndex;
+
             /// <summary>Propulsion at ship level (engine Move + thruster Accel, Extra-Leveled then summed).</summary>
             public ShipPropulsionAggregation.Result Propulsion;
         }
@@ -245,7 +251,8 @@ namespace TitanOrbit.UI
             // --- Prefab sum (raw) + optional moon-store ShipComponent rows ---
             // [TITAN-ORBIT] Same merge as ShipStatApplyLogic so tooltip part lists match the motor.
             // Extras keep their catalog family’s PerExtra (any-family lookup inside Append).
-            var extraIds = CollectStoreComponentIds(em, shipEntity);
+            ShipComponentStoreVisualScaleLogic.CollectExtraComponents(
+                em, shipEntity, out List<string> extraIds, out List<int> extraFamilies);
             ShipFamilyStatsCalculator.SumResult sum =
                 ShipFamilyStatsCalculator.SumFromPrefabHierarchy(
                     tier.prefab, family, shipLevel: 1, applyPropulsionAndWeaponRules: false);
@@ -287,6 +294,7 @@ namespace TitanOrbit.UI
             }
 
             cache.StoreExtraStartIndex = extraIds.Count > 0 ? storeExtraStart : int.MaxValue;
+            FillComponentFleetFamilies(ref cache, extraFamilies);
             cache.Propulsion = ShipPropulsionAggregation.ComputeThrusterPropulsion(
                 cache.Ids, cache.Stats, shipLevel, cache.StoreExtraStartIndex);
             cache.Family = family;
@@ -372,7 +380,8 @@ namespace TitanOrbit.UI
             // PerExtra × shipLevel only in MegaShipStatsCalculator.EvaluateLoadoutExtra.
             // Do not Extra-Level the whole Titan list or hull parts inflate at shipLevel 7.
             int extraStart = cache.Ids.Count;
-            var extraIds = CollectStoreComponentIds(em, shipEntity);
+            ShipComponentStoreVisualScaleLogic.CollectExtraComponents(
+                em, shipEntity, out List<string> extraIds, out List<int> extraFamilies);
             for (int i = 0; i < extraIds.Count; i++)
             {
                 string id = extraIds[i];
@@ -394,6 +403,7 @@ namespace TitanOrbit.UI
             cache.StoreExtraStartIndex = extraIds.Count > 0 && cache.Ids.Count > extraStart
                 ? extraStart
                 : int.MaxValue;
+            FillComponentFleetFamilies(ref cache, extraFamilies);
             cache.Valid = cache.Ids.Count > 0;
             return cache.Valid;
         }
@@ -1125,25 +1135,33 @@ namespace TitanOrbit.UI
             return ShipComponentStoreData.FormatComponentId(componentId);
         }
 
-        /// <summary>Collects equipped moon-store ShipComponent ids (not cards / consumables).</summary>
-        static List<string> CollectStoreComponentIds(EntityManager em, Entity shipEntity)
+        /// <summary>
+        /// Chassis rows are −1. Store rows copy the purchase family in the same
+        /// order <see cref="ShipComponentStoreVisualScaleLogic.CollectExtraComponents"/> returned.
+        /// </summary>
+        static void FillComponentFleetFamilies(ref PartCache cache, List<int> extraFamilies)
         {
-            var ids = new List<string>(4);
-            if (!em.HasBuffer<EquippedEquipmentElement>(shipEntity))
-                return ids;
+            int count = cache.Ids != null ? cache.Ids.Count : 0;
+            if (cache.ComponentFleetFamilyIndex == null)
+                cache.ComponentFleetFamilyIndex = new List<int>(count);
+            else
+                cache.ComponentFleetFamilyIndex.Clear();
 
-            var buf = em.GetBuffer<EquippedEquipmentElement>(shipEntity);
-            for (int i = 0; i < buf.Length; i++)
+            int extraStart = cache.StoreExtraStartIndex;
+            int extraI = 0;
+            for (int i = 0; i < count; i++)
             {
-                var e = buf[i];
-                if ((StoreItemType)e.ItemType != StoreItemType.ShipComponent)
-                    continue;
-                string id = e.ComponentId.ToString();
-                if (!string.IsNullOrWhiteSpace(id))
-                    ids.Add(id);
+                if (extraStart != int.MaxValue && i >= extraStart
+                    && extraFamilies != null && extraI < extraFamilies.Count)
+                {
+                    cache.ComponentFleetFamilyIndex.Add(extraFamilies[extraI]);
+                    extraI++;
+                }
+                else
+                {
+                    cache.ComponentFleetFamilyIndex.Add(-1);
+                }
             }
-
-            return ids;
         }
 
         /// <summary>Stable hash of store ShipComponent rows for cache invalidation.</summary>
@@ -1161,6 +1179,7 @@ namespace TitanOrbit.UI
                     continue;
                 hash = hash * 31 + e.ComponentId.GetHashCode();
                 hash = hash * 31 + e.ItemLevel;
+                hash = hash * 31 + e.SourceFamilyConfigIndex;
             }
 
             return hash;

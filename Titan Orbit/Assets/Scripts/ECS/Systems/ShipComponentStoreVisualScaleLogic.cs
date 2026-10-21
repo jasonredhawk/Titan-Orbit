@@ -250,13 +250,32 @@ namespace TitanOrbit.ECS
         /// <summary>
         /// Copies ship-component catalog ids from the equipment buffer into
         /// <paramref name="extraIds"/> (list created when null).
+        /// Family slots are discarded — callers that apply fleet bonuses use
+        /// <see cref="CollectExtraComponents"/>.
         /// </summary>
         public static void CollectExtraComponentIds(
             EntityManager em,
             Entity shipEntity,
             out List<string> extraIds)
         {
+            CollectExtraComponents(em, shipEntity, out extraIds, out _);
+        }
+
+        /// <summary>
+        /// Equipped moon-store ship components, in buffer order, plus the family
+        /// slot stamped at purchase. Ids that have no catalog row are skipped so
+        /// the two lists stay aligned with
+        /// <see cref="ShipFamilyStatsCalculator.AppendExtraComponentsAndAggregate"/>.
+        /// <paramref name="familyConfigIndices"/> is −1 never — 0 means home (1×).
+        /// </summary>
+        public static void CollectExtraComponents(
+            EntityManager em,
+            Entity shipEntity,
+            out List<string> extraIds,
+            out List<int> familyConfigIndices)
+        {
             extraIds = new List<string>(4);
+            familyConfigIndices = new List<int>(4);
             if (shipEntity == Entity.Null || !em.Exists(shipEntity))
                 return;
             if (!em.HasBuffer<EquippedEquipmentElement>(shipEntity))
@@ -269,8 +288,14 @@ namespace TitanOrbit.ECS
                 if ((StoreItemType)e.ItemType != StoreItemType.ShipComponent)
                     continue;
                 string id = e.ComponentId.ToString();
-                if (!string.IsNullOrWhiteSpace(id))
-                    extraIds.Add(id);
+                if (string.IsNullOrWhiteSpace(id))
+                    continue;
+                // Same gate as the stat append, so a missing catalog row cannot
+                // shift the fleet index onto the next part.
+                if (!ShipFamilyStatsCalculator.TryResolveComponentStats(null, id, out _))
+                    continue;
+                extraIds.Add(id);
+                familyConfigIndices.Add(e.SourceFamilyConfigIndex);
             }
         }
 

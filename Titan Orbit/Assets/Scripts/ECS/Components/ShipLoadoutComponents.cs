@@ -113,6 +113,17 @@ namespace TitanOrbit.ECS
         /// place name (Helios, Aetheris, …) without a separate name string.
         /// </summary>
         [GhostField] public int SourcePlanetId;
+
+        /// <summary>
+        /// Planet family slot this ship component was bought from.
+        /// <see cref="Data.MegaShipStatsCalculator.ResolveFleetBonuses"/> turns it
+        /// into that moon's fleet multipliers. Those multipliers scale this row
+        /// only — the hull and every other part keep their own family roll.
+        /// 0 is home (exactly 1×) and also older buys from before the stamp.
+        /// One byte, not the 19 multipliers: client and server both recompute
+        /// the roll from the match seed.
+        /// </summary>
+        [GhostField] public byte SourceFamilyConfigIndex;
     }
 
     /// <summary>

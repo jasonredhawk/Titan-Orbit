@@ -153,10 +153,17 @@ namespace TitanOrbit.Data
         /// <param name="hull">In/out catalog totals. Gem cap is forced to 0 after the merge.</param>
         /// <param name="extraComponentIds">Equipped store component ids.</param>
         /// <param name="shipLevel">Titan chassis level (1-based).</param>
+        /// <param name="gearFamilyConfigIndices">
+        /// Parallel to <paramref name="extraComponentIds"/>. Each entry is the
+        /// purchase planet's family slot. Null leaves extras unscaled so a caller
+        /// can still multiply the whole Titan. When set, that roll hits this
+        /// component only — the catalog hull is not multiplied again.
+        /// </param>
         public static void AddEquippedStoreComponents(
             ref ShipComponentAbilityStats hull,
             IReadOnlyList<string> extraComponentIds,
-            int shipLevel)
+            int shipLevel,
+            IReadOnlyList<int> gearFamilyConfigIndices = null)
         {
             // --- No extras: still pin gem cap ---
             if (extraComponentIds == null || extraComponentIds.Count == 0)
@@ -176,6 +183,15 @@ namespace TitanOrbit.Data
                     continue;
 
                 ShipComponentAbilityStats extra = EvaluateLoadoutExtra(raw, id, shipLevel);
+
+                // Purchase-moon fleet on this part's contribution. The Titan hull
+                // was already rolled. Do not multiply that hull by this part's bonus.
+                if (gearFamilyConfigIndices != null && i < gearFamilyConfigIndices.Count)
+                {
+                    ShipFamilySpecialBonuses gearFleet = ResolveFleetBonuses(gearFamilyConfigIndices[i]);
+                    if (!gearFleet.IsIdentity)
+                        extra = gearFleet.Apply(extra);
+                }
 
                 // Purchased weapon: bullet-type unlock only on the frozen hull sum.
                 // Energy and other non-damage fields still merge. Catalog gun damage
@@ -231,9 +247,9 @@ namespace TitanOrbit.Data
         /// <summary>
         /// Fleet bonuses for the ship family a Titan was bought with.
         /// Home slot (config index 0) is exactly 1× during a match. Every other
-        /// planet's family uses this match's bell-curve roll (centered on 1×, tails
-        /// half to double). With no match seed yet, this is the family's authored
-        /// preview multipliers — the same
+        /// planet's family keeps its authored multipliers, then this match replaces
+        /// 3–6 of them with a bell-curve roll (centered on 1×, tails half to double).
+        /// With no match seed yet, this is the family's authored multipliers — the same
         /// numbers a regular hull on that planet would use.
         /// </summary>
         /// <param name="familyConfigIndex">

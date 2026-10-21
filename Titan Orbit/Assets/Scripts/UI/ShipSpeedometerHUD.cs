@@ -1344,19 +1344,19 @@ namespace TitanOrbit.UI
                 bool megaChassis = MegaShipCatalog.IsMegaChassisId(chassisId);
                 if (megaChassis)
                 {
-                    // Frozen catalog hull + PerExtra-only LOADOUT gear. Do not Extra-Level
-                    // the whole Titan as a regular L7 family — that inflates every chip.
-                    ShipComponentStoreVisualScaleLogic.CollectExtraComponentIds(
-                        em, shipEntity, out var extraIds);
+                    // Frozen catalog hull, Titan fleet on that hull, then each
+                    // purchased part with the moon it was bought at.
+                    ShipComponentStoreVisualScaleLogic.CollectExtraComponents(
+                        em, shipEntity, out var extraIds, out var gearFamilies);
                     if (MegaShipCatalog.TryParseCatalogIndex(chassisId, out ushort megaIdx))
-                        MegaShipStatsCalculator.TrySumForCatalogIndex(
-                            megaIdx, extraIds, ship.ShipLevel, out effectiveStats);
+                        MegaShipStatsCalculator.TrySumForCatalogIndex(megaIdx, out effectiveStats);
                     else
                         ShipStatApplyLogic.TryGetBaseStatsForChassis(
                             chassisId, ship.ShipLevel, out effectiveStats);
-                    // Same roll the motor just wrote. Home Titans stay 1×.
                     effectiveStats = MegaShipStatsCalculator.ApplyFleetBonuses(
                         effectiveStats, ship.ShipFamilyConfigIndex);
+                    MegaShipStatsCalculator.AddEquippedStoreComponents(
+                        ref effectiveStats, extraIds, ship.ShipLevel, gearFamilies);
                 }
                 else
                 {
@@ -1366,20 +1366,15 @@ namespace TitanOrbit.UI
 
                     if (_partCache.Valid && _partCache.Ids != null && _partCache.Ids.Count > 0)
                     {
-                        effectiveStats = ShipComponentExtraLevelMath.AggregateAndEvaluate(
+                        ShipStatApplyLogic.TryResolveFamilyForChassisId(chassisId, out ShipFamilyDefinition family);
+                        effectiveStats = ShipStatApplyLogic.EvaluatePartsWithGearFleet(
                             _partCache.Ids,
                             _partCache.Stats,
                             ship.ShipLevel,
                             in abilityCounts,
-                            _partCache.StoreExtraStartIndex);
-                        effectiveStats = ShipComponentExtraLevelMath.ApplyMobilityPenalties(
-                            effectiveStats, ship.ShipLevel);
-                        if (ShipStatApplyLogic.TryResolveFamilyForChassisId(chassisId, out ShipFamilyDefinition family)
-                            && family != null)
-                        {
-                            effectiveStats = family.ApplyStatFallbacks(effectiveStats);
-                            effectiveStats = family.ApplySpecialBonuses(effectiveStats);
-                        }
+                            _partCache.StoreExtraStartIndex,
+                            family,
+                            _partCache.ComponentFleetFamilyIndex);
 
                         ShipStatApplyLogic.ApplyEquippedCardStatModifiers(
                             em, shipEntity, chassisId, ref effectiveStats);

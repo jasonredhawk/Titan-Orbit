@@ -185,9 +185,10 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Applies frozen MEGA hull stats plus PerExtra-only moon-store gear, multiplies
-        /// by the planet family's fleet bonuses, then resizes the ghosted aim-slot buffer
-        /// to match weapon mounts. <paramref name="familyIndex"/> is the store planet's
+        /// Applies frozen MEGA hull stats, multiplies that hull by the Titan's
+        /// planet family, then adds each purchased component with that part's
+        /// own fleet roll. Resizes the ghosted aim-slot buffer to match weapon
+        /// mounts. <paramref name="familyIndex"/> is the store planet's
         /// <c>ShipFamilyConfigIndex</c> copied onto the ship at purchase.
         /// </summary>
         public static void ApplyToShip(
@@ -204,23 +205,21 @@ namespace TitanOrbit.ECS
 
             string chassisId = MegaShipCatalog.FormatChassisId(mega.CatalogIndex);
 
-            // --- Frozen hull + PerExtra-only LOADOUT gear ---
-            // [TITAN-ORBIT] Catalog unique-parts keep Base. Moon-store ShipComponent rows
-            // add PerExtra × shipLevel only (no second Base) so a purchased cockpit raises
-            // Titan health by Extra Level steps, not by copying another catalog Base.
+            // --- Frozen hull, then each LOADOUT part's own fleet ---
+            // [TITAN-ORBIT] Catalog unique-parts keep Base and the Titan's planet roll.
+            // A purchased engine keeps the moon it was bought at. That +15% does not
+            // multiply the Titan, and the Titan's roll does not multiply the engine.
             int shipLevel = 7;
             if (em.HasComponent<ShipState>(shipEntity))
                 shipLevel = math.max(1, em.GetComponentData<ShipState>(shipEntity).ShipLevel);
-            ShipComponentStoreVisualScaleLogic.CollectExtraComponentIds(
-                em, shipEntity, out List<string> extraIds);
             MegaShipStatsCalculator.SumFromEntry(
-                entry, catalog, extraIds, shipLevel, out ShipComponentAbilityStats effective);
-            // --- Planet family fleet bonuses ---
-            // [TITAN-ORBIT] The Titan was added on a planet that owns a ship family.
-            // Home worlds stay 1×. Every other family uses this match's roll (0.5–2.0)
-            // on health, energy, speed, guns, ram, and troop cap. Gem cap stays 0.
+                entry, catalog, out ShipComponentAbilityStats effective);
             ShipFamilySpecialBonuses fleet = MegaShipStatsCalculator.ResolveFleetBonuses(familyIndex);
             effective = fleet.Apply(effective);
+            ShipComponentStoreVisualScaleLogic.CollectExtraComponents(
+                em, shipEntity, out List<string> extraIds, out List<int> gearFamilies);
+            MegaShipStatsCalculator.AddEquippedStoreComponents(
+                ref effective, extraIds, shipLevel, gearFamilies);
             effective.maxGems = 0f;
 
             // --- Caps (server / authoritative only) ---

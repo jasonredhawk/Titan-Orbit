@@ -110,9 +110,9 @@ namespace TitanOrbit.Data
 
         [Header("Family Special Bonuses")]
         [Tooltip(
-            "Editor preview only. A live match does not use these numbers. " +
-            "Home-planet ships are always 1×. Every other planet's family is rolled " +
-            "from the match seed on a bell curve centered on 1×, tails 0.5 to 2.0 " +
+            "Authored fleet multipliers. Home-planet ships are always 1× during a match. " +
+            "Every other planet's family keeps these numbers, then the match seed replaces " +
+            "3 to 6 of them with a bell curve centered on 1×, tails 0.5 to 2.0 " +
             "(ShipFamilyMatchBonuses).")]
         public ShipFamilySpecialBonuses specialBonuses = ShipFamilySpecialBonuses.Identity;
 
@@ -224,9 +224,9 @@ namespace TitanOrbit.Data
 
         /// <summary>
         /// Bonuses that actually apply to this family right now.
-        /// During a match, home planets are exactly 1× and other planets use the
-        /// seed roll. With no match, this is the authored <see cref="specialBonuses"/>
-        /// block (inspector and power-bar bake).
+        /// During a match, home planets are exactly 1×. Other planets keep
+        /// <see cref="specialBonuses"/> and the seed replaces 3–6 of those fields.
+        /// With no match, this is the authored block (inspector and power-bar bake).
         /// </summary>
         public ShipFamilySpecialBonuses ResolveSpecialBonuses()
         {

@@ -85,52 +85,24 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Signed percent that marks an extreme fleet gain. +40% and above is
-        /// electric teal; a smaller gain stays ice green. Losses do not use this
-        /// cut — they switch to crimson at <see cref="ExtremeLossSignedPercent"/>.
-        /// Camera zoom never uses either cut: height is neither a boost nor a penalty.
+        /// Signed percent that marks a large fleet gain. The wheel draws that spoke
+        /// a little thicker. Colour stays the stat's own hue — a big Fire Power
+        /// roll is still offense orange.
         /// </summary>
         public const float ExtremeGainSignedPercent = 40f;
 
         /// <summary>
-        /// Loss magnitude that marks an extreme fleet penalty. A signed percent
-        /// at or below −20% is crimson; a milder loss (for example −12%) stays amber.
-        /// Gains ignore this and use <see cref="ExtremeGainSignedPercent"/> instead.
-        /// The two cuts are intentionally different: a −20% roll is already a
-        /// sharp trade-off, while a +20% gain is still an everyday buff.
+        /// Loss magnitude that marks a large fleet penalty for spoke thickness.
+        /// A −20% roll is already a sharp trade-off, so it thickens sooner than
+        /// a gain. Colour is not changed.
         /// </summary>
         public const float ExtremeLossSignedPercent = 20f;
 
-        /// <summary>TMP hex for a regular gain (ice green). Paired with <see cref="ColorBoost"/>.</summary>
+        /// <summary>TMP hex for a bullet-bank gain. Fleet bonuses do not use this.</summary>
         public const string HexBoost = "59FA9E";
 
-        /// <summary>TMP hex for a regular trade-off (amber). Paired with <see cref="ColorPenalty"/>.</summary>
+        /// <summary>TMP hex for a bullet-bank trade-off. Fleet bonuses do not use this.</summary>
         public const string HexPenalty = "F2B852";
-
-        /// <summary>
-        /// TMP hex for an extreme gain (electric teal). Used when the signed percent
-        /// is at least <see cref="ExtremeGainSignedPercent"/>. Teal, not gold: gold sat
-        /// too close to the regular-loss amber. Paired with <see cref="ColorExtremeBoost"/>.
-        /// </summary>
-        public const string HexExtremeBoost = "1AF0DE";
-
-        /// <summary>
-        /// TMP hex for an extreme trade-off (crimson). Used when the signed percent
-        /// is at or below −<see cref="ExtremeLossSignedPercent"/>. Paired with <see cref="ColorExtremePenalty"/>.
-        /// </summary>
-        public const string HexExtremePenalty = "FF4D5A";
-
-        /// <summary>Vertex colour for a regular gain. Same RGB as <see cref="HexBoost"/>.</summary>
-        public static readonly Color ColorBoost = new Color(0.34902f, 0.98039f, 0.61961f, 1f);
-
-        /// <summary>Vertex colour for a regular trade-off. Same RGB as <see cref="HexPenalty"/>.</summary>
-        public static readonly Color ColorPenalty = new Color(0.94902f, 0.72157f, 0.32157f, 1f);
-
-        /// <summary>Vertex colour for an extreme gain. Same RGB as <see cref="HexExtremeBoost"/>.</summary>
-        public static readonly Color ColorExtremeBoost = new Color(0.10196f, 0.94118f, 0.87059f, 1f);
-
-        /// <summary>Vertex colour for an extreme trade-off. Same RGB as <see cref="HexExtremePenalty"/>.</summary>
-        public static readonly Color ColorExtremePenalty = new Color(1f, 0.30196f, 0.35294f, 1f);
 
         /// <summary>TMP hex for camera / zoom (ice blue).</summary>
         public const string HexNeutral = "7EC8FF";
@@ -466,8 +438,7 @@ namespace TitanOrbit.Data
 
         /// <summary>
         /// TMP hex for a cell value. Stock is muted, camera zoom stays ice,
-        /// and a live gain or loss picks the regular or extreme palette from
-        /// <see cref="ExtremeGainSignedPercent"/> and <see cref="ExtremeLossSignedPercent"/>.
+        /// and a live bonus keeps its stat colour (Fire Power stays offense orange).
         /// </summary>
         public static string HexForRow(in BonusRow row)
         {
@@ -475,40 +446,44 @@ namespace TitanOrbit.Data
                 return HexMuted;
             if (row.IsNeutral)
                 return HexNeutral;
-            return HexForSignedPercent(row.SignedPercent);
+            return HexForCategory(row.Category);
         }
 
         /// <summary>
-        /// TMP hex for one signed fleet percent that is already player-facing
-        /// (drain has been flipped so a saving is positive).
-        /// A gain at or past +<see cref="ExtremeGainSignedPercent"/> is teal.
-        /// A loss at or past −<see cref="ExtremeLossSignedPercent"/> is crimson.
-        /// Smaller gains stay ice green and smaller losses stay amber.
-        /// Inside the ±0.05% dead zone this returns the muted 1× hex.
+        /// Power-bar hue for one fleet-bonus group. Same RGB as the wheel spokes:
+        /// move is blue, combat (Fire Power) is orange, hull is green, energy is
+        /// yellow, hold is purple.
         /// </summary>
-        /// <param name="signedPercent">Percent the player reads. +12 is a mild gain, −12 is a mild loss.</param>
-        public static string HexForSignedPercent(float signedPercent)
+        public static Color ColorForCategory(BonusCategory category)
         {
-            // --- Extreme tails ---
-            // Gains and losses use different cuts: +40% is teal, −20% is already crimson.
-            if (signedPercent >= ExtremeGainSignedPercent)
-                return HexExtremeBoost;
-            if (signedPercent <= -ExtremeLossSignedPercent)
-                return HexExtremePenalty;
+            switch (category)
+            {
+                case BonusCategory.Mobility:
+                    return ShipStatPalette.Mobility;
+                case BonusCategory.Combat:
+                    return ShipStatPalette.Offense;
+                case BonusCategory.Hull:
+                    return ShipStatPalette.Defense;
+                case BonusCategory.Energy:
+                    return ShipStatPalette.Energy;
+                case BonusCategory.Hold:
+                    return ShipStatPalette.Capacity;
+                default:
+                    return ShipStatPalette.Mobility;
+            }
+        }
 
-            // --- Everyday band ---
-            if (signedPercent > 0.05f)
-                return HexBoost;
-            if (signedPercent < -0.05f)
-                return HexPenalty;
-            return HexMuted;
+        /// <summary>TMP hex for <see cref="ColorForCategory"/>, no leading <c>#</c>.</summary>
+        public static string HexForCategory(BonusCategory category)
+        {
+            return ColorUtility.ToHtmlStringRGB(ColorForCategory(category));
         }
 
         /// <summary>
-        /// True when a player-facing signed percent is an extreme fleet roll.
-        /// Gains cross at +<see cref="ExtremeGainSignedPercent"/> (teal).
-        /// Losses cross at −<see cref="ExtremeLossSignedPercent"/> (crimson).
-        /// A −12% loss is still regular amber; a −20% loss is extreme.
+        /// True when a player-facing signed percent is large enough to draw a
+        /// thicker spoke. Gains cross at +<see cref="ExtremeGainSignedPercent"/>.
+        /// Losses cross at −<see cref="ExtremeLossSignedPercent"/>.
+        /// This does not pick a colour.
         /// </summary>
         /// <param name="signedPercent">Percent the player reads. Drain is already flipped.</param>
         public static bool IsExtremeSignedPercent(float signedPercent)
@@ -518,31 +493,6 @@ namespace TitanOrbit.Data
             if (signedPercent <= -ExtremeLossSignedPercent)
                 return true;
             return false;
-        }
-
-        /// <summary>
-        /// Vertex colour for a live good or bad fleet bonus on the wheel.
-        /// Same cuts as <see cref="HexForSignedPercent"/>: ice green under +40%,
-        /// electric teal at or past that, amber under a −20% loss, crimson at or past it.
-        /// </summary>
-        /// <param name="row">Spoke already collected by <see cref="CollectBonusRows"/>.</param>
-        /// <param name="color">Tier colour. Unchanged when this returns false.</param>
-        /// <returns>
-        /// False for a 1× spoke and for camera zoom — those keep their own colours.
-        /// </returns>
-        public static bool TryGetMagnitudeColor(in BonusRow row, out Color color)
-        {
-            color = default;
-            // Identity and camera zoom are not good/bad, so they do not take a tier.
-            if (row.IsIdentity || row.IsNeutral || (!row.IsBoost && !row.IsPenalty))
-                return false;
-
-            bool extreme = IsExtremeSignedPercent(row.SignedPercent);
-            if (row.IsPenalty)
-                color = extreme ? ColorExtremePenalty : ColorPenalty;
-            else
-                color = extreme ? ColorExtremeBoost : ColorBoost;
-            return true;
         }
 
         static readonly List<BonusRow> s_ScratchRows = new List<BonusRow>(20);
