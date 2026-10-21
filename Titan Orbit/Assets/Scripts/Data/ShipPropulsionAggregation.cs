@@ -574,7 +574,7 @@ namespace TitanOrbit.Data
         /// Ability purchases are 0 here — HUD/sim pass them via
         /// <see cref="ShipComponentExtraLevelMath.AggregateAndEvaluate"/>.
         /// </summary>
-        /// <param name="storeExtraStartIndex">First moon-store extra index. Primary is the highest base, not the newest buy.</param>
+        /// <param name="storeExtraStartIndex">First moon-store extra index. A purchase of that role owns the base even when it is lower than the hull.</param>
         public static Result ComputeThrusterPropulsion(
             IReadOnlyList<string> componentIds,
             IReadOnlyList<ShipComponentAbilityStats> perComponentStats,

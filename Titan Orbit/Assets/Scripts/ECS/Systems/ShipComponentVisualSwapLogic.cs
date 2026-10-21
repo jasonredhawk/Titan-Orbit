@@ -13,9 +13,10 @@ namespace TitanOrbit.ECS
     /// keeping the host slot pose. Used by the hybrid proxy applier and by covering-collider
     /// bake so the unique silhouette matches what the player sees.
     /// <para>
-    /// Store extras remap cockpit / engine / wing / thruster / tail / hull only when that
-    /// purchase has the highest base of its type. A weaker buy stays a PerExtra and leaves
-    /// the current mesh in place. Weapons stay on the B-key
+    /// Store extras remap cockpit / engine / wing / thruster / tail / hull — and any
+    /// other non-weapon part type — by matching type, not a fixed list of slots.
+    /// A purchase of that type always replaces the hull mesh, even when its base is
+    /// lower. Several buys of one type show the highest. Weapons stay on the B-key
     /// <see cref="ShipLoadoutState.RuntimeBulletIndex"/> so purchase and cycle do not fight:
     /// every barrel restyles to the family that owns that bank (purchased extra, else the
     /// planet that rolled it). Combat stats stay on Extra Level merge.
@@ -43,10 +44,12 @@ namespace TitanOrbit.ECS
         static readonly List<Transform> RestoreScratch = new List<Transform>(8);
         static readonly List<Transform> StashEntryScratch = new List<Transform>(32);
         static readonly HashSet<string> KeepRemappedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        /// <summary>Store extras that own their pool Base. Weaker buys are not remapped.</summary>
+        /// <summary>Store extras that own their pool. The best purchase of each type is remapped.</summary>
         static readonly List<string> PrimaryExtraScratch = new List<string>(8);
         /// <summary>Copy of <see cref="PrimaryExtraScratch"/> for the in-progress apply. WouldRemap refills the scratch.</summary>
         static readonly List<string> ApplyPrimaryExtras = new List<string>(8);
+        /// <summary>Fleet roll parallel to the chassis-plus-purchase list while a selection runs.</summary>
+        static readonly List<ShipFamilySpecialBonuses> PrimaryFleetScratch = new List<ShipFamilySpecialBonuses>(32);
         static readonly HashSet<string> LiveSlotNames = new HashSet<string>(StringComparer.Ordinal);
         static readonly Dictionary<string, int> NameOrdinalScratch = new Dictionary<string, int>(32);
         static readonly Dictionary<int, int> OccurrenceByInstanceId = new Dictionary<int, int>(32);
@@ -95,7 +98,8 @@ namespace TitanOrbit.ECS
             if (em.HasComponent<ShipState>(shipEntity))
                 shipLevel = Mathf.Max(1, em.GetComponentData<ShipState>(shipEntity).ShipLevel);
 
-            ShipComponentStoreVisualScaleLogic.CollectExtraComponentIds(em, shipEntity, out List<string> extras);
+            ShipComponentStoreVisualScaleLogic.CollectExtraComponents(
+                em, shipEntity, out List<string> extras, out List<int> extraFamilies);
 
             int bankIndex = 0;
             bool healing = false;
@@ -119,7 +123,8 @@ namespace TitanOrbit.ECS
                 stripColliders,
                 remapNonWeapons,
                 em,
-                shipEntity);
+                shipEntity,
+                extraFamilies);
         }
 
         /// <summary>
@@ -132,11 +137,12 @@ namespace TitanOrbit.ECS
             int runtimeBulletIndex,
             bool healingBullets,
             EntityManager em,
-            Entity shipEntity)
+            Entity shipEntity,
+            IReadOnlyList<int> extraFamilyConfigIndices = null)
         {
-            // B-key weapon restyle is presentation-only. Covering colliders stay
-            // host + the highest-base store extra of each type, so a weaker buy
-            // does not Instantiates/Destroy a mesh during the sim tick.
+            // B-key weapon restyle is presentation-only. Covering colliders follow
+            // the best purchase of each non-weapon type, including a buy whose
+            // base is lower than the hull part.
             _ = runtimeBulletIndex;
             _ = healingBullets;
             int shipLevel = 1;
@@ -147,7 +153,8 @@ namespace TitanOrbit.ECS
             }
 
             if (TrySelectPrimaryStoreExtras(
-                    hostFamily, shipLevel, extraComponentIds, PrimaryExtraScratch, em, shipEntity))
+                    hostFamily, shipLevel, extraComponentIds, extraFamilyConfigIndices,
+                    PrimaryExtraScratch, em, shipEntity))
                 return PrimaryExtraScratch.Count > 0;
             return HasNonWeaponExtra(extraComponentIds);
         }
@@ -170,7 +177,8 @@ namespace TitanOrbit.ECS
             bool stripColliders,
             bool remapNonWeapons = true,
             EntityManager em = default,
-            Entity shipEntity = default)
+            Entity shipEntity = default,
+            IReadOnlyList<int> extraFamilyConfigIndices = null)
         {
             if (root == null)
                 return false;
@@ -181,8 +189,9 @@ namespace TitanOrbit.ECS
             bool changed = false;
 
             // --- Which non-weapon hardpoints the best purchase of each type still covers ---
-            // [TITAN-ORBIT] A weaker buy does not replace the mesh. Slots not in this set
-            // go back to the host part. Discard still clears the id from the ghosted buffer.
+            // [TITAN-ORBIT] Any purchase of a type replaces that type's mesh. A lower
+            // number is still the player's choice. Slots with no purchase go back to
+            // the host part. Discard still clears the id from the ghosted buffer.
             KeepRemappedNames.Clear();
             IReadOnlyList<string> remapExtras = extraComponentIds;
             if (remapNonWeapons && extraComponentIds != null)
@@ -190,7 +199,8 @@ namespace TitanOrbit.ECS
                 // Copy winners out of the scratch list. Collider bake may call WouldRemap
                 // while this apply is still walking slots, and that refills the scratch.
                 if (TrySelectPrimaryStoreExtras(
-                        hostFamily, shipLevel, extraComponentIds, PrimaryExtraScratch, em, shipEntity))
+                        hostFamily, shipLevel, extraComponentIds, extraFamilyConfigIndices,
+                        PrimaryExtraScratch, em, shipEntity))
                 {
                     ApplyPrimaryExtras.Clear();
                     for (int i = 0; i < PrimaryExtraScratch.Count; i++)
@@ -1031,14 +1041,18 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Purchases that own their type’s Base, scored the same way as live Extra Level.
-        /// The ship’s chassis prefab (catalog × authored scale) and store rows compete together.
-        /// Returns false when that prefab cannot be resolved — callers then remap every extra.
+        /// Purchases that own their type, scored the same way as live Extra Level.
+        /// The hull part stays primary until the player buys that type. The best
+        /// purchase then wins even when its base is lower. Matching is by part type
+        /// (wing, engine, fin/tail, thruster, cockpit, sensor-as-hull, and the rest).
+        /// Returns false when the chassis prefab cannot be resolved — callers then
+        /// remap every extra.
         /// </summary>
         static bool TrySelectPrimaryStoreExtras(
             ShipFamilyDefinition hostFamily,
             int shipLevel,
             IReadOnlyList<string> extraComponentIds,
+            IReadOnlyList<int> extraFamilyConfigIndices,
             List<string> into,
             EntityManager em = default,
             Entity shipEntity = default)
@@ -1058,6 +1072,15 @@ namespace TitanOrbit.ECS
 
             // Store rows sit after chassis children — same split Extra Level uses.
             int storeStart = chassis.MatchedComponentIds.Count;
+            ShipFamilySpecialBonuses hullFleet = family != null
+                ? family.ResolveSpecialBonuses()
+                : ShipFamilySpecialBonuses.Identity;
+            PrimaryFleetScratch.Clear();
+            for (int i = 0; i < storeStart; i++)
+                PrimaryFleetScratch.Add(hullFleet);
+
+            // Family stamps stay aligned with the incoming extra list. A skipped id
+            // adds no stat row and no fleet row, and the next id keeps its own index.
             for (int i = 0; i < extraComponentIds.Count; i++)
             {
                 string componentId = extraComponentIds[i];
@@ -1069,6 +1092,12 @@ namespace TitanOrbit.ECS
 
                 chassis.MatchedComponentIds.Add(componentId);
                 chassis.PerComponentStats.Add(stats);
+                int familyIndex = extraFamilyConfigIndices != null && i < extraFamilyConfigIndices.Count
+                    ? extraFamilyConfigIndices[i]
+                    : -1;
+                PrimaryFleetScratch.Add(familyIndex >= 0
+                    ? MegaShipStatsCalculator.ResolveFleetBonuses(familyIndex)
+                    : hullFleet);
             }
 
             if (chassis.MatchedComponentIds.Count <= storeStart)
@@ -1078,7 +1107,8 @@ namespace TitanOrbit.ECS
                 chassis.MatchedComponentIds,
                 chassis.PerComponentStats,
                 storeStart,
-                into);
+                into,
+                PrimaryFleetScratch);
             return true;
         }
 

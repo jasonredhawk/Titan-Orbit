@@ -318,17 +318,20 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// Full-width telemetry rule for calculation grids (parts / mass).
-        /// Wider than <see cref="AppendSectionBanner"/> so columns read as one table.
+        /// <paramref name="monospaceColumns"/> is the table width in characters.
+        /// The hyphens use the same 0.5em monospace as the grid cells, so the
+        /// line reaches the last column instead of stopping short in proportional type.
         /// </summary>
-        public static void AppendGridRule(StringBuilder sb)
+        public static void AppendGridRule(StringBuilder sb, int monospaceColumns)
         {
-            if (sb == null)
+            if (sb == null || monospaceColumns <= 0)
                 return;
             // ASCII hyphens — box-drawing rules fall back to Liberation Sans (or boxes) on WebGL.
-            // Long enough to sit under PART … SCALE SCALE ADD. Mass-tax
-            // tables are shorter; a rule that runs past them still reads as one band.
-            sb.Append("<color=#").Append(SectionRailHex)
-                .Append(">----------------------------------------------------------------------</color>")
+            // [TITAN-ORBIT] Cells are <mspace=0.5em>. A proportional hyphen run is
+            // shorter than that many columns, so the rule used to die before ADD.
+            sb.Append("<color=#").Append(SectionRailHex).Append("><mspace=0.5em>")
+                .Append(new string('-', monospaceColumns))
+                .Append("</mspace></color>")
                 .AppendLine();
         }
 

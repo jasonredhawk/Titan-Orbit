@@ -14,9 +14,9 @@ namespace TitanOrbit.UI
     /// <summary>
     /// Telemetry-style calculation cards for the ten bottom Ship Ability chips.
     /// Colour-coded calculation grids for the ten bottom Ship Ability chips.
-    /// PARTS table: one row per component. BASE and PERX are catalog numbers;
-    /// The first SCALE column is that part’s prefab size (including ×1) and multiplies the row.
-    /// The next SCALE column is this match’s family roll for that stat: a green +% adds,
+    /// PARTS table: one row per component. BASE and PERX are catalog numbers.
+    /// The SCALE column is that part’s prefab size (including ×1) and multiplies the row.
+    /// The BONUS column is this match’s family roll for that stat: a green +% adds,
     /// an amber −% reduces, and ×1 means the roll does not change the ship.
     /// The same roll is printed on every part — it is per family, not per component.
     /// Extras add no Base. There is no second line under a part for scale.
@@ -404,6 +404,10 @@ namespace TitanOrbit.UI
         {
             ShipPropulsionAggregation.ClassifyPropulsionRoles(
                 parts.Ids, out bool hasEngines, out bool hasThrusters);
+            ShipFamilySpecialBonuses hull = parts.Family != null
+                ? parts.Family.ResolveSpecialBonuses()
+                : ShipFamilySpecialBonuses.Identity;
+            ShipFamilySpecialBonuses[] fleets = BuildPartFleets(in parts, in hull);
             var pools = new Dictionary<string, List<int>>(StringComparer.OrdinalIgnoreCase);
             for (int i = 0; i < parts.Ids.Count && i < parts.Stats.Count; i++)
             {
@@ -435,8 +439,8 @@ namespace TitanOrbit.UI
             var map = new Dictionary<string, GroupedPartRow>(StringComparer.OrdinalIgnoreCase);
             foreach (KeyValuePair<string, List<int>> pool in pools)
             {
-                int primaryLocal = ShipComponentStackAggregation.PickPrimaryLocalIndex(
-                    pool.Key, pool.Value, parts.Stats, parts.StoreExtraStartIndex);
+                int primaryLocal = PickDisplayedPrimaryLocal(
+                    pool.Key, pool.Value, in parts, fleets);
                 int primaryGlobal = pool.Value[primaryLocal];
 
                 for (int m = 0; m < pool.Value.Count; m++)
@@ -652,15 +656,23 @@ namespace TitanOrbit.UI
         const int GridScaleW = 7;
 
         /// <summary>
-        /// Width of the fleet-roll SCALE column. Wide enough for the header and for
-        /// <c>+100%</c>, <c>-50%</c>, or stock <c>×1</c>. Mass-tax tables skip it.
+        /// Width of the fleet BONUS column. Wide enough for <c>+100%</c>, <c>-50%</c>,
+        /// or stock <c>×1</c>, with room so BONUS does not sit against SCALE.
+        /// Mass-tax tables skip it.
         /// </summary>
         const int GridFleetW = 11;
+
+        /// <summary>PART ROLE BASE PERX xLV SCALE BONUS ADD, in monospace characters.</summary>
+        const int PartsGridColumns =
+            GridNameW + GridRoleW + GridNumW + GridNumW + GridLvW + GridScaleW + GridFleetW + GridNumW;
+
+        /// <summary>Mass-tax grid: SOURCE QTY RATE MASS. No level, scale, or bonus columns.</summary>
+        const int MassGridColumns = GridNameW + GridRoleW + GridNumW + GridNumW;
 
         /// <summary>
         /// Colour-coded parts table. One row per component — scale is a column, not a second line.
         /// BASE and PERX are family-catalog values (before prefab size). SCALE is that part’s
-        /// prefab multiplier, including ×1. FLEET BONUS is that row’s roll: chassis rows share
+        /// prefab multiplier, including ×1. BONUS is that row’s roll: chassis rows share
         /// the hull, and a purchased part shows the moon it was bought at. ADD is
         /// <c>(Base + PerExtra × levels) × scale × fleet</c>.
         /// Extras show — in BASE (they never add a second Base). Weapon barrels keep Base.
@@ -700,7 +712,7 @@ namespace TitanOrbit.UI
             }
 
             AppendPartsCalcHeader(sb);
-            ShipStatTooltipChrome.AppendGridRule(sb);
+            ShipStatTooltipChrome.AppendGridRule(sb, PartsGridColumns);
 
             // --- Fleet roll for this stat ---
             // [TITAN-ORBIT] Home planets stay 1×. Every other family is rolled once
@@ -746,7 +758,7 @@ namespace TitanOrbit.UI
                 sb.AppendLine();
             }
 
-            ShipStatTooltipChrome.AppendGridRule(sb);
+            ShipStatTooltipChrome.AppendGridRule(sb, PartsGridColumns);
             float shownTotal = IsMassAffectedField(field) ? running : finalEffective;
             if (!IsMassAffectedField(field) && Mathf.Abs(finalEffective - running) > 0.05f)
                 shownTotal = finalEffective;
@@ -796,7 +808,7 @@ namespace TitanOrbit.UI
             if (writeComposition)
             {
                 AppendGridHeader(sb, "SOURCE", "QTY", "RATE", "MASS", "", "");
-                ShipStatTooltipChrome.AppendGridRule(sb);
+                ShipStatTooltipChrome.AppendGridRule(sb, MassGridColumns);
                 AppendGridRow(
                     sb, "Gems", HexCount,
                     FGrid(live.Ship.CurrentGems), HexCount,
@@ -815,7 +827,7 @@ namespace TitanOrbit.UI
                     FGrid(mSize), HexMute,
                     FGrid(sizeMass), HexMass,
                     "", HexMute, "", HexMute);
-                ShipStatTooltipChrome.AppendGridRule(sb);
+                ShipStatTooltipChrome.AppendGridRule(sb, MassGridColumns);
                 AppendGridRow(
                     sb, "totalMass", HexMute,
                     "-", HexMute,
@@ -845,7 +857,7 @@ namespace TitanOrbit.UI
                 FGrid(weight), HexMass,
                 "-" + FGrid(drag), HexMass,
                 "", HexMute, "", HexMute);
-            ShipStatTooltipChrome.AppendGridRule(sb);
+            ShipStatTooltipChrome.AppendGridRule(sb, MassGridColumns);
             string totalUnit = field == StatField.TurnSpeed
                 ? "deg/s"
                 : field == StatField.AccelerationCap
@@ -903,7 +915,7 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Parts-grid total. Blank cells keep the number under ADD, including both SCALE columns.
+        /// Parts-grid total. Blank cells keep the number under ADD, including SCALE and BONUS.
         /// Mass tax uses <see cref="AppendMassGridTotal"/> so its four columns stay put.
         /// </summary>
         static void AppendGridTotal(StringBuilder sb, float total, string unitLabel)
@@ -913,7 +925,7 @@ namespace TitanOrbit.UI
             AppendGridCell(sb, HexMute, "", GridNumW, right: true);
             AppendGridCell(sb, HexMute, "", GridNumW, right: true);
             AppendGridCell(sb, HexMute, "", GridLvW, right: true);
-            // Blank prefab SCALE and fleet SCALE cells keep the total under ADD.
+            // Blank SCALE and BONUS cells keep the total under ADD.
             AppendGridCell(sb, HexMute, "", GridScaleW, right: true);
             AppendGridCell(sb, HexMute, "", GridFleetW, right: true);
             AppendGridCell(sb, HexResult, FGrid(total), GridNumW, right: true);
@@ -942,7 +954,7 @@ namespace TitanOrbit.UI
             sb.AppendLine();
         }
 
-        /// <summary>First four columns of a parts row; caller writes ×LV, prefab SCALE, fleet SCALE, then ADD.</summary>
+        /// <summary>First four columns of a parts row; caller writes ×LV, SCALE, BONUS, then ADD.</summary>
         static void AppendGridRowOpen(
             StringBuilder sb,
             string n, string nHex,
@@ -992,8 +1004,8 @@ namespace TitanOrbit.UI
             v.ToString("0.##", CultureInfo.InvariantCulture);
 
         /// <summary>
-        /// Parts-grid header: PART ROLE BASE PERX xLV SCALE SCALE ADD.
-        /// The first SCALE is the prefab multiplier for that row. The second SCALE is the match roll
+        /// Parts-grid header: PART ROLE BASE PERX xLV SCALE BONUS ADD.
+        /// SCALE is the prefab multiplier for that row. BONUS is the match roll
         /// for this stat. Mass-tax tables keep their own header.
         /// </summary>
         static void AppendPartsCalcHeader(StringBuilder sb)
@@ -1004,13 +1016,13 @@ namespace TitanOrbit.UI
             AppendGridCell(sb, HexMute, "PERX", GridNumW, right: true);
             AppendGridCell(sb, HexMute, "xLV", GridLvW, right: true);
             AppendGridCell(sb, HexMute, "SCALE", GridScaleW, right: true);
-            AppendGridCell(sb, HexMute, "SCALE", GridFleetW, right: true);
+            AppendGridCell(sb, HexMute, "BONUS", GridFleetW, right: true);
             AppendGridCell(sb, HexMute, "ADD", GridNumW, right: true);
             sb.AppendLine();
         }
 
         /// <summary>
-        /// One fleet-roll SCALE cell. <paramref name="mul"/> is the match roll already
+        /// One fleet BONUS cell. <paramref name="mul"/> is the match roll already
         /// resolved for this stat (1 when the family does not change it).
         /// The percent uses that stat's own colour. Muted <c>×1</c> is stock.
         /// </summary>
@@ -1081,7 +1093,7 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// Fire-rate fleet roll under the DPS caption. The parts table above is
-        /// damage per shot, so its fleet SCALE column cannot also be cadence.
+        /// damage per shot, so its BONUS column cannot also be cadence.
         /// Prints even at ×1 so a stock rate is visible next to a damage bonus.
         /// Called only when the Fire Power details card rebuilds — not every frame.
         /// Titans read the purchase planet via <see cref="ResolveMegaFleet"/> —
@@ -1187,7 +1199,7 @@ namespace TitanOrbit.UI
             string levels = field == StatField.BulletSpeed
                 ? Tint(HexAbility, "ability")
                 : Tint(HexMute, "(") + Tint(HexShip, "ship") + Tint(HexMute, "+") + Tint(HexAbility, "ability") + Tint(HexMute, ")");
-            // Same multiply the two SCALE columns apply on every part row.
+            // Same multiply the SCALE and BONUS columns apply on every part row.
             return Tint(HexMute, "(")
                    + primary
                    + Tint(HexMute, " + ")
@@ -1201,9 +1213,56 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
+        /// One fleet roll per cached part. A purchase stamp is that moon.
+        /// −1, or a missing stamp, is the hull roll already resolved by the caller.
+        /// </summary>
+        static ShipFamilySpecialBonuses[] BuildPartFleets(
+            in ShipSpeedometerStatTooltips.PartCache parts,
+            in ShipFamilySpecialBonuses hullFleet)
+        {
+            int n = parts.Stats != null ? parts.Stats.Count : 0;
+            var fleets = new ShipFamilySpecialBonuses[n];
+            for (int i = 0; i < n; i++)
+            {
+                int stamped = -1;
+                if (parts.ComponentFleetFamilyIndex != null && i < parts.ComponentFleetFamilyIndex.Count)
+                    stamped = parts.ComponentFleetFamilyIndex[i];
+                fleets[i] = stamped >= 0
+                    ? MegaShipStatsCalculator.ResolveFleetBonuses(stamped)
+                    : hullFleet;
+            }
+
+            return fleets;
+        }
+
+        /// <summary>
+        /// Display primary for one pool. Weapons keep the unbuffed pick so a firepower
+        /// roll does not reshuffle gun rows. Every other pool lets a purchase own the
+        /// seat even when its base is lower than the hull. Among those purchases the
+        /// higher fleet-adjusted score wins.
+        /// </summary>
+        static int PickDisplayedPrimaryLocal(
+            string poolKey,
+            List<int> members,
+            in ShipSpeedometerStatTooltips.PartCache parts,
+            ShipFamilySpecialBonuses[] fleets)
+        {
+            if (ShipComponentStackAggregation.IsWeaponPoolKey(poolKey))
+            {
+                return ShipComponentStackAggregation.PickPrimaryLocalIndex(
+                    poolKey, members, parts.Stats, parts.StoreExtraStartIndex);
+            }
+
+            return ShipComponentStackAggregation.PickPrimaryLocalIndex(
+                poolKey, members, parts.Stats, parts.StoreExtraStartIndex, fleets);
+        }
+
+        /// <summary>
         /// Builds one eval per contributing part. Only the pool primary (and every weapon
-        /// barrel) includes Base; extras are PerExtra × levels. Turn uses one hull-wide
-        /// Base — the highest <c>turnSpeed</c> — and every other turn part is PerExtra only.
+        /// barrel) includes Base; extras are PerExtra × levels. A fleet bonus takes that
+        /// primary seat only when its buffed score beats the unbuffed primary. Turn uses
+        /// one hull-wide Base — the highest <c>turnSpeed</c>, with the same bonus rule —
+        /// and every other turn part is PerExtra only.
         /// Matches <see cref="ShipComponentExtraLevelMath.AggregateAndEvaluate"/>.
         /// </summary>
         static void CollectFieldPools(
@@ -1217,6 +1276,8 @@ namespace TitanOrbit.UI
             into.Clear();
             if (!parts.Valid || parts.Ids == null || parts.Stats == null)
                 return;
+
+            ShipFamilySpecialBonuses[] fleets = BuildPartFleets(in parts, in hullFleet);
 
             // --- Group so the highest base of each type is the display primary ---
             ShipPropulsionAggregation.ClassifyPropulsionRoles(
@@ -1248,16 +1309,15 @@ namespace TitanOrbit.UI
             var primaryGlobals = new HashSet<int>();
             foreach (KeyValuePair<string, List<int>> pair in groups)
             {
-                int primaryLocal = ShipComponentStackAggregation.PickPrimaryLocalIndex(
-                    pair.Key, pair.Value, parts.Stats, parts.StoreExtraStartIndex);
+                int primaryLocal = PickDisplayedPrimaryLocal(
+                    pair.Key, pair.Value, in parts, fleets);
                 primaryGlobals.Add(pair.Value[primaryLocal]);
             }
 
-            // Turn Base is the highest turnSpeed on the ship, even when that part is not its pool primary.
-            // A purchased fin can own it; every other turn part adds PerExtra only.
+            // Turn Base is one part. A purchase that authors turn owns it.
             int bestTurnIndex = field == StatField.TurnSpeed
                 ? ShipComponentExtraLevelMath.PickBestTurnBaseIndex(
-                    parts.Ids, parts.Stats, parts.StoreExtraStartIndex)
+                    parts.Ids, parts.Stats, parts.StoreExtraStartIndex, fleets)
                 : -1;
 
             foreach (KeyValuePair<string, List<int>> pair in groups)
@@ -1649,7 +1709,7 @@ namespace TitanOrbit.UI
             }
 
             sb.AppendLine();
-            // The parts grid's fleet SCALE column is damage per shot. Fire rate is a
+            // The parts grid's BONUS column is damage per shot. Fire rate is a
             // second match roll and it changes this DPS product, so it is named here.
             AppendFireRateFleetLine(sb, in parts, in live);
 
@@ -2307,10 +2367,10 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// Fire Power parts grid for Titan guns. Same columns as a regular ship
-        /// (PART, ROLE, BASE, PERX, ×LV, SCALE, SCALE, ADD). Each copy is its own row.
+        /// (PART, ROLE, BASE, PERX, ×LV, SCALE, BONUS, ADD). Each copy is its own row.
         /// The default Titan bank lists each gun part at its catalog firepower times the
         /// purchase planet's fire-power roll. A family or gear bank lists that weapon at
-        /// maxed level 7 (ship 7 + ability 7) and prints ×1 in the fleet SCALE column — that shot
+        /// maxed level 7 (ship 7 + ability 7) and prints ×1 in BONUS — that shot
         /// replaces catalog damage, so the planet roll stays on the Titan's own guns.
         /// Lasers, missiles, and snipers stay off this grid and show the roll on their own line.
         /// Rebuilds when the selected bullet bank changes.
@@ -2342,7 +2402,7 @@ namespace TitanOrbit.UI
             if (familyGun || (haveEntry && CatalogHasBulletGun(catalog, entry)))
             {
                 AppendPartsCalcHeader(sb);
-                ShipStatTooltipChrome.AppendGridRule(sb);
+                ShipStatTooltipChrome.AppendGridRule(sb, PartsGridColumns);
                 if (familyGun)
                 {
                     // This bank's damage is the family weapon, not catalog × fleet.
@@ -2396,7 +2456,7 @@ namespace TitanOrbit.UI
 
                 if (wroteGun)
                 {
-                    ShipStatTooltipChrome.AppendGridRule(sb);
+                    ShipStatTooltipChrome.AppendGridRule(sb, PartsGridColumns);
                     AppendGridTotal(sb, running, "Fire");
                 }
             }

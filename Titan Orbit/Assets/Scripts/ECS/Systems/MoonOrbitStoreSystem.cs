@@ -698,7 +698,11 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Buys a ship-family extra component by stable id into an empty equipment slot.
-        /// Price and stamped ItemLevel use <c>min(ship, docked planet)</c>.
+        /// That purchase becomes the primary for its part type — wing for wing, engine
+        /// for engine, and the same for every other non-weapon type — on both the mesh
+        /// and the Base, even when the number is lower than the hull part. Several buys
+        /// of one type keep the highest. Price and stamped ItemLevel use
+        /// <c>min(ship, docked planet)</c>.
         /// When <see cref="TitanOrbitDebugFlags.FreeGear"/> is on, skips the gem debit
         /// (already-equipped and slot limits still apply).
         /// </summary>

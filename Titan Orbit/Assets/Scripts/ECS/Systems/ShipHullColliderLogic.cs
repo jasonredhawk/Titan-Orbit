@@ -458,9 +458,10 @@ namespace TitanOrbit.ECS
             bool remap = false;
             if (canRemap)
             {
-                ShipComponentStoreVisualScaleLogic.CollectExtraComponentIds(em, shipEntity, out var extras);
+                ShipComponentStoreVisualScaleLogic.CollectExtraComponents(
+                    em, shipEntity, out var extras, out var extraFamilies);
                 remap = ShipComponentVisualSwapLogic.WouldRemap(
-                    hostFamily, extras, bankIndex, healing, em, shipEntity);
+                    hostFamily, extras, bankIndex, healing, em, shipEntity, extraFamilies);
             }
 
             var key = new CoveringBakeKey

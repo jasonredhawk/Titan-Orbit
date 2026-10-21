@@ -12,10 +12,11 @@ namespace TitanOrbit.Data
     /// with that part’s own PerExtra and sums them (Engine PerExtra ≠ Thruster PerExtra).
     /// </para>
     /// <para>
-    /// Primary for display and Base: the member with the highest base of that type
-    /// (chassis parts and moon-store purchases compete together). A level-2 engine
-    /// keeps the Move Base over a later level-1 buy. Every other member of the pool
-    /// is an extra — its PerExtra still adds, its Base does not.
+    /// Primary for display and Base: the hull part with the highest base of that
+    /// type, until the player buys gear of that type. A purchase then owns the
+    /// Base even when its numbers are lower. Several buys keep the highest one.
+    /// Every other member of the pool is an extra — its PerExtra still adds, its
+    /// Base does not.
     /// Engines and thrusters are <b>separate</b> pools: engines own Move + Energy,
     /// thrusters own Accel + Turn. <see cref="PropulsionPoolKey"/> is leftover for
     /// older HUD binders that still group both.
@@ -151,12 +152,12 @@ namespace TitanOrbit.Data
             foreach (KeyValuePair<string, List<int>> pair in groups)
             {
                 PoolContribution contrib = AggregatePoolPrimary(
-                    pair.Key, pair.Value, componentIds, perComponentStats);
+                    pair.Key, pair.Value, componentIds, perComponentStats, storeExtraStartIndex);
                 pools.Add(contrib);
                 combinedPrimary.AddInPlace(contrib.PrimaryStats);
             }
 
-            // Turn Base is one part (highest turnSpeed), not one Base per pool.
+            // Turn Base is one part. A purchase that authors turn owns it.
             // Every other part still adds its turn PerExtra.
             ApplySingleTurnBase(
                 componentIds, perComponentStats, ref combinedPrimary, storeExtraStartIndex);
@@ -197,7 +198,8 @@ namespace TitanOrbit.Data
             string poolKey,
             List<int> memberIndices,
             IReadOnlyList<string> componentIds,
-            IReadOnlyList<ShipComponentAbilityStats> perComponentStats)
+            IReadOnlyList<ShipComponentAbilityStats> perComponentStats,
+            int storeExtraStartIndex = int.MaxValue)
         {
             var result = new PoolContribution
             {
@@ -211,7 +213,7 @@ namespace TitanOrbit.Data
                 return result;
 
             int primaryLocal = PickPrimaryLocalIndex(
-                poolKey, memberIndices, perComponentStats);
+                poolKey, memberIndices, perComponentStats, storeExtraStartIndex);
             int primaryGlobal = memberIndices[primaryLocal];
 
             // [TITAN-ORBIT] Engine primary must not leak Accel into the hull snapshot
@@ -242,14 +244,15 @@ namespace TitanOrbit.Data
 
         /// <summary>
         /// Primary index within <paramref name="memberIndices"/> (local list index, not global).
-        /// Highest base in the pool wins, whether that part was on the chassis or bought
-        /// later. Engines use move speed (then energy); thrusters use acceleration (then turn);
-        /// other types use the additive base score. A tie keeps the earlier list index, so a
-        /// chassis part stays primary when a purchase has the same base.
+        /// With no moon-store row in the pool, the highest hull base wins. Engines use move
+        /// speed (then energy); thrusters use acceleration (then turn); other types use the
+        /// additive base score. A tie keeps the earlier list index.
+        /// Once any purchase of this type is in the pool, only those purchases compete.
+        /// The best purchase owns Base even when it is lower than the hull part. Weapons
+        /// stay on the old contest — each barrel keeps its own Base.
         /// </summary>
         /// <param name="storeExtraStartIndex">
-        /// Kept so callers can still pass the moon-store split. Purchase order does not
-        /// choose the primary — only base score does.
+        /// First moon-store row. <see cref="int.MaxValue"/> means the list is hull-only.
         /// </param>
         public static int PickPrimaryLocalIndex(
             string poolKey,
@@ -257,34 +260,99 @@ namespace TitanOrbit.Data
             IReadOnlyList<ShipComponentAbilityStats> perComponentStats,
             int storeExtraStartIndex = int.MaxValue)
         {
-            _ = storeExtraStartIndex;
+            return PickPrimaryLocalIndex(
+                poolKey, memberIndices, perComponentStats, storeExtraStartIndex, perComponentFleet: null);
+        }
+
+        /// <summary>
+        /// Same purchase rule as the unbuffed pick. Among the parts that are allowed
+        /// to own Base, the highest fleet-adjusted score wins. A 1× row uses its naked
+        /// score. A tie keeps the earlier part. A lone weaker purchase still beats the hull.
+        /// </summary>
+        public static int PickPrimaryLocalIndex(
+            string poolKey,
+            List<int> memberIndices,
+            IReadOnlyList<ShipComponentAbilityStats> perComponentStats,
+            int storeExtraStartIndex,
+            IReadOnlyList<ShipFamilySpecialBonuses> perComponentFleet)
+        {
             if (memberIndices == null || memberIndices.Count == 0)
                 return 0;
 
+            bool purchasedOwn = PurchasedMembersOwnPool(poolKey, memberIndices, storeExtraStartIndex);
             int bestLocal = 0;
             float bestScore = float.NegativeInfinity;
-            bool enginePool = IsEnginePoolKey(poolKey);
-            bool thrusterPool = IsThrusterPoolKey(poolKey);
-            bool legacyPropulsion = string.Equals(poolKey, PropulsionPoolKey, StringComparison.OrdinalIgnoreCase);
-
+            bool found = false;
             for (int m = 0; m < memberIndices.Count; m++)
             {
-                ShipComponentAbilityStats s = perComponentStats[memberIndices[m]];
-                float score;
-                if (enginePool || legacyPropulsion)
-                    score = ScoreEnginePrimary(s);
-                else if (thrusterPool)
-                    score = ScoreThrusterPrimary(s);
-                else
-                    score = ScoreGenericPrimary(s);
-                if (score > bestScore)
+                int gi = memberIndices[m];
+                if (perComponentStats == null || gi < 0 || gi >= perComponentStats.Count)
+                    continue;
+                if (purchasedOwn && gi < storeExtraStartIndex)
+                    continue;
+
+                float score = ScoreWithFleet(poolKey, gi, perComponentStats, perComponentFleet);
+                if (!found || score > bestScore)
                 {
+                    found = true;
                     bestScore = score;
                     bestLocal = m;
                 }
             }
 
             return bestLocal;
+        }
+
+        /// <summary>
+        /// True when a non-weapon pool contains a moon-store row. Those rows then own Base.
+        /// </summary>
+        static bool PurchasedMembersOwnPool(
+            string poolKey,
+            List<int> memberIndices,
+            int storeExtraStartIndex)
+        {
+            if (IsWeaponPoolKey(poolKey) || memberIndices == null)
+                return false;
+            if (storeExtraStartIndex == int.MaxValue || storeExtraStartIndex < 0)
+                return false;
+
+            for (int m = 0; m < memberIndices.Count; m++)
+            {
+                if (memberIndices[m] >= storeExtraStartIndex)
+                    return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>Pool score after this row's fleet roll. A 1× roll leaves the catalog number.</summary>
+        static float ScoreWithFleet(
+            string poolKey,
+            int globalIndex,
+            IReadOnlyList<ShipComponentAbilityStats> perComponentStats,
+            IReadOnlyList<ShipFamilySpecialBonuses> perComponentFleet)
+        {
+            ShipComponentAbilityStats stats = perComponentStats[globalIndex];
+            if (perComponentFleet != null
+                && globalIndex >= 0
+                && globalIndex < perComponentFleet.Count
+                && !perComponentFleet[globalIndex].IsIdentity)
+            {
+                stats = perComponentFleet[globalIndex].Apply(stats);
+            }
+
+            return ScoreForPool(poolKey, stats);
+        }
+
+        /// <summary>Same weights <see cref="PickPrimaryLocalIndex"/> uses for an unbuffed part.</summary>
+        static float ScoreForPool(string poolKey, in ShipComponentAbilityStats stats)
+        {
+            if (IsEnginePoolKey(poolKey)
+                || string.Equals(poolKey, PropulsionPoolKey, StringComparison.OrdinalIgnoreCase))
+                return ScoreEnginePrimary(stats);
+            if (IsThrusterPoolKey(poolKey))
+                return ScoreThrusterPrimary(stats);
+            return ScoreGenericPrimary(stats);
         }
 
         /// <summary>Global list index of the propulsion primary, or -1.</summary>
@@ -340,16 +408,17 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Moon-store component ids that own their pool’s Base. Chassis parts and purchases
-        /// are scored together; only a buy with a strictly higher base than every other
-        /// member is returned. Weaker buys stay extras and must not replace the mesh.
-        /// Weapons are omitted — a bought gun unlocks a bullet type and does not take a barrel’s Base.
+        /// Moon-store component ids that own their pool’s Base and should replace the mesh.
+        /// A purchase of that type always qualifies, even when its base is lower than the hull.
+        /// Several buys of one type return only the highest. Weapons are omitted — a bought
+        /// gun unlocks a bullet type and does not take a barrel’s Base.
         /// </summary>
         public static void CollectStoreExtrasThatOwnPoolBase(
             IReadOnlyList<string> componentIds,
             IReadOnlyList<ShipComponentAbilityStats> perComponentStats,
             int storeExtraStartIndex,
-            List<string> into)
+            List<string> into,
+            IReadOnlyList<ShipFamilySpecialBonuses> perComponentFleet = null)
         {
             if (into == null)
                 return;
@@ -385,7 +454,7 @@ namespace TitanOrbit.Data
                     continue;
 
                 int primaryLocal = PickPrimaryLocalIndex(
-                    pair.Key, pair.Value, perComponentStats, storeExtraStartIndex);
+                    pair.Key, pair.Value, perComponentStats, storeExtraStartIndex, perComponentFleet);
                 int primaryGlobal = pair.Value[primaryLocal];
                 if (primaryGlobal < storeExtraStartIndex)
                     continue;

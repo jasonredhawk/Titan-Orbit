@@ -70,11 +70,11 @@ namespace TitanOrbit.Data
     /// PerExtra; a second thruster adds Accel PerExtra.
     /// </para>
     /// <para>
-    /// Turn is one hull-wide Base, not one Base per pool. The hull part with the
-    /// highest authored <c>turnSpeed</c> keeps that Base. Every other hull part,
-    /// and every moon-store gear piece, adds only its <c>turnSpeedPerExtraLevel</c>
-    /// × levels — the same small step Move and Accel use for an extra engine or
-    /// thruster. Gear never replaces the hull Turn Base.
+    /// Turn is one hull-wide Base, not one Base per pool. With no purchased part
+    /// that authors turn, the hull part with the highest <c>turnSpeed</c> keeps
+    /// that Base. A purchase that authors turn takes the Base even when it is
+    /// lower than the hull, and the best purchase wins when several were bought.
+    /// Every other part adds only its <c>turnSpeedPerExtraLevel</c> × levels.
     /// </para>
     /// <para>
     /// [TITAN-ORBIT] Callers pass Base / PerExtra already multiplied by prefab starting
@@ -166,14 +166,15 @@ namespace TitanOrbit.Data
 
         /// <summary>
         /// The single part whose turn Base is allowed on the ship.
-        /// Highest authored <c>turnSpeed</c> wins, including moon-store gear.
-        /// A tie goes to the higher <c>turnSpeedPerExtraLevel</c>, then the earlier list index
-        /// (a chassis part stays primary when a purchase has the same turn base).
+        /// With no purchased part that authors turn, the highest hull <c>turnSpeed</c> wins.
+        /// A purchase that authors turn takes the Base even when it is lower than the hull.
+        /// Several purchases keep the highest turn base. A tie goes to the higher
+        /// <c>turnSpeedPerExtraLevel</c>, then the earlier list index.
         /// Parts with no turn Base (only PerExtra) are never chosen. Everyone else
         /// still adds turn PerExtra.
         /// </summary>
         /// <param name="storeExtraStartIndex">
-        /// Kept for callers. Purchase order does not exclude a part — only turn base does.
+        /// First moon-store row. <see cref="int.MaxValue"/> means the list is hull-only.
         /// </param>
         /// <returns>Index into <paramref name="perComponentStats"/>, or -1 when no part authored a turn Base.</returns>
         public static int PickBestTurnBaseIndex(
@@ -181,16 +182,20 @@ namespace TitanOrbit.Data
             IReadOnlyList<ShipComponentAbilityStats> perComponentStats,
             int storeExtraStartIndex = int.MaxValue)
         {
-            _ = storeExtraStartIndex;
             if (componentIds == null || perComponentStats == null)
                 return -1;
 
             int count = Mathf.Min(componentIds.Count, perComponentStats.Count);
+            bool purchasedOwn = HasPurchasedTurnBase(
+                componentIds, perComponentStats, storeExtraStartIndex, count);
             int best = -1;
             float bestBase = 0f;
             float bestPer = float.NegativeInfinity;
             for (int i = 0; i < count; i++)
             {
+                if (purchasedOwn && i < storeExtraStartIndex)
+                    continue;
+
                 string id = componentIds[i];
                 if (string.IsNullOrWhiteSpace(id))
                     continue;
@@ -215,6 +220,95 @@ namespace TitanOrbit.Data
             }
 
             return best;
+        }
+
+        /// <summary>True when a moon-store row authors a turn Base. That row then owns turn.</summary>
+        static bool HasPurchasedTurnBase(
+            IReadOnlyList<string> componentIds,
+            IReadOnlyList<ShipComponentAbilityStats> perComponentStats,
+            int storeExtraStartIndex,
+            int count)
+        {
+            if (storeExtraStartIndex == int.MaxValue || storeExtraStartIndex < 0)
+                return false;
+
+            for (int i = storeExtraStartIndex; i < count; i++)
+            {
+                string id = componentIds[i];
+                if (string.IsNullOrWhiteSpace(id))
+                    continue;
+                if (ShipFamilyPartCalcProfileSet.IsCosmeticPartName(id))
+                    continue;
+                if (perComponentStats[i].turnSpeed > 0.0001f)
+                    return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Same turn owner as the unbuffed pick, then the highest fleet-adjusted
+        /// turn among the parts allowed to own it. A lone weaker purchase still
+        /// beats the hull. A tie keeps the earlier part.
+        /// </summary>
+        public static int PickBestTurnBaseIndex(
+            IReadOnlyList<string> componentIds,
+            IReadOnlyList<ShipComponentAbilityStats> perComponentStats,
+            int storeExtraStartIndex,
+            IReadOnlyList<ShipFamilySpecialBonuses> perComponentFleet)
+        {
+            int unbuffed = PickBestTurnBaseIndex(
+                componentIds, perComponentStats, storeExtraStartIndex);
+            if (perComponentFleet == null || unbuffed < 0 || perComponentStats == null
+                || componentIds == null)
+                return unbuffed;
+            if (unbuffed >= perComponentStats.Count)
+                return unbuffed;
+
+            bool purchasedOwn = storeExtraStartIndex != int.MaxValue
+                && storeExtraStartIndex >= 0
+                && unbuffed >= storeExtraStartIndex;
+            int best = unbuffed;
+            float bestValue = TurnBaseWithFleet(unbuffed, perComponentStats, perComponentFleet);
+            int count = Mathf.Min(componentIds.Count, perComponentStats.Count);
+            for (int i = 0; i < count; i++)
+            {
+                if (purchasedOwn && i < storeExtraStartIndex)
+                    continue;
+                string id = componentIds[i];
+                if (string.IsNullOrWhiteSpace(id))
+                    continue;
+                if (ShipFamilyPartCalcProfileSet.IsCosmeticPartName(id))
+                    continue;
+                if (perComponentStats[i].turnSpeed <= 0.0001f)
+                    continue;
+
+                float buffed = TurnBaseWithFleet(i, perComponentStats, perComponentFleet);
+                if (buffed > bestValue + 0.0001f)
+                {
+                    bestValue = buffed;
+                    best = i;
+                }
+            }
+
+            return best;
+        }
+
+        /// <summary>Authored turn Base after this row's fleet roll.</summary>
+        static float TurnBaseWithFleet(
+            int index,
+            IReadOnlyList<ShipComponentAbilityStats> perComponentStats,
+            IReadOnlyList<ShipFamilySpecialBonuses> perComponentFleet)
+        {
+            if (perComponentFleet != null
+                && index >= 0
+                && index < perComponentFleet.Count
+                && !perComponentFleet[index].IsIdentity)
+            {
+                return perComponentFleet[index].Apply(perComponentStats[index]).turnSpeed;
+            }
+
+            return perComponentStats[index].turnSpeed;
         }
 
         /// <summary>
@@ -353,10 +447,12 @@ namespace TitanOrbit.Data
 
         /// <summary>
         /// Extra-Levels every matched part with <b>that part’s</b> PerExtra, then sums.
-        /// Non-weapon pools keep <b>only the primary Base</b> (highest base of that type).
-        /// Extras add PerExtra × levels.
+        /// Non-weapon pools keep <b>only the primary Base</b>. The hull part owns it
+        /// until the player buys that type; the best purchase then owns it even when
+        /// the number is lower. Extras add PerExtra × levels.
         /// Turn ignores pool primaries: only <see cref="PickBestTurnBaseIndex"/> keeps a Base.
-        /// A purchased fin with a higher turn base owns that Base; weaker turn parts add PerExtra only.
+        /// A purchase that authors turn owns that Base even when it is lower than the hull.
+        /// Among purchases the highest turn wins. Weaker turn parts add PerExtra only.
         /// Chassis weapons keep each barrel’s Base (they fire on their own).
         /// A moon-store weapon does not: it unlocks a bullet type and adds no damage or cadence.
         /// <para>
@@ -371,15 +467,16 @@ namespace TitanOrbit.Data
         /// Live shot damage still comes from per-mount apply after this hull block.
         /// </summary>
         /// <param name="storeExtraStartIndex">
-        /// First moon-store extra index. Primary is the highest base in the pool, not the newest buy.
-        /// <see cref="int.MaxValue"/> when the hull has no store gear.
+        /// First moon-store extra index. A purchase of a non-weapon type owns that
+        /// pool’s Base even when it is lower than the hull. <see cref="int.MaxValue"/>
+        /// when the hull has no store gear.
         /// </param>
         /// <param name="perComponentFleet">
         /// One fleet roll per part, parallel to <paramref name="perComponentStats"/>.
         /// Null keeps every part unscaled (callers that still multiply the sum).
-        /// Applied after this part's Base / PerExtra choice, so a bonus cannot
-        /// steal primary from another part. A bought engine's +15% stays on that
-        /// engine. It does not multiply the hull or the next component.
+        /// Among the parts allowed to own Base, the highest fleet-adjusted score wins.
+        /// A weaker purchase still beats the hull. Weapon barrels ignore this for
+        /// Base — each chassis gun keeps its own.
         /// </param>
         public static ShipComponentAbilityStats AggregateAndEvaluate(
             IReadOnlyList<string> componentIds,
@@ -421,9 +518,9 @@ namespace TitanOrbit.Data
                 list.Add(i);
             }
 
-            // One turn Base — the highest turnSpeed, chassis or purchased. Everyone else adds PerExtra only.
+            // One turn Base. A purchase that authors turn owns it, even below the hull.
             int bestTurnIndex = PickBestTurnBaseIndex(
-                componentIds, perComponentStats, storeExtraStartIndex);
+                componentIds, perComponentStats, storeExtraStartIndex, perComponentFleet);
 
             // Weapon travel is one hull value (fastest barrel), not a sum of every gun.
             float maxWeaponBulletSpeed = 0f;
@@ -435,8 +532,12 @@ namespace TitanOrbit.Data
             foreach (KeyValuePair<string, List<int>> pair in groups)
             {
                 bool weapon = ShipComponentStackAggregation.IsWeaponPoolKey(pair.Key);
-                int primaryLocal = ShipComponentStackAggregation.PickPrimaryLocalIndex(
-                    pair.Key, pair.Value, perComponentStats, storeExtraStartIndex);
+                // Guns keep every barrel's Base. Fleet does not reshuffle firepower primaries.
+                int primaryLocal = weapon
+                    ? ShipComponentStackAggregation.PickPrimaryLocalIndex(
+                        pair.Key, pair.Value, perComponentStats, storeExtraStartIndex)
+                    : ShipComponentStackAggregation.PickPrimaryLocalIndex(
+                        pair.Key, pair.Value, perComponentStats, storeExtraStartIndex, perComponentFleet);
 
                 for (int m = 0; m < pair.Value.Count; m++)
                 {

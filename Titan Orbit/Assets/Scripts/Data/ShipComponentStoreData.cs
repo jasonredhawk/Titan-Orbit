@@ -266,7 +266,9 @@ namespace TitanOrbit.Data
 
         /// <summary>
         /// Moon-dock equipment card ability list (TMP rich text).
-        /// Propulsion shows base and cumulative hull gain (e.g. <c>+6 base Move → +1.5 cumulative</c>).
+        /// Each stat is one row: VAL, BONUS, and FINAL.
+        /// When hull aggregation keeps less than that final (extra engines do not add a second base),
+        /// the next row is the amount this part actually adds to the ship.
         /// </summary>
         public static string BuildAbilityDescriptionRichText(
             ShipFamilyComponentEntry entry,
@@ -291,9 +293,12 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Builds the Gear-tab card description: weapon bullet type (when this part is a gun),
-        /// then authored Extra-Level stats. Propulsion also shows real hull gain
-        /// (e.g. <c>+6 base Move → +1.5 cumulative</c>). No long stacking essays.
+        /// Builds the Gear-tab card description as a column grid.
+        /// Weapon cards lead with the bullet type. Each stat row is
+        /// <c>VAL</c> (this part, before the moon roll), <c>BONUS</c> (that roll's percent, or —),
+        /// and <c>FINAL</c> (the part number after the roll).
+        /// A following <c>hull</c> row is the amount that actually lands on the ship when
+        /// aggregation is smaller than FINAL (extra engines / turn-per-extra).
         /// Called when a card is created and again when the Gear tab refreshes prices.
         /// </summary>
         static string BuildAbilityDescription(
@@ -324,106 +329,85 @@ namespace TitanOrbit.Data
             if (entry.statCategories == null || entry.statCategories.Count == 0)
                 entry.statCategories = ShipFamilyComponentPartKey.InferDefaultStatCategories(entry.componentId);
 
-            var lines = new List<AbilityLine>(16);
+            var lines = new List<GearStatRow>(16);
             bool isPropulsion = ShipComponentAbilityStats.IsPropulsionComponent(entry.componentId);
             bool isEngine = ShipFamilyPartTypes.IsEngineLikeName(entry.componentId);
 
             // --- Weapon bullet type ---
             // [TITAN-ORBIT] Gear-tab weapon cards list which bullet bank this part fires
-            // (Fireballs, Rift, …) next to Fire Power / Speed / Range. Authored
+            // (Fireballs, Rift, …) above the stat grid. Authored
             // entry.bulletPrefabIndex overrides the family default when set.
             TryQueueWeaponBulletType(lines, entry, family, planetOrHullBankIndex);
 
             // --- Offense / Health / Energy (full gain = authored; they sum) ---
-            TryQueueFleet(lines, original.firePower, adjusted.firePower, "Fire Power", 0, richText);
-            TryQueueFleet(lines, original.bulletSpeed, adjusted.bulletSpeed, "Bullet Speed", 1, richText);
-            TryQueueFleet(lines, original.bulletRange, adjusted.bulletRange, "Bullet Range", 1, richText);
-            TryQueueFleet(lines, original.fireRate, adjusted.fireRate, "Fire Rate", 1, richText);
-            TryQueueFleet(lines, original.rammingPower, adjusted.rammingPower, "Ramming", 0, richText);
-            TryQueueFleet(lines, original.healthCap, adjusted.healthCap, "Health Cap", 2, richText);
-            TryQueueFleet(lines, original.healthRegen, adjusted.healthRegen, "Health Regen", 3, richText);
-            TryQueueFleet(lines, original.energyCap, adjusted.energyCap, "Energy Cap", 4, richText);
-            TryQueueFleet(lines, original.energyRegen, adjusted.energyRegen, "Energy Regen", 5, richText);
+            // Short labels stay inside the name column on an 8-up gear card.
+            // The hover tooltip still spells the full stat name.
+            TryQueueFleet(lines, original.firePower, adjusted.firePower, "Fire", 0);
+            TryQueueFleet(lines, original.bulletSpeed, adjusted.bulletSpeed, "B.Speed", 1);
+            TryQueueFleet(lines, original.bulletRange, adjusted.bulletRange, "Range", 1);
+            TryQueueFleet(lines, original.fireRate, adjusted.fireRate, "Rate", 1);
+            TryQueueFleet(lines, original.rammingPower, adjusted.rammingPower, "Ram", 0);
+            TryQueueFleet(lines, original.healthCap, adjusted.healthCap, "HP", 2);
+            TryQueueFleet(lines, original.healthRegen, adjusted.healthRegen, "HP/s", 3);
+            TryQueueFleet(lines, original.energyCap, adjusted.energyCap, "Energy", 4);
+            TryQueueFleet(lines, original.energyRegen, adjusted.energyRegen, "EN/s", 5);
 
-            // --- Movement: catalog number, then the fleet-adjusted number ---
+            // --- Movement: catalog number, moon bonus, then hull gain when it differs ---
             if (isPropulsion)
             {
                 TryGetPropulsionCumulativeGain(
                     family, entry, shipLevel, out float cumulativeMove, out float cumulativeAccel);
 
-                TryQueueFleetOrHull(lines, original.moveSpeed, adjusted.moveSpeed, cumulativeMove, "Move", 6, richText);
-                TryQueueFleetOrHull(lines, original.accelerationCap, adjusted.accelerationCap, cumulativeAccel, "Accel", 6, richText);
+                TryQueueFleetOrHull(lines, original.moveSpeed, adjusted.moveSpeed, cumulativeMove, "Move", 6);
+                TryQueueFleetOrHull(lines, original.accelerationCap, adjusted.accelerationCap, cumulativeAccel, "Accel", 6);
             }
             else
             {
-                TryQueueFleet(lines, original.moveSpeed, adjusted.moveSpeed, "Move", 6, richText);
-                TryQueueFleet(lines, original.accelerationCap, adjusted.accelerationCap, "Accel", 6, richText);
+                TryQueueFleet(lines, original.moveSpeed, adjusted.moveSpeed, "Move", 6);
+                TryQueueFleet(lines, original.accelerationCap, adjusted.accelerationCap, "Accel", 6);
             }
 
             // Same extra-part rule as Move / Accel: the hull keeps its Turn Base.
             // Buying this piece adds only its Turn PerExtra × ship level.
-            float turnOriginal = GetAddedGearTurnGain(entry, shipLevel, family, applyFamilyFleet: false);
+            // The row's VAL / FINAL are the part's turn number; the hull child row is that PerExtra gain.
             float turnAdjusted = GetAddedGearTurnGain(entry, shipLevel, family, applyFamilyFleet: true);
-            TryQueueFleetOrHull(lines, original.turnSpeed, adjusted.turnSpeed, turnAdjusted, "Turn", 7, richText);
+            TryQueueFleetOrHull(lines, original.turnSpeed, adjusted.turnSpeed, turnAdjusted, "Turn", 7);
 
             // [TITAN-ORBIT] Absolute OVERDRIVE energy/sec on engines (not a multiplier of ExtraSpeedPercent).
-            // More drain is worse, so a +% on this line is amber, not green.
+            // More drain is worse. The percent stays in this row's energy colour — it is not recolored.
             if (isEngine)
                 TryQueueFleet(
                     lines,
                     original.extraSpeedEnergyDrain,
                     adjusted.extraSpeedEnergyDrain,
-                    "Overdrive Drain/s",
+                    "OD/s",
                     4,
-                    richText,
                     higherIsBetter: false);
 
             if (isEngine && adjusted.extraSpeedPercent > 0.0001f)
             {
                 float pctOriginal = original.extraSpeedPercent * 100f;
                 float pctAdjusted = adjusted.extraSpeedPercent * 100f;
-                string od = TryBuildFleetArrow(pctOriginal, pctAdjusted, richText, higherIsBetter: true, out string odArrow)
-                    ? $"Overdrive +{FormatStatValue(pctOriginal)}%{odArrow} speed/thrust"
-                    : $"Overdrive +{FormatStatValue(pctAdjusted)}% speed/thrust";
-                TryQueueNote(lines, od, 6);
+                TryQueuePercent(lines, pctOriginal, pctAdjusted, "OD", 6);
             }
 
             // --- Capacity ---
-            TryQueueFleet(lines, original.maxGems, adjusted.maxGems, "Gem Cap", 8, richText);
-            TryQueueFleet(lines, original.tractorBeamDistance, adjusted.tractorBeamDistance, "Tractor Dist", 8, richText);
-            TryQueueFleet(lines, original.tractorBeamPower, adjusted.tractorBeamPower, "Tractor Power", 8, richText);
-            TryQueueFleet(lines, original.maxPeople, adjusted.maxPeople, "Troop Cap", 9, richText);
+            TryQueueFleet(lines, original.maxGems, adjusted.maxGems, "Gems", 8);
+            TryQueueFleet(lines, original.tractorBeamDistance, adjusted.tractorBeamDistance, "Tract", 8);
+            TryQueueFleet(lines, original.tractorBeamPower, adjusted.tractorBeamPower, "T.Pwr", 8);
+            TryQueueFleet(lines, original.maxPeople, adjusted.maxPeople, "Troops", 9);
 
             if (lines.Count == 0)
                 return richText ? "<color=#888888>—</color>" : "No stat bonus";
 
             // --- Compile visible lines ---
-            // TMP cards use category tints; legacy callers ask for plain text.
             // maxLines is a card-height budget (14 on Gear, 8 on short tooltips).
-            var sb = new StringBuilder(256);
-            int written = 0;
-            for (int i = 0; i < lines.Count && written < maxLines; i++)
-            {
-                AbilityLine line = lines[i];
-                if (written > 0)
-                    sb.Append('\n');
+            // The column header is extra so it does not eat a stat row.
+            int budget = Mathf.Max(1, maxLines);
+            if (lines.Count > budget)
+                lines.RemoveRange(budget, lines.Count - budget);
 
-                if (richText)
-                {
-                    Color c = ResolveAbilityLineColor(line.ColorIndex);
-                    sb.Append("<color=#").Append(ColorUtility.ToHtmlStringRGB(c)).Append('>');
-                    sb.Append(line.Text);
-                    sb.Append("</color>");
-                }
-                else
-                {
-                    sb.Append(line.Text);
-                }
-
-                written++;
-            }
-
-            return sb.ToString();
+            return FormatGearStatGrid(lines, richText);
         }
 
         /// <summary>
@@ -563,19 +547,34 @@ namespace TitanOrbit.Data
             out float actualAccelGain) =>
             TryGetPropulsionCumulativeGain(family, entry, shipLevel, out actualMoveGain, out actualAccelGain);
 
-        /// <summary>One colored line in a moon-dock ability description.</summary>
-        struct AbilityLine
+        /// <summary>
+        /// One Gear-card stat row. Banner lines (bullet type) span the card.
+        /// Numeric rows fill VAL / BONUS / FINAL. A dim row is the hull contribution
+        /// sitting under its parent stat.
+        /// </summary>
+        struct GearStatRow
         {
-            public string Text;
+            public string Label;
+            public string Value;
+            public string Bonus;
+            public string Final;
             public int ColorIndex;
+            public bool Banner;
+            public string BannerText;
+            /// <summary>Hull child row — quieter than the parent stat, FINAL stays bright.</summary>
+            public bool Dim;
         }
 
+        /// <summary>Empty numeric cell. Keeps the column occupied so the eye can scan down.</summary>
+        const string GearStatEmptyCell = "—";
+
         /// <summary>
-        /// Adds <c>Bullet Type  Fireballs</c> (offense tint) when this part is a weapon
+        /// Adds <c>Type  Fireballs</c> (offense tint) when this part is a weapon
         /// and the VFX bank has a category name for it. Non-weapons skip this line.
+        /// The line sits above the column header — it is a name, not a VAL / BONUS / FINAL triple.
         /// </summary>
         static void TryQueueWeaponBulletType(
-            List<AbilityLine> lines,
+            List<GearStatRow> lines,
             ShipFamilyComponentEntry entry,
             ShipFamilyDefinition family,
             int planetOrHullBankIndex = -1)
@@ -589,74 +588,149 @@ namespace TitanOrbit.Data
                 return;
 
             // Color index 1 = offense orange — same rail as Bullet Speed / Fire Rate.
-            TryQueueNote(lines, "Bullet Type  " + typeName, 1);
+            lines.Add(new GearStatRow
+            {
+                Banner = true,
+                BannerText = "Type  " + typeName,
+                ColorIndex = 1,
+            });
         }
 
         /// <summary>
-        /// Gear-card line. When this moon's fleet roll changes the number, the
-        /// player sees the catalog value, then the adjusted value, then +% or −%.
-        /// A 1× roll stays a single number.
+        /// One grid row. VAL is the part before this moon's fleet roll, BONUS is that
+        /// roll's percent (or — when the moon does not change it), FINAL is the part after the roll.
+        /// <paramref name="higherIsBetter"/> stays so drain callers are explicit; the percent
+        /// uses the row colour either way.
         /// </summary>
         static void TryQueueFleet(
-            List<AbilityLine> lines,
+            List<GearStatRow> lines,
             float original,
             float adjusted,
             string label,
             int colorIndex,
-            bool richText,
             bool higherIsBetter = true)
         {
+            // Drain growing is worse, but the card keeps one colour per stat so columns stay scannable.
+            _ = higherIsBetter;
             if (Mathf.Abs(original) < 0.05f && Mathf.Abs(adjusted) < 0.05f)
                 return;
 
-            string text = $"+{FormatStatValue(Mathf.Abs(original) >= 0.05f ? original : adjusted)} {label}";
-            if (TryBuildFleetArrow(original, adjusted, richText, higherIsBetter, out string arrow))
-                text = $"+{FormatStatValue(original)} {label}{arrow}";
-
-            lines.Add(new AbilityLine
+            float shownValue = Mathf.Abs(original) >= 0.05f ? original : adjusted;
+            float shownFinal = Mathf.Abs(adjusted) >= 0.05f ? adjusted : original;
+            lines.Add(new GearStatRow
             {
-                Text = text,
+                Label = label,
+                Value = FormatSignedStat(shownValue),
+                Bonus = TryFormatFleetPercent(original, adjusted, out string percent) ? percent : GearStatEmptyCell,
+                Final = FormatSignedStat(shownFinal),
                 ColorIndex = colorIndex,
             });
         }
 
         /// <summary>
-        /// Same as <see cref="TryQueueFleet"/>, and when hull aggregation changes
-        /// the gain (extra engines do not add a second Base) appends that hull number.
+        /// Percent stat (overdrive speed). The % sign lives on VAL and FINAL because the
+        /// stat itself is a percent. BONUS is still the moon's extra percent on top.
+        /// </summary>
+        static void TryQueuePercent(
+            List<GearStatRow> lines,
+            float originalPercent,
+            float adjustedPercent,
+            string label,
+            int colorIndex)
+        {
+            if (Mathf.Abs(originalPercent) < 0.05f && Mathf.Abs(adjustedPercent) < 0.05f)
+                return;
+
+            float shownValue = Mathf.Abs(originalPercent) >= 0.05f ? originalPercent : adjustedPercent;
+            float shownFinal = Mathf.Abs(adjustedPercent) >= 0.05f ? adjustedPercent : originalPercent;
+            lines.Add(new GearStatRow
+            {
+                Label = label,
+                Value = FormatSignedStat(shownValue) + "%",
+                Bonus = TryFormatFleetPercent(originalPercent, adjustedPercent, out string percent)
+                    ? percent
+                    : GearStatEmptyCell,
+                Final = FormatSignedStat(shownFinal) + "%",
+                ColorIndex = colorIndex,
+            });
+        }
+
+        /// <summary>
+        /// Same columns as <see cref="TryQueueFleet"/>. When hull aggregation changes the
+        /// gain (extra engines do not add a second Base, turn gear is PerExtra only),
+        /// a dim child row puts that ship contribution in FINAL.
         /// </summary>
         static void TryQueueFleetOrHull(
-            List<AbilityLine> lines,
+            List<GearStatRow> lines,
             float original,
             float adjusted,
             float hullGain,
             string label,
-            int colorIndex,
-            bool richText)
+            int colorIndex)
         {
-            bool fleet = TryBuildFleetArrow(original, adjusted, richText, higherIsBetter: true, out string arrow);
-            bool hullDiffers = Mathf.Abs(hullGain - adjusted) >= 0.05f && Mathf.Abs(hullGain) >= 0.05f;
-            if (!fleet)
+            bool hasPart = Mathf.Abs(original) >= 0.05f || Mathf.Abs(adjusted) >= 0.05f;
+            bool hasHull = Mathf.Abs(hullGain) >= 0.05f;
+            // Compare the hull figure to the post-bonus part number (the row's FINAL).
+            float compare = Mathf.Abs(adjusted) >= 0.05f ? adjusted : original;
+            bool hullDiffers = hasHull && Mathf.Abs(hullGain - compare) >= 0.05f;
+
+            if (!hasPart && !hasHull)
+                return;
+
+            // No catalog number — the only figure is what the ship gains.
+            if (!hasPart)
             {
-                TryQueueBaseAndCumulative(lines, original, hullGain, label, colorIndex);
+                lines.Add(new GearStatRow
+                {
+                    Label = label,
+                    Value = GearStatEmptyCell,
+                    Bonus = "hull",
+                    Final = FormatSignedStat(hullGain),
+                    ColorIndex = colorIndex,
+                });
                 return;
             }
 
-            if (Mathf.Abs(original) < 0.05f && Mathf.Abs(adjusted) < 0.05f && !hullDiffers)
+            TryQueueFleet(lines, original, adjusted, label, colorIndex);
+            if (!hullDiffers)
                 return;
 
-            string text = $"+{FormatStatValue(original)} {label}{arrow}";
-            if (hullDiffers)
-                text += $" · hull +{FormatStatValue(hullGain)}";
-
-            lines.Add(new AbilityLine
+            // Child row: same colour, quieter, FINAL is the amount added to the ship.
+            lines.Add(new GearStatRow
             {
-                Text = text,
+                Label = "hull",
+                Value = GearStatEmptyCell,
+                Bonus = GearStatEmptyCell,
+                Final = FormatSignedStat(hullGain),
                 ColorIndex = colorIndex,
+                Dim = true,
             });
         }
 
         /// <summary>
+        /// Moon fleet percent, e.g. <c>+20%</c> or <c>-5%</c>.
+        /// False when the roll does not move the number (1×, or a zero base).
+        /// </summary>
+        static bool TryFormatFleetPercent(float original, float adjusted, out string percent)
+        {
+            percent = null;
+            if (Mathf.Abs(original) < 0.0001f)
+                return false;
+            if (Mathf.Abs(adjusted - original) < 0.05f)
+                return false;
+
+            float signed = ((adjusted / original) - 1f) * 100f;
+            if (Mathf.Abs(signed) <= 0.05f)
+                return false;
+
+            string body = Mathf.Abs(signed).ToString("0.#", CultureInfo.InvariantCulture);
+            percent = signed > 0f ? "+" + body + "%" : "-" + body + "%";
+            return true;
+        }
+
+        /// <summary>
         /// <c> → +11.5 +15%</c> when the fleet roll moves the number.
+        /// Used by the extra-level hover and the short plain tooltip, not the gear grid.
         /// The percent keeps the line's stat colour. <paramref name="higherIsBetter"/>
         /// is retained so drain callers stay source-compatible; it no longer recolors.
         /// </summary>
@@ -668,89 +742,149 @@ namespace TitanOrbit.Data
             out string arrow)
         {
             arrow = string.Empty;
-            if (Mathf.Abs(original) < 0.0001f)
-                return false;
-            if (Mathf.Abs(adjusted - original) < 0.05f)
+            if (!TryFormatFleetPercent(original, adjusted, out string percent))
                 return false;
 
-            float signed = ((adjusted / original) - 1f) * 100f;
-            if (Mathf.Abs(signed) <= 0.05f)
-                return false;
-
-            string body = Mathf.Abs(signed).ToString("0.#", CultureInfo.InvariantCulture);
-            string pct = signed > 0f ? "+" + body + "%" : "-" + body + "%";
             _ = higherIsBetter;
             if (richText)
-                arrow = " → +" + FormatStatValue(adjusted) + " " + pct;
+                arrow = " → +" + FormatStatValue(adjusted) + " " + percent;
             else
-            {
-                arrow = " → +" + FormatStatValue(adjusted) + " (" + pct + ")";
-            }
+                arrow = " → +" + FormatStatValue(adjusted) + " (" + percent + ")";
 
             return true;
         }
 
-        static void TryQueue(List<AbilityLine> lines, float value, string label, int colorIndex)
+        /// <summary>
+        /// Paints queued rows as a column grid.
+        /// Rich text uses TextMeshPro position stops so VAL / BONUS / FINAL stay aligned
+        /// when the card width changes. Plain text pads the same columns for the legacy tooltip.
+        /// </summary>
+        static string FormatGearStatGrid(List<GearStatRow> lines, bool richText)
         {
-            if (Mathf.Abs(value) < 0.05f)
-                return;
-            lines.Add(new AbilityLine
+            if (lines == null || lines.Count == 0)
+                return richText ? "<color=#888888>—</color>" : "No stat bonus";
+
+            bool anyNumeric = false;
+            for (int i = 0; i < lines.Count; i++)
             {
-                Text = $"+{FormatStatValue(value)} {label}",
-                ColorIndex = colorIndex,
-            });
+                if (!lines[i].Banner)
+                {
+                    anyNumeric = true;
+                    break;
+                }
+            }
+
+            // Stops are a fraction of the description width, so an 8-up card and a
+            // wider window keep the same columns. The stat name sits at the left edge.
+            const string valuePos = "36%";
+            const string bonusPos = "58%";
+            const string finalPos = "80%";
+
+            var sb = new StringBuilder(384);
+
+            // --- Banner lines (bullet type) sit above the header ---
+            for (int i = 0; i < lines.Count; i++)
+            {
+                GearStatRow row = lines[i];
+                if (!row.Banner)
+                    continue;
+                AppendGearGridLineStart(sb, richText, row.ColorIndex, dim: false);
+                sb.Append(row.BannerText ?? string.Empty);
+                AppendGearGridLineEnd(sb, richText);
+            }
+
+            if (!anyNumeric)
+                return sb.ToString();
+
+            // --- Column header ---
+            // [TITAN-ORBIT] Ice caption, slightly smaller than the numbers, so the stats stay the loud part.
+            if (sb.Length > 0)
+                sb.Append('\n');
+            if (richText)
+            {
+                sb.Append("<size=85%><color=#9EC7F2>");
+                sb.Append("STAT");
+                sb.Append("<pos=").Append(valuePos).Append(">VAL");
+                sb.Append("<pos=").Append(bonusPos).Append(">BONUS");
+                sb.Append("<pos=").Append(finalPos).Append(">FINAL");
+                sb.Append("</color></size>");
+            }
+            else
+            {
+                sb.Append(FitGearCell("STAT", 8, right: false));
+                sb.Append(FitGearCell("VAL", 7, right: true));
+                sb.Append(FitGearCell("BONUS", 7, right: true));
+                sb.Append(FitGearCell("FINAL", 7, right: true));
+            }
+
+            // --- One row per stat ---
+            for (int i = 0; i < lines.Count; i++)
+            {
+                GearStatRow row = lines[i];
+                if (row.Banner)
+                    continue;
+
+                AppendGearGridLineStart(sb, richText, row.ColorIndex, row.Dim);
+                if (richText)
+                {
+                    sb.Append(row.Label ?? string.Empty);
+                    sb.Append("<pos=").Append(valuePos).Append('>').Append(row.Value ?? GearStatEmptyCell);
+                    sb.Append("<pos=").Append(bonusPos).Append('>').Append(row.Bonus ?? GearStatEmptyCell);
+                    // FINAL is the number the player came to compare — bold, full strength
+                    // even on the quieter hull child row.
+                    sb.Append("<pos=").Append(finalPos).Append("><alpha=#FF><b>");
+                    sb.Append(row.Final ?? GearStatEmptyCell);
+                    sb.Append("</b>");
+                }
+                else
+                {
+                    sb.Append(FitGearCell(row.Label, 8, right: false));
+                    sb.Append(FitGearCell(row.Value, 7, right: true));
+                    sb.Append(FitGearCell(row.Bonus, 7, right: true));
+                    sb.Append(FitGearCell(row.Final, 7, right: true));
+                }
+
+                AppendGearGridLineEnd(sb, richText);
+            }
+
+            return sb.ToString();
         }
 
         /// <summary>
-        /// <c>+6 base Move → +1.5 cumulative</c> when hull gain differs from the part's base;
-        /// otherwise <c>+6 base Move</c>.
+        /// Opens one grid line. Rich lines wrap the row in its category colour.
+        /// A newline is inserted when this is not the first line in <paramref name="sb"/>.
         /// </summary>
-        static void TryQueueBaseAndCumulative(
-            List<AbilityLine> lines,
-            float baseValue,
-            float cumulativeValue,
-            string label,
-            int colorIndex)
+        static void AppendGearGridLineStart(StringBuilder sb, bool richText, int colorIndex, bool dim)
         {
-            if (Mathf.Abs(baseValue) < 0.05f && Mathf.Abs(cumulativeValue) < 0.05f)
+            if (sb.Length > 0)
+                sb.Append('\n');
+            if (!richText)
                 return;
 
-            if (Mathf.Abs(baseValue) < 0.05f)
-            {
-                lines.Add(new AbilityLine
-                {
-                    Text = $"+{FormatStatValue(cumulativeValue)} {label} cumulative",
-                    ColorIndex = colorIndex,
-                });
-                return;
-            }
-
-            if (Mathf.Abs(cumulativeValue - baseValue) < 0.05f)
-            {
-                lines.Add(new AbilityLine
-                {
-                    Text = $"+{FormatStatValue(baseValue)} base {label}",
-                    ColorIndex = colorIndex,
-                });
-                return;
-            }
-
-            lines.Add(new AbilityLine
-            {
-                Text = $"+{FormatStatValue(baseValue)} base {label} → +{FormatStatValue(cumulativeValue)} cumulative",
-                ColorIndex = colorIndex,
-            });
+            Color c = ResolveAbilityLineColor(colorIndex);
+            sb.Append("<color=#").Append(ColorUtility.ToHtmlStringRGB(c)).Append('>');
+            if (dim)
+                sb.Append("<alpha=#99>");
         }
 
-        static void TryQueueNote(List<AbilityLine> lines, string note, int colorIndex)
+        /// <summary>Closes the category colour tag opened by <see cref="AppendGearGridLineStart"/>.</summary>
+        static void AppendGearGridLineEnd(StringBuilder sb, bool richText)
         {
-            if (string.IsNullOrWhiteSpace(note))
-                return;
-            lines.Add(new AbilityLine
-            {
-                Text = note,
-                ColorIndex = colorIndex,
-            });
+            if (richText)
+                sb.Append("</color>");
+        }
+
+        /// <summary>
+        /// Pads a plain-text cell to <paramref name="width"/> characters.
+        /// Longer labels are cut so a wide name cannot shove the next column over.
+        /// </summary>
+        static string FitGearCell(string text, int width, bool right)
+        {
+            if (string.IsNullOrEmpty(text))
+                text = string.Empty;
+            if (text.Length > width)
+                text = text.Substring(0, width);
+            return right ? text.PadLeft(width) : text.PadRight(width);
         }
 
         static Color ResolveAbilityLineColor(int colorIndex)
@@ -798,6 +932,17 @@ namespace TitanOrbit.Data
             if (Mathf.Abs(value - Mathf.Round(value)) < 0.05f)
                 return Mathf.RoundToInt(value).ToString();
             return value.ToString("0.#");
+        }
+
+        /// <summary>
+        /// Gear-grid number with a sign, e.g. <c>+6</c> or <c>-2</c>.
+        /// Near-zero values still print <c>+0</c> — callers skip those rows before this runs.
+        /// </summary>
+        static string FormatSignedStat(float value)
+        {
+            if (value < -0.05f)
+                return "-" + FormatStatValue(Mathf.Abs(value));
+            return "+" + FormatStatValue(value);
         }
 
         /// <summary>

@@ -313,7 +313,8 @@ namespace TitanOrbit.UI
         private GridLayoutGroup _moonDockStoreGrid;
         private string _moonDockStoreBuiltForFamilyKey;
         private int _moonDockEquipmentCardLayoutVersionBuilt = -1;
-        private const int MoonDockEquipmentCardLayoutVersion = 10;
+        /// <summary>Bump when gear-card chrome changes so cached family grids rebuild in place.</summary>
+        private const int MoonDockEquipmentCardLayoutVersion = 11;
 
         private sealed class MoonDockStoreCardBinding
         {
@@ -5164,6 +5165,10 @@ namespace TitanOrbit.UI
                 MoonDockStoreCardBinding card = _moonDockStoreCards[i];
                 if (card?.descriptionText == null)
                     continue;
+                // Component grids are one line per stat. A wider card can use a slightly larger face;
+                // a narrow 8-up tile stays at 7 so BONUS and FINAL do not collide.
+                if (card.isComponent)
+                    card.descriptionText.fontSize = tileWidth >= 140f ? 8f : 7f;
                 float preferred = MeasureMoonDockDescriptionHeight(card.descriptionText, textWidth);
                 if (preferred > maxDesc)
                     maxDesc = preferred;
@@ -5234,6 +5239,19 @@ namespace TitanOrbit.UI
             float lineH = tmp != null ? Mathf.Max(10f, tmp.fontSize * 1.25f) : 10f;
             if (string.IsNullOrEmpty(text))
                 return MoonDockEquipmentAbilityAreaMinHeight;
+
+            // The stat grid is one row per newline. Wrapping those rows would split VAL from FINAL.
+            if (tmp != null && !tmp.enableWordWrapping)
+            {
+                int rows = 1;
+                for (int i = 0; i < text.Length; i++)
+                {
+                    if (text[i] == '\n')
+                        rows++;
+                }
+
+                return Mathf.Clamp(rows * lineH, MoonDockEquipmentAbilityAreaMinHeight, MoonDockEquipmentAbilityAreaMaxHeight);
+            }
 
             float charW = Mathf.Max(3.5f, (tmp != null ? tmp.fontSize : 8f) * 0.48f);
             int cols = Mathf.Max(8, Mathf.FloorToInt(Mathf.Max(16f, width) / charW));
@@ -5591,6 +5609,11 @@ namespace TitanOrbit.UI
                 entry, shipLevel, family, maxLines, planetOrHullBankIndex);
         }
 
+        /// <summary>
+        /// Paints a component card's stat block as a VAL / BONUS / FINAL grid.
+        /// Word wrap stays off so a stat name cannot push the columns onto the next line.
+        /// Called when the card is built and again whenever the dock refreshes prices.
+        /// </summary>
         private static void ApplyEquipmentCardAbilityDescription(
             TextMeshProUGUI descriptionTmp,
             ShipFamilyComponentEntry entry,
@@ -5600,6 +5623,12 @@ namespace TitanOrbit.UI
             if (descriptionTmp == null)
                 return;
 
+            // [UNITY] Left edge is the STAT column. Centered text would slide every <pos> stop.
+            descriptionTmp.richText = true;
+            descriptionTmp.enableWordWrapping = false;
+            descriptionTmp.alignment = TextAlignmentOptions.TopLeft;
+            descriptionTmp.overflowMode = TextOverflowModes.Overflow;
+            descriptionTmp.maxVisibleLines = 24;
             descriptionTmp.text = entry != null
                 ? BuildMoonDockComponentStatRichText(
                     entry, shipLevel, family, planetOrHullBankIndex: ResolveStoreFamilyBulletBankIndex())
@@ -5721,6 +5750,8 @@ namespace TitanOrbit.UI
             var descPlateBg = descPlateGo.AddComponent<Image>();
             descPlateBg.color = MoonDockEquipmentStatsFooterBg;
             descPlateBg.raycastTarget = false;
+            // [UNITY] Clip the stat grid to this plate so a wide FINAL column cannot paint onto the next card.
+            descPlateGo.AddComponent<RectMask2D>();
             var descPlateVlg = descPlateGo.AddComponent<VerticalLayoutGroup>();
             descPlateVlg.padding = new RectOffset(4, 4, 4, 4);
             descPlateVlg.spacing = 0f;

@@ -11,8 +11,9 @@ namespace TitanOrbit.UI
     /// <summary>
     /// Hidden beta field-notes card. Game Manager → Beta — Field Notes (default off) is the
     /// only switch. While that checkbox is off this object does nothing visible, so a public
-    /// build never shows NOTES. While it is on, a top-center NOTES chip opens a right-side
-    /// card that stamps the local ship, takes a typed note, and SENDs both to the server log.
+    /// build never shows NOTES. While it is on, a NOTES chip on the top edge — just to the
+    /// right of the speedometer — opens a right-side card that stamps the local ship, takes
+    /// a typed note, and SENDs both to the server log.
     /// Saved rows list underneath, each with DELETE.
     /// <para>
     /// The stamp is taken when the card opens, not on a clock. Closing and opening again
@@ -31,6 +32,28 @@ namespace TitanOrbit.UI
         static readonly Color InputColor = new Color(0.03f, 0.05f, 0.09f, 1f);
         static readonly Color MutedColor = new Color(0.55f, 0.68f, 0.82f, 0.9f);
         static readonly Color DeleteColor = new Color(0.95f, 0.45f, 0.42f, 1f);
+
+        /// <summary>NOTES launcher size. A short chip, not a panel — it only opens the card.</summary>
+        const float LauncherWidth = 120f;
+
+        /// <summary>Chip height. Short enough to share the top band with the speedometer.</summary>
+        const float LauncherHeight = 32f;
+
+        /// <summary>
+        /// Half of the speedometer's slim width (258px in <see cref="ShipSpeedometerHUD"/>).
+        /// Both widgets use a top-center anchor, so this is the meter's right edge in the
+        /// same pixel space as the chip.
+        /// </summary>
+        const float SpeedometerHalfWidth = 129f;
+
+        /// <summary>Clear air between the speedometer's right edge and the NOTES chip.</summary>
+        const float GapRightOfSpeedometer = 16f;
+
+        /// <summary>
+        /// Same top inset as the speedometer's vertical margin, so the chip's top lines
+        /// up with the meter instead of sitting on the bars.
+        /// </summary>
+        const float LauncherTopInset = 6f;
 
         RectTransform _launcher;
         GameObject _card;
@@ -131,17 +154,24 @@ namespace TitanOrbit.UI
             _card.SetActive(false);
         }
 
-        /// <summary>Small top-center chip. Hidden while the card is open, and while the checkbox is off.</summary>
+        /// <summary>
+        /// Small chip on the top edge, just right of the speedometer.
+        /// Hidden while the card is open, and while the checkbox is off.
+        /// Top-center used to cover the SPD / ACC bars.
+        /// </summary>
         void BuildLauncher()
         {
             var go = new GameObject("NotesChip", typeof(RectTransform), typeof(Image), typeof(Button));
             go.transform.SetParent(transform, false);
             _launcher = go.GetComponent<RectTransform>();
+            // Top-center anchor matches the speedometer, so X is pixels from screen center.
+            // Pivot is the chip's own top-center, so we step half the chip past the gap.
             _launcher.anchorMin = new Vector2(0.5f, 1f);
             _launcher.anchorMax = new Vector2(0.5f, 1f);
             _launcher.pivot = new Vector2(0.5f, 1f);
-            _launcher.anchoredPosition = new Vector2(0f, -10f);
-            _launcher.sizeDelta = new Vector2(120f, 32f);
+            float x = SpeedometerHalfWidth + GapRightOfSpeedometer + LauncherWidth * 0.5f;
+            _launcher.anchoredPosition = new Vector2(x, -LauncherTopInset);
+            _launcher.sizeDelta = new Vector2(LauncherWidth, LauncherHeight);
             go.GetComponent<Image>().color = FillColor;
 
             var button = go.GetComponent<Button>();
