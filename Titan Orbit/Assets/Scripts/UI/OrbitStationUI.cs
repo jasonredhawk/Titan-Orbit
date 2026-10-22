@@ -314,7 +314,7 @@ namespace TitanOrbit.UI
         private string _moonDockStoreBuiltForFamilyKey;
         private int _moonDockEquipmentCardLayoutVersionBuilt = -1;
         /// <summary>Bump when gear-card chrome changes so cached family grids rebuild in place.</summary>
-        private const int MoonDockEquipmentCardLayoutVersion = 11;
+        private const int MoonDockEquipmentCardLayoutVersion = 12;
 
         private sealed class MoonDockStoreCardBinding
         {
@@ -326,6 +326,7 @@ namespace TitanOrbit.UI
             public Image iconImage;
             public TextMeshProUGUI iconGlyph;
             public TextMeshProUGUI titleText;
+            public TextMeshProUGUI roleText;
             public TextMeshProUGUI descriptionText;
             public TextMeshProUGUI sublineText;
             public ShipUpgradeTreePowerBarUI powerBar;
@@ -4575,6 +4576,7 @@ namespace TitanOrbit.UI
             }
 
             int shipLevel = GetStorePurchaseLevel();
+            GearStorePrimaryContext.Prepare();
             // [TITAN-ORBIT] GameManager.DebugFreeGear — Inspector toggle on NceGameRoot.
             // Same convenience as the free ship-tree: skip the gem check, keep slot / owned gates.
             bool debugFreeGear = GameManager.IsDebugFreeGearActive;
@@ -4586,6 +4588,9 @@ namespace TitanOrbit.UI
                 bool canBuy;
                 float price;
                 string subline;
+                ShipComponentStackAggregation.GearCardRole gearRole =
+                    ShipComponentStackAggregation.GearCardRole.Unclassified;
+                Color gearAccent = OrbitDockSidebarPanelUI.EquipmentAccent;
                 if (card.isComponent)
                 {
                     ShipFamilyComponentEntry componentEntry = null;
@@ -4611,9 +4616,22 @@ namespace TitanOrbit.UI
                         if (!string.IsNullOrEmpty(bankName))
                             subline = bankName + " · " + subline;
                     }
+                    if (componentEntry != null)
+                    {
+                        gearRole = GearStorePrimaryContext.Classify(componentEntry);
+                        gearAccent = ShipAbilityCategoryColors.GetPowerBreakdownStatColorForHud(
+                            ShipComponentStoreData.GetAbilityColorStatIndex(componentEntry), 0.92f);
+                    }
                     if (card.descriptionText != null && componentEntry != null)
+                    {
+                        ResolveOldPrimary(
+                            componentEntry, shipLevel, family, ResolveStoreFamilyBulletBankIndex(),
+                            out bool hasDisplaced, out bool oldIsThisCard, out ShipComponentAbilityStats oldAdjusted);
                         ApplyEquipmentCardAbilityDescription(
-                            card.descriptionText, componentEntry, shipLevel, family);
+                            card.descriptionText, componentEntry, shipLevel, family, gearRole,
+                            hasDisplaced, oldAdjusted, oldIsThisCard);
+                    }
+                    ApplyGearRoleLabel(card.roleText, gearRole);
                     if (card.powerBar != null && componentEntry != null)
                     {
                         ApplyMoonDockGearPowerBar(
@@ -4682,14 +4700,7 @@ namespace TitanOrbit.UI
                 if (card.bgImage != null)
                 {
                     if (card.isComponent)
-                    {
-                        float alpha = canBuy ? 0.98f : 0.72f;
-                        card.bgImage.color = new Color(
-                            MoonDockEquipmentCardBg.r,
-                            MoonDockEquipmentCardBg.g,
-                            MoonDockEquipmentCardBg.b,
-                            alpha);
-                    }
+                        RestoreMoonDockEquipmentCardColors(card.root, card.bgImage, card.titleText, canBuy, gearAccent);
                     else
                     {
                         var c = card.bgImage.color;
@@ -4712,6 +4723,7 @@ namespace TitanOrbit.UI
                 Destroy(_moonDockStoreGridContent.GetChild(c).gameObject);
 
             int shipLevel = GetStorePurchaseLevel();
+            GearStorePrimaryContext.Prepare();
             if (family?.components != null)
             {
                 var sorted = new List<ShipFamilyComponentEntry>();
@@ -4995,22 +5007,31 @@ namespace TitanOrbit.UI
                 accentColor,
                 $"{price:F0}g",
                 includePowerBar: true,
+                includeRoleLabel: true,
                 out GameObject root,
                 out _,
                 out Image cardBg,
                 out Image iconImg,
                 out TextMeshProUGUI iconGlyph,
                 out TextMeshProUGUI titleTmp,
+                out TextMeshProUGUI roleTmp,
                 out TextMeshProUGUI descriptionTmp,
                 out TextMeshProUGUI sublineTmp,
                 out ShipUpgradeTreePowerBarUI powerBar,
                 out Button buyBtn,
                 out Image buyImg);
 
+            ShipComponentStackAggregation.GearCardRole gearRole = GearStorePrimaryContext.Classify(entry);
             if (titleTmp != null)
                 titleTmp.text = ShipComponentStoreData.GetDisplayName(entry);
+            ResolveOldPrimary(
+                entry, shipLevel, family, familyBank,
+                out bool hasDisplaced, out bool oldIsThisCard, out ShipComponentAbilityStats oldAdjusted);
             if (descriptionTmp != null)
-                ApplyEquipmentCardAbilityDescription(descriptionTmp, entry, shipLevel, family);
+                ApplyEquipmentCardAbilityDescription(
+                    descriptionTmp, entry, shipLevel, family, gearRole, hasDisplaced, oldAdjusted, oldIsThisCard);
+            ApplyGearRoleLabel(roleTmp, gearRole);
+            RestoreMoonDockEquipmentCardColors(root, cardBg, titleTmp, canBuy: true, accentColor);
             if (sublineTmp != null)
             {
                 string sub = FormatMoonDockEquipmentSubline(shipLevel, power, owned: false);
@@ -5061,6 +5082,7 @@ namespace TitanOrbit.UI
                     iconImage = iconImg,
                     iconGlyph = iconGlyph,
                     titleText = titleTmp,
+                    roleText = roleTmp,
                     descriptionText = descriptionTmp,
                     sublineText = sublineTmp,
                     powerBar = powerBar,
@@ -5083,12 +5105,14 @@ namespace TitanOrbit.UI
                 accentColor,
                 $"{StoreItemData.GetPrice(itemType, shipLevel):F0}g",
                 includePowerBar: false,
+                includeRoleLabel: false,
                 out GameObject root,
                 out _,
                 out Image cardBg,
                 out Image iconImg,
                 out TextMeshProUGUI iconGlyph,
                 out TextMeshProUGUI titleTmp,
+                out _,
                 out TextMeshProUGUI descriptionTmp,
                 out TextMeshProUGUI sublineTmp,
                 out _,
@@ -5175,7 +5199,19 @@ namespace TitanOrbit.UI
             }
 
             maxDesc = Mathf.Clamp(maxDesc, MoonDockEquipmentAbilityAreaMinHeight, MoonDockEquipmentAbilityAreaMaxHeight);
-            float cardHeight = ComputeMoonDockEquipmentCardHeight(iconHeight, maxDesc, includePowerBar: true);
+            bool includeRoleRow = false;
+            for (int r = 0; r < _moonDockStoreCards.Count; r++)
+            {
+                TextMeshProUGUI roleLabel = _moonDockStoreCards[r]?.roleText;
+                if (roleLabel != null && roleLabel.gameObject.activeSelf)
+                {
+                    includeRoleRow = true;
+                    break;
+                }
+            }
+
+            float cardHeight = ComputeMoonDockEquipmentCardHeight(
+                iconHeight, maxDesc, includePowerBar: true, includeRoleRow: includeRoleRow);
 
             for (int i = 0; i < _moonDockStoreCards.Count; i++)
             {
@@ -5292,18 +5328,23 @@ namespace TitanOrbit.UI
             return Mathf.Clamp(lines * lineH, MoonDockEquipmentAbilityAreaMinHeight, MoonDockEquipmentAbilityAreaMaxHeight);
         }
 
-        private static float ComputeMoonDockEquipmentCardHeight(float iconHeight, float descHeight, bool includePowerBar)
+        private static float ComputeMoonDockEquipmentCardHeight(
+            float iconHeight,
+            float descHeight,
+            bool includePowerBar,
+            bool includeRoleRow = false)
         {
             const float verticalPadding = 9f;
             const float spacing = 4f;
-            int gaps = includePowerBar ? 6 : 5;
+            int gaps = (includePowerBar ? 6 : 5) + (includeRoleRow ? 1 : 0);
             float accent = 4f;
             float title = 16f;
+            float role = includeRoleRow ? 12f : 0f;
             float descPlate = descHeight + 8f;
             float power = includePowerBar ? MoonDockEquipmentPowerBarHeight + 4f : 0f;
             float subline = 12f;
             float action = 22f;
-            return verticalPadding + gaps * spacing + accent + title + iconHeight + descPlate + power + subline + action;
+            return verticalPadding + gaps * spacing + accent + title + role + iconHeight + descPlate + power + subline + action;
         }
 
         private static void ApplyMoonDockEquipmentTileIcon(Image iconImage, TextMeshProUGUI iconGlyph, Sprite sprite, string fallbackGlyph)
@@ -5597,20 +5638,145 @@ namespace TitanOrbit.UI
             return ResolveEquippedFamilyBulletBankIndex();
         }
 
+        /// <summary>
+        /// Puts the gear card back on the standard dock colours: navy plate, ice frame,
+        /// white title, category accent. Primary and Extra are words under the title,
+        /// not a second paint of the card.
+        /// </summary>
+        private static void RestoreMoonDockEquipmentCardColors(
+            GameObject root,
+            Image bgImage,
+            TextMeshProUGUI title,
+            bool canBuy,
+            Color categoryAccent)
+        {
+            float alpha = canBuy ? 0.98f : 0.72f;
+            if (bgImage != null)
+            {
+                bgImage.color = new Color(
+                    MoonDockEquipmentCardBg.r,
+                    MoonDockEquipmentCardBg.g,
+                    MoonDockEquipmentCardBg.b,
+                    alpha);
+            }
+
+            if (title != null)
+                title.color = Color.white;
+            if (root == null)
+                return;
+
+            Outline outline = root.GetComponent<Outline>();
+            if (outline != null)
+                outline.effectColor = MoonDockStoreCardFrameColor;
+
+            Transform accentTransform = root.transform.Find("Accent");
+            if (accentTransform != null)
+            {
+                Image accentImage = accentTransform.GetComponent<Image>();
+                if (accentImage != null)
+                    accentImage.color = categoryAccent;
+            }
+
+            Transform plateTransform = root.transform.Find("DescriptionPlate");
+            if (plateTransform != null)
+            {
+                Image plateImage = plateTransform.GetComponent<Image>();
+                if (plateImage != null)
+                    plateImage.color = MoonDockEquipmentStatsFooterBg;
+            }
+        }
+
+        /// <summary>
+        /// Caption under the part name. Primary is the best of that type, or the
+        /// card that would become it. Extra is every other piece of the type.
+        /// Weapons and unresolved ships leave the line off.
+        /// </summary>
+        private static void ApplyGearRoleLabel(
+            TextMeshProUGUI label,
+            ShipComponentStackAggregation.GearCardRole role)
+        {
+            if (label == null)
+                return;
+
+            string text = role == ShipComponentStackAggregation.GearCardRole.Primary
+                ? "Primary"
+                : role == ShipComponentStackAggregation.GearCardRole.Each
+                    ? "Extra"
+                    : string.Empty;
+            label.text = text;
+            bool show = text.Length > 0;
+            if (label.gameObject.activeSelf != show)
+                label.gameObject.SetActive(show);
+
+            LayoutElement layout = label.GetComponent<LayoutElement>();
+            if (layout != null)
+            {
+                layout.preferredHeight = show ? 12f : 0f;
+                layout.minHeight = show ? 10f : 0f;
+                layout.flexibleHeight = 0f;
+            }
+        }
+
+        /// <summary>
+        /// The owned primary of this card’s type. When that piece is a different part,
+        /// <paramref name="adjusted"/> is its post-bonus total. When it is this card,
+        /// <paramref name="oldIsThisCard"/> is set and the grid uses this card’s own total
+        /// so OLD still prints even though it matches.
+        /// </summary>
+        private static void ResolveOldPrimary(
+            ShipFamilyComponentEntry entry,
+            int shipLevel,
+            ShipFamilyDefinition family,
+            int bankIndex,
+            out bool hasDisplaced,
+            out bool oldIsThisCard,
+            out ShipComponentAbilityStats adjusted)
+        {
+            hasDisplaced = false;
+            oldIsThisCard = false;
+            adjusted = default;
+            if (entry == null
+                || !GearStorePrimaryContext.TryGetOwnedPrimary(
+                    entry, out string oldId, out ShipComponentAbilityStats raw, out ShipFamilySpecialBonuses fleet))
+                return;
+
+            if (string.Equals(oldId, entry.componentId, System.StringComparison.OrdinalIgnoreCase))
+            {
+                oldIsThisCard = true;
+                return;
+            }
+
+            ShipFamilyComponentEntry oldEntry = null;
+            if (family == null || !family.TryGetComponentEntry(oldId, out oldEntry) || oldEntry == null)
+                GearStorePrimaryContext.TryGetHullComponentEntry(oldId, out oldEntry);
+
+            adjusted = ShipComponentStoreData.GetDisplayedAdjustedStats(
+                raw, shipLevel, oldId, fleet, oldEntry, family, bankIndex);
+            hasDisplaced = true;
+        }
+
         private static string BuildMoonDockComponentStatRichText(
             ShipFamilyComponentEntry entry,
             int shipLevel,
             ShipFamilyDefinition family,
             int maxLines = 14,
-            int planetOrHullBankIndex = -1)
+            int planetOrHullBankIndex = -1,
+            ShipComponentStackAggregation.GearCardRole role = ShipComponentStackAggregation.GearCardRole.Unclassified,
+            bool hasDisplacedPrimary = false,
+            ShipComponentAbilityStats displacedAdjusted = default,
+            bool oldPrimaryIsThisCard = false)
         {
             // [TITAN-ORBIT] Compact Extra Level list (family muls already baked into the numbers).
+            // BEST keeps the full part. EACH prints PerExtra × ship level after the moon roll.
+            // Primary OLD is always shown. DLTA is the post-bonus total minus that old value.
             return ShipComponentStoreData.BuildAbilityDescriptionRichText(
-                entry, shipLevel, family, maxLines, planetOrHullBankIndex);
+                entry, shipLevel, family, maxLines, planetOrHullBankIndex, role,
+                hasDisplacedPrimary, displacedAdjusted, oldPrimaryIsThisCard);
         }
 
         /// <summary>
         /// Paints a component card's stat block as a VAL / BONUS / FINAL grid.
+        /// BEST and EACH replace the STAT header so a row of cards reads at a glance.
         /// Word wrap stays off so a stat name cannot push the columns onto the next line.
         /// Called when the card is built and again whenever the dock refreshes prices.
         /// </summary>
@@ -5618,7 +5784,11 @@ namespace TitanOrbit.UI
             TextMeshProUGUI descriptionTmp,
             ShipFamilyComponentEntry entry,
             int shipLevel,
-            ShipFamilyDefinition family = null)
+            ShipFamilyDefinition family = null,
+            ShipComponentStackAggregation.GearCardRole role = ShipComponentStackAggregation.GearCardRole.Unclassified,
+            bool hasDisplacedPrimary = false,
+            ShipComponentAbilityStats displacedAdjusted = default,
+            bool oldPrimaryIsThisCard = false)
         {
             if (descriptionTmp == null)
                 return;
@@ -5631,7 +5801,9 @@ namespace TitanOrbit.UI
             descriptionTmp.maxVisibleLines = 24;
             descriptionTmp.text = entry != null
                 ? BuildMoonDockComponentStatRichText(
-                    entry, shipLevel, family, planetOrHullBankIndex: ResolveStoreFamilyBulletBankIndex())
+                    entry, shipLevel, family, planetOrHullBankIndex: ResolveStoreFamilyBulletBankIndex(), role: role,
+                    hasDisplacedPrimary: hasDisplacedPrimary, displacedAdjusted: displacedAdjusted,
+                    oldPrimaryIsThisCard: oldPrimaryIsThisCard)
                 : string.Empty;
             descriptionTmp.ForceMeshUpdate(true);
 
@@ -5652,12 +5824,14 @@ namespace TitanOrbit.UI
             Color accentColor,
             string actionLabel,
             bool includePowerBar,
+            bool includeRoleLabel,
             out GameObject root,
             out Image accentImage,
             out Image bgImage,
             out Image iconImage,
             out TextMeshProUGUI iconGlyphText,
             out TextMeshProUGUI titleText,
+            out TextMeshProUGUI roleText,
             out TextMeshProUGUI descriptionText,
             out TextMeshProUGUI sublineText,
             out ShipUpgradeTreePowerBarUI powerBar,
@@ -5665,6 +5839,7 @@ namespace TitanOrbit.UI
             out Image actionButtonImage)
         {
             powerBar = null;
+            roleText = null;
             float cardHeight = MoonDockEquipmentCardHeight;
 
             root = new GameObject(tileName);
@@ -5715,6 +5890,26 @@ namespace TitanOrbit.UI
             titleText.overflowMode = TextOverflowModes.Ellipsis;
             titleText.raycastTarget = false;
             if (fontAsset != null) titleText.font = fontAsset;
+
+            if (includeRoleLabel)
+            {
+                // Sits under the part name. Height stays 0 until Primary or Extra is set.
+                var roleGo = new GameObject("Role");
+                roleGo.transform.SetParent(root.transform, false);
+                var roleLe = roleGo.AddComponent<LayoutElement>();
+                roleLe.preferredHeight = 0f;
+                roleLe.minHeight = 0f;
+                roleLe.flexibleHeight = 0f;
+                roleText = roleGo.AddComponent<TextMeshProUGUI>();
+                roleText.fontSize = 8f;
+                roleText.fontStyle = FontStyles.Bold;
+                roleText.alignment = TextAlignmentOptions.Center;
+                roleText.color = new Color(0.82f, 0.86f, 0.94f, 0.92f);
+                roleText.overflowMode = TextOverflowModes.Ellipsis;
+                roleText.raycastTarget = false;
+                if (fontAsset != null) roleText.font = fontAsset;
+                roleGo.SetActive(false);
+            }
 
             var iconGo = new GameObject("Icon");
             iconGo.transform.SetParent(root.transform, false);

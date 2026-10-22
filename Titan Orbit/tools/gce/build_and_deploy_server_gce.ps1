@@ -22,7 +22,8 @@
 # Flags (any order, case-insensitive):
 #   buildOnly   - Unity build only (skip deploy)
 #   deployOnly  - skip Unity build; deploy existing TitanOrbitLinux1 folder
-#   freeDisk / useGcs / aggressive / useIap - passed through to deploy (defaults: freeDisk useGcs)
+#   freeDisk / useGcs / aggressive / useIap / resetVm - passed through to deploy
+#   (no-arg default: freeDisk useGcs resetVm — same as the Unity + Deploy menu)
 #   Plus optional deploy positionals: [build folder] [project id] [bucket]
 
 param()
@@ -44,6 +45,7 @@ $flags = @{
     useGcs     = $false
     aggressive = $false
     useIap     = $false
+    resetVm    = $false
 }
 $positional = [System.Collections.Generic.List[string]]::new()
 foreach ($a in $args) {
@@ -54,6 +56,7 @@ foreach ($a in $args) {
     if ($t -match '^(?i)useGcs$') { $flags.useGcs = $true; continue }
     if ($t -match '^(?i)aggressive$') { $flags.aggressive = $true; continue }
     if ($t -match '^(?i)useIap$') { $flags.useIap = $true; continue }
+    if ($t -match '^(?i)resetVm$') { $flags.resetVm = $true; continue }
     $positional.Add($t) | Out-Null
 }
 
@@ -64,9 +67,11 @@ if ($flags.buildOnly -and $flags.deployOnly) {
 
 # Day-to-day default when deploying: free disk on VM + GCS upload path.
 $deploying = -not $flags.buildOnly
-if ($deploying -and -not $flags.freeDisk -and -not $flags.useGcs -and -not $flags.aggressive -and -not $flags.useIap -and $positional.Count -eq 0) {
+if ($deploying -and -not $flags.freeDisk -and -not $flags.useGcs -and -not $flags.aggressive -and -not $flags.useIap -and -not $flags.resetVm -and $positional.Count -eq 0) {
     $flags.freeDisk = $true
     $flags.useGcs = $true
+    # Match Unity + Deploy: GCS install stops the service, then reset_gce_vm.bat boots it again.
+    $flags.resetVm = $true
 }
 
 function Get-UnityEditorVersion {
@@ -161,7 +166,7 @@ Write-Host "=== Titan Orbit: build + deploy Linux server (GCE) ==="
 Write-Host "Repo root:  $repoRoot"
 Write-Host "Mode:       $(if ($flags.buildOnly) { 'buildOnly' } elseif ($flags.deployOnly) { 'deployOnly' } else { 'build + deploy' })"
 if ($deploying) {
-    Write-Host "Deploy:     freeDisk=$($flags.freeDisk) useGcs=$($flags.useGcs) aggressive=$($flags.aggressive) useIap=$($flags.useIap)"
+    Write-Host "Deploy:     freeDisk=$($flags.freeDisk) useGcs=$($flags.useGcs) aggressive=$($flags.aggressive) useIap=$($flags.useIap) resetVm=$($flags.resetVm)"
 }
 Write-Host ""
 
@@ -257,7 +262,7 @@ else {
 # --- [2] Deploy to GCE ---
 if ($flags.buildOnly) {
     Write-Host "buildOnly set - skipping deploy."
-    Write-Host "When ready: .\deploy_server_gce.bat freeDisk useGcs"
+    Write-Host "When ready: .\deploy_server_gce.bat freeDisk useGcs resetVm"
     Write-Host ""
     exit 0
 }
@@ -268,6 +273,7 @@ if ($flags.freeDisk) { $deployArgs.Add("freeDisk") | Out-Null }
 if ($flags.useGcs) { $deployArgs.Add("useGcs") | Out-Null }
 if ($flags.aggressive) { $deployArgs.Add("aggressive") | Out-Null }
 if ($flags.useIap) { $deployArgs.Add("useIap") | Out-Null }
+if ($flags.resetVm) { $deployArgs.Add("resetVm") | Out-Null }
 foreach ($p in $positional) { $deployArgs.Add($p) | Out-Null }
 
 $pipeline = Join-Path $gceDir "deploy_server_gce_pipeline.ps1"

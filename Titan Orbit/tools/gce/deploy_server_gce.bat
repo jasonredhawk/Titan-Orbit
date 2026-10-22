@@ -4,13 +4,16 @@ setlocal
 REM Full deploy pipeline: optional VM disk cleanup, upload, install on VM, restart systemd or hard VM reset.
 REM Implemented in deploy_server_gce_pipeline.ps1 (OpenSSH upload path and/or GCS + VM pull).
 REM
-REM Flags (any order, case-insensitive):  freeDisk   useGcs   aggressive   useIap
+REM Flags (any order, case-insensitive):  freeDisk   useGcs   aggressive   useIap   resetVm
 REM   freeDisk    Run vm_free_disk_for_server_upload_gce.bat first (clears /tmp etc. on the VM).
 REM   useGcs      Run upload_linux_build_to_gcs.bat, then pull tarball from GCS on the VM and extract
 REM               (VM default service account needs storage.objectViewer on the bucket — see README).
 REM   aggressive  With freeDisk: stronger cleanup (removes whole game install, ~/.cache, etc.). Implied when freeDisk+useGcs.
 REM   useIap      IAP for free-disk + GCS-install SSH; legacy match: after deploy runs reset_gce_vm.bat
 REM               instead of systemctl restart (same as this .bat before the pipeline split).
+REM   resetVm     After a successful upload, run reset_gce_vm.bat (hard reboot). Does not switch SSH to IAP.
+REM               Unity + Deploy passes this. Install already stops titanorbit-server; a VM reset is what
+REM               brings a joinable game back. SSH systemctl restart is the path when this flag is absent.
 REM
 REM Then pass through the same arguments as upload_linux_build_to_gce.bat / upload_linux_build_to_gcs.bat:
 REM   [build folder] [project id] [bucket when useGcs]   and optional useIap

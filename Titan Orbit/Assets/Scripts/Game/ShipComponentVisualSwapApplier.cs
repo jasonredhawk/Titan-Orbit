@@ -34,6 +34,16 @@ namespace TitanOrbit.Game
 
         int _lastEquipmentKey = -1;
         int _lastBankIndex = int.MinValue;
+
+        /// <summary>
+        /// Counts mesh rebuilds on this hull. The Orbit Menu "Your Ship" camera
+        /// reframes when this changes, so a bought or discarded part shows up
+        /// on the same frame the mesh swaps. MEGA hulls never increment it
+        /// (this applier skips them). Starts at 0 each time the proxy is created.
+        /// </summary>
+        public int VisualRevision => _visualRevision;
+
+        int _visualRevision;
         bool _lastHealing;
         bool _bound;
 
@@ -154,6 +164,10 @@ namespace TitanOrbit.Game
             // jets so leftover purchased flames do not stay on the original mount.
             if (!changed && !force && !equipmentChanged)
                 return;
+
+            // [TITAN-ORBIT] Portrait camera reads this after LateUpdate order 90.
+            // Bump only when we are about to rebuild meshes, not on idle frames.
+            _visualRevision++;
 
             RefreshDependents(remapNonWeapons, propulsionMountsChanged);
 

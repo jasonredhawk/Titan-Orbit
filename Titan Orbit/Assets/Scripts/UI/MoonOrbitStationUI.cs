@@ -1097,6 +1097,10 @@ namespace TitanOrbit.UI
             view.SetShipName(DisplayNameFormatting.StripLeadingFamilyLabel(
                 GetShipDisplayNameForSlot(ShipLevel, BranchIndex, currentChassisId), familyLabel));
             view.SetFamilyName(familyLabel);
+            // Baked thumb stays underneath. The live camera covers it while the menu is open.
+            view.SetPreview(GetMenuPreviewForChassis(currentChassisId));
+            if (view.UsesSidebarHeroLayout)
+                view.EnableLiveShipPortrait();
             view.SetPrice(debugFree ? "Free" : "—");
             // Sidebar "You" card uses the MEGA pool when this hull is a catalog MEGA.
             view.ApplyPowerBreakdown(

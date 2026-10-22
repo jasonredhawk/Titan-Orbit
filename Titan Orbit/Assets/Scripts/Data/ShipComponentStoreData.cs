@@ -72,6 +72,48 @@ namespace TitanOrbit.Data
             return ShipComponentExtraLevelMath.ApplyMobilityPenalties(evaluated, shipLevel);
         }
 
+        /// <summary>
+        /// PerExtra × ship level only, no Base and no ability purchases.
+        /// This is the gain of a stacked extra before the moon's fleet roll.
+        /// </summary>
+        public static ShipComponentAbilityStats GetMarginalStatsAtShipLevel(
+            ShipComponentAbilityStats stats,
+            int shipLevel,
+            string componentId)
+        {
+            var attrs = default(ShipAbilityLevelCounts);
+            bool weapon = ShipComponentAbilityStats.IsWeaponComponent(componentId);
+            return ShipComponentExtraLevelMath.EvaluatePool(
+                stats,
+                componentCount: 1,
+                shipLevel,
+                in attrs,
+                isWeaponPool: weapon,
+                includeBase: false);
+        }
+
+        /// <summary>
+        /// Post-bonus total for one part, the same number a primary card puts in FINAL.
+        /// Base plus PerExtra × ship level, then this part's fleet roll and bullet bank.
+        /// Used for the OLD column: the primary this card would replace.
+        /// </summary>
+        public static ShipComponentAbilityStats GetDisplayedAdjustedStats(
+            ShipComponentAbilityStats raw,
+            int shipLevel,
+            string componentId,
+            ShipFamilySpecialBonuses fleet,
+            ShipFamilyComponentEntry entry,
+            ShipFamilyDefinition family,
+            int planetOrHullBankIndex)
+        {
+            ShipComponentAbilityStats leveled = GetEffectiveStatsAtShipLevel(raw, shipLevel, componentId);
+            ShipComponentAbilityStats rolled = fleet.IsIdentity ? leveled : fleet.Apply(leveled);
+            if (entry == null)
+                return rolled;
+            return BulletBankProfileUtility.ApplyProfileToComponentStats(
+                rolled, entry, family, planetOrHullBankIndex);
+        }
+
 
         /// <summary>Single scalar power number for gem pricing (sum of breakdown categories).</summary>
         public static float GetComponentPowerScore(
@@ -267,18 +309,28 @@ namespace TitanOrbit.Data
         /// <summary>
         /// Moon-dock equipment card ability list (TMP rich text).
         /// Each stat is one row: VAL, BONUS, and FINAL.
-        /// When hull aggregation keeps less than that final (extra engines do not add a second base),
-        /// the next row is the amount this part actually adds to the ship.
+        /// <see cref="ShipComponentStackAggregation.GearCardRole.Each"/> fills those columns
+        /// with PerExtra × ship level (then the moon roll) and labels the header EACH.
+        /// <see cref="ShipComponentStackAggregation.GearCardRole.Primary"/> keeps the full
+        /// part numbers, labels the header BEST, and adds OLD when this card would
+        /// replace a different primary. FINAL stays that part's post-bonus total.
+        /// When hull aggregation keeps less than FINAL, a following hull row is the amount
+        /// that lands on the ship. Each cards omit that row — the columns are already the gain.
         /// </summary>
         public static string BuildAbilityDescriptionRichText(
             ShipFamilyComponentEntry entry,
             int shipLevel,
             ShipFamilyDefinition family = null,
             int maxLines = 14,
-            int planetOrHullBankIndex = -1)
+            int planetOrHullBankIndex = -1,
+            ShipComponentStackAggregation.GearCardRole role = ShipComponentStackAggregation.GearCardRole.Unclassified,
+            bool hasDisplacedPrimary = false,
+            ShipComponentAbilityStats displacedAdjusted = default,
+            bool oldPrimaryIsThisCard = false)
         {
             return BuildAbilityDescription(
-                entry, shipLevel, family, maxLines, richText: true, planetOrHullBankIndex);
+                entry, shipLevel, family, maxLines, richText: true, planetOrHullBankIndex, role,
+                hasDisplacedPrimary, displacedAdjusted, oldPrimaryIsThisCard);
         }
 
         /// <summary>Plain-text variant (legacy equipment panel / short tooltips).</summary>
@@ -297,6 +349,8 @@ namespace TitanOrbit.Data
         /// Weapon cards lead with the bullet type. Each stat row is
         /// <c>VAL</c> (this part, before the moon roll), <c>BONUS</c> (that roll's percent, or —),
         /// and <c>FINAL</c> (the part number after the roll).
+        /// Primary cards that would replace another piece add <c>OLD</c> before VAL:
+        /// that piece's own post-bonus total. FINAL is not a difference.
         /// A following <c>hull</c> row is the amount that actually lands on the ship when
         /// aggregation is smaller than FINAL (extra engines / turn-per-extra).
         /// Called when a card is created and again when the Gear tab refreshes prices.
@@ -307,24 +361,43 @@ namespace TitanOrbit.Data
             ShipFamilyDefinition family,
             int maxLines,
             bool richText,
-            int planetOrHullBankIndex = -1)
+            int planetOrHullBankIndex = -1,
+            ShipComponentStackAggregation.GearCardRole role = ShipComponentStackAggregation.GearCardRole.Unclassified,
+            bool hasDisplacedPrimary = false,
+            ShipComponentAbilityStats displacedAdjusted = default,
+            bool oldPrimaryIsThisCard = false)
         {
             if (entry == null)
                 return string.Empty;
 
             // Extra Level + bullet bank. Fleet is applied next so the card can
             // show the catalog number and the moon-adjusted number side by side.
-            ShipComponentAbilityStats leveled = GetEffectiveStatsAtShipLevel(
+            // EACH cards show PerExtra × ship level instead of the part's full total.
+            bool each = role == ShipComponentStackAggregation.GearCardRole.Each;
+            ShipComponentAbilityStats fullLeveled = GetEffectiveStatsAtShipLevel(
                 entry.stats, shipLevel, entry.componentId);
+            ShipComponentAbilityStats leveled = each
+                ? GetMarginalStatsAtShipLevel(entry.stats, shipLevel, entry.componentId)
+                : fullLeveled;
             ShipFamilySpecialBonuses fleet = family != null
                 ? family.ResolveSpecialBonuses()
                 : ShipFamilySpecialBonuses.Identity;
-            ShipComponentAbilityStats original = BulletBankProfileUtility.ApplyProfileToComponentStats(
-                leveled, entry, family, planetOrHullBankIndex);
-            ShipComponentAbilityStats adjusted = fleet.IsIdentity
-                ? original
+            ShipComponentAbilityStats fullOriginal = BulletBankProfileUtility.ApplyProfileToComponentStats(
+                fullLeveled, entry, family, planetOrHullBankIndex);
+            ShipComponentAbilityStats fullAdjusted = fleet.IsIdentity
+                ? fullOriginal
                 : BulletBankProfileUtility.ApplyProfileToComponentStats(
-                    fleet.Apply(leveled), entry, family, planetOrHullBankIndex);
+                    fleet.Apply(fullLeveled), entry, family, planetOrHullBankIndex);
+            ShipComponentAbilityStats original = each
+                ? BulletBankProfileUtility.ApplyProfileToComponentStats(
+                    leveled, entry, family, planetOrHullBankIndex)
+                : fullOriginal;
+            ShipComponentAbilityStats adjusted = each
+                ? (fleet.IsIdentity
+                    ? original
+                    : BulletBankProfileUtility.ApplyProfileToComponentStats(
+                        fleet.Apply(leveled), entry, family, planetOrHullBankIndex))
+                : fullAdjusted;
             entry.EnsureStatCategories();
             if (entry.statCategories == null || entry.statCategories.Count == 0)
                 entry.statCategories = ShipFamilyComponentPartKey.InferDefaultStatCategories(entry.componentId);
@@ -339,63 +412,97 @@ namespace TitanOrbit.Data
             // entry.bulletPrefabIndex overrides the family default when set.
             TryQueueWeaponBulletType(lines, entry, family, planetOrHullBankIndex);
 
+            // Every primary card keeps OLD, including when that number matches this card.
+            // DLTA is this part's post-bonus total minus OLD. Extras keep a real FINAL.
+            bool showOld = role == ShipComponentStackAggregation.GearCardRole.Primary;
+            bool hasOldBaseline = hasDisplacedPrimary || oldPrimaryIsThisCard;
+
+            // Shown numbers are the marginal gain on EACH cards, the full part otherwise.
+            // A row stays when the full part has the stat, even if the extra step is +0.
+            void Queue(float fullOriginal, float fullAdjusted, float showOriginal, float showAdjusted,
+                string label, int colorIndex, float oldAdjusted = 0f, bool higherIsBetter = true)
+            {
+                bool fullVisible = Mathf.Abs(fullOriginal) >= 0.05f || Mathf.Abs(fullAdjusted) >= 0.05f;
+                bool showVisible = Mathf.Abs(showOriginal) >= 0.05f || Mathf.Abs(showAdjusted) >= 0.05f;
+                if (!fullVisible && !showVisible)
+                    return;
+                float baseline = oldPrimaryIsThisCard ? showAdjusted : oldAdjusted;
+                TryQueueFleet(
+                    lines, showOriginal, showAdjusted, label, colorIndex, higherIsBetter,
+                    showEvenIfSmall: fullVisible, showOld: showOld, oldAdjusted: baseline,
+                    hasOldBaseline: hasOldBaseline, finalIsDelta: showOld);
+            }
+
             // --- Offense / Health / Energy (full gain = authored; they sum) ---
             // Short labels stay inside the name column on an 8-up gear card.
             // The hover tooltip still spells the full stat name.
-            TryQueueFleet(lines, original.firePower, adjusted.firePower, "Fire", 0);
-            TryQueueFleet(lines, original.bulletSpeed, adjusted.bulletSpeed, "B.Speed", 1);
-            TryQueueFleet(lines, original.bulletRange, adjusted.bulletRange, "Range", 1);
-            TryQueueFleet(lines, original.fireRate, adjusted.fireRate, "Rate", 1);
-            TryQueueFleet(lines, original.rammingPower, adjusted.rammingPower, "Ram", 0);
-            TryQueueFleet(lines, original.healthCap, adjusted.healthCap, "HP", 2);
-            TryQueueFleet(lines, original.healthRegen, adjusted.healthRegen, "HP/s", 3);
-            TryQueueFleet(lines, original.energyCap, adjusted.energyCap, "Energy", 4);
-            TryQueueFleet(lines, original.energyRegen, adjusted.energyRegen, "EN/s", 5);
+            Queue(fullOriginal.firePower, fullAdjusted.firePower, original.firePower, adjusted.firePower, "Fire", 0, displacedAdjusted.firePower);
+            Queue(fullOriginal.bulletSpeed, fullAdjusted.bulletSpeed, original.bulletSpeed, adjusted.bulletSpeed, "B.Speed", 1, displacedAdjusted.bulletSpeed);
+            Queue(fullOriginal.bulletRange, fullAdjusted.bulletRange, original.bulletRange, adjusted.bulletRange, "Range", 1, displacedAdjusted.bulletRange);
+            Queue(fullOriginal.fireRate, fullAdjusted.fireRate, original.fireRate, adjusted.fireRate, "Rate", 1, displacedAdjusted.fireRate);
+            Queue(fullOriginal.rammingPower, fullAdjusted.rammingPower, original.rammingPower, adjusted.rammingPower, "Ram", 0, displacedAdjusted.rammingPower);
+            Queue(fullOriginal.healthCap, fullAdjusted.healthCap, original.healthCap, adjusted.healthCap, "HP", 2, displacedAdjusted.healthCap);
+            Queue(fullOriginal.healthRegen, fullAdjusted.healthRegen, original.healthRegen, adjusted.healthRegen, "HP/s", 3, displacedAdjusted.healthRegen);
+            Queue(fullOriginal.energyCap, fullAdjusted.energyCap, original.energyCap, adjusted.energyCap, "Energy", 4, displacedAdjusted.energyCap);
+            Queue(fullOriginal.energyRegen, fullAdjusted.energyRegen, original.energyRegen, adjusted.energyRegen, "EN/s", 5, displacedAdjusted.energyRegen);
 
             // --- Movement: catalog number, moon bonus, then hull gain when it differs ---
-            if (isPropulsion)
+            // EACH already prints the purchase gain, so it does not add a hull child row.
+            if (!each && isPropulsion)
             {
                 TryGetPropulsionCumulativeGain(
                     family, entry, shipLevel, out float cumulativeMove, out float cumulativeAccel);
 
-                TryQueueFleetOrHull(lines, original.moveSpeed, adjusted.moveSpeed, cumulativeMove, "Move", 6);
-                TryQueueFleetOrHull(lines, original.accelerationCap, adjusted.accelerationCap, cumulativeAccel, "Accel", 6);
+                TryQueueFleetOrHull(lines, original.moveSpeed, adjusted.moveSpeed, cumulativeMove, "Move", 6, showOld, displacedAdjusted.moveSpeed, hasOldBaseline, oldPrimaryIsThisCard);
+                TryQueueFleetOrHull(lines, original.accelerationCap, adjusted.accelerationCap, cumulativeAccel, "Accel", 6, showOld, displacedAdjusted.accelerationCap, hasOldBaseline, oldPrimaryIsThisCard);
             }
             else
             {
-                TryQueueFleet(lines, original.moveSpeed, adjusted.moveSpeed, "Move", 6);
-                TryQueueFleet(lines, original.accelerationCap, adjusted.accelerationCap, "Accel", 6);
+                Queue(fullOriginal.moveSpeed, fullAdjusted.moveSpeed, original.moveSpeed, adjusted.moveSpeed, "Move", 6, displacedAdjusted.moveSpeed);
+                Queue(fullOriginal.accelerationCap, fullAdjusted.accelerationCap, original.accelerationCap, adjusted.accelerationCap, "Accel", 6, displacedAdjusted.accelerationCap);
             }
 
             // Same extra-part rule as Move / Accel: the hull keeps its Turn Base.
             // Buying this piece adds only its Turn PerExtra × ship level.
             // The row's VAL / FINAL are the part's turn number; the hull child row is that PerExtra gain.
-            float turnAdjusted = GetAddedGearTurnGain(entry, shipLevel, family, applyFamilyFleet: true);
-            TryQueueFleetOrHull(lines, original.turnSpeed, adjusted.turnSpeed, turnAdjusted, "Turn", 7);
+            if (!each)
+            {
+                float turnAdjusted = GetAddedGearTurnGain(entry, shipLevel, family, applyFamilyFleet: true);
+                TryQueueFleetOrHull(lines, original.turnSpeed, adjusted.turnSpeed, turnAdjusted, "Turn", 7, showOld, displacedAdjusted.turnSpeed, hasOldBaseline, oldPrimaryIsThisCard);
+            }
+            else
+            {
+                Queue(fullOriginal.turnSpeed, fullAdjusted.turnSpeed, original.turnSpeed, adjusted.turnSpeed, "Turn", 7, displacedAdjusted.turnSpeed);
+            }
 
             // [TITAN-ORBIT] Absolute OVERDRIVE energy/sec on engines (not a multiplier of ExtraSpeedPercent).
             // More drain is worse. The percent stays in this row's energy colour — it is not recolored.
             if (isEngine)
-                TryQueueFleet(
-                    lines,
+                Queue(
+                    fullOriginal.extraSpeedEnergyDrain,
+                    fullAdjusted.extraSpeedEnergyDrain,
                     original.extraSpeedEnergyDrain,
                     adjusted.extraSpeedEnergyDrain,
                     "OD/s",
                     4,
+                    displacedAdjusted.extraSpeedEnergyDrain,
                     higherIsBetter: false);
 
-            if (isEngine && adjusted.extraSpeedPercent > 0.0001f)
+            if (isEngine && (fullAdjusted.extraSpeedPercent > 0.0001f || adjusted.extraSpeedPercent > 0.0001f))
             {
                 float pctOriginal = original.extraSpeedPercent * 100f;
                 float pctAdjusted = adjusted.extraSpeedPercent * 100f;
-                TryQueuePercent(lines, pctOriginal, pctAdjusted, "OD", 6);
+                TryQueuePercent(
+                    lines, pctOriginal, pctAdjusted, "OD", 6,
+                    showOld, displacedAdjusted.extraSpeedPercent * 100f,
+                    hasOldBaseline, oldPrimaryIsThisCard);
             }
 
             // --- Capacity ---
-            TryQueueFleet(lines, original.maxGems, adjusted.maxGems, "Gems", 8);
-            TryQueueFleet(lines, original.tractorBeamDistance, adjusted.tractorBeamDistance, "Tract", 8);
-            TryQueueFleet(lines, original.tractorBeamPower, adjusted.tractorBeamPower, "T.Pwr", 8);
-            TryQueueFleet(lines, original.maxPeople, adjusted.maxPeople, "Troops", 9);
+            Queue(fullOriginal.maxGems, fullAdjusted.maxGems, original.maxGems, adjusted.maxGems, "Gems", 8, displacedAdjusted.maxGems);
+            Queue(fullOriginal.tractorBeamDistance, fullAdjusted.tractorBeamDistance, original.tractorBeamDistance, adjusted.tractorBeamDistance, "Tract", 8, displacedAdjusted.tractorBeamDistance);
+            Queue(fullOriginal.tractorBeamPower, fullAdjusted.tractorBeamPower, original.tractorBeamPower, adjusted.tractorBeamPower, "T.Pwr", 8, displacedAdjusted.tractorBeamPower);
+            Queue(fullOriginal.maxPeople, fullAdjusted.maxPeople, original.maxPeople, adjusted.maxPeople, "Troops", 9, displacedAdjusted.maxPeople);
 
             if (lines.Count == 0)
                 return richText ? "<color=#888888>—</color>" : "No stat bonus";
@@ -407,7 +514,13 @@ namespace TitanOrbit.Data
             if (lines.Count > budget)
                 lines.RemoveRange(budget, lines.Count - budget);
 
-            return FormatGearStatGrid(lines, richText);
+            string header = role == ShipComponentStackAggregation.GearCardRole.Each
+                ? "EACH"
+                : role == ShipComponentStackAggregation.GearCardRole.Primary
+                    ? "BEST"
+                    : "STAT";
+            bool showOldColumn = role == ShipComponentStackAggregation.GearCardRole.Primary;
+            return FormatGearStatGrid(lines, richText, header, showOldColumn);
         }
 
         /// <summary>
@@ -555,6 +668,7 @@ namespace TitanOrbit.Data
         struct GearStatRow
         {
             public string Label;
+            public string Old;
             public string Value;
             public string Bonus;
             public string Final;
@@ -608,11 +722,16 @@ namespace TitanOrbit.Data
             float adjusted,
             string label,
             int colorIndex,
-            bool higherIsBetter = true)
+            bool higherIsBetter = true,
+            bool showEvenIfSmall = false,
+            bool showOld = false,
+            float oldAdjusted = 0f,
+            bool hasOldBaseline = false,
+            bool finalIsDelta = false)
         {
             // Drain growing is worse, but the card keeps one colour per stat so columns stay scannable.
             _ = higherIsBetter;
-            if (Mathf.Abs(original) < 0.05f && Mathf.Abs(adjusted) < 0.05f)
+            if (!showEvenIfSmall && Mathf.Abs(original) < 0.05f && Mathf.Abs(adjusted) < 0.05f)
                 return;
 
             float shownValue = Mathf.Abs(original) >= 0.05f ? original : adjusted;
@@ -620,11 +739,40 @@ namespace TitanOrbit.Data
             lines.Add(new GearStatRow
             {
                 Label = label,
+                Old = FormatOldCell(showOld, hasOldBaseline, oldAdjusted),
                 Value = FormatSignedStat(shownValue),
                 Bonus = TryFormatFleetPercent(original, adjusted, out string percent) ? percent : GearStatEmptyCell,
-                Final = FormatSignedStat(shownFinal),
+                Final = finalIsDelta
+                    ? FormatDeltaCell(shownFinal, hasOldBaseline, oldAdjusted)
+                    : FormatSignedStat(shownFinal),
                 ColorIndex = colorIndex,
             });
+        }
+
+        /// <summary>
+        /// OLD cell. Null when this card has no old column. A real number when a
+        /// primary exists, including zero and including a match with this card.
+        /// An em dash when this type has no owned primary yet.
+        /// </summary>
+        static string FormatOldCell(bool showOld, bool hasBaseline, float oldAdjusted, bool percent = false)
+        {
+            if (!showOld)
+                return null;
+            if (!hasBaseline)
+                return GearStatEmptyCell;
+            string text = FormatSignedStat(oldAdjusted);
+            return percent ? text + "%" : text;
+        }
+
+        /// <summary>
+        /// Post-bonus total minus the old primary. With no owned primary, the
+        /// whole post-bonus total is the gain.
+        /// </summary>
+        static string FormatDeltaCell(float shownFinal, bool hasBaseline, float oldAdjusted, bool percent = false)
+        {
+            float delta = hasBaseline ? shownFinal - oldAdjusted : shownFinal;
+            string text = FormatSignedStat(delta);
+            return percent ? text + "%" : text;
         }
 
         /// <summary>
@@ -636,21 +784,29 @@ namespace TitanOrbit.Data
             float originalPercent,
             float adjustedPercent,
             string label,
-            int colorIndex)
+            int colorIndex,
+            bool showOld = false,
+            float oldAdjustedPercent = 0f,
+            bool hasOldBaseline = false,
+            bool oldPrimaryIsThisCard = false)
         {
             if (Mathf.Abs(originalPercent) < 0.05f && Mathf.Abs(adjustedPercent) < 0.05f)
                 return;
 
             float shownValue = Mathf.Abs(originalPercent) >= 0.05f ? originalPercent : adjustedPercent;
             float shownFinal = Mathf.Abs(adjustedPercent) >= 0.05f ? adjustedPercent : originalPercent;
+            float baseline = oldPrimaryIsThisCard ? shownFinal : oldAdjustedPercent;
             lines.Add(new GearStatRow
             {
                 Label = label,
+                Old = FormatOldCell(showOld, hasOldBaseline, baseline, percent: true),
                 Value = FormatSignedStat(shownValue) + "%",
                 Bonus = TryFormatFleetPercent(originalPercent, adjustedPercent, out string percent)
                     ? percent
                     : GearStatEmptyCell,
-                Final = FormatSignedStat(shownFinal) + "%",
+                Final = showOld
+                    ? FormatDeltaCell(shownFinal, hasOldBaseline, baseline, percent: true)
+                    : FormatSignedStat(shownFinal) + "%",
                 ColorIndex = colorIndex,
             });
         }
@@ -666,7 +822,11 @@ namespace TitanOrbit.Data
             float adjusted,
             float hullGain,
             string label,
-            int colorIndex)
+            int colorIndex,
+            bool showOld = false,
+            float oldAdjusted = 0f,
+            bool hasOldBaseline = false,
+            bool oldPrimaryIsThisCard = false)
         {
             bool hasPart = Mathf.Abs(original) >= 0.05f || Mathf.Abs(adjusted) >= 0.05f;
             bool hasHull = Mathf.Abs(hullGain) >= 0.05f;
@@ -683,15 +843,22 @@ namespace TitanOrbit.Data
                 lines.Add(new GearStatRow
                 {
                     Label = label,
+                    Old = FormatOldCell(showOld, hasOldBaseline, oldPrimaryIsThisCard ? hullGain : oldAdjusted),
                     Value = GearStatEmptyCell,
                     Bonus = "hull",
-                    Final = FormatSignedStat(hullGain),
+                    Final = showOld
+                        ? FormatDeltaCell(hullGain, hasOldBaseline, oldPrimaryIsThisCard ? hullGain : oldAdjusted)
+                        : FormatSignedStat(hullGain),
                     ColorIndex = colorIndex,
                 });
                 return;
             }
 
-            TryQueueFleet(lines, original, adjusted, label, colorIndex);
+            float baseline = oldPrimaryIsThisCard ? adjusted : oldAdjusted;
+            TryQueueFleet(
+                lines, original, adjusted, label, colorIndex,
+                showOld: showOld, oldAdjusted: baseline, hasOldBaseline: hasOldBaseline,
+                finalIsDelta: showOld);
             if (!hullDiffers)
                 return;
 
@@ -699,6 +866,7 @@ namespace TitanOrbit.Data
             lines.Add(new GearStatRow
             {
                 Label = "hull",
+                Old = showOld ? GearStatEmptyCell : null,
                 Value = GearStatEmptyCell,
                 Bonus = GearStatEmptyCell,
                 Final = FormatSignedStat(hullGain),
@@ -759,7 +927,11 @@ namespace TitanOrbit.Data
         /// Rich text uses TextMeshPro position stops so VAL / BONUS / FINAL stay aligned
         /// when the card width changes. Plain text pads the same columns for the legacy tooltip.
         /// </summary>
-        static string FormatGearStatGrid(List<GearStatRow> lines, bool richText)
+        static string FormatGearStatGrid(
+            List<GearStatRow> lines,
+            bool richText,
+            string statHeader = "STAT",
+            bool showOldColumn = false)
         {
             if (lines == null || lines.Count == 0)
                 return richText ? "<color=#888888>—</color>" : "No stat bonus";
@@ -776,9 +948,11 @@ namespace TitanOrbit.Data
 
             // Stops are a fraction of the description width, so an 8-up card and a
             // wider window keep the same columns. The stat name sits at the left edge.
-            const string valuePos = "36%";
-            const string bonusPos = "58%";
-            const string finalPos = "80%";
+            // OLD sits in front of VAL only when this primary would replace another piece.
+            string oldPos = "22%";
+            string valuePos = showOldColumn ? "40%" : "36%";
+            string bonusPos = showOldColumn ? "60%" : "58%";
+            string finalPos = "80%";
 
             var sb = new StringBuilder(384);
 
@@ -803,18 +977,22 @@ namespace TitanOrbit.Data
             if (richText)
             {
                 sb.Append("<size=85%><color=#9EC7F2>");
-                sb.Append("STAT");
+                sb.Append(string.IsNullOrEmpty(statHeader) ? "STAT" : statHeader);
+                if (showOldColumn)
+                    sb.Append("<pos=").Append(oldPos).Append(">OLD");
                 sb.Append("<pos=").Append(valuePos).Append(">VAL");
                 sb.Append("<pos=").Append(bonusPos).Append(">BONUS");
-                sb.Append("<pos=").Append(finalPos).Append(">FINAL");
+                sb.Append("<pos=").Append(finalPos).Append(showOldColumn ? ">DLTA" : ">FINAL");
                 sb.Append("</color></size>");
             }
             else
             {
-                sb.Append(FitGearCell("STAT", 8, right: false));
+                sb.Append(FitGearCell(string.IsNullOrEmpty(statHeader) ? "STAT" : statHeader, 8, right: false));
+                if (showOldColumn)
+                    sb.Append(FitGearCell("OLD", 6, right: true));
                 sb.Append(FitGearCell("VAL", 7, right: true));
                 sb.Append(FitGearCell("BONUS", 7, right: true));
-                sb.Append(FitGearCell("FINAL", 7, right: true));
+                sb.Append(FitGearCell(showOldColumn ? "DLTA" : "FINAL", 7, right: true));
             }
 
             // --- One row per stat ---
@@ -828,6 +1006,8 @@ namespace TitanOrbit.Data
                 if (richText)
                 {
                     sb.Append(row.Label ?? string.Empty);
+                    if (showOldColumn)
+                        sb.Append("<pos=").Append(oldPos).Append('>').Append(row.Old ?? GearStatEmptyCell);
                     sb.Append("<pos=").Append(valuePos).Append('>').Append(row.Value ?? GearStatEmptyCell);
                     sb.Append("<pos=").Append(bonusPos).Append('>').Append(row.Bonus ?? GearStatEmptyCell);
                     // FINAL is the number the player came to compare — bold, full strength
@@ -839,6 +1019,8 @@ namespace TitanOrbit.Data
                 else
                 {
                     sb.Append(FitGearCell(row.Label, 8, right: false));
+                    if (showOldColumn)
+                        sb.Append(FitGearCell(row.Old ?? GearStatEmptyCell, 6, right: true));
                     sb.Append(FitGearCell(row.Value, 7, right: true));
                     sb.Append(FitGearCell(row.Bonus, 7, right: true));
                     sb.Append(FitGearCell(row.Final, 7, right: true));

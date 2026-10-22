@@ -4,7 +4,7 @@ setlocal
 REM One-shot: Unity Linux headless server build + GCE deploy.
 REM Close the Unity Editor first (same project cannot be open in GUI + batchmode).
 REM
-REM Defaults match day-to-day GCE publish: freeDisk useGcs
+REM Defaults match day-to-day GCE publish: freeDisk useGcs resetVm
 REM
 REM Examples (from tools\gce):
 REM   build_and_deploy_server_gce.bat

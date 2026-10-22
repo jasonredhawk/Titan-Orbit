@@ -25,14 +25,6 @@ namespace TitanOrbit.Editor
         const int RenderSize = 512;
         const string OutputFolder = "Assets/Prefabs/MEGA_Ships/MenuPreviews";
 
-        struct TheatricalPreviewFraming
-        {
-            public Vector3 lookTarget;
-            public Vector3 cameraPosition;
-            public Quaternion keyLightRotation;
-            public float maxExtent;
-        }
-
         struct PreviewVariant
         {
             public string name;
@@ -153,7 +145,7 @@ namespace TitanOrbit.Editor
             root.hideFlags = HideFlags.HideAndDontSave;
             instance.transform.SetParent(root.transform, false);
             instance.transform.localPosition = Vector3.zero;
-            instance.transform.localRotation = Quaternion.Euler(0f, -28f, 0f);
+            instance.transform.localRotation = Quaternion.Euler(0f, TheatricalMenuPreviewFraming.SubjectYawDegrees, 0f);
             instance.transform.localScale = Vector3.one;
 
             PrepareRenderers(instance);
@@ -168,7 +160,11 @@ namespace TitanOrbit.Editor
                 return false;
             }
 
-            TheatricalPreviewFraming framing = BuildTheatricalFraming(wb, catalog);
+            // Same 3/4 pose as family gear thumbs and the Orbit Menu live camera.
+            TheatricalMenuPreviewFraming framing = TheatricalMenuPreviewFraming.Build(
+                wb,
+                catalog.menuPreviewTheatricalFieldOfView,
+                catalog.menuPreviewBoundsPadding);
 
             var camGo = new GameObject("MegaMenuPreviewCam");
             camGo.hideFlags = HideFlags.HideAndDontSave;
@@ -179,22 +175,21 @@ namespace TitanOrbit.Editor
             cam.backgroundColor = Color.black;
             cam.cullingMask = 1 << PreviewLayer;
             cam.orthographic = false;
-            cam.fieldOfView = Mathf.Clamp(catalog.menuPreviewTheatricalFieldOfView, 20f, 55f);
-            camGo.transform.position = framing.cameraPosition;
-            camGo.transform.LookAt(framing.lookTarget, Vector3.up);
+            cam.fieldOfView = framing.FieldOfView;
+            camGo.transform.position = framing.CameraPosition;
+            camGo.transform.LookAt(framing.LookTarget, Vector3.up);
 
-            float dist = Vector3.Distance(framing.cameraPosition, framing.lookTarget);
-            cam.nearClipPlane = Mathf.Clamp(dist * 0.02f, 0.1f, 20f);
-            cam.farClipPlane = Mathf.Max(200f, dist + framing.maxExtent * 6f);
+            cam.nearClipPlane = framing.NearClip;
+            cam.farClipPlane = framing.FarClip;
 
             var lightGo = new GameObject("MegaMenuPreviewLight");
             lightGo.hideFlags = HideFlags.HideAndDontSave;
             lightGo.transform.SetParent(root.transform, false);
             var light = lightGo.AddComponent<Light>();
             light.type = LightType.Directional;
-            light.intensity = 1.2f;
+            light.intensity = TheatricalMenuPreviewFraming.KeyLightIntensity;
             light.cullingMask = ~0;
-            light.transform.rotation = framing.keyLightRotation;
+            light.transform.rotation = framing.KeyLightRotation;
 
             Color oldAmb = RenderSettings.ambientLight;
             RenderSettings.ambientLight = new Color(0.32f, 0.35f, 0.42f);
@@ -225,40 +220,6 @@ namespace TitanOrbit.Editor
 
             UnityEngine.Object.DestroyImmediate(root);
             return true;
-        }
-
-        static TheatricalPreviewFraming BuildTheatricalFraming(Bounds wb, MegaShipCatalog catalog)
-        {
-            Vector3 c = wb.center;
-            float padding = Mathf.Max(1f, catalog.menuPreviewBoundsPadding);
-            float maxExt = Mathf.Max(wb.extents.x, wb.extents.y, wb.extents.z);
-            float standoff = maxExt * padding * 3.6f;
-
-            const float elevationDeg = 26f;
-            const float azimuthDeg = 34f;
-            float elevRad = elevationDeg * Mathf.Deg2Rad;
-            float azRad = azimuthDeg * Mathf.Deg2Rad;
-            float horiz = standoff * Mathf.Cos(elevRad);
-            float height = standoff * Mathf.Sin(elevRad);
-            Vector3 cameraOffset = new Vector3(
-                horiz * Mathf.Sin(azRad),
-                height,
-                horiz * Mathf.Cos(azRad));
-
-            Vector3 lookTarget = c + new Vector3(0f, wb.extents.y * 0.12f, wb.extents.z * 0.1f);
-            Vector3 cameraPosition = lookTarget + cameraOffset;
-
-            Vector3 lightOffset = new Vector3(horiz * 0.62f, height * 1.75f, horiz * 0.82f);
-            Vector3 lightPosition = lookTarget + lightOffset;
-            Quaternion keyLightRotation = Quaternion.LookRotation((lookTarget - lightPosition).normalized, Vector3.up);
-
-            return new TheatricalPreviewFraming
-            {
-                lookTarget = lookTarget,
-                cameraPosition = cameraPosition,
-                keyLightRotation = keyLightRotation,
-                maxExtent = maxExt
-            };
         }
 
         /// <summary>

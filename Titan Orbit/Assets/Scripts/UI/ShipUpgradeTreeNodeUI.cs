@@ -2,6 +2,7 @@ using System;
 using TMPro;
 using TitanOrbit.Core;
 using TitanOrbit.Data;
+using TitanOrbit.Game;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -22,6 +23,9 @@ namespace TitanOrbit.UI
     /// <see cref="SetPreview"/> and <see cref="ApplyPowerBreakdown"/> skip redundant canvas
     /// work when the screenshot / chassis did not change — landing used to hitch by
     /// rewriting every card.
+    /// The Orbit Menu "Your Ship" hero covers that screenshot with a live camera of
+    /// the hull you are flying (<see cref="EnableLiveShipPortrait"/>). Tree cards stay
+    /// on the baked sprite.
     /// </summary>
     public class ShipUpgradeTreeNodeUI : MonoBehaviour
     {
@@ -142,6 +146,12 @@ namespace TitanOrbit.UI
         public TextMeshProUGUI ShipNameText => shipNameText;
         public TextMeshProUGUI PriceText => priceText;
         public Image PreviewImage => previewImage;
+        /// <summary>
+        /// Live camera image on the Your Ship hero only. Sits on top of
+        /// <see cref="previewImage"/>, which stays assigned as the fallback sprite.
+        /// </summary>
+        RawImage _livePortrait;
+        bool _livePortraitBound;
         public float LayoutWidth => layoutWidth;
         public float LayoutHeight => layoutHeight;
 
@@ -1999,6 +2009,128 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
+        /// Your Ship card. The baked hull PNG is not used here. The only picture
+        /// is the live camera of the ship you are flying.
+        /// </summary>
+        public void EnableLiveShipPortrait()
+        {
+            // --- Hero card only ---
+            if (!_sidebarHeroLayout || previewImage == null)
+                return;
+
+            // This Image is the theatrical screenshot. Clear it so a later refresh
+            // cannot paint that still over the camera.
+            if (previewImage.sprite != null)
+                previewImage.sprite = null;
+            // The live picture is the child RawImage. This graphic is the old
+            // screenshot plate — leave it off so a black fill cannot cover the camera.
+            previewImage.enabled = false;
+
+            if (_livePortrait == null)
+                _livePortrait = FindLivePortraitImage();
+
+            if (_livePortrait == null)
+            {
+                var go = new GameObject("LiveShipPortrait", typeof(RectTransform));
+                go.transform.SetParent(previewImage.transform, false);
+                var rt = go.GetComponent<RectTransform>();
+                rt.anchorMin = Vector2.zero;
+                rt.anchorMax = Vector2.one;
+                rt.offsetMin = Vector2.zero;
+                rt.offsetMax = Vector2.zero;
+                rt.pivot = new Vector2(0.5f, 0.5f);
+                var le = go.AddComponent<LayoutElement>();
+                le.ignoreLayout = true;
+                _livePortrait = go.AddComponent<RawImage>();
+                _livePortrait.raycastTarget = true;
+                _livePortrait.color = Color.white;
+                _livePortrait.maskable = false;
+                _livePortrait.enabled = false;
+                go.AddComponent<OrbitMenuPortraitTurntable>();
+            }
+
+            if (_livePortrait.GetComponent<OrbitMenuPortraitTurntable>() == null)
+                _livePortrait.gameObject.AddComponent<OrbitMenuPortraitTurntable>();
+            _livePortrait.raycastTarget = true;
+            _livePortrait.maskable = false;
+            if (_livePortrait.transform.parent != previewImage.transform)
+                _livePortrait.transform.SetParent(previewImage.transform, false);
+            _livePortrait.transform.SetAsLastSibling();
+            if (!_livePortrait.gameObject.activeSelf)
+                _livePortrait.gameObject.SetActive(true);
+            RemovePortraitToggleBar();
+            OrbitMenuShipPortrait.Bind(_livePortrait);
+            _livePortrait.enabled = _livePortrait.texture != null;
+            _livePortraitBound = true;
+        }
+
+        /// <summary>
+        /// Deletes the Solo / Moon / Stars / Near / Spin strip if this card still has one.
+        /// Those labels are not part of the Your Ship picture.
+        /// </summary>
+        /// <summary>
+        /// The live picture may sit under the thumbnail (older builds) or beside it.
+        /// </summary>
+        RawImage FindLivePortraitImage()
+        {
+            if (previewImage == null)
+                return null;
+            Transform existing = previewImage.transform.Find("LiveShipPortrait");
+            if (existing == null && previewImage.transform.parent != null)
+                existing = previewImage.transform.parent.Find("LiveShipPortrait");
+            return existing != null ? existing.GetComponent<RawImage>() : null;
+        }
+
+        void RemovePortraitToggleBar()
+        {
+            if (previewImage == null)
+                return;
+            Transform bar = previewImage.transform.Find("PortraitToggles");
+            if (bar != null)
+                Destroy(bar.gameObject);
+        }
+
+        /// <summary>
+        /// Menu close deactivates this card. Put the hull back on the gameplay camera
+        /// so the world ship does not stay on the preview layer.
+        /// </summary>
+        void LateUpdate()
+        {
+            // The portrait rig can lose its owner across a script reload while
+            // this card stays open. Bind is a no-op once the picture is live.
+            if (!_sidebarHeroLayout || _livePortrait == null || !isActiveAndEnabled)
+                return;
+            if (OrbitMenuShipPortrait.Active != null && _livePortrait.enabled && _livePortrait.texture != null)
+                return;
+            OrbitMenuShipPortrait.Bind(_livePortrait);
+        }
+
+        void OnEnable()
+        {
+            // A disable (menu tab, layout rebuild) unbinds the camera. The live
+            // image is created at runtime, so a domain reload clears this field
+            // while the child is still there. Find it and bind again, or the
+            // card stays on the baked sprite. Also drop a leftover toggle strip.
+            RemovePortraitToggleBar();
+            if (!_sidebarHeroLayout || previewImage == null)
+                return;
+            if (_livePortrait == null)
+                _livePortrait = FindLivePortraitImage();
+
+            if (_livePortrait != null)
+                EnableLiveShipPortrait();
+        }
+
+        void OnDisable()
+        {
+            if (!_livePortraitBound)
+                return;
+
+            _livePortraitBound = false;
+            OrbitMenuShipPortrait.Unbind(_livePortrait);
+        }
+
+        /// <summary>
         /// Writes the hull screenshot onto this card. No-ops when the sprite is
         /// already assigned so a later tree refresh does not dirty the canvas.
         /// </summary>
@@ -2010,6 +2142,13 @@ namespace TitanOrbit.UI
             // there. Twenty-four dirty cards on land was the Orbit Menu hitch.
             if (previewImage == null)
                 return;
+            // Your Ship is the live camera. Tree cards keep the baked sprite.
+            if (_sidebarHeroLayout)
+            {
+                EnableLiveShipPortrait();
+                return;
+            }
+
             if (_appliedPreview == sprite && previewImage.sprite == sprite)
                 return;
 
@@ -2017,6 +2156,8 @@ namespace TitanOrbit.UI
             previewImage.sprite = sprite;
             previewImage.preserveAspect = sprite != null;
             previewImage.color = sprite != null ? Color.white : new Color(0.07f, 0.09f, 0.12f, 0.95f);
+            if (!previewImage.enabled)
+                previewImage.enabled = true;
         }
 
         public void SetButtonColors(Color normal) => SetButtonBackgroundColor(normal);

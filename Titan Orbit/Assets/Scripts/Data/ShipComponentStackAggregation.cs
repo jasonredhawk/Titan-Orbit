@@ -12,11 +12,11 @@ namespace TitanOrbit.Data
     /// with that part’s own PerExtra and sums them (Engine PerExtra ≠ Thruster PerExtra).
     /// </para>
     /// <para>
-    /// Primary for display and Base: the hull part with the highest base of that
-    /// type, until the player buys gear of that type. A purchase then owns the
-    /// Base even when its numbers are lower. Several buys keep the highest one.
+    /// Primary for Base: the single best piece of that type across the hull and
+    /// every owned part, by fleet-adjusted score. A purchase becomes primary only
+    /// when it actually out-scores the current best. A tie keeps the earlier part.
     /// Every other member of the pool is an extra — its PerExtra still adds, its
-    /// Base does not.
+    /// Base does not. Weapons are outside this contest: each barrel keeps its Base.
     /// Engines and thrusters are <b>separate</b> pools: engines own Move + Energy,
     /// thrusters own Accel + Turn. <see cref="PropulsionPoolKey"/> is leftover for
     /// older HUD binders that still group both.
@@ -157,7 +157,7 @@ namespace TitanOrbit.Data
                 combinedPrimary.AddInPlace(contrib.PrimaryStats);
             }
 
-            // Turn Base is one part. A purchase that authors turn owns it.
+            // Turn Base is one part: the best authored turn across hull and gear.
             // Every other part still adds its turn PerExtra.
             ApplySingleTurnBase(
                 componentIds, perComponentStats, ref combinedPrimary, storeExtraStartIndex);
@@ -244,15 +244,16 @@ namespace TitanOrbit.Data
 
         /// <summary>
         /// Primary index within <paramref name="memberIndices"/> (local list index, not global).
-        /// With no moon-store row in the pool, the highest hull base wins. Engines use move
-        /// speed (then energy); thrusters use acceleration (then turn); other types use the
-        /// additive base score. A tie keeps the earlier list index.
-        /// Once any purchase of this type is in the pool, only those purchases compete.
-        /// The best purchase owns Base even when it is lower than the hull part. Weapons
-        /// stay on the old contest — each barrel keeps its own Base.
+        /// Hull parts and moon-store parts compete together. Engines use move speed (then
+        /// energy); thrusters use acceleration (then turn); other types use the additive
+        /// base score. A tie keeps the earlier list index. A purchase wins only when its
+        /// score is strictly higher. Weapons still keep every barrel's Base in
+        /// <see cref="ShipComponentExtraLevelMath.AggregateAndEvaluate"/> — this pick does
+        /// not take that Base away.
         /// </summary>
         /// <param name="storeExtraStartIndex">
-        /// First moon-store row. <see cref="int.MaxValue"/> means the list is hull-only.
+        /// Kept so callers can still pass the hull/extra split. Ownership no longer
+        /// depends on it.
         /// </param>
         public static int PickPrimaryLocalIndex(
             string poolKey,
@@ -265,9 +266,8 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Same purchase rule as the unbuffed pick. Among the parts that are allowed
-        /// to own Base, the highest fleet-adjusted score wins. A 1× row uses its naked
-        /// score. A tie keeps the earlier part. A lone weaker purchase still beats the hull.
+        /// Highest fleet-adjusted score among every member, hull and purchased.
+        /// A 1× row uses its naked score. A tie keeps the earlier part.
         /// </summary>
         public static int PickPrimaryLocalIndex(
             string poolKey,
@@ -276,10 +276,11 @@ namespace TitanOrbit.Data
             int storeExtraStartIndex,
             IReadOnlyList<ShipFamilySpecialBonuses> perComponentFleet)
         {
+            // The split is no longer a gate. Callers still pass it.
+            _ = storeExtraStartIndex;
             if (memberIndices == null || memberIndices.Count == 0)
                 return 0;
 
-            bool purchasedOwn = PurchasedMembersOwnPool(poolKey, memberIndices, storeExtraStartIndex);
             int bestLocal = 0;
             float bestScore = float.NegativeInfinity;
             bool found = false;
@@ -287,8 +288,6 @@ namespace TitanOrbit.Data
             {
                 int gi = memberIndices[m];
                 if (perComponentStats == null || gi < 0 || gi >= perComponentStats.Count)
-                    continue;
-                if (purchasedOwn && gi < storeExtraStartIndex)
                     continue;
 
                 float score = ScoreWithFleet(poolKey, gi, perComponentStats, perComponentFleet);
@@ -301,28 +300,6 @@ namespace TitanOrbit.Data
             }
 
             return bestLocal;
-        }
-
-        /// <summary>
-        /// True when a non-weapon pool contains a moon-store row. Those rows then own Base.
-        /// </summary>
-        static bool PurchasedMembersOwnPool(
-            string poolKey,
-            List<int> memberIndices,
-            int storeExtraStartIndex)
-        {
-            if (IsWeaponPoolKey(poolKey) || memberIndices == null)
-                return false;
-            if (storeExtraStartIndex == int.MaxValue || storeExtraStartIndex < 0)
-                return false;
-
-            for (int m = 0; m < memberIndices.Count; m++)
-            {
-                if (memberIndices[m] >= storeExtraStartIndex)
-                    return true;
-            }
-
-            return false;
         }
 
         /// <summary>Pool score after this row's fleet roll. A 1× roll leaves the catalog number.</summary>
@@ -408,10 +385,10 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Moon-store component ids that own their pool’s Base and should replace the mesh.
-        /// A purchase of that type always qualifies, even when its base is lower than the hull.
-        /// Several buys of one type return only the highest. Weapons are omitted — a bought
-        /// gun unlocks a bullet type and does not take a barrel’s Base.
+        /// Moon-store component ids that won their pool’s Base and should replace the mesh.
+        /// A purchase is included only when its fleet-adjusted score beats the hull and
+        /// every other owned part of that type. Weapons are omitted — a bought gun unlocks
+        /// a bullet type and does not take a barrel’s Base.
         /// </summary>
         public static void CollectStoreExtrasThatOwnPoolBase(
             IReadOnlyList<string> componentIds,
@@ -476,6 +453,173 @@ namespace TitanOrbit.Data
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// How a gear card should read against the ship the player already flies.
+        /// <see cref="Unclassified"/> is a weapon (every barrel keeps Base) or a card
+        /// with no readable loadout. <see cref="Primary"/> is the current best of its
+        /// type, or an unowned part that would out-score that best at this moon.
+        /// <see cref="Each"/> is everything else of that type.
+        /// </summary>
+        public enum GearCardRole
+        {
+            Unclassified = 0,
+            Primary = 1,
+            Each = 2,
+        }
+
+        /// <summary>
+        /// Fleet-adjusted primary score for one part. Same weights as
+        /// <see cref="PickPrimaryLocalIndex"/>.
+        /// </summary>
+        public static float ScorePart(
+            string poolKey,
+            in ShipComponentAbilityStats raw,
+            ShipFamilySpecialBonuses fleet)
+        {
+            ShipComponentAbilityStats stats = fleet.IsIdentity ? raw : fleet.Apply(raw);
+            return ScoreForPool(poolKey, stats);
+        }
+
+        /// <summary>
+        /// Store-card role for <paramref name="componentId"/>.
+        /// Owned rows use <paramref name="ownedFleets"/> (parallel to the ids).
+        /// The card itself is scored with <paramref name="purchaseFleet"/>, the moon
+        /// on screen. A tie with the current best stays with that best, so the card
+        /// is <see cref="GearCardRole.Each"/> unless it is already the winning row.
+        /// </summary>
+        public static GearCardRole ClassifyStoreCard(
+            string componentId,
+            in ShipComponentAbilityStats rawStats,
+            ShipFamilySpecialBonuses purchaseFleet,
+            IReadOnlyList<string> ownedIds,
+            IReadOnlyList<ShipComponentAbilityStats> ownedStats,
+            IReadOnlyList<ShipFamilySpecialBonuses> ownedFleets)
+        {
+            if (string.IsNullOrWhiteSpace(componentId) || ownedIds == null || ownedStats == null)
+                return GearCardRole.Unclassified;
+            if (ShipFamilyPartCalcProfileSet.IsCosmeticPartName(componentId))
+                return GearCardRole.Unclassified;
+
+            string poolKey = ResolveStackPoolKey(componentId);
+            if (IsWeaponPoolKey(poolKey))
+                return GearCardRole.Unclassified;
+
+            bool anyOwned = TryFindBestOwned(
+                poolKey, ownedIds, ownedStats, ownedFleets, out int bestIndex, out float best);
+            if (!anyOwned)
+                bestIndex = -1;
+
+            if (bestIndex >= 0
+                && string.Equals(ownedIds[bestIndex], componentId, StringComparison.OrdinalIgnoreCase))
+                return GearCardRole.Primary;
+
+            float cardScore = ScorePart(poolKey, rawStats, purchaseFleet);
+            if (bestIndex < 0 || cardScore > best)
+                return GearCardRole.Primary;
+
+            return GearCardRole.Each;
+        }
+
+        /// <summary>
+        /// Best owned piece of this card’s type, including when that piece is the card itself.
+        /// False when the pool is empty. Weapons stay outside the contest.
+        /// </summary>
+        public static bool TryFindOwnedPrimary(
+            string componentId,
+            IReadOnlyList<string> ownedIds,
+            IReadOnlyList<ShipComponentAbilityStats> ownedStats,
+            IReadOnlyList<ShipFamilySpecialBonuses> ownedFleets,
+            out int ownedIndex)
+        {
+            ownedIndex = -1;
+            if (string.IsNullOrWhiteSpace(componentId) || ownedIds == null || ownedStats == null)
+                return false;
+            if (ShipFamilyPartCalcProfileSet.IsCosmeticPartName(componentId))
+                return false;
+
+            string poolKey = ResolveStackPoolKey(componentId);
+            if (IsWeaponPoolKey(poolKey))
+                return false;
+
+            return TryFindBestOwned(poolKey, ownedIds, ownedStats, ownedFleets, out ownedIndex, out _);
+        }
+
+        /// <summary>
+        /// Owned row this card would replace. True only when the card’s fleet-adjusted
+        /// score is strictly higher than a different piece that currently holds the pool.
+        /// The card that already is that piece, a tie, and an empty pool return false.
+        /// </summary>
+        public static bool TryFindDisplacedPrimary(
+            string componentId,
+            in ShipComponentAbilityStats rawStats,
+            ShipFamilySpecialBonuses purchaseFleet,
+            IReadOnlyList<string> ownedIds,
+            IReadOnlyList<ShipComponentAbilityStats> ownedStats,
+            IReadOnlyList<ShipFamilySpecialBonuses> ownedFleets,
+            out int ownedIndex)
+        {
+            ownedIndex = -1;
+            if (string.IsNullOrWhiteSpace(componentId) || ownedIds == null || ownedStats == null)
+                return false;
+            if (ShipFamilyPartCalcProfileSet.IsCosmeticPartName(componentId))
+                return false;
+
+            string poolKey = ResolveStackPoolKey(componentId);
+            if (IsWeaponPoolKey(poolKey))
+                return false;
+
+            if (!TryFindBestOwned(poolKey, ownedIds, ownedStats, ownedFleets, out int bestIndex, out float best))
+                return false;
+            if (string.Equals(ownedIds[bestIndex], componentId, StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            float cardScore = ScorePart(poolKey, rawStats, purchaseFleet);
+            if (cardScore <= best)
+                return false;
+
+            ownedIndex = bestIndex;
+            return true;
+        }
+
+        /// <summary>
+        /// Best owned member of <paramref name="poolKey"/>. A tie keeps the earlier row.
+        /// </summary>
+        static bool TryFindBestOwned(
+            string poolKey,
+            IReadOnlyList<string> ownedIds,
+            IReadOnlyList<ShipComponentAbilityStats> ownedStats,
+            IReadOnlyList<ShipFamilySpecialBonuses> ownedFleets,
+            out int bestIndex,
+            out float bestScore)
+        {
+            bestIndex = -1;
+            bestScore = float.NegativeInfinity;
+            int count = Mathf.Min(ownedIds.Count, ownedStats.Count);
+            for (int i = 0; i < count; i++)
+            {
+                string id = ownedIds[i];
+                if (string.IsNullOrWhiteSpace(id))
+                    continue;
+                if (ShipFamilyPartCalcProfileSet.IsCosmeticPartName(id))
+                    continue;
+                if (!string.Equals(ResolveStackPoolKey(id), poolKey, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                ShipFamilySpecialBonuses fleet = ShipFamilySpecialBonuses.Identity;
+                if (ownedFleets != null && i < ownedFleets.Count)
+                    fleet = ownedFleets[i];
+
+                float score = ScorePart(poolKey, ownedStats[i], fleet);
+                if (bestIndex < 0 || score > bestScore)
+                {
+                    bestScore = score;
+                    bestIndex = i;
+                }
+            }
+
+            return bestIndex >= 0;
         }
 
         /// <summary>Engine primary: cruise base first, then energy plant size.</summary>

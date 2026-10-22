@@ -1,12 +1,15 @@
 # End-to-end dedicated server deploy: optional VM disk cleanup, upload (OpenSSH or GCS), install on VM, restart systemd or hard VM reset.
 # Replaces a manual split between upload_linux_build_to_gcs.bat (bucket only) and Cloud Shell.
 #
-# Flags (any position, case-insensitive): freeDisk  useGcs  aggressive  useIap
+# Flags (any position, case-insensitive): freeDisk  useGcs  aggressive  useIap  resetVm
 #   freeDisk   — run vm_free_disk_for_server_upload_gce.ps1 before upload (same as vm_free_disk_for_server_upload_gce.bat).
 #   useGcs     — tar + upload_linux_build_to_gcs.bat, then VM pulls from GCS and extracts (needs bucket IAM for the VM SA).
 #   aggressive — pass through to free-disk script when freeDisk is set (also removes entire game install; see vm_free_disk_for_server_upload.sh).
 #                Implied automatically when both freeDisk and useGcs are set (small GCE boot disks).
 #   useIap     — IAP for free-disk / GCS install ssh; after deploy matches legacy deploy_server_gce.bat: hard VM reset instead of systemctl restart.
+#   resetVm    — after a successful upload, hard-reboot the VM (reset_gce_vm.bat). Does not switch SSH to IAP.
+#                Unity's + Deploy menu passes this. freeDisk/GCS install already stop titanorbit-server; SSH systemctl
+#                restart often never brings a joinable game back, and a VM reset does (systemd starts the unit on boot).
 #
 # Remaining arguments follow upload_linux_build_to_gce.bat / upload_linux_build_to_gcs.bat order:
 #   [build folder] [project id] [bucket name when -UseGcs]   plus optional useIap mixed in.
@@ -73,6 +76,7 @@ $flags = @{
     freeDisk   = $false
     useGcs     = $false
     aggressive = $false
+    resetVm    = $false
 }
 $positional = [System.Collections.Generic.List[string]]::new()
 foreach ($a in $args) {
@@ -80,11 +84,14 @@ foreach ($a in $args) {
     if ($t -match '^(?i)freeDisk$') { $flags.freeDisk = $true; continue }
     if ($t -match '^(?i)useGcs$') { $flags.useGcs = $true; continue }
     if ($t -match '^(?i)aggressive$') { $flags.aggressive = $true; continue }
+    if ($t -match '^(?i)resetVm$') { $flags.resetVm = $true; continue }
     $positional.Add($t) | Out-Null
 }
 
 $hasUseIap = ($positional | Where-Object { $_ -match '^(?i)useIap$' }).Count -gt 0
-$resetVmAfter = $hasUseIap
+# useIap keeps the legacy "reset instead of systemctl" behavior. resetVm is the Unity publish path:
+# same hard reboot, without forcing IAP on the upload/install SSH that already works.
+$resetVmAfter = $hasUseIap -or $flags.resetVm
 
 if ($flags.freeDisk -and $flags.useGcs -and -not $flags.aggressive) {
     $flags.aggressive = $true
@@ -125,7 +132,7 @@ Write-Host "Repo root:     $repoRoot"
 Write-Host "Source dir:    $sourceDir"
 Write-Host "Mode:          $(if ($flags.useGcs) { 'GCS upload + VM pull' } else { 'OpenSSH folder upload' })"
 Write-Host "Free disk:     $(if ($flags.freeDisk) { 'yes' } else { 'no' })$(if ($flags.freeDisk -and $flags.aggressive) { ' (aggressive)' } elseif ($flags.freeDisk) { '' })"
-Write-Host "Post-deploy:   $(if ($resetVmAfter) { 'VM reset (useIap legacy)' } else { 'systemctl restart titanorbit-server' })"
+Write-Host "Post-deploy:   $(if ($resetVmAfter) { 'hard VM reset (reset_gce_vm.bat)' } else { 'systemctl restart titanorbit-server' })"
 Write-Host ""
 
 if ($flags.freeDisk) {
@@ -197,7 +204,7 @@ else {
 }
 
 $finBase = if ($flags.useGcs) { if ($flags.freeDisk) { 4 } else { 3 } } else { if ($flags.freeDisk) { 3 } else { 2 } }
-Write-Host "--- [$finBase] Post-deploy: $(if ($resetVmAfter) { 'reset VM' } else { 'restart service' }) ---"
+Write-Host "--- [$finBase] Post-deploy: $(if ($resetVmAfter) { 'reset VM (gcloud compute instances reset)' } else { 'restart service' }) ---"
 
 $resetBat = Join-Path $gceDir "reset_gce_vm.bat"
 $restartBat = Join-Path $gceDir "restart_titanorbit_server_on_gce.bat"

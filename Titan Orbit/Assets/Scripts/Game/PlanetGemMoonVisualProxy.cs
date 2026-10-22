@@ -72,6 +72,13 @@ namespace TitanOrbit.Game
         public Vector3 MoonWorldPosition =>
             _moonRoot != null ? _moonRoot.position : transform.position;
 
+        /// <summary>
+        /// The spinning surface mesh (texture rides this, not the shield or the label).
+        /// The Your Ship card films it when the moon checkbox is on.
+        /// </summary>
+        public Renderer SurfaceRenderer =>
+            _moonSpinVisual != null ? _moonSpinVisual.GetComponent<Renderer>() : null;
+
         public Vector3 SpinAxisWorld
         {
             get

@@ -30,7 +30,10 @@ namespace TitanOrbit.Core
     /// Background checkboxes independently enable the shader starfield (production) and the
     /// optional legacy nebula quad. <see cref="ShowOrbitMenuCardsPanel"/> hides the orbit-menu
     /// CARDS tab (default off) so the dock shows SHIPS and GEAR only; flip it later to bring
-    /// the spin-offer panel back without deleting that UI. <see cref="ShowJoinGameClosesIn"/>
+    /// the spin-offer panel back without deleting that UI. The Your Ship card toggles
+    /// (<see cref="PortraitShipOnly"/>, moon, stars, nearby hulls, auto-rotate) live here too
+    /// so the live camera and the card buttons share one set of switches.
+    /// <see cref="ShowJoinGameClosesIn"/>
     /// hides the Join Game "closes in…" countdown (default off); flip it to show empty-lobby
     /// idle-kill time again. <see cref="EnableBetaFeedback"/> (default off) shows the hidden
     /// field-notes screen and lets the server append tester notes to BetaFeedback.log —
@@ -135,6 +138,34 @@ namespace TitanOrbit.Core
 
         /// <summary>Mirror of the last published cards-panel flag for change detection.</summary>
         bool _lastPublishedShowOrbitMenuCardsPanel;
+
+        // [UNITY] / [TITAN-ORBIT] Your Ship live camera. Ship-only is the old black thumbnail
+        // look. The other boxes add that same framed shot's surroundings. Ship-only wins
+        // while it is on, and the scene boxes stay stored so turning it off brings them back.
+        [Header("Orbit Menu — Your Ship camera")]
+        [Tooltip("ON: the Your Ship card films only the hull on black, same as the baked thumbnail. OFF: moon, stars, and nearby ships are included from their own checkboxes. The zoom does not change.")]
+        [SerializeField] bool portraitShipOnly;
+
+        [Tooltip("ON: the Your Ship camera also draws the moon surface mesh (texture and spin). Ignored while Ship Only is on.")]
+        [SerializeField] bool portraitShowMoon = true;
+
+        [Tooltip("ON: the Your Ship camera draws the starfield behind the hull. Ignored while Ship Only is on.")]
+        [SerializeField] bool portraitShowStars = true;
+
+        [Tooltip("ON: other ships close enough to enter this framed shot are drawn too. Ignored while Ship Only is on.")]
+        [SerializeField] bool portraitShowNearbyShips = true;
+
+        [Tooltip("ON: the Your Ship camera slowly orbits the hull, keeping the theatrical 3/4 height. Drag on the picture still spins it either way.")]
+        [SerializeField] bool portraitAutoRotate;
+
+        /// <summary>
+        /// Play Mode: fired when any Your Ship camera checkbox changes so the card
+        /// buttons can repaint without the camera polling the UI.
+        /// </summary>
+        public static event Action PortraitCameraOptionsChanged;
+
+        /// <summary>Last bit pack sent to <see cref="PortraitCameraOptionsChanged"/>.</summary>
+        int _publishedPortraitBits = int.MinValue;
 
         // [UNITY] / [TITAN-ORBIT] Join Game lobby rows can show "closes in Xm" for empty matches.
         // Default off — the idle-kill still happens on the server; this only hides the label.
@@ -245,6 +276,75 @@ namespace TitanOrbit.Core
         /// Default off — SHIPS and GEAR only. The cards panel code stays so this can be turned back on.
         /// </summary>
         public bool ShowOrbitMenuCardsPanel => showOrbitMenuCardsPanel;
+
+        /// <summary>
+        /// True when the Your Ship card should film only the hull on black.
+        /// While this is on, moon, stars, and nearby ships stay out of that picture.
+        /// </summary>
+        public bool PortraitShipOnly => portraitShipOnly;
+
+        /// <summary>True when the Your Ship camera should draw the moon surface. Ship-only still hides it.</summary>
+        public bool PortraitShowMoon => portraitShowMoon;
+
+        /// <summary>True when the Your Ship camera should draw stars. Ship-only still hides them.</summary>
+        public bool PortraitShowStars => portraitShowStars;
+
+        /// <summary>True when the Your Ship camera should draw other nearby hulls. Ship-only still hides them.</summary>
+        public bool PortraitShowNearbyShips => portraitShowNearbyShips;
+
+        /// <summary>True when the Your Ship camera slowly orbits the hull.</summary>
+        public bool PortraitAutoRotate => portraitAutoRotate;
+
+        /// <summary>Ship-only black shot. Does not clear the scene checkboxes.</summary>
+        public void SetPortraitShipOnly(bool value)
+        {
+            if (portraitShipOnly == value)
+                return;
+            portraitShipOnly = value;
+            NotifyPortraitCameraOptionsChangedIfNeeded();
+        }
+
+        /// <summary>Moon surface in the Your Ship shot. Turning it on leaves ship-only.</summary>
+        public void SetPortraitShowMoon(bool value)
+        {
+            if (portraitShowMoon == value && (!value || !portraitShipOnly))
+                return;
+            portraitShowMoon = value;
+            if (value)
+                portraitShipOnly = false;
+            NotifyPortraitCameraOptionsChangedIfNeeded();
+        }
+
+        /// <summary>Stars in the Your Ship shot. Turning them on leaves ship-only.</summary>
+        public void SetPortraitShowStars(bool value)
+        {
+            if (portraitShowStars == value && (!value || !portraitShipOnly))
+                return;
+            portraitShowStars = value;
+            if (value)
+                portraitShipOnly = false;
+            NotifyPortraitCameraOptionsChangedIfNeeded();
+        }
+
+        /// <summary>Nearby hulls in the Your Ship shot. Turning them on leaves ship-only.</summary>
+        public void SetPortraitShowNearbyShips(bool value)
+        {
+            if (portraitShowNearbyShips == value && (!value || !portraitShipOnly))
+                return;
+            portraitShowNearbyShips = value;
+            if (value)
+                portraitShipOnly = false;
+            NotifyPortraitCameraOptionsChangedIfNeeded();
+        }
+
+        /// <summary>Slow theatrical orbit on the Your Ship card. Works in ship-only and scene views.</summary>
+        public void SetPortraitAutoRotate(bool value)
+        {
+            if (portraitAutoRotate == value)
+                return;
+            portraitAutoRotate = value;
+            NotifyPortraitCameraOptionsChangedIfNeeded();
+        }
 
         /// <summary>
         /// True when Join Game lobby rows should show the empty-match "closes in…" countdown
@@ -450,6 +550,7 @@ namespace TitanOrbit.Core
                 _hasPublishedShowSpaceBackground = false;
                 _hasPublishedShowStarfieldBackground = false;
                 _hasPublishedShowOrbitMenuCardsPanel = false;
+                _publishedPortraitBits = int.MinValue;
             }
         }
 
@@ -533,6 +634,7 @@ namespace TitanOrbit.Core
             NotifyShowSpaceBackgroundChangedIfNeeded();
             NotifyShowStarfieldBackgroundChangedIfNeeded();
             NotifyShowOrbitMenuCardsPanelChangedIfNeeded();
+            NotifyPortraitCameraOptionsChangedIfNeeded();
         }
 
         /// <summary>
@@ -546,6 +648,32 @@ namespace TitanOrbit.Core
                 ref _lastPublishedShowOrbitMenuCardsPanel,
                 showOrbitMenuCardsPanel,
                 ShowOrbitMenuCardsPanelChanged);
+        }
+
+        /// <summary>
+        /// Fires <see cref="PortraitCameraOptionsChanged"/> when any Your Ship checkbox changes.
+        /// </summary>
+        void NotifyPortraitCameraOptionsChangedIfNeeded()
+        {
+            if (!Application.isPlaying)
+                return;
+
+            int bits = 0;
+            if (portraitShipOnly)
+                bits |= 1;
+            if (portraitShowMoon)
+                bits |= 2;
+            if (portraitShowStars)
+                bits |= 4;
+            if (portraitShowNearbyShips)
+                bits |= 8;
+            if (portraitAutoRotate)
+                bits |= 16;
+            if (_publishedPortraitBits == bits)
+                return;
+
+            _publishedPortraitBits = bits;
+            PortraitCameraOptionsChanged?.Invoke();
         }
 
         /// <summary>

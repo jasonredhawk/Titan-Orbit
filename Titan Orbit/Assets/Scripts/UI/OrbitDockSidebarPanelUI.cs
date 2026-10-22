@@ -13,10 +13,12 @@ using UnityEngine.UI;
 namespace TitanOrbit.UI
 {
     /// <summary>
-    /// Narrow left Orbit Menu dock: SHIPS / GEAR / CARDS nav, current ship, family name,
-    /// bank, and one LOADOUT list (cards + components + drones + rockets + mines share slots).
-    /// The WEAPONS plate under Your Ship names each owned bullet type and what that
-    /// shot does. Hover still opens the full ordnance tooltip.
+    /// Narrow left Orbit Menu dock. The top of the panel stays put: GEM DEPOSITS,
+    /// then the SHIPS / GEAR / CARDS buttons, then the live camera of the ship you
+    /// are flying. Everything under that picture (family bonuses, weapons, toggles,
+    /// and the LOADOUT list) lives in a scroll view, so the camera cannot scroll away.
+    /// The WEAPONS plate names each owned bullet type and what that shot does.
+    /// Hover still opens the full ordnance tooltip.
     /// The CARDS nav button follows <see cref="GameManager.ShowOrbitMenuCardsPanel"/> (default off)
     /// so the dock can show only SHIPS and GEAR until that panel is turned back on.
     /// </summary>
@@ -50,10 +52,15 @@ namespace TitanOrbit.UI
 
         private const float NavStripHeight = 44f;
         /// <summary>
-        /// Height of the "Your Ship" hero card (preview + labels + power bar).
-        /// Kept compact so more LOADOUT slots stay on-screen at once.
+        /// Height of the "Your Ship" hero card (live camera + name + power bar).
+        /// This card is pinned above the scroll, so LOADOUT uses whatever height
+        /// is left under the picture.
         /// </summary>
         private const float CurrentShipNodeHeight = 220f;
+        /// <summary>YOUR SHIP caption kept with the pinned camera.</summary>
+        private const float YourShipHeaderHeight = 28f;
+        /// <summary>Family name line kept with the pinned camera.</summary>
+        private const float FamilyNameHeight = 18f;
         private const float BankBalanceBannerHeight = 96f;
         private const float AutoDepositToggleHeight = 38f;
         public const string AutoDepositGemsPrefsKey = "TitanOrbit_AutoDepositGems";
@@ -136,6 +143,11 @@ namespace TitanOrbit.UI
             ApplyNavVisuals();
         }
 
+        /// <summary>
+        /// Creates the dock the first time the Orbit Menu opens: GEM DEPOSITS and the
+        /// live ship camera stay fixed, and the list under the camera scrolls.
+        /// Later calls only fill in controls that a script reload dropped.
+        /// </summary>
         public void EnsureBuilt()
         {
             // --- Ensure setup ---
@@ -171,15 +183,37 @@ namespace TitanOrbit.UI
                 rootBg.type = panelBackgroundSprite.border.sqrMagnitude > 0 ? Image.Type.Sliced : Image.Type.Simple;
             }
 
-            BuildNavStrip();
+            // --- Fixed top + scrolling body ---
+            // [UNITY] A VerticalLayoutGroup on the dock gives the leftover height
+            // to the scroll view. GEM DEPOSITS, the nav buttons, and the live
+            // camera are siblings above that scroll, so they are not clipped or
+            // moved when the player scrolls LOADOUT.
+            var rootVlg = gameObject.AddComponent<VerticalLayoutGroup>();
+            rootVlg.spacing = 0f;
+            rootVlg.padding = new RectOffset(0, 0, 0, 0);
+            rootVlg.childAlignment = TextAnchor.UpperCenter;
+            rootVlg.childControlWidth = true;
+            rootVlg.childControlHeight = true;
+            rootVlg.childForceExpandWidth = true;
+            rootVlg.childForceExpandHeight = false;
+
+            BuildFixedDockHeader();
 
             var scrollGo = new GameObject("SidebarScroll");
             scrollGo.transform.SetParent(transform, false);
             var scrollRt = scrollGo.AddComponent<RectTransform>();
             scrollRt.anchorMin = Vector2.zero;
             scrollRt.anchorMax = Vector2.one;
-            scrollRt.offsetMin = new Vector2(4f, 4f);
-            scrollRt.offsetMax = new Vector2(-4f, -(NavStripHeight + 4f));
+            scrollRt.offsetMin = Vector2.zero;
+            scrollRt.offsetMax = Vector2.zero;
+            var scrollLe = scrollGo.AddComponent<LayoutElement>();
+            // flexibleHeight takes every pixel under the pinned camera.
+            // preferredHeight -1 lets the layout group use minHeight as the
+            // preferred size, then pour the surplus into this one child.
+            scrollLe.flexibleHeight = 1f;
+            scrollLe.minHeight = 48f;
+            scrollLe.preferredHeight = -1f;
+            scrollLe.flexibleWidth = 1f;
             var scroll = scrollGo.AddComponent<ScrollRect>();
             scroll.horizontal = false;
             scroll.vertical = true;
@@ -218,19 +252,11 @@ namespace TitanOrbit.UI
             contentFitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
             scroll.content = _contentRoot;
 
-            CreateSectionHeader(_contentRoot, "YOUR SHIP", 28f);
-            _familyNameText = CreateBodyLabel(_contentRoot, "FamilyName", "FAMILY", 18f);
-            _familyNameText.fontSize = 12f;
-            _familyNameText.fontStyle = FontStyles.Bold;
-            _familyNameText.characterSpacing = 1.5f;
-            _familyNameText.color = new Color(0.62f, 0.78f, 0.95f, 0.95f);
-            _currentShipHost = CreateStretchHost(_contentRoot, "CurrentShipHost", CurrentShipNodeHeight);
-            ApplyTopJustifiedHostLayout(_currentShipHost);
-            ApplyYourShipHeroChrome(_currentShipHost);
+            // Family bonuses, weapons, toggles, and LOADOUT start under the
+            // pinned camera. GEM DEPOSITS is built above the nav buttons.
             CreateFamilyStatsBlock(_contentRoot);
             CreateOrdnanceBlock(_contentRoot);
 
-            CreateBankBalanceBanner(_contentRoot);
             CreateAutoDepositToggle(_contentRoot);
             CreateHealingBulletsToggle(_contentRoot);
             CreateCustomizeHullButton(_contentRoot);
@@ -277,12 +303,99 @@ namespace TitanOrbit.UI
             ApplyNavVisuals();
         }
 
+        /// <summary>
+        /// Builds the dock chrome that must stay on screen: the GEM DEPOSITS
+        /// plate, the SHIPS / GEAR buttons, and the live ship camera.
+        /// Called once from <see cref="EnsureBuilt"/>. These objects are direct
+        /// children of the dock, above <c>SidebarScroll</c>, so the scroll view's
+        /// mask cannot clip the picture and scrolling cannot move it.
+        /// </summary>
+        private void BuildFixedDockHeader()
+        {
+            // --- GEM DEPOSITS, above the nav buttons ---
+            // [TITAN-ORBIT] Cargo → bank → planet level is the first thing the
+            // player reads when the Orbit Menu opens. It used to sit under the
+            // camera, inside the scroll, so a long LOADOUT hid it.
+            const int gemPadH = 8;
+            const int gemPadTop = 6;
+            const int gemPadBottom = 4;
+            var gemHost = new GameObject("GemDepositsHost");
+            gemHost.transform.SetParent(transform, false);
+            var gemLe = gemHost.AddComponent<LayoutElement>();
+            gemLe.preferredHeight = BankBalanceBannerHeight + gemPadTop + gemPadBottom;
+            gemLe.minHeight = gemLe.preferredHeight;
+            gemLe.flexibleHeight = 0f;
+            gemLe.flexibleWidth = 1f;
+            var gemVlg = gemHost.AddComponent<VerticalLayoutGroup>();
+            gemVlg.spacing = 0f;
+            gemVlg.padding = new RectOffset(gemPadH, gemPadH, gemPadTop, gemPadBottom);
+            gemVlg.childAlignment = TextAnchor.UpperCenter;
+            gemVlg.childControlWidth = true;
+            gemVlg.childControlHeight = true;
+            gemVlg.childForceExpandWidth = true;
+            gemVlg.childForceExpandHeight = true;
+            CreateBankBalanceBanner(gemHost.transform);
+
+            BuildNavStrip();
+
+            // --- Live camera, pinned under the buttons ---
+            // YOUR SHIP and the family name sit on the picture, not under it,
+            // so they stay with the camera. Family bonuses and LOADOUT are
+            // created later, inside the scroll.
+            const float labelGap = 4f;
+            const int shipPadH = 8;
+            const int shipPadTop = 4;
+            const int shipPadBottom = 6;
+            float shipStack = YourShipHeaderHeight + labelGap + FamilyNameHeight + labelGap + CurrentShipNodeHeight;
+            var shipHostGo = new GameObject("PinnedShip");
+            shipHostGo.transform.SetParent(transform, false);
+            var shipHostLe = shipHostGo.AddComponent<LayoutElement>();
+            shipHostLe.preferredHeight = shipStack + shipPadTop + shipPadBottom;
+            shipHostLe.minHeight = shipHostLe.preferredHeight;
+            shipHostLe.flexibleHeight = 0f;
+            shipHostLe.flexibleWidth = 1f;
+            var shipVlg = shipHostGo.AddComponent<VerticalLayoutGroup>();
+            shipVlg.spacing = labelGap;
+            shipVlg.padding = new RectOffset(shipPadH, shipPadH, shipPadTop, shipPadBottom);
+            shipVlg.childAlignment = TextAnchor.UpperCenter;
+            shipVlg.childControlWidth = true;
+            shipVlg.childControlHeight = true;
+            shipVlg.childForceExpandWidth = true;
+            shipVlg.childForceExpandHeight = false;
+
+            CreateSectionHeader(shipHostGo.transform, "YOUR SHIP", YourShipHeaderHeight);
+            _familyNameText = CreateBodyLabel(shipHostGo.transform, "FamilyName", "FAMILY", FamilyNameHeight);
+            _familyNameText.fontSize = 12f;
+            _familyNameText.fontStyle = FontStyles.Bold;
+            _familyNameText.characterSpacing = 1.5f;
+            _familyNameText.color = new Color(0.62f, 0.78f, 0.95f, 0.95f);
+            _currentShipHost = CreateStretchHost(shipHostGo.transform, "CurrentShipHost", CurrentShipNodeHeight);
+            ApplyTopJustifiedHostLayout(_currentShipHost);
+            ApplyYourShipHeroChrome(_currentShipHost);
+        }
+
+        /// <summary>
+        /// Builds the SHIPS / GEAR / CARDS row between GEM DEPOSITS and the live camera.
+        /// Called from <see cref="BuildFixedDockHeader"/> so the row is not inside the scroll.
+        /// </summary>
         private void BuildNavStrip()
         {
-            // --- Build data ---
+            // --- SHIPS / GEAR row ---
+            // The dock's VerticalLayoutGroup reads this LayoutElement for the row height.
+            // Parenting under the dock already supplies a RectTransform; adding a second
+            // one would fail and leave the row with no anchors.
             var navGo = new GameObject("NavStrip");
             navGo.transform.SetParent(transform, false);
-            var navRt = navGo.AddComponent<RectTransform>();
+            // [UNITY] Parenting to a RectTransform converts the child. If that has not
+            // happened yet, add the rect once — never twice.
+            var navRt = navGo.GetComponent<RectTransform>();
+            if (navRt == null)
+                navRt = navGo.AddComponent<RectTransform>();
+            var navLe = navGo.AddComponent<LayoutElement>();
+            navLe.preferredHeight = NavStripHeight;
+            navLe.minHeight = NavStripHeight;
+            navLe.flexibleHeight = 0f;
+            navLe.flexibleWidth = 1f;
             navRt.anchorMin = new Vector2(0f, 1f);
             navRt.anchorMax = new Vector2(1f, 1f);
             navRt.pivot = new Vector2(0.5f, 1f);

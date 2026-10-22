@@ -167,14 +167,14 @@ namespace TitanOrbit.Data
         /// <summary>
         /// The single part whose turn Base is allowed on the ship.
         /// With no purchased part that authors turn, the highest hull <c>turnSpeed</c> wins.
-        /// A purchase that authors turn takes the Base even when it is lower than the hull.
-        /// Several purchases keep the highest turn base. A tie goes to the higher
-        /// <c>turnSpeedPerExtraLevel</c>, then the earlier list index.
+        /// Hull and purchased parts compete together. The highest turn Base wins.
+        /// A tie goes to the higher <c>turnSpeedPerExtraLevel</c>, then the earlier
+        /// list index. A purchase wins only when its base is actually higher.
         /// Parts with no turn Base (only PerExtra) are never chosen. Everyone else
         /// still adds turn PerExtra.
         /// </summary>
         /// <param name="storeExtraStartIndex">
-        /// First moon-store row. <see cref="int.MaxValue"/> means the list is hull-only.
+        /// Kept so callers can still pass the hull/extra split. Turn ownership no longer depends on it.
         /// </param>
         /// <returns>Index into <paramref name="perComponentStats"/>, or -1 when no part authored a turn Base.</returns>
         public static int PickBestTurnBaseIndex(
@@ -185,17 +185,14 @@ namespace TitanOrbit.Data
             if (componentIds == null || perComponentStats == null)
                 return -1;
 
+            // The hull/extra split no longer gates who may own turn Base.
+            _ = storeExtraStartIndex;
             int count = Mathf.Min(componentIds.Count, perComponentStats.Count);
-            bool purchasedOwn = HasPurchasedTurnBase(
-                componentIds, perComponentStats, storeExtraStartIndex, count);
             int best = -1;
             float bestBase = 0f;
             float bestPer = float.NegativeInfinity;
             for (int i = 0; i < count; i++)
             {
-                if (purchasedOwn && i < storeExtraStartIndex)
-                    continue;
-
                 string id = componentIds[i];
                 if (string.IsNullOrWhiteSpace(id))
                     continue;
@@ -222,34 +219,9 @@ namespace TitanOrbit.Data
             return best;
         }
 
-        /// <summary>True when a moon-store row authors a turn Base. That row then owns turn.</summary>
-        static bool HasPurchasedTurnBase(
-            IReadOnlyList<string> componentIds,
-            IReadOnlyList<ShipComponentAbilityStats> perComponentStats,
-            int storeExtraStartIndex,
-            int count)
-        {
-            if (storeExtraStartIndex == int.MaxValue || storeExtraStartIndex < 0)
-                return false;
-
-            for (int i = storeExtraStartIndex; i < count; i++)
-            {
-                string id = componentIds[i];
-                if (string.IsNullOrWhiteSpace(id))
-                    continue;
-                if (ShipFamilyPartCalcProfileSet.IsCosmeticPartName(id))
-                    continue;
-                if (perComponentStats[i].turnSpeed > 0.0001f)
-                    return true;
-            }
-
-            return false;
-        }
-
         /// <summary>
-        /// Same turn owner as the unbuffed pick, then the highest fleet-adjusted
-        /// turn among the parts allowed to own it. A lone weaker purchase still
-        /// beats the hull. A tie keeps the earlier part.
+        /// Highest fleet-adjusted turn Base across hull and gear.
+        /// A tie keeps the earlier part.
         /// </summary>
         public static int PickBestTurnBaseIndex(
             IReadOnlyList<string> componentIds,
@@ -265,16 +237,12 @@ namespace TitanOrbit.Data
             if (unbuffed >= perComponentStats.Count)
                 return unbuffed;
 
-            bool purchasedOwn = storeExtraStartIndex != int.MaxValue
-                && storeExtraStartIndex >= 0
-                && unbuffed >= storeExtraStartIndex;
+            _ = storeExtraStartIndex;
             int best = unbuffed;
             float bestValue = TurnBaseWithFleet(unbuffed, perComponentStats, perComponentFleet);
             int count = Mathf.Min(componentIds.Count, perComponentStats.Count);
             for (int i = 0; i < count; i++)
             {
-                if (purchasedOwn && i < storeExtraStartIndex)
-                    continue;
                 string id = componentIds[i];
                 if (string.IsNullOrWhiteSpace(id))
                     continue;

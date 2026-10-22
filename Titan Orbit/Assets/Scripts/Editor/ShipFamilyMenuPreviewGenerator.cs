@@ -34,51 +34,6 @@ namespace TitanOrbit.Editor
             public Material[] materials;
         }
 
-        private struct TheatricalPreviewFraming
-        {
-            public Vector3 lookTarget;
-            public Vector3 cameraPosition;
-            public Quaternion keyLightRotation;
-        }
-
-        private static TheatricalPreviewFraming BuildTheatricalFraming(Bounds wb, ShipFamilyDefinition def)
-        {
-            Vector3 c = wb.center;
-            float padding = Mathf.Max(1f, def.menuPreviewBoundsPadding);
-            float maxExt = Mathf.Max(wb.extents.x, wb.extents.y, wb.extents.z);
-            float standoff = maxExt * padding * 3.6f;
-
-            // Ship nose points +Z; camera sits front-right and above, looking down at the hull.
-            const float elevationDeg = 26f;
-            const float azimuthDeg = 34f;
-            float elevRad = elevationDeg * Mathf.Deg2Rad;
-            float azRad = azimuthDeg * Mathf.Deg2Rad;
-            float horiz = standoff * Mathf.Cos(elevRad);
-            float height = standoff * Mathf.Sin(elevRad);
-            Vector3 cameraOffset = new Vector3(
-                horiz * Mathf.Sin(azRad),
-                height,
-                horiz * Mathf.Cos(azRad));
-
-            Vector3 lookTarget = c + new Vector3(0f, wb.extents.y * 0.12f, wb.extents.z * 0.1f);
-            Vector3 cameraPosition = lookTarget + cameraOffset;
-
-            // Key light from upper front-right, slightly higher than camera, toward the visible front-left surfaces.
-            Vector3 lightOffset = new Vector3(
-                horiz * 0.62f,
-                height * 1.75f,
-                horiz * 0.82f);
-            Vector3 lightPosition = lookTarget + lightOffset;
-            Quaternion keyLightRotation = Quaternion.LookRotation((lookTarget - lightPosition).normalized, Vector3.up);
-
-            return new TheatricalPreviewFraming
-            {
-                lookTarget = lookTarget,
-                cameraPosition = cameraPosition,
-                keyLightRotation = keyLightRotation
-            };
-        }
-
         private static bool RenderComponentToPng(
             GameObject prefab,
             ShipFamilyDefinition def,
@@ -145,7 +100,7 @@ namespace TitanOrbit.Editor
             float minOrthoSize)
         {
             if (style == PreviewCameraStyle.Theatrical)
-                subject.transform.localRotation = Quaternion.Euler(0f, -28f, 0f);
+                subject.transform.localRotation = Quaternion.Euler(0f, TheatricalMenuPreviewFraming.SubjectYawDegrees, 0f);
 
             if (overrideMaterials != null && overrideMaterials.Length > 0)
                 ApplyMaterialOverride(subject, overrideMaterials);
@@ -175,9 +130,15 @@ namespace TitanOrbit.Editor
             cam.nearClipPlane = 0.05f;
             cam.farClipPlane = 200f;
 
-            TheatricalPreviewFraming theatricalFraming = default;
+            // Same 3/4 pose the Orbit Menu live camera uses. Do not copy the angles here.
+            TheatricalMenuPreviewFraming theatricalFraming = default;
             if (style == PreviewCameraStyle.Theatrical)
-                theatricalFraming = BuildTheatricalFraming(wb, def);
+            {
+                theatricalFraming = TheatricalMenuPreviewFraming.Build(
+                    wb,
+                    def.menuPreviewTheatricalFieldOfView,
+                    def.menuPreviewBoundsPadding);
+            }
             ConfigurePreviewCamera(cam, camGo.transform, wb, def, style, minOrthoSize, theatricalFraming);
 
             var lightGo = new GameObject("MenuPreviewLight");
@@ -185,10 +146,12 @@ namespace TitanOrbit.Editor
             lightGo.transform.SetParent(root.transform, false);
             var light = lightGo.AddComponent<Light>();
             light.type = LightType.Directional;
-            light.intensity = style == PreviewCameraStyle.Theatrical ? 1.2f : 1.05f;
+            light.intensity = style == PreviewCameraStyle.Theatrical
+                ? TheatricalMenuPreviewFraming.KeyLightIntensity
+                : 1.05f;
             light.cullingMask = ~0;
             if (style == PreviewCameraStyle.Theatrical)
-                light.transform.rotation = theatricalFraming.keyLightRotation;
+                light.transform.rotation = theatricalFraming.KeyLightRotation;
             else
                 light.transform.rotation = Quaternion.Euler(58f, -32f, 0f);
 
@@ -232,7 +195,7 @@ namespace TitanOrbit.Editor
             ShipFamilyDefinition def,
             PreviewCameraStyle style,
             float minOrthoSize,
-            TheatricalPreviewFraming theatricalFraming)
+            TheatricalMenuPreviewFraming theatricalFraming)
         {
             Vector3 c = wb.center;
             float padding = Mathf.Max(1f, def.menuPreviewBoundsPadding);
@@ -250,9 +213,9 @@ namespace TitanOrbit.Editor
             }
 
             cam.orthographic = false;
-            cam.fieldOfView = Mathf.Clamp(def.menuPreviewTheatricalFieldOfView, 20f, 55f);
-            camTransform.position = theatricalFraming.cameraPosition;
-            camTransform.LookAt(theatricalFraming.lookTarget, Vector3.up);
+            cam.fieldOfView = theatricalFraming.FieldOfView;
+            camTransform.position = theatricalFraming.CameraPosition;
+            camTransform.LookAt(theatricalFraming.LookTarget, Vector3.up);
         }
 
         [MenuItem("Titan Orbit/Generate Menu Previews For Selected Ship Family")]

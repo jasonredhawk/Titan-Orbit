@@ -717,7 +717,7 @@ namespace TitanOrbit.Editor.Build
 
         /// <summary>
         /// Fast day-to-day path: build the Linux GCE server in the already-open Editor, then launch
-        /// <c>deploy_server_gce.bat freeDisk useGcs</c> against a staging copy of the output.
+        /// <c>deploy_server_gce.bat freeDisk useGcs resetVm</c> against a staging copy of the output.
         /// Prefer this over <c>build_and_deploy_server_gce.bat</c> when Unity is already open —
         /// batchmode must close/reopen the project and is much slower.
         /// </summary>
@@ -729,7 +729,7 @@ namespace TitanOrbit.Editor.Build
             // the live BuildOutput folder (truncated IL2CPP metadata was a real failure mode).
             Debug.Log(
                 "[TitanOrbitBuild] Linux GCE build + deploy starting (Editor stays open). " +
-                "After BuildPlayer succeeds, a console window runs deploy_server_gce.bat freeDisk useGcs.");
+                "After BuildPlayer succeeds, a console window runs deploy_server_gce.bat freeDisk useGcs resetVm.");
             BuildLinuxDedicatedServer(
                 GetLinuxServerOutputBasePath(),
                 "GCE",
@@ -841,7 +841,9 @@ namespace TitanOrbit.Editor.Build
         /// </param>
         /// <param name="deployToGceAfterSuccess">
         /// When true (Editor + Deploy menu), copy the build to staging and launch
-        /// <c>deploy_server_gce.bat freeDisk useGcs</c> without closing Unity.
+        /// <c>deploy_server_gce.bat freeDisk useGcs resetVm</c> without closing Unity.
+        /// <c>resetVm</c> hard-reboots the GCE VM after upload (<c>reset_gce_vm.bat</c>). The GCS install
+        /// already stops <c>titanorbit-server</c>; an SSH <c>systemctl restart</c> was leaving no joinable game.
         /// </param>
         /// <param name="continueWithWebGlProductionDeploy">
         /// When true (<b>Linux &amp; WebGL builds + Deploy to both</b>), a successful Linux build
@@ -1206,8 +1208,11 @@ namespace TitanOrbit.Editor.Build
             // [STANDARD] Project path contains a space ("Titan Orbit"). Launch via cmd /c with quoted
             // paths. Trailing pause keeps the console readable if upload/restart fails.
             // cmd.exe quoting: cmd /c ""bat" args..."  (leading doubled quote is intentional on Windows).
+            // resetVm: after GCS install, hard-reboot the VM (reset_gce_vm.bat). Do not rely on
+            // SSH systemctl restart — install already stops titanorbit-server, and that restart
+            // was returning without a joinable game until someone ran reset_gce_vm.bat by hand.
             string cmdArgs =
-                "/c \"\"" + deployBat + "\" freeDisk useGcs \"" + stagingFolder +
+                "/c \"\"" + deployBat + "\" freeDisk useGcs resetVm \"" + stagingFolder +
                 "\" & echo. & echo ===== deploy finished (exit %ERRORLEVEL%) ===== & pause\"";
 
             var psi = new ProcessStartInfo
@@ -1223,8 +1228,8 @@ namespace TitanOrbit.Editor.Build
             {
                 Process.Start(psi);
                 Debug.Log(
-                    "[TitanOrbitBuild] Started deploy_server_gce.bat freeDisk useGcs (staging copy). " +
-                    "Watch the new console window for upload progress. Unity can stay open. " +
+                    "[TitanOrbitBuild] Started deploy_server_gce.bat freeDisk useGcs resetVm (staging copy). " +
+                    "Watch the new console window for upload, then the GCE VM hard reset. Unity can stay open. " +
                     "Window pauses at the end so errors are visible.");
                 return true;
             }

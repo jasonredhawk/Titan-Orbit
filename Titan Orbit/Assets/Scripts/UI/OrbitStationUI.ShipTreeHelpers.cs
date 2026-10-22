@@ -581,6 +581,9 @@ namespace TitanOrbit.UI
                 view.SetButtonBackgroundColor(new Color(0.26f, 0.62f, 0.36f, 0.98f));
 
             view.SetPreview(ResolveCurrentShipPreviewSprite());
+            // Left hero only. SHIPS-tab cards keep the baked theatrical sprite.
+            if (view.UsesSidebarHeroLayout)
+                view.EnableLiveShipPortrait();
             // Sidebar hero hides level ("You") and shows the hull name on top of the ship art.
             if (view.UsesSidebarHeroLayout)
                 view.SetLevelLabel(string.Empty);

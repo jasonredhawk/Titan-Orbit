@@ -33,5 +33,7 @@ echo Zone:          %ZONE%
 echo This is a hard reboot ^(brief outage^).
 echo.
 
-call gcloud compute instances reset "%INSTANCE%" --project="%PROJECT_ID%" --zone="%ZONE%"
+REM --quiet: do not stop for a zone/project prompt. Unity deploy redirects this bat's console
+REM until it exits, so an interactive prompt looks like the reset step did nothing.
+call gcloud --quiet compute instances reset "%INSTANCE%" --project="%PROJECT_ID%" --zone="%ZONE%"
 exit /b %errorlevel%
