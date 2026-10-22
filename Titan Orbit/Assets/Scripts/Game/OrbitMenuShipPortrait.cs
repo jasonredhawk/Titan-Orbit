@@ -130,16 +130,71 @@ namespace TitanOrbit.Game
 
         static OrbitMenuShipPortrait Ensure()
         {
+            if (Active == null)
+                Active = FindLiveRig();
+            DestroyExtraRigs(Active);
             if (Active != null)
                 return Active;
 
-            // DontSave keeps this out of the scene file. HideAndDontSave also
-            // sets HideInHierarchy, which is why a Hierarchy camera filter never
-            // listed it. It still lives under the DontDestroyOnLoad scene while playing.
+            // Created while playing, so it is discarded when Play Mode ends.
+            // DontSave / DontDestroyOnLoad left old cameras behind after a moon
+            // landing rebuilt the ship.
             var go = new GameObject("OrbitMenuShipPortrait");
-            go.hideFlags = HideFlags.DontSave;
-            DontDestroyOnLoad(go);
             return go.AddComponent<OrbitMenuShipPortrait>();
+        }
+
+        static OrbitMenuShipPortrait FindLiveRig()
+        {
+            OrbitMenuShipPortrait[] all = Resources.FindObjectsOfTypeAll<OrbitMenuShipPortrait>();
+            for (int i = 0; i < all.Length; i++)
+            {
+                if (all[i] != null)
+                    return all[i];
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// One portrait rig. Extra copies, and cameras left behind when a ship
+        /// proxy was destroyed, are removed.
+        /// </summary>
+        static void DestroyExtraRigs(OrbitMenuShipPortrait keep)
+        {
+            OrbitMenuShipPortrait[] portraits = Resources.FindObjectsOfTypeAll<OrbitMenuShipPortrait>();
+            for (int i = 0; i < portraits.Length; i++)
+            {
+                OrbitMenuShipPortrait portrait = portraits[i];
+                if (portrait == null || portrait == keep)
+                    continue;
+                DestroyTree(portrait.gameObject);
+            }
+
+            Camera[] cameras = Resources.FindObjectsOfTypeAll<Camera>();
+            for (int i = 0; i < cameras.Length; i++)
+            {
+                Camera cam = cameras[i];
+                if (cam == null || cam.gameObject.name != "OrbitMenuShipPortraitCamera")
+                    continue;
+                if (keep != null && cam.transform.IsChildOf(keep.transform))
+                    continue;
+                DestroyTree(cam.gameObject);
+            }
+        }
+
+        static void DestroyTree(GameObject go)
+        {
+            if (go == null)
+                return;
+            ClearHideFlags(go.transform);
+            Object.Destroy(go);
+        }
+
+        static void ClearHideFlags(Transform node)
+        {
+            node.gameObject.hideFlags = HideFlags.None;
+            for (int i = 0; i < node.childCount; i++)
+                ClearHideFlags(node.GetChild(i));
         }
 
         void Awake()
@@ -162,20 +217,19 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// One portrait rig. Extra copies are removed. HideAndDontSave is never
-        /// used: it hides the camera and those objects leak after Play Mode ends.
+        /// Keeps a single portrait rig. Any other copy is destroyed, including
+        /// cameras left behind when a landed ship proxy was rebuilt.
         /// </summary>
         void ClaimOrDiscard()
         {
             if (Active != null && Active != this)
             {
-                gameObject.hideFlags = HideFlags.None;
-                Destroy(gameObject);
+                DestroyTree(gameObject);
                 return;
             }
 
             Active = this;
-            gameObject.hideFlags = HideFlags.DontSave;
+            DestroyExtraRigs(this);
             _previewLayer = PreviewLayer();
             _moonLayer = LayerOr("PortraitMoon", 7);
             _nearbyLayer = LayerOr("PortraitNearbyShip", 8);
@@ -239,10 +293,13 @@ namespace TitanOrbit.Game
 #if UNITY_SERVER && !UNITY_EDITOR
             return;
 #else
+            if (Active != null && Active != this)
+            {
+                DestroyTree(gameObject);
+                return;
+            }
             if (Active == null)
                 Active = this;
-            if (Active != this)
-                return;
 
             if (_target == null || !_target.gameObject.activeInHierarchy)
             {
@@ -593,13 +650,18 @@ namespace TitanOrbit.Game
             {
                 // Same setup as ShipCustomizeScreen's preview camera, which does show a hull.
                 var camGo = new GameObject("OrbitMenuShipPortraitCamera");
-                camGo.hideFlags = HideFlags.DontSave;
                 camGo.transform.SetParent(transform, false);
                 _cam = camGo.AddComponent<Camera>();
             }
 
+            Camera[] cameras = GetComponentsInChildren<Camera>(true);
+            for (int i = 0; i < cameras.Length; i++)
+            {
+                if (cameras[i] != null && cameras[i] != _cam)
+                    DestroyTree(cameras[i].gameObject);
+            }
+
             _cam.gameObject.name = "OrbitMenuShipPortraitCamera";
-            _cam.gameObject.hideFlags = HideFlags.DontSave;
             _cam.enabled = false;
             _cam.clearFlags = CameraClearFlags.SolidColor;
             _cam.backgroundColor = new Color(0.01f, 0.015f, 0.03f, 1f);
@@ -636,12 +698,10 @@ namespace TitanOrbit.Game
             if (_keyLight == null)
             {
                 var lightGo = new GameObject("KeyLight");
-                lightGo.hideFlags = HideFlags.DontSave;
                 lightGo.transform.SetParent(transform, false);
                 _keyLight = lightGo.AddComponent<Light>();
             }
 
-            _keyLight.gameObject.hideFlags = HideFlags.DontSave;
             _keyLight.type = LightType.Directional;
             _keyLight.intensity = TheatricalMenuPreviewFraming.KeyLightIntensity;
             _keyLight.color = Color.white;
@@ -699,24 +759,22 @@ namespace TitanOrbit.Game
         void ApplyMask(PortraitOptions options)
         {
             int mask = 1 << _previewLayer;
-            int lightMask = 1 << _previewLayer;
+            bool scene = options.Moon || options.Stars || options.NearbyShips;
             if (options.Moon)
-            {
                 mask |= 1 << _moonLayer;
-                lightMask |= 1 << _moonLayer;
-            }
-
             if (options.Stars)
                 mask |= 1 << _starLayer;
             if (options.NearbyShips)
-            {
                 mask |= 1 << _nearbyLayer;
-                lightMask |= 1 << _nearbyLayer;
-            }
 
             _cam.cullingMask = mask;
+            // The portrait key light is only for the black hull shot. With the moon
+            // and stars in frame it stacks on the scene lights and blows the picture out.
             if (_keyLight != null)
-                _keyLight.cullingMask = lightMask;
+            {
+                _keyLight.enabled = !scene;
+                _keyLight.cullingMask = 1 << _previewLayer;
+            }
         }
 
         /// <summary>
@@ -838,7 +896,6 @@ namespace TitanOrbit.Game
             }
 
             var go = new GameObject("PortraitSceneCopy");
-            go.hideFlags = HideFlags.DontSave;
             go.layer = layer;
             go.transform.SetParent(source.transform, false);
             go.transform.localPosition = Vector3.zero;
@@ -932,7 +989,6 @@ namespace TitanOrbit.Game
             }
 
             _starQuad = new GameObject("OrbitMenuPortraitStars");
-            _starQuad.hideFlags = HideFlags.DontSave;
             _starQuad.layer = _starLayer;
             _starQuad.transform.SetParent(transform, false);
             MeshFilter filter = _starQuad.AddComponent<MeshFilter>();

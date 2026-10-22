@@ -96,30 +96,58 @@ namespace TitanOrbit.Game
             state.Team = team == TeamId.None ? TeamId.TeamA : team;
 
             var renderers = root.GetComponentsInChildren<Renderer>(true);
+            Material[][] previousBases = state.BaseSharedMaterials;
+            Material[][] previousPristine = state.PristineMaterials;
             state.Renderers = renderers;
             state.BaseSharedMaterials = new Material[renderers.Length][];
+            state.PristineMaterials = new Material[renderers.Length][];
             for (int i = 0; i < renderers.Length; i++)
             {
                 var renderer = renderers[i];
                 if (renderer == null || renderer is ParticleSystemRenderer)
-                {
-                    state.BaseSharedMaterials[i] = null;
                     continue;
-                }
 
                 Material[] current = renderer.sharedMaterials;
                 if (current == null || current.Length == 0)
-                {
-                    state.BaseSharedMaterials[i] = null;
                     continue;
-                }
 
                 var copy = new Material[current.Length];
+                var pristine = new Material[current.Length];
+                Material[] oldBases = SlotRow(previousBases, i);
+                Material[] oldPristine = SlotRow(previousPristine, i);
                 for (int s = 0; s < current.Length; s++)
-                    copy[s] = current[s];
+                {
+                    // A part-swap recapture runs after paint. The renderer is already
+                    // wearing an _Accent instance — keeping that as the "base" makes
+                    // Default clone the last skin and skip the color write.
+                    Material incoming = current[s];
+                    if (IsAccentInstance(incoming)
+                        && oldBases != null
+                        && s < oldBases.Length
+                        && oldBases[s] != null)
+                    {
+                        copy[s] = oldBases[s];
+                        pristine[s] = oldPristine != null && s < oldPristine.Length
+                            ? oldPristine[s]
+                            : null;
+                        continue;
+                    }
+
+                    copy[s] = incoming;
+                    pristine[s] = incoming != null
+                        ? new Material(incoming)
+                        {
+                            name = incoming.name + "_Baked",
+                            hideFlags = HideFlags.HideAndDontSave,
+                        }
+                        : null;
+                }
+
                 state.BaseSharedMaterials[i] = copy;
+                state.PristineMaterials[i] = pristine;
             }
 
+            DestroyUnusedPristine(previousPristine, state.PristineMaterials);
             state.LastAccentKey = int.MinValue;
             ApplyFromCapturedBase(state, accents, state.Team);
         }
@@ -150,7 +178,9 @@ namespace TitanOrbit.Game
             Color color1 = TeamColor1Palette.GetColor1(team);
             uint color1Packed = ShipAccentColors.Pack(Opaque(color1));
             int key = unchecked((int)color1Packed * 397) ^ accents.CacheKey;
-            if (state.LastAccentKey == key && state.LastAccentKey != 0)
+            // Default (HasCustom 0) must still run. The key can match a previous
+            // factory apply while the renderer is wearing a later skin.
+            if (accents.IsCustom && state.LastAccentKey == key && state.LastAccentKey != 0)
                 return;
             state.LastAccentKey = key;
 
@@ -163,15 +193,18 @@ namespace TitanOrbit.Game
                 if (renderer == null || bases == null || bases.Length == 0)
                     continue;
 
+                Material[] pristine = SlotRow(state.PristineMaterials, i);
                 var replaced = new Material[bases.Length];
                 for (int s = 0; s < bases.Length; s++)
                 {
                     Material source = bases[s];
+                    Material baked = pristine != null && s < pristine.Length ? pristine[s] : null;
                     replaced[s] = source != null
-                        ? GetOrCreateTinted(source, accents, color1Packed, color1)
+                        ? GetOrCreateTinted(source, baked, accents, color1Packed, color1)
                         : null;
                 }
 
+                renderer.SetPropertyBlock(null);
                 renderer.sharedMaterials = replaced;
             }
         }
@@ -193,20 +226,10 @@ namespace TitanOrbit.Game
                 return false;
 
             var state = root.GetComponent<ShipAccentTintState>();
-            if (state != null && state.BaseSharedMaterials != null)
-            {
-                for (int i = 0; i < state.BaseSharedMaterials.Length; i++)
-                {
-                    Material[] mats = state.BaseSharedMaterials[i];
-                    if (mats == null)
-                        continue;
-                    for (int s = 0; s < mats.Length; s++)
-                    {
-                        if (TryReadBakedAccents(mats[s], out color2, out color3, out emission1, out emission2, out emission3))
-                            return true;
-                    }
-                }
-            }
+            if (state != null && TryReadBakedFromRows(state.PristineMaterials, out color2, out color3, out emission1, out emission2, out emission3))
+                return true;
+            if (state != null && TryReadBakedFromRows(state.BaseSharedMaterials, out color2, out color3, out emission1, out emission2, out emission3))
+                return true;
 
             var renderers = root.GetComponentsInChildren<Renderer>(true);
             for (int i = 0; i < renderers.Length; i++)
@@ -329,10 +352,12 @@ namespace TitanOrbit.Game
 
         static Material GetOrCreateTinted(
             Material source,
+            Material bakedSource,
             in ShipAccentColors accents,
             uint color1Packed,
             Color color1)
         {
+            Material copyFrom = bakedSource != null ? bakedSource : source;
             var key = new AccentCacheKey
             {
                 BaseId = source.GetInstanceID(),
@@ -345,23 +370,35 @@ namespace TitanOrbit.Game
                 Emission3 = accents.Emission3Packed,
             };
             if (Cache.TryGetValue(key, out Material cached) && cached != null)
+            {
+                if (!accents.IsCustom)
+                    RestoreBakedAccents(cached, copyFrom, color1);
                 return cached;
+            }
 
-            var instance = new Material(source)
+            var instance = new Material(copyFrom)
             {
                 name = source.name + "_Accent",
             };
-            WriteAccentColors(instance, accents, color1);
+            WriteAccentColors(instance, accents, color1, copyFrom);
             Cache[key] = instance;
             return instance;
         }
 
-        static void WriteAccentColors(Material material, in ShipAccentColors accents, Color color1)
+        /// <summary>
+        /// Factory hull (HasCustom 0) must put the Colorize Color2 / Color3 / glow
+        /// slots back. Leaving them untouched keeps whatever skin was last written
+        /// onto the material we cloned.
+        /// </summary>
+        static void WriteAccentColors(Material material, in ShipAccentColors accents, Color color1, Material bakedSource)
         {
             TrySet(material, Color1Id, color1);
 
             if (!accents.IsCustom)
+            {
+                RestoreBakedAccents(material, bakedSource, color1);
                 return;
+            }
 
             Color color2 = (Color)accents.Color2;
             Color color3 = (Color)accents.Color3;
@@ -381,9 +418,97 @@ namespace TitanOrbit.Game
             TrySet(material, HighlightId, emission2);
         }
 
+        static void RestoreBakedAccents(Material dest, Material baked, Color color1)
+        {
+            if (dest == null || baked == null || dest == baked)
+            {
+                TrySet(dest, Color1Id, color1);
+                return;
+            }
+
+            dest.CopyPropertiesFromMaterial(baked);
+            TrySet(dest, Color1Id, color1);
+        }
+
+        static bool IsAccentInstance(Material material)
+        {
+            return material != null && material.name.EndsWith("_Accent");
+        }
+
+        static Material[] SlotRow(Material[][] rows, int index)
+        {
+            if (rows == null || index < 0 || index >= rows.Length)
+                return null;
+            return rows[index];
+        }
+
+        static bool TryReadBakedFromRows(
+            Material[][] rows,
+            out Color32 color2,
+            out Color32 color3,
+            out Color32 emission1,
+            out Color32 emission2,
+            out Color32 emission3)
+        {
+            AssignFallbackAccents(out color2, out color3, out emission1, out emission2, out emission3);
+            if (rows == null)
+                return false;
+            for (int i = 0; i < rows.Length; i++)
+            {
+                Material[] mats = rows[i];
+                if (mats == null)
+                    continue;
+                for (int s = 0; s < mats.Length; s++)
+                {
+                    if (TryReadBakedAccents(mats[s], out color2, out color3, out emission1, out emission2, out emission3))
+                        return true;
+                }
+            }
+
+            return false;
+        }
+
+        static void DestroyUnusedPristine(Material[][] previous, Material[][] kept)
+        {
+            if (previous == null)
+                return;
+            for (int i = 0; i < previous.Length; i++)
+            {
+                Material[] row = previous[i];
+                if (row == null)
+                    continue;
+                for (int s = 0; s < row.Length; s++)
+                {
+                    Material mat = row[s];
+                    if (mat == null || ContainsMaterial(kept, mat))
+                        continue;
+                    UnityEngine.Object.Destroy(mat);
+                }
+            }
+        }
+
+        static bool ContainsMaterial(Material[][] rows, Material mat)
+        {
+            if (rows == null || mat == null)
+                return false;
+            for (int i = 0; i < rows.Length; i++)
+            {
+                Material[] row = rows[i];
+                if (row == null)
+                    continue;
+                for (int s = 0; s < row.Length; s++)
+                {
+                    if (row[s] == mat)
+                        return true;
+                }
+            }
+
+            return false;
+        }
+
         static void TrySet(Material material, int id, Color color)
         {
-            if (material.HasProperty(id))
+            if (material != null && material.HasProperty(id))
                 material.SetColor(id, color);
         }
     }

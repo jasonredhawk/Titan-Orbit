@@ -63,15 +63,28 @@ chmod 755 "${TARGET}/TitanOrbitServer" "${TARGET}/TitanOrbitServer.x86_64" 2>/de
 chmod a+r "${TARGET}/GameAssembly.so" "${TARGET}/UnityPlayer.so" 2>/dev/null || true
 
 META="${TARGET}/TitanOrbitServer_Data/il2cpp_data/Metadata/global-metadata.dat"
-if [[ ! -f "${META}" ]]; then
-  echo "FATAL: global-metadata.dat missing after extract: ${META}" >&2
-  exit 1
-fi
-SZ="$(stat -c%s "${META}" 2>/dev/null || echo 0)"
-if [[ "${SZ}" -lt 1000000 ]]; then
-  echo "FATAL: global-metadata.dat too small (${SZ} bytes). Repack on Windows with Unity closed." >&2
-  exit 1
-fi
+BURST="${TARGET}/TitanOrbitServer_Data/Plugins/lib_burst_generated.so"
+RESOURCES="${TARGET}/TitanOrbitServer_Data/Resources/unity default resources"
+require_min() {
+  local path="$1" min="$2" label="$3"
+  if [[ ! -f "${path}" ]]; then
+    echo "FATAL: ${label} missing after extract: ${path}" >&2
+    exit 1
+  fi
+  local sz
+  sz="$(stat -c%s "${path}" 2>/dev/null || echo 0)"
+  if [[ "${sz}" -lt "${min}" ]]; then
+    echo "FATAL: ${label} is ${sz} bytes (need >= ${min}). Repack on Windows with Unity closed." >&2
+    exit 1
+  fi
+  echo "OK ${label} ${sz} bytes"
+}
+require_min "${META}" 1000000 "global-metadata.dat"
+require_min "${BURST}" 1000000 "lib_burst_generated.so"
+require_min "${RESOURCES}" 1000000 "unity default resources"
 
-echo "== Extract OK under ${TARGET}"
+# Hard reset (gcloud compute instances reset) drops dirty page cache. Without sync,
+# files written at the end of the extract come back as 0 bytes and the player exits 1.
+sync
+echo "== Extract OK under ${TARGET} (synced)"
 ls -la "${TARGET}" | head -n 20

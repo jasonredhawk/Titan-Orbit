@@ -567,18 +567,12 @@ namespace TitanOrbit.UI
         /// </summary>
         private void PopulateCurrentShipDisplayNode(ShipUpgradeTreeNodeUI view, ShipPowerBarStatMaxes maxes)
         {
-            Planet storePlanet = GetShipUpgradeStorePlanet();
             int currentLevel = currentShip.ShipLevel;
-            int currentBranch = currentShip.BranchIndex;
-            bool canSwapHull = CardShopSystem.Instance.CanSwapShipAtSameTreeSlot(
-                currentShip, storePlanet, currentLevel, currentBranch, out _);
-
-            view.SetInteractable(canSwapHull);
+            // Picture of the hull you are flying. Same-slot swaps (another family's
+            // matching card) stay on that card's price chip — this view does not buy.
+            view.SetInteractable(false);
             view.EnsureStableButtonRendering();
-            if (canSwapHull)
-                view.SetButtonBackgroundColor(new Color(0.28f, 0.68f, 0.82f, 0.98f));
-            else
-                view.SetButtonBackgroundColor(new Color(0.26f, 0.62f, 0.36f, 0.98f));
+            view.SetButtonBackgroundColor(new Color(0.26f, 0.62f, 0.36f, 0.98f));
 
             view.SetPreview(ResolveCurrentShipPreviewSprite());
             // Left hero only. SHIPS-tab cards keep the baked theatrical sprite.
@@ -596,7 +590,7 @@ namespace TitanOrbit.UI
             view.SetShipName(DisplayNameFormatting.StripLeadingFamilyLabel(
                 GetCurrentShipDisplayName(), familyLabel));
             view.SetFamilyName(familyLabel);
-            view.SetPrice(canSwapHull ? "Free" : "—");
+            view.SetPrice("—");
             // Sidebar "You" card uses the same pool as the tree node for this hull.
             view.ApplyPowerBreakdown(
                 GetCurrentShipPowerBreakdown(),
@@ -692,11 +686,15 @@ namespace TitanOrbit.UI
                 currentShip.CurrentChassisId, currentShip.ShipLevel);
         }
 
+        /// <summary>
+        /// Your Ship was clicked. Does not buy or swap. The price chip on the
+        /// upgrade-tree card is the only purchase control, including the card
+        /// at this hull's level and branch on another family's moon.
+        /// </summary>
         internal void OnCurrentShipDisplayNodeClicked()
         {
-            if (currentShip == null)
-                return;
-            OnUpgradeTreeNodeClicked(currentShip.ShipLevel, currentShip.BranchIndex);
+            // Intentionally empty. A previous handler sent the current level and
+            // branch into OnUpgradeTreeNodeClicked, which purchases that slot.
         }
 
         /// <summary>

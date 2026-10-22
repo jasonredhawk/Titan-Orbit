@@ -891,7 +891,8 @@ namespace TitanOrbit.UI
                 ShipFamilyPowerBarNorm.ResolveForTreeLevel(view.Level, maxes, chassisId),
                 chassisId);
             UnityEngine.Events.UnityAction click = () => OnUpgradeTreeNodeClicked(view.Level, view.BranchIndex);
-            view.SetClickHandler(clickable ? click : null);
+            // Card body is not a buy button. Only the price chip purchases.
+            view.SetClickHandler(null);
             view.SetPriceClickHandler(clickable ? click : null);
             if (megaOccupied)
                 view.SetOwnedOccupantStyle();
@@ -963,7 +964,8 @@ namespace TitanOrbit.UI
                 chassisId);
 
             UnityEngine.Events.UnityAction click = () => OnUpgradeTreeNodeClicked(level, branch);
-            view.SetClickHandler(clickable ? click : null);
+            // Card body is not a buy button. Only the price chip purchases.
+            view.SetClickHandler(null);
             view.SetPriceClickHandler(clickable ? click : null);
             if (megaOccupied)
                 view.SetOwnedOccupantStyle();
@@ -1078,13 +1080,12 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Sidebar "current ship" card — always shows your hull; debug mode still allows click-through.
+        /// Sidebar "current ship" card — always shows your hull. It does not buy.
         /// The title on the art is the ship name only. The family caption already sits above the image.
         /// </summary>
         void PopulateCurrentShipDisplayNode(ShipUpgradeTreeNodeUI view, ShipPowerBarStatMaxes maxes)
         {
-            bool debugFree = IsDebugFreeShipUpgradeTree();
-            view.SetInteractable(debugFree);
+            view.SetInteractable(false);
             view.SetButtonBackgroundColor(new Color(0.26f, 0.62f, 0.36f, 0.98f));
             // Sidebar hero: no "You" label — hull name sits on top of the ship art instead.
             if (view.UsesSidebarHeroLayout)
@@ -1101,7 +1102,7 @@ namespace TitanOrbit.UI
             view.SetPreview(GetMenuPreviewForChassis(currentChassisId));
             if (view.UsesSidebarHeroLayout)
                 view.EnableLiveShipPortrait();
-            view.SetPrice(debugFree ? "Free" : "—");
+            view.SetPrice("—");
             // Sidebar "You" card uses the MEGA pool when this hull is a catalog MEGA.
             view.ApplyPowerBreakdown(
                 GetCurrentShipPowerBreakdown(),
@@ -1135,8 +1136,15 @@ namespace TitanOrbit.UI
             }
         }
 
-        public void OnCurrentShipDisplayNodeClicked() =>
-            OnUpgradeTreeNodeClicked(ShipLevel, BranchIndex);
+        /// <summary>
+        /// Your Ship was clicked. Does not buy or swap. Purchases stay on the
+        /// price chip of the upgrade-tree card, including the same ladder slot.
+        /// </summary>
+        public void OnCurrentShipDisplayNodeClicked()
+        {
+            // Intentionally empty. This used to purchase ShipLevel + BranchIndex,
+            // which is the other family's matching card when docked away from home.
+        }
 
         /// <summary>
         /// True when this store slot is the hull the local ship is already flying.

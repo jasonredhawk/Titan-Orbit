@@ -56,7 +56,39 @@ namespace TitanOrbit.ECS
             if (Templates.TryGetValue(key, out GameObject cached) && cached != null)
                 return cached;
 
-            GameObject template = ExtractTemplate(sourceFamily, suffix, shipLevel);
+            GameObject template = ExtractTemplate(sourceFamily, suffix, shipLevel, exactOnly: false);
+            if (template == null)
+                return null;
+
+            Templates[key] = template;
+            return template;
+        }
+
+        /// <summary>
+        /// Same as <see cref="GetOrCreateTemplate"/> but only an exact suffix match.
+        /// Wing_5 stays null until a family hull actually contains Wing_5 — it is not
+        /// filled with Wing_3 from the ship the player is flying. Cached separately so
+        /// a previous index-fallback template cannot be reused as the exact mesh.
+        /// </summary>
+        public static GameObject GetOrCreateExactTemplate(
+            ShipFamilyDefinition sourceFamily,
+            string componentId,
+            int shipLevel)
+        {
+            if (sourceFamily == null || string.IsNullOrWhiteSpace(componentId))
+                return null;
+
+            string suffix = ShipFamilyDefinition.GetComponentIdSuffix(sourceFamily.familyId, componentId);
+            if (string.IsNullOrEmpty(suffix))
+                suffix = ShipFamilyDefinition.NormalizeComponentId(componentId);
+            if (string.IsNullOrEmpty(suffix))
+                return null;
+
+            string key = MakeKey(sourceFamily.familyId, suffix) + "|exact";
+            if (Templates.TryGetValue(key, out GameObject cached) && cached != null)
+                return cached;
+
+            GameObject template = ExtractTemplate(sourceFamily, suffix, shipLevel, exactOnly: true);
             if (template == null)
                 return null;
 
@@ -100,31 +132,14 @@ namespace TitanOrbit.ECS
             return clone;
         }
 
-        static GameObject ExtractTemplate(ShipFamilyDefinition family, string suffix, int shipLevel)
+        static GameObject ExtractTemplate(
+            ShipFamilyDefinition family,
+            string suffix,
+            int shipLevel,
+            bool exactOnly)
         {
             var prefabs = new List<GameObject>(8);
-
-            // --- Weapon parts: lowest-tier prefab first ---
-            // [TITAN-ORBIT] Child localScale on a L5 hull is often already grown. Attribute
-            // grow + ship-root tier scale apply later; extracting a high-tier gun made
-            // B-key swaps look enormous. Other parts still prefer the live ship tier.
-            bool weaponPart = ShipFamilyPartTypes.IsWeapon(
-                ShipFamilyPartTypes.Normalize(
-                    ShipComponentAbilityStats.ResolvePartTypeForSuggestedStats(suffix),
-                    suffix));
-            int preferredLevel = weaponPart ? 1 : Mathf.Max(1, shipLevel);
-            if (family.TryGetVisualPrefabForLevel(preferredLevel, out GameObject preferredPrefab)
-                && preferredPrefab != null)
-                prefabs.Add(preferredPrefab);
-            if (family.upgradeTree != null)
-            {
-                for (int i = 0; i < family.upgradeTree.Count; i++)
-                {
-                    GameObject prefab = family.upgradeTree[i]?.prefab;
-                    if (prefab != null && !prefabs.Contains(prefab))
-                        prefabs.Add(prefab);
-                }
-            }
+            CollectScanPrefabs(family, suffix, shipLevel, prefabs);
 
             Transform hidden = EnsureHiddenRoot();
             for (int i = 0; i < prefabs.Count; i++)
@@ -132,8 +147,12 @@ namespace TitanOrbit.ECS
                 GameObject hull = Object.Instantiate(prefabs[i], hidden, false);
                 hull.name = "_Scan_" + family.familyId;
                 hull.SetActive(false);
-                Transform found = ShipFamilyPartMatch.FindBestSourceTransform(
-                    hull.transform, family.familyId, suffix);
+                // Exact scans keep walking until a hull actually has this suffix.
+                // The index fallback would stop on the live ship (Hawk Wing_3 for a
+                // purchased Wing_5) and cache the wrong mesh under the bought id.
+                Transform found = exactOnly
+                    ? ShipFamilyPartMatch.FindExactSourceTransform(hull.transform, family.familyId, suffix)
+                    : ShipFamilyPartMatch.FindBestSourceTransform(hull.transform, family.familyId, suffix);
                 if (found == null)
                 {
                     Object.DestroyImmediate(hull);
@@ -148,6 +167,43 @@ namespace TitanOrbit.ECS
             }
 
             return null;
+        }
+
+        /// <summary>
+        /// Prefabs to search for a part mesh. Weapons start at tier 1 so a high-tier
+        /// grown barrel is not the template. Other parts prefer the live ship tier,
+        /// then the rest of the upgrade tree.
+        /// </summary>
+        static void CollectScanPrefabs(
+            ShipFamilyDefinition family,
+            string suffix,
+            int shipLevel,
+            List<GameObject> prefabs)
+        {
+            if (family == null || prefabs == null)
+                return;
+
+            // --- Weapon parts: lowest-tier prefab first ---
+            // [TITAN-ORBIT] Child localScale on a L5 hull is often already grown. Attribute
+            // grow + ship-root tier scale apply later; extracting a high-tier gun made
+            // B-key swaps look enormous. Other parts still prefer the live ship tier.
+            bool weaponPart = ShipFamilyPartTypes.IsWeapon(
+                ShipFamilyPartTypes.Normalize(
+                    ShipComponentAbilityStats.ResolvePartTypeForSuggestedStats(suffix),
+                    suffix));
+            int preferredLevel = weaponPart ? 1 : Mathf.Max(1, shipLevel);
+            if (family.TryGetVisualPrefabForLevel(preferredLevel, out GameObject preferredPrefab)
+                && preferredPrefab != null)
+                prefabs.Add(preferredPrefab);
+            if (family.upgradeTree == null)
+                return;
+
+            for (int i = 0; i < family.upgradeTree.Count; i++)
+            {
+                GameObject prefab = family.upgradeTree[i]?.prefab;
+                if (prefab != null && !prefabs.Contains(prefab))
+                    prefabs.Add(prefab);
+            }
         }
 
         static Transform EnsureHiddenRoot()

@@ -295,6 +295,18 @@ namespace TitanOrbit.Core
         /// <summary>True when the Your Ship camera slowly orbits the hull.</summary>
         public bool PortraitAutoRotate => portraitAutoRotate;
 
+        /// <summary>
+        /// True when the card is showing moon, stars, and nearby hulls.
+        /// Ship-only hides that whole group.
+        /// </summary>
+        public bool PortraitSceneElementsVisible => !portraitShipOnly;
+
+        /// <summary>PlayerPrefs: 1 shows moon, stars, and nearby hulls. 0 is the hull alone.</summary>
+        const string PortraitShowScenePrefsKey = "TitanOrbit.PortraitShowScene";
+
+        /// <summary>PlayerPrefs: 1 keeps the Your Ship camera slowly orbiting.</summary>
+        const string PortraitAutoRotatePrefsKey = "TitanOrbit.PortraitAutoRotate";
+
         /// <summary>Ship-only black shot. Does not clear the scene checkboxes.</summary>
         public void SetPortraitShipOnly(bool value)
         {
@@ -334,6 +346,33 @@ namespace TitanOrbit.Core
             portraitShowNearbyShips = value;
             if (value)
                 portraitShipOnly = false;
+            NotifyPortraitCameraOptionsChangedIfNeeded();
+        }
+
+        /// <summary>
+        /// One player switch for the surroundings. On shows moon, stars, and nearby
+        /// hulls. Off is the hull alone and leaves those checkboxes stored.
+        /// </summary>
+        public void SetPortraitSceneElementsVisible(bool visible)
+        {
+            if (visible)
+            {
+                if (!portraitShipOnly && portraitShowMoon && portraitShowStars && portraitShowNearbyShips)
+                    return;
+                portraitShipOnly = false;
+                portraitShowMoon = true;
+                portraitShowStars = true;
+                portraitShowNearbyShips = true;
+            }
+            else if (!portraitShipOnly)
+            {
+                portraitShipOnly = true;
+            }
+            else
+            {
+                return;
+            }
+
             NotifyPortraitCameraOptionsChangedIfNeeded();
         }
 
@@ -504,6 +543,7 @@ namespace TitanOrbit.Core
             }
 
             Instance = this;
+            LoadPortraitCameraPreferences();
             PublishDebugFlags();
         }
 
@@ -673,7 +713,37 @@ namespace TitanOrbit.Core
                 return;
 
             _publishedPortraitBits = bits;
+            SavePortraitCameraPreferences();
             PortraitCameraOptionsChanged?.Invoke();
+        }
+
+        /// <summary>
+        /// Restores the two Your Ship switches. Missing keys keep the scene checkboxes.
+        /// </summary>
+        void LoadPortraitCameraPreferences()
+        {
+            if (PlayerPrefs.HasKey(PortraitShowScenePrefsKey))
+            {
+                bool showScene = PlayerPrefs.GetInt(PortraitShowScenePrefsKey, 1) != 0;
+                portraitShipOnly = !showScene;
+                if (showScene)
+                {
+                    portraitShowMoon = true;
+                    portraitShowStars = true;
+                    portraitShowNearbyShips = true;
+                }
+            }
+
+            if (PlayerPrefs.HasKey(PortraitAutoRotatePrefsKey))
+                portraitAutoRotate = PlayerPrefs.GetInt(PortraitAutoRotatePrefsKey, 1) != 0;
+        }
+
+        /// <summary>Writes the two Your Ship switches. Inspector edits in Play Mode are included.</summary>
+        void SavePortraitCameraPreferences()
+        {
+            PlayerPrefs.SetInt(PortraitShowScenePrefsKey, portraitShipOnly ? 0 : 1);
+            PlayerPrefs.SetInt(PortraitAutoRotatePrefsKey, portraitAutoRotate ? 1 : 0);
+            PlayerPrefs.Save();
         }
 
         /// <summary>

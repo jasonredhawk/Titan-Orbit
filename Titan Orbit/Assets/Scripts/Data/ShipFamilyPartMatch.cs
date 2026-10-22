@@ -14,6 +14,8 @@ namespace TitanOrbit.Data
     /// [TITAN-ORBIT] Indices are family-local. Exact suffix wins; otherwise we take the
     /// closest index at or below the purchased number, then the highest index of that type
     /// (Wing_5 on a hull that only has Wing_3 → Wing_3, including any _L/_R siblings).
+    /// That downgrade picks the host socket. The purchased mesh is resolved with
+    /// <see cref="FindExactSourceTransform"/> so a same-family Wing_5 is not cloned from Wing_3.
     /// Engines do not match thrusters. All weapon subtypes share one group for B-key swaps.
     /// </para>
     /// </summary>
@@ -184,10 +186,12 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Source-family child that matches <paramref name="wantedSuffix"/>, else best index
-        /// of the same type on that prefab instance.
+        /// Source-family child whose suffix is exactly <paramref name="wantedSuffix"/>.
+        /// A non-mirrored child wins over a <c>_Mirrored</c> sibling. No index fallback —
+        /// Wing_5 on a hull that only has Wing_3 returns null so the caller can keep
+        /// scanning other family prefabs for the real part.
         /// </summary>
-        public static Transform FindBestSourceTransform(
+        public static Transform FindExactSourceTransform(
             Transform sourceRoot,
             string sourceFamilyPrefix,
             string wantedSuffix)
@@ -198,25 +202,44 @@ namespace TitanOrbit.Data
             var slots = new List<Slot>(16);
             CollectSlots(sourceRoot, sourceFamilyPrefix, slots);
 
-            Transform exact = null;
+            Transform mirrored = null;
             for (int i = 0; i < slots.Count; i++)
             {
-                if (string.Equals(slots[i].NormalizedSuffix, wantedSuffix, StringComparison.OrdinalIgnoreCase))
-                {
-                    if (slots[i].Transform != null
-                        && slots[i].Transform.name.IndexOf("_Mirrored", StringComparison.OrdinalIgnoreCase) < 0)
-                        return slots[i].Transform;
-                    if (exact == null)
-                        exact = slots[i].Transform;
-                }
+                if (!string.Equals(slots[i].NormalizedSuffix, wantedSuffix, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                if (slots[i].Transform == null)
+                    continue;
+                if (slots[i].Transform.name.IndexOf("_Mirrored", StringComparison.OrdinalIgnoreCase) < 0)
+                    return slots[i].Transform;
+                if (mirrored == null)
+                    mirrored = slots[i].Transform;
             }
 
+            return mirrored;
+        }
+
+        /// <summary>
+        /// Source-family child that matches <paramref name="wantedSuffix"/>, else best index
+        /// of the same type on that prefab instance.
+        /// Host hardpoints still use this downgrade (Wing_5 mounts on the Wing_3 sockets).
+        /// Purchased same-family meshes use <see cref="FindExactSourceTransform"/> instead.
+        /// </summary>
+        public static Transform FindBestSourceTransform(
+            Transform sourceRoot,
+            string sourceFamilyPrefix,
+            string wantedSuffix)
+        {
+            Transform exact = FindExactSourceTransform(sourceRoot, sourceFamilyPrefix, wantedSuffix);
             if (exact != null)
                 return exact;
 
+            if (sourceRoot == null || string.IsNullOrWhiteSpace(wantedSuffix))
+                return null;
             if (!TryParseSlotName(wantedSuffix, sourceFamilyPrefix, out string partType, out int index, out _))
                 return null;
 
+            var slots = new List<Slot>(16);
+            CollectSlots(sourceRoot, sourceFamilyPrefix, slots);
             var best = new List<Slot>(4);
             CollectBestHostSlotsForType(slots, partType, index, best);
             return best.Count > 0 ? best[0].Transform : null;

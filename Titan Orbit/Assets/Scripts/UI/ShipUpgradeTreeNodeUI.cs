@@ -318,27 +318,17 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Orbit Menu "Your Ship": hide the dark price chrome and route hull-swap clicks to the card root.
+        /// Orbit Menu "Your Ship": hide the dark price chrome and clear any buy click.
+        /// A click on this picture used to buy the docked family's hull at the same
+        /// level and branch. The price chip on that upgrade-tree card is the buy control.
         /// The price pill was drawing a black bar immediately above the colourful stats.
         /// </summary>
-        public void SetSidebarHeroCardClickHandler(UnityEngine.Events.UnityAction handler)
+        public void SetSidebarHeroCardClickHandler()
         {
-            // --- Wire whole-card click; collapse price / "You" chrome ---
+            // --- Collapse price chrome and leave the card unable to purchase ---
             _sidebarHeroHidePrice = true;
             ApplySidebarHeroChrome();
-
-            if (button == null)
-                return;
-
-            button.transition = Selectable.Transition.None;
-            button.interactable = handler != null;
-            var rootGraphic = button.targetGraphic;
-            if (rootGraphic != null)
-                rootGraphic.raycastTarget = handler != null;
-
-            button.onClick.RemoveAllListeners();
-            if (handler != null)
-                button.onClick.AddListener(handler);
+            DisarmSidebarHeroPurchaseClick();
         }
 
         /// <summary>
@@ -1506,7 +1496,12 @@ namespace TitanOrbit.UI
 
             if (_priceButtonEnsured && priceButton != null && _priceButtonImage != null
                 && _priceButtonBorder != null && priceText != null)
+            {
+                // Clicks only. Arrow-key focus plus Enter/Space must not buy a hull
+                // while the player is using the rest of the Orbit Menu.
+                priceButton.navigation = new Navigation { mode = Navigation.Mode.None };
                 return;
+            }
 
             MigratePriceTextOffRoot(priceRoot);
             ResolvePriceTextReference(priceRoot);
@@ -1531,6 +1526,7 @@ namespace TitanOrbit.UI
             }
 
             priceButton.targetGraphic = _priceButtonImage;
+            priceButton.navigation = new Navigation { mode = Navigation.Mode.None };
 
             if (priceText != null)
             {
@@ -1725,6 +1721,8 @@ namespace TitanOrbit.UI
             if (_sidebarHeroLayout)
             {
                 ApplySidebarHeroChrome();
+                // Paint runs after click wiring. Keep the picture from becoming a buy button.
+                DisarmSidebarHeroPurchaseClick();
                 return;
             }
 
@@ -2062,6 +2060,7 @@ namespace TitanOrbit.UI
             OrbitMenuShipPortrait.Bind(_livePortrait);
             _livePortrait.enabled = _livePortrait.texture != null;
             _livePortraitBound = true;
+            OrbitMenuPortraitIconToggles.Ensure(_livePortrait);
         }
 
         /// <summary>
@@ -2164,12 +2163,11 @@ namespace TitanOrbit.UI
         public void SetInteractable(bool on)
         {
             // --- SetInteractable ---
-            if (_sidebarHeroHidePrice)
+            if (_sidebarHeroHidePrice || _sidebarHeroLayout)
             {
-                // Card-root click stays wired from SetSidebarHeroCardClickHandler; only toggle interactable.
-                if (button != null)
-                    button.interactable = on;
-                ApplySidebarHeroPriceHidden();
+                // Your Ship stays a picture. Passing true used to arm the whole card,
+                // and a tap bought this moon's hull at the same ladder slot.
+                DisarmSidebarHeroPurchaseClick();
                 return;
             }
 
@@ -2479,12 +2477,33 @@ namespace TitanOrbit.UI
                 button.onClick.AddListener(handler);
         }
 
+        /// <summary>
+        /// Your Ship card root must not buy a hull. Clears any click that was
+        /// forwarded from the live picture or from <see cref="SetPriceClickHandler"/>.
+        /// </summary>
+        void DisarmSidebarHeroPurchaseClick()
+        {
+            // --- Drop the card-sized buy target ---
+            if (button == null)
+                return;
+
+            button.transition = Selectable.Transition.None;
+            button.navigation = new Navigation { mode = Navigation.Mode.None };
+            button.interactable = false;
+            var rootGraphic = button.targetGraphic;
+            if (rootGraphic != null)
+                rootGraphic.raycastTarget = false;
+            button.onClick.RemoveAllListeners();
+        }
+
         public void SetPriceClickHandler(UnityEngine.Events.UnityAction handler)
         {
             // --- SetPriceClickHandler ---
-            if (_sidebarHeroHidePrice)
+            if (_sidebarHeroHidePrice || _sidebarHeroLayout)
             {
-                SetSidebarHeroCardClickHandler(handler);
+                // The price chip is hidden on Your Ship. Do not move that click
+                // onto the picture — that bought the same tree slot on this moon.
+                DisarmSidebarHeroPurchaseClick();
                 return;
             }
 

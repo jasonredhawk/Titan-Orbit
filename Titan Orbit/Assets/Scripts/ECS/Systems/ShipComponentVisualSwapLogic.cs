@@ -344,13 +344,27 @@ namespace TitanOrbit.ECS
                 return false;
 
             // Same family + exact suffix already on the hull — nothing to restyle.
-            if (hostFamily != null
-                && string.Equals(sourceFamily.familyId, hostFamily.familyId, StringComparison.OrdinalIgnoreCase)
-                && HostHasExactSuffix(entry.componentId, sourceFamily.familyId))
+            bool sameFamily = hostFamily != null
+                && string.Equals(sourceFamily.familyId, hostFamily.familyId, StringComparison.OrdinalIgnoreCase);
+            if (sameFamily && HostHasExactSuffix(entry.componentId, sourceFamily.familyId))
                 return false;
 
-            GameObject template = ShipFamilyPartVisualCache.GetOrCreateTemplate(
-                sourceFamily, entry.componentId, shipLevel);
+            // Same-family primaries load the purchased mesh (Wing_5 from the family
+            // hull that actually has Wing_5). The index fallback would reuse the
+            // chassis wing. Host sockets still map onto the closest hardpoint.
+            // Cross-family buys keep the fallback when the foreign hull has no exact child.
+            GameObject template = null;
+            if (sameFamily)
+            {
+                template = ShipFamilyPartVisualCache.GetOrCreateExactTemplate(
+                    sourceFamily, entry.componentId, shipLevel);
+            }
+
+            if (template == null)
+            {
+                template = ShipFamilyPartVisualCache.GetOrCreateTemplate(
+                    sourceFamily, entry.componentId, shipLevel);
+            }
             if (template == null)
                 return false;
 

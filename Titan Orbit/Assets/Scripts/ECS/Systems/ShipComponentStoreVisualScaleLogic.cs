@@ -13,6 +13,11 @@ namespace TitanOrbit.ECS
     /// type and grows your existing matching meshes — it does not spawn the purchased mesh
     /// and it does not rewrite combat numbers (those stay on Extra Level merge).
     /// <para>
+    /// A same-family purchase that wins its pool is omitted. That part replaces the hull
+    /// mesh (<see cref="ShipComponentVisualSwapLogic"/>) and must keep the purchased
+    /// part's authored size. Cross-family winners and extras that lost the pool still grow.
+    /// </para>
+    /// <para>
     /// [TITAN-ORBIT] Scale amount is a <b>stat-increase ratio</b>, not prefab
     /// <c>localScale</c>. Weaker extras never shrink (grow-only). Several extras of one
     /// type take the <b>max</b> factor. MEGA hulls return identity (no family part groups).
@@ -38,6 +43,14 @@ namespace TitanOrbit.ECS
         /// the mesh (playtest clamp — not a combat stat cap).
         /// </summary>
         public const float MaxGroupScale = 3f;
+
+        /// <summary>Hull-plus-purchase ids while picking same-family primaries. Not re-entrant.</summary>
+        static readonly List<string> SameFamilyIdScratch = new List<string>(32);
+        static readonly List<ShipComponentAbilityStats> SameFamilyStatScratch =
+            new List<ShipComponentAbilityStats>(32);
+        static readonly List<ShipFamilySpecialBonuses> SameFamilyFleetScratch =
+            new List<ShipFamilySpecialBonuses>(32);
+        static readonly List<string> SameFamilyWinnerScratch = new List<string>(4);
 
         /// <summary>
         /// Per attribute-scale group multipliers. Default (all zeros) means "unset" —
@@ -181,11 +194,11 @@ namespace TitanOrbit.ECS
                 || string.IsNullOrEmpty(chassisId))
                 return Identity;
 
-            CollectExtraComponentIds(em, shipEntity, out List<string> extraIds);
+            CollectExtraComponents(em, shipEntity, out List<string> extraIds, out List<int> extraFamilies);
             if (extraIds == null || extraIds.Count == 0)
                 return Identity;
 
-            return Compute(chassisId, ship.ShipLevel, extraIds);
+            return Compute(chassisId, ship.ShipLevel, extraIds, extraFamilies);
         }
 
         /// <summary>
@@ -195,10 +208,16 @@ namespace TitanOrbit.ECS
         /// <param name="chassisId">Current hull id (e.g. AstroEagle_01) — baseline comes from this prefab.</param>
         /// <param name="shipLevel">Live ship level used for Extra Level evaluation on both sides.</param>
         /// <param name="extraComponentIds">Moon-store equipped catalog ids (may be another family).</param>
+        /// <param name="extraFamilyConfigIndices">
+        /// Parallel to <paramref name="extraComponentIds"/>. Purchase fleet stamps so the
+        /// same-family skip uses the same pool winner as the mesh swap. Null treats every
+        /// extra as the hull fleet.
+        /// </param>
         public static StoreVisualScaleFactors Compute(
             string chassisId,
             int shipLevel,
-            IReadOnlyList<string> extraComponentIds)
+            IReadOnlyList<string> extraComponentIds,
+            IReadOnlyList<int> extraFamilyConfigIndices = null)
         {
             var factors = Identity;
             if (string.IsNullOrWhiteSpace(chassisId)
@@ -211,11 +230,17 @@ namespace TitanOrbit.ECS
                 || chassisParts.MatchedComponentIds.Count == 0)
                 return factors;
 
+            // Same-family pool winners swap their mesh and stay at authored size.
+            List<string> sameFamilyPrimaries = CollectSameFamilyReplacingPrimaries(
+                chassisId, chassisParts, extraComponentIds, extraFamilyConfigIndices);
+
             int level = Mathf.Max(1, shipLevel);
             for (int i = 0; i < extraComponentIds.Count; i++)
             {
                 string extraId = extraComponentIds[i];
                 if (string.IsNullOrWhiteSpace(extraId))
+                    continue;
+                if (ContainsId(sameFamilyPrimaries, extraId))
                     continue;
 
                 // --- Source family catalog (not the ship's suffix remap) ---
@@ -525,5 +550,121 @@ namespace TitanOrbit.ECS
 
         static float ClampGroup(float value) =>
             Mathf.Clamp(value, 1f, MaxGroupScale);
+
+        /// <summary>
+        /// Same-family store ids that beat the hull and every other owned part of that
+        /// type. Those rows replace the mesh, so the stat-ratio grow must skip them.
+        /// Cross-family winners stay out of this list and still scale. Returns null
+        /// when nothing same-family won a pool.
+        /// </summary>
+        static List<string> CollectSameFamilyReplacingPrimaries(
+            string chassisId,
+            in ShipFamilyStatsCalculator.SumResult chassisParts,
+            IReadOnlyList<string> extraComponentIds,
+            IReadOnlyList<int> extraFamilyConfigIndices)
+        {
+            if (!ShipStatApplyLogic.TryResolveFamilyForChassisId(chassisId, out ShipFamilyDefinition family)
+                || family == null
+                || string.IsNullOrWhiteSpace(family.familyId))
+                return null;
+            if (chassisParts.MatchedComponentIds == null || chassisParts.PerComponentStats == null)
+                return null;
+            if (!HasSameFamilyExtra(family.familyId, extraComponentIds))
+                return null;
+
+            int storeStart = Mathf.Min(
+                chassisParts.MatchedComponentIds.Count,
+                chassisParts.PerComponentStats.Count);
+            if (storeStart <= 0)
+                return null;
+
+            // Reused scratch — ComputeForShip runs while territory scale is easing.
+            SameFamilyIdScratch.Clear();
+            SameFamilyStatScratch.Clear();
+            SameFamilyFleetScratch.Clear();
+            SameFamilyWinnerScratch.Clear();
+
+            ShipFamilySpecialBonuses hullFleet = family.ResolveSpecialBonuses();
+            for (int i = 0; i < storeStart; i++)
+            {
+                SameFamilyIdScratch.Add(chassisParts.MatchedComponentIds[i]);
+                SameFamilyStatScratch.Add(chassisParts.PerComponentStats[i]);
+                SameFamilyFleetScratch.Add(hullFleet);
+            }
+
+            // Same split the mesh swap uses: hull rows, then raw catalog stats for buys.
+            if (extraComponentIds != null)
+            {
+                for (int i = 0; i < extraComponentIds.Count; i++)
+                {
+                    string componentId = extraComponentIds[i];
+                    if (string.IsNullOrWhiteSpace(componentId))
+                        continue;
+                    if (!ShipFamilyStatsCalculator.TryResolveComponentStats(
+                            family, componentId, out ShipComponentAbilityStats raw))
+                        continue;
+
+                    SameFamilyIdScratch.Add(componentId);
+                    SameFamilyStatScratch.Add(raw);
+                    int familyIndex = extraFamilyConfigIndices != null && i < extraFamilyConfigIndices.Count
+                        ? extraFamilyConfigIndices[i]
+                        : -1;
+                    SameFamilyFleetScratch.Add(familyIndex >= 0
+                        ? MegaShipStatsCalculator.ResolveFleetBonuses(familyIndex)
+                        : hullFleet);
+                }
+            }
+
+            if (SameFamilyIdScratch.Count <= storeStart)
+                return null;
+
+            ShipComponentStackAggregation.CollectStoreExtrasThatOwnPoolBase(
+                SameFamilyIdScratch,
+                SameFamilyStatScratch,
+                storeStart,
+                SameFamilyWinnerScratch,
+                SameFamilyFleetScratch);
+
+            string prefix = family.familyId.Trim() + "_";
+            for (int i = SameFamilyWinnerScratch.Count - 1; i >= 0; i--)
+            {
+                string winner = SameFamilyWinnerScratch[i];
+                if (string.IsNullOrEmpty(winner)
+                    || !winner.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                    SameFamilyWinnerScratch.RemoveAt(i);
+            }
+
+            return SameFamilyWinnerScratch.Count > 0 ? SameFamilyWinnerScratch : null;
+        }
+
+        static bool HasSameFamilyExtra(string familyId, IReadOnlyList<string> extraComponentIds)
+        {
+            if (string.IsNullOrWhiteSpace(familyId) || extraComponentIds == null)
+                return false;
+
+            string prefix = familyId.Trim() + "_";
+            for (int i = 0; i < extraComponentIds.Count; i++)
+            {
+                string id = extraComponentIds[i];
+                if (!string.IsNullOrWhiteSpace(id)
+                    && id.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+
+            return false;
+        }
+
+        static bool ContainsId(List<string> ids, string id)
+        {
+            if (ids == null || string.IsNullOrEmpty(id))
+                return false;
+            for (int i = 0; i < ids.Count; i++)
+            {
+                if (string.Equals(ids[i], id, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+
+            return false;
+        }
     }
 }

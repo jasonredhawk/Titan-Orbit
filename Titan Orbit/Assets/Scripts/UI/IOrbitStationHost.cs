@@ -29,6 +29,10 @@ namespace TitanOrbit.UI
         void RefreshShipUpgradeTreeNodeStates(IReadOnlyList<ShipUpgradeTreeNodeUI> nodes, ShipPowerBarStatMaxes maxes);
         void PopulateTreeNode(ShipUpgradeTreeNodeUI view, ShipPowerBarStatMaxes maxes);
         void OnUpgradeTreeNodeClicked(int nodeLevel, int targetBranchIndex);
+        /// <summary>
+        /// Your Ship picture was clicked. Must not buy a hull — the price chip
+        /// on the matching upgrade-tree card is the only purchase control.
+        /// </summary>
         void OnCurrentShipDisplayNodeClicked();
 
         // --- Power score breakdown for tooltips ---

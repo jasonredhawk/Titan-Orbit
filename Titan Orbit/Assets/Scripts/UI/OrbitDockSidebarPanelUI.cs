@@ -57,8 +57,6 @@ namespace TitanOrbit.UI
         /// is left under the picture.
         /// </summary>
         private const float CurrentShipNodeHeight = 220f;
-        /// <summary>YOUR SHIP caption kept with the pinned camera.</summary>
-        private const float YourShipHeaderHeight = 28f;
         /// <summary>Family name line kept with the pinned camera.</summary>
         private const float FamilyNameHeight = 18f;
         private const float BankBalanceBannerHeight = 96f;
@@ -339,14 +337,14 @@ namespace TitanOrbit.UI
             BuildNavStrip();
 
             // --- Live camera, pinned under the buttons ---
-            // YOUR SHIP and the family name sit on the picture, not under it,
-            // so they stay with the camera. Family bonuses and LOADOUT are
-            // created later, inside the scroll.
+            // The family name stays with the picture. There is no "YOUR SHIP"
+            // caption — the camera is the ship. Family bonuses and LOADOUT
+            // are created later, inside the scroll.
             const float labelGap = 4f;
             const int shipPadH = 8;
             const int shipPadTop = 4;
             const int shipPadBottom = 6;
-            float shipStack = YourShipHeaderHeight + labelGap + FamilyNameHeight + labelGap + CurrentShipNodeHeight;
+            float shipStack = FamilyNameHeight + labelGap + CurrentShipNodeHeight;
             var shipHostGo = new GameObject("PinnedShip");
             shipHostGo.transform.SetParent(transform, false);
             var shipHostLe = shipHostGo.AddComponent<LayoutElement>();
@@ -363,7 +361,6 @@ namespace TitanOrbit.UI
             shipVlg.childForceExpandWidth = true;
             shipVlg.childForceExpandHeight = false;
 
-            CreateSectionHeader(shipHostGo.transform, "YOUR SHIP", YourShipHeaderHeight);
             _familyNameText = CreateBodyLabel(shipHostGo.transform, "FamilyName", "FAMILY", FamilyNameHeight);
             _familyNameText.fontSize = 12f;
             _familyNameText.fontStyle = FontStyles.Bold;
@@ -797,11 +794,8 @@ namespace TitanOrbit.UI
             {
                 _currentShipNode.ApplySidebarHeroPreviewLayout(innerW, CurrentShipNodeHeight, trackW);
                 _currentShipNode.ConfigureLayout(true);
-                _currentShipNode.SetSidebarHeroCardClickHandler(() =>
-                {
-                    if (_station != null)
-                        _station.OnCurrentShipDisplayNodeClicked();
-                });
+                // Picture only. The price chip on the upgrade-tree card is the buy control.
+                _currentShipNode.SetSidebarHeroCardClickHandler();
                 return;
             }
 
@@ -820,12 +814,8 @@ namespace TitanOrbit.UI
             view.ApplySidebarHeroPreviewLayout(innerW, CurrentShipNodeHeight, trackW);
             view.ConfigureLayout(true);
             // [TITAN-ORBIT] Sidebar hero hides the dark price pill (it sat on top of the power bar).
-            // Hull-swap click goes on the whole card instead.
-            view.SetSidebarHeroCardClickHandler(() =>
-            {
-                if (_station != null)
-                    _station.OnCurrentShipDisplayNodeClicked();
-            });
+            // The picture is not a buy button. Same-slot swaps use the tree card's price chip.
+            view.SetSidebarHeroCardClickHandler();
             _currentShipNode = view;
         }
 
@@ -899,11 +889,6 @@ namespace TitanOrbit.UI
             if (_currentShipNode == null || populateNode == null)
                 return;
             populateNode(_currentShipNode, maxes);
-        }
-
-        private void CreateSectionHeader(Transform parent, string text, float height)
-        {
-            CreateAccentSectionHeader(parent, text, null, new Color(0.88f, 0.92f, 1f, 1f), height, false);
         }
 
         private void CreateAccentSectionHeader(Transform parent, string title, string subtitle, Color accent,

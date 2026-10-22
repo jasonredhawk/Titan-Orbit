@@ -6,8 +6,8 @@ namespace TitanOrbit.Game
 {
     /// <summary>
     /// Drag on the Your Ship picture orbits the live camera around the hull.
-    /// A short tap still clicks the card, because this image sits above the
-    /// card button and would otherwise swallow that hull-swap click.
+    /// A tap does not click the card under the picture. That card used to buy
+    /// the docked moon's hull at the same upgrade-tree slot.
     /// </summary>
     public sealed class OrbitMenuPortraitTurntable : MonoBehaviour, IPointerDownHandler, IDragHandler, IPointerUpHandler
     {
@@ -19,11 +19,6 @@ namespace TitanOrbit.Game
 
         /// <summary>How many degrees the view yaws per pixel of horizontal drag.</summary>
         const float DegreesPerPixel = 0.4f;
-
-        /// <summary>Movement below this is a tap, not a spin, and still activates the card.</summary>
-        const float ClickSlopPixels = 8f;
-
-        float _moved;
 
         void OnEnable()
         {
@@ -47,8 +42,9 @@ namespace TitanOrbit.Game
 
         public void OnPointerDown(PointerEventData eventData)
         {
+            // Hold pauses auto-orbit. This object sits on the picture, above the
+            // card, so the card button underneath must not receive the tap.
             IsDragging = true;
-            _moved = 0f;
         }
 
         public void OnDrag(PointerEventData eventData)
@@ -56,18 +52,13 @@ namespace TitanOrbit.Game
             if (eventData == null)
                 return;
             DragYawDegrees += eventData.delta.x * DegreesPerPixel;
-            _moved += eventData.delta.magnitude;
         }
 
         public void OnPointerUp(PointerEventData eventData)
         {
+            // Release only ends the drag. Do not Invoke a parent Button —
+            // that bought the same ladder slot on another family's moon.
             IsDragging = false;
-            if (_moved > ClickSlopPixels)
-                return;
-
-            Button button = GetComponentInParent<Button>();
-            if (button != null && button.IsInteractable())
-                button.onClick.Invoke();
         }
     }
 }
