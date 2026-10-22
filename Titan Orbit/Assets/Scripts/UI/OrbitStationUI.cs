@@ -82,17 +82,13 @@ namespace TitanOrbit.UI
         private const float SidebarEquipmentHeaderHeightEmpty = 38f;
         /// <summary>Single-line hint under "Empty" ("Buy from store" / bonus copy). Filled meta stays taller.</summary>
         private const float SidebarEquipmentEmptySublineHeight = 14f;
-        /// <summary>Bumps <see cref="SetEquipmentSlotLayoutMode"/> so existing sessions rebuild the new glance cards.</summary>
-        private const int EquipmentSlotCardLayoutVersion = 3;
+        /// <summary>Bumps <see cref="SetEquipmentSlotLayoutMode"/> so existing sessions rebuild the glance cards.</summary>
+        private const int EquipmentSlotCardLayoutVersion = 4;
         /// <summary>
         /// Locked +1 row: accent + "+1 SLOT" + a full-width WATCH AD button (no power bar).
         /// Taller than empty so the button has a usable hit target inside the same card chrome.
         /// </summary>
         private const float SidebarEquipmentSlotCardHeightLocked = 78f;
-        /// <summary>Extra height when the player expands mount Move/Turn controls on a component.</summary>
-        private const float SidebarEquipmentPlacementPanelHeight = 118f;
-        /// <summary>Height of the collapsed "Adjust mount" toggle row on component cards.</summary>
-        private const float SidebarEquipmentPlacementToggleHeight = 18f;
         private const float SidebarEquipmentIconHeight = 52f;
         private const float SidebarEquipmentIconMinHeight = 44f;
         /// <summary>Stats footer holds only the colourful category power bar (no ability text, no dark track chrome).</summary>
@@ -341,16 +337,12 @@ namespace TitanOrbit.UI
 
         private readonly List<MoonDockStoreCardBinding> _moonDockStoreCards = new List<MoonDockStoreCardBinding>();
 
-        private const float EquipmentPlacementNudgeStep = 0.03f;
-        private const float EquipmentRotationSnapStep = 45f;
-
         /// <summary>
         /// Runtime wiring for one compact Equipment card in the left Orbit Menu dock.
-        /// Holds presentation refs plus mount-adjust expand state (placement starts collapsed).
         /// </summary>
         private sealed class SidebarEquipmentSlotUi
         {
-            /// <summary>LayoutElement on the card root — preferredHeight updates when empty/filled/placement expands.</summary>
+            /// <summary>LayoutElement on the card root — preferredHeight updates when empty or filled.</summary>
             public LayoutElement cardLayout;
             /// <summary>Card-edge outline. Gold on the bonus row, ice-white on regular slots.</summary>
             public Outline outline;
@@ -362,13 +354,6 @@ namespace TitanOrbit.UI
             public GameObject statsFooter;
             public GameObject iconRoot;
             public GameObject headerRow;
-            /// <summary>Small "Adjust mount" control; only shown for ship components.</summary>
-            public GameObject placementToggleRow;
-            public TextMeshProUGUI placementToggleLabel;
-            public GameObject placementPanel;
-            public TextMeshProUGUI placementReadout;
-            /// <summary>[TITAN-ORBIT] Mount Move/Turn rows stay collapsed so the inventory list stays scannable.</summary>
-            public bool placementExpanded;
         }
 
         private SidebarEquipmentSlotUi[] _sidebarEquipmentSlotUi;
@@ -2873,17 +2858,17 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// Builds one compact Equipment card for the left Orbit Menu purchased list.
-        /// Layout: accent → title → icon → colorful power bar → subline → optional Adjust mount → delete.
+        /// Layout: accent → title → icon → colorful power bar → subline → delete.
         /// Ability text is intentionally omitted — the right-hand store cards already show line-by-line stats.
         /// </summary>
         /// <param name="gridParent">Equipment grid under the sidebar Equipment host.</param>
-        /// <param name="index">Zero-based equipment slot index (used for delete / placement RPCs).</param>
+        /// <param name="index">Zero-based equipment slot index (used for delete).</param>
         /// <param name="boxRoot">Card root GameObject.</param>
         /// <param name="bgImage">Card background image.</param>
         /// <param name="titleText">Item name (or "Empty").</param>
         /// <param name="descText">Unused on compact cards — kept for array wiring compatibility (hidden).</param>
         /// <param name="deleteButton">Top-left ×. One click discards that gear row with no confirm dialog.</param>
-        /// <param name="slotUi">Runtime refs for refresh / placement toggle.</param>
+        /// <param name="slotUi">Runtime refs for refresh.</param>
         private void CreateSidebarEquipmentSlotCard(
             Transform gridParent,
             int index,
@@ -2896,7 +2881,7 @@ namespace TitanOrbit.UI
         {
             // --- Card shell ---
             // [TITAN-ORBIT] Preferred height starts at the empty-slot size; RefreshSidebarEquipmentSlotRich
-            // grows it when filled and when the player expands mount controls.
+            // grows it when the row is filled.
             slotUi = new SidebarEquipmentSlotUi();
             float trackWidth = Mathf.Max(40f, SidebarSlotCardWidth - 22f);
 
@@ -3060,77 +3045,6 @@ namespace TitanOrbit.UI
                 MoonDockEquipmentPowerBarPairGap,
                 trackWidth);
 
-            // --- Adjust mount toggle (collapsed by default to keep the list short) ---
-            slotUi.placementToggleRow = new GameObject("PlacementToggle");
-            slotUi.placementToggleRow.transform.SetParent(boxRoot.transform, false);
-            var toggleLe = slotUi.placementToggleRow.AddComponent<LayoutElement>();
-            toggleLe.preferredHeight = SidebarEquipmentPlacementToggleHeight;
-            toggleLe.minHeight = SidebarEquipmentPlacementToggleHeight;
-            var toggleBg = slotUi.placementToggleRow.AddComponent<Image>();
-            toggleBg.color = new Color(0.1f, 0.14f, 0.22f, 0.95f);
-            if (buttonSprite != null)
-            {
-                toggleBg.sprite = buttonSprite;
-                toggleBg.type = Image.Type.Sliced;
-            }
-            var toggleBtn = slotUi.placementToggleRow.AddComponent<Button>();
-            int capturedSlot = index;
-            toggleBtn.onClick.AddListener(() => ToggleSidebarEquipmentPlacementExpanded(capturedSlot));
-
-            var toggleLabelGo = new GameObject("Label");
-            toggleLabelGo.transform.SetParent(slotUi.placementToggleRow.transform, false);
-            var toggleLabelRt = toggleLabelGo.AddComponent<RectTransform>();
-            toggleLabelRt.anchorMin = Vector2.zero;
-            toggleLabelRt.anchorMax = Vector2.one;
-            toggleLabelRt.offsetMin = new Vector2(4f, 0f);
-            toggleLabelRt.offsetMax = new Vector2(-4f, 0f);
-            slotUi.placementToggleLabel = toggleLabelGo.AddComponent<TextMeshProUGUI>();
-            slotUi.placementToggleLabel.text = "Adjust mount >";
-            slotUi.placementToggleLabel.fontSize = 8f;
-            slotUi.placementToggleLabel.fontStyle = FontStyles.Bold;
-            slotUi.placementToggleLabel.alignment = TextAlignmentOptions.Center;
-            slotUi.placementToggleLabel.color = new Color(0.78f, 0.88f, 1f, 0.95f);
-            slotUi.placementToggleLabel.raycastTarget = false;
-            if (fontAsset != null) slotUi.placementToggleLabel.font = fontAsset;
-            slotUi.placementToggleRow.SetActive(false);
-
-            // --- Mount Move/Turn rows (shown only when expanded) ---
-            slotUi.placementPanel = new GameObject("Placement");
-            slotUi.placementPanel.transform.SetParent(boxRoot.transform, false);
-            var placementLe = slotUi.placementPanel.AddComponent<LayoutElement>();
-            placementLe.preferredHeight = SidebarEquipmentPlacementPanelHeight;
-            placementLe.minHeight = SidebarEquipmentPlacementPanelHeight;
-            var placementVlg = slotUi.placementPanel.AddComponent<VerticalLayoutGroup>();
-            placementVlg.spacing = 2f;
-            placementVlg.padding = new RectOffset(2, 2, 0, 0);
-            placementVlg.childAlignment = TextAnchor.UpperCenter;
-            placementVlg.childControlWidth = true;
-            placementVlg.childControlHeight = true;
-            placementVlg.childForceExpandWidth = true;
-            placementVlg.childForceExpandHeight = false;
-
-            CreateSidebarEquipmentPlacementMoveRow(slotUi.placementPanel.transform, "Move X", index, moveAxis: 0);
-            CreateSidebarEquipmentPlacementMoveRow(slotUi.placementPanel.transform, "Move Y", index, moveAxis: 1);
-            CreateSidebarEquipmentPlacementMoveRow(slotUi.placementPanel.transform, "Move Z", index, moveAxis: 2);
-            CreateSidebarEquipmentPlacementRotateRow(slotUi.placementPanel.transform, "Turn X", index, rotateAxis: 0);
-            CreateSidebarEquipmentPlacementRotateRow(slotUi.placementPanel.transform, "Turn Y", index, rotateAxis: 1);
-            CreateSidebarEquipmentPlacementRotateRow(slotUi.placementPanel.transform, "Turn Z", index, rotateAxis: 2);
-
-            var readoutGo = new GameObject("PlacementReadout");
-            readoutGo.transform.SetParent(slotUi.placementPanel.transform, false);
-            var readoutLe = readoutGo.AddComponent<LayoutElement>();
-            readoutLe.preferredHeight = 11f;
-            readoutLe.minHeight = 10f;
-            slotUi.placementReadout = readoutGo.AddComponent<TextMeshProUGUI>();
-            slotUi.placementReadout.fontSize = 7f;
-            slotUi.placementReadout.alignment = TextAlignmentOptions.Center;
-            slotUi.placementReadout.color = new Color(0.72f, 0.8f, 0.92f, 0.88f);
-            slotUi.placementReadout.raycastTarget = false;
-            if (fontAsset != null) slotUi.placementReadout.font = fontAsset;
-
-            slotUi.placementPanel.SetActive(false);
-            slotUi.placementExpanded = false;
-
             // --- Delete × (layout-ignored overlay). Click discards the row immediately. ---
             var delGo = new GameObject("Delete");
             delGo.transform.SetParent(boxRoot.transform, false);
@@ -3160,162 +3074,6 @@ namespace TitanOrbit.UI
             if (fontAsset != null) delTmp.font = fontAsset;
             delTmp.raycastTarget = false;
             deleteButton.gameObject.SetActive(false);
-        }
-
-        /// <summary>
-        /// Toggles the mount Move/Turn panel on one owned component card, then relayouts the equipment list.
-        /// </summary>
-        /// <param name="slotIndex">Equipment slot whose Adjust mount control was clicked.</param>
-        private void ToggleSidebarEquipmentPlacementExpanded(int slotIndex)
-        {
-            // --- Guard ---
-            if (_sidebarEquipmentSlotUi == null || slotIndex < 0 || slotIndex >= _sidebarEquipmentSlotUi.Length)
-                return;
-            SidebarEquipmentSlotUi slotUi = _sidebarEquipmentSlotUi[slotIndex];
-            if (slotUi == null)
-                return;
-
-            // --- Flip expand state and refresh that slot + list height ---
-            // [TITAN-ORBIT] Placement starts collapsed so many purchased components fit on one screen.
-            slotUi.placementExpanded = !slotUi.placementExpanded;
-            RefreshEquipmentSlots();
-        }
-
-        private void CreateSidebarEquipmentPlacementMoveRow(Transform parent, string label, int slotIndex, int moveAxis)
-        {
-            CreateSidebarEquipmentPlacementAxisRow(
-                parent,
-                label,
-                slotIndex,
-                axisIndex: moveAxis,
-                negativeLabel: "−",
-                positiveLabel: "+",
-                onStep: (slot, axis, direction) =>
-                {
-                    Vector3 delta = Vector3.zero;
-                    delta[axis] = direction * EquipmentPlacementNudgeStep;
-                    NudgeSidebarEquipmentPlacement(slot, delta, Vector3.zero);
-                });
-        }
-
-        private void CreateSidebarEquipmentPlacementRotateRow(Transform parent, string label, int slotIndex, int rotateAxis)
-        {
-            CreateSidebarEquipmentPlacementAxisRow(
-                parent,
-                label,
-                slotIndex,
-                axisIndex: rotateAxis,
-                negativeLabel: "↺",
-                positiveLabel: "↻",
-                onStep: (slot, axis, direction) =>
-                {
-                    Vector3 deltaEuler = Vector3.zero;
-                    deltaEuler[axis] = direction * EquipmentRotationSnapStep;
-                    NudgeSidebarEquipmentPlacement(slot, Vector3.zero, deltaEuler);
-                });
-        }
-
-        private void CreateSidebarEquipmentPlacementAxisRow(
-            Transform parent,
-            string label,
-            int slotIndex,
-            int axisIndex,
-            string negativeLabel,
-            string positiveLabel,
-            System.Action<int, int, int> onStep)
-        {
-            var rowGo = new GameObject(label.Replace(' ', '_') + "Row");
-            rowGo.transform.SetParent(parent, false);
-            var rowLe = rowGo.AddComponent<LayoutElement>();
-            rowLe.preferredHeight = 16f;
-            rowLe.minHeight = 15f;
-            var rowHlg = rowGo.AddComponent<HorizontalLayoutGroup>();
-            rowHlg.spacing = 3f;
-            rowHlg.childAlignment = TextAnchor.MiddleCenter;
-            rowHlg.childControlWidth = true;
-            rowHlg.childControlHeight = true;
-            rowHlg.childForceExpandWidth = false;
-            rowHlg.childForceExpandHeight = true;
-
-            var labelGo = new GameObject("Label");
-            labelGo.transform.SetParent(rowGo.transform, false);
-            var labelLe = labelGo.AddComponent<LayoutElement>();
-            labelLe.preferredWidth = 42f;
-            labelLe.minWidth = 42f;
-            var labelTmp = labelGo.AddComponent<TextMeshProUGUI>();
-            labelTmp.text = label;
-            labelTmp.fontSize = 7.5f;
-            labelTmp.fontStyle = FontStyles.Bold;
-            labelTmp.alignment = TextAlignmentOptions.MidlineLeft;
-            labelTmp.color = new Color(0.75f, 0.82f, 0.95f, 0.92f);
-            labelTmp.raycastTarget = false;
-            if (fontAsset != null) labelTmp.font = fontAsset;
-
-            CreateSidebarEquipmentPlacementStepButton(rowGo.transform, negativeLabel, 18f, () => onStep?.Invoke(slotIndex, axisIndex, -1));
-            CreateSidebarEquipmentPlacementStepButton(rowGo.transform, positiveLabel, 18f, () => onStep?.Invoke(slotIndex, axisIndex, 1));
-        }
-
-        private void CreateSidebarEquipmentPlacementStepButton(Transform parent, string text, float width, UnityEngine.Events.UnityAction onClick)
-        {
-            var btnGo = new GameObject("Step_" + text);
-            btnGo.transform.SetParent(parent, false);
-            var btnLe = btnGo.AddComponent<LayoutElement>();
-            btnLe.preferredWidth = width;
-            btnLe.minWidth = width;
-            btnLe.preferredHeight = 16f;
-            btnLe.minHeight = 16f;
-            var btnImg = btnGo.AddComponent<Image>();
-            btnImg.color = new Color(0.12f, 0.16f, 0.24f, 0.96f);
-            if (buttonSprite != null)
-            {
-                btnImg.sprite = buttonSprite;
-                btnImg.type = Image.Type.Sliced;
-            }
-            var btn = btnGo.AddComponent<Button>();
-            btn.onClick.AddListener(onClick);
-
-            var txtGo = new GameObject("Text");
-            txtGo.transform.SetParent(btnGo.transform, false);
-            var txtRt = txtGo.AddComponent<RectTransform>();
-            txtRt.anchorMin = Vector2.zero;
-            txtRt.anchorMax = Vector2.one;
-            txtRt.offsetMin = Vector2.zero;
-            txtRt.offsetMax = Vector2.zero;
-            var tmp = txtGo.AddComponent<TextMeshProUGUI>();
-            tmp.text = text;
-            tmp.fontSize = 9f;
-            tmp.alignment = TextAlignmentOptions.Center;
-            tmp.color = new Color(0.92f, 0.96f, 1f, 0.96f);
-            tmp.raycastTarget = false;
-            if (fontAsset != null) tmp.font = fontAsset;
-        }
-
-        private static string FormatEquipmentPlacementCompact(Vector3 pos, Vector3 euler) =>
-            string.Format(
-                System.Globalization.CultureInfo.InvariantCulture,
-                "Pos {0:0.##}, {1:0.##}, {2:0.##}   Rot {3:0.#}°, {4:0.#}°, {5:0.#}°",
-                pos.x, pos.y, pos.z, euler.x, euler.y, euler.z);
-
-        private void NudgeSidebarEquipmentPlacement(int slotIndex, Vector3 deltaPosition, Vector3 deltaEuler)
-        {
-            if (currentShip == null || slotIndex < 0)
-                return;
-
-            var equipment = currentShip.EquippedEquipment;
-            if (equipment == null || slotIndex >= equipment.Count)
-                return;
-
-            EquippedEquipmentEntry entry = equipment[slotIndex];
-            if (!entry.IsShipComponent)
-                return;
-
-            Vector3 pos = entry.LocalPosition + deltaPosition;
-            Vector3 rot = EquippedComponentPlacementUtility.SnapEulerAngles(entry.LocalEulerAngles + deltaEuler);
-
-            currentShip.UpdateEquippedComponentPlacementServerRpc(
-                entry.bufferIndex,
-                pos.x, pos.y, pos.z,
-                rot.x, rot.y, rot.z);
         }
 
         private void SetUpgradeCardSlotLayoutMode(bool richLayout)
@@ -7165,10 +6923,6 @@ namespace TitanOrbit.UI
                     slotUi.statsFooter.SetActive(false);
                 if (slotUi.powerBar != null)
                     slotUi.powerBar.gameObject.SetActive(false);
-                if (slotUi.placementToggleRow != null)
-                    slotUi.placementToggleRow.SetActive(false);
-                if (slotUi.placementPanel != null)
-                    slotUi.placementPanel.SetActive(false);
                 if (slotUi.cardLayout != null)
                 {
                     slotUi.cardLayout.preferredHeight = SidebarEquipmentSlotCardHeightLocked;
@@ -7286,7 +7040,6 @@ namespace TitanOrbit.UI
         /// <summary>
         /// Paints one compact owned Equipment card: accent, title, icon, colorful power bar, subline.
         /// Ability line-by-line stats are omitted (store purchase cards already show them).
-        /// Mount Move/Turn controls stay behind Adjust mount until the player expands them.
         /// <paramref name="isPermanentBonus"/> is the extra capacity row (last visible
         /// slot when <c>LoadoutBonusSlots</c> is 1) — gold glass instead of navy Empty.
         /// </summary>
@@ -7484,29 +7237,9 @@ namespace TitanOrbit.UI
                 equipmentDeleteButtons[index].interactable = filled;
             }
 
-            // --- Mount adjust (collapsed by default) ---
-            bool canAdjustMount = filled && entry.IsShipComponent && componentEntry != null;
-            if (!canAdjustMount && slotUi != null)
-                slotUi.placementExpanded = false;
-
-            bool showPlacement = canAdjustMount && slotUi != null && slotUi.placementExpanded;
-            if (slotUi?.placementToggleRow != null)
-            {
-                slotUi.placementToggleRow.SetActive(canAdjustMount);
-                if (slotUi.placementToggleLabel != null)
-                {
-                    slotUi.placementToggleLabel.text = showPlacement ? "Hide mount v" : "Adjust mount >";
-                }
-            }
-            if (slotUi?.placementPanel != null)
-                slotUi.placementPanel.SetActive(showPlacement);
-
-            if (showPlacement && slotUi != null && slotUi.placementReadout != null)
-                slotUi.placementReadout.text = FormatEquipmentPlacementCompact(entry.LocalPosition, entry.LocalEulerAngles);
-
             // --- Variable card height ---
             // Empty = accent + title + one hint line (tall enough that text clears the rail).
-            // Filled = glance card; expanded mount adds placement panel height.
+            // Filled = glance card. Non-component rows have no power-bar footer.
             if (slotUi?.cardLayout != null)
             {
                 float h;
@@ -7515,11 +7248,6 @@ namespace TitanOrbit.UI
                 else
                 {
                     h = SidebarEquipmentSlotCardHeight;
-                    if (canAdjustMount)
-                        h += SidebarEquipmentPlacementToggleHeight;
-                    if (showPlacement)
-                        h += SidebarEquipmentPlacementPanelHeight;
-                    // Non-component filled items have no power-bar footer — shave that reserved space.
                     if (!showComponentPowerBar)
                         h -= SidebarEquipmentStatsFooterHeight + 2f;
                 }
