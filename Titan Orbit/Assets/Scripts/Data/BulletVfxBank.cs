@@ -69,7 +69,7 @@ namespace TitanOrbit.Data
         [Tooltip("Not applied. Tracer size is fire power ÷ Bullet Reference Fire Power, then Global Visual Scale.")]
         [SerializeField] float upgradeVisualScaleMultiplier = 0.5f;
 
-        [Tooltip("Ship-bullet tracer size is this shot's fire power divided by this number. Missiles, lasers, turrets, and ramming do not use it.")]
+        [Tooltip("Gun and missile tracer size is this shot's fire power divided by this number. Snipers divide by 50. Lasers, turrets, and ramming do not use it.")]
         [Min(0.01f)]
         [SerializeField] float bulletReferenceFirePower = 4f;
 

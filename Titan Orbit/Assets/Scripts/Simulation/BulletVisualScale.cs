@@ -18,7 +18,8 @@ namespace TitanOrbit.Simulation
         /// <summary>
         /// Fallback ship-bullet tracer reference when <see cref="BulletVfxBank"/> is missing.
         /// The live value is <see cref="BulletVfxBank.BulletReferenceFirePower"/> on
-        /// Resources/BulletVfxBank (default 4). Missiles, lasers, turrets, and ramming do not use it.
+        /// Resources/BulletVfxBank (default 4). Guns and missiles divide by it.
+        /// Snipers use <see cref="SniperVisualReferenceFirePower"/>. Lasers, turrets, and ramming do not use it.
         /// </summary>
         public const float FixedBulletReferenceDamage = 4f;
 
@@ -35,9 +36,9 @@ namespace TitanOrbit.Simulation
         }
 
         /// <summary>
-        /// Size divisor for a sniper only. Every other bullet, Titan guns included,
-        /// divides fire power by <see cref="BulletVfxBank.BulletReferenceFirePower"/>
-        /// on the bullet bank asset. The sniper does not.
+        /// Size divisor for a sniper only. Guns and missiles divide fire power by
+        /// <see cref="BulletVfxBank.BulletReferenceFirePower"/> on the bullet bank asset.
+        /// The sniper does not.
         /// </summary>
         public const float SniperVisualReferenceFirePower = 50f;
 

@@ -476,11 +476,6 @@ namespace TitanOrbit.ECS
                                  && killerRoles.IsKiller(
                                      shipState.ValueRO.Team, ghostOwner.ValueRO.NetworkId);
 
-                // Missile tracers still share one hull ratio. Bullets use this shot's
-                // fire power ÷ the Bullet VFX Bank reference inside BulletShotMath.
-                SumPeakFirepowerDps(mounts, bankIndex, out float shipPeakDps, out float shipReferenceDps);
-                shipPeakDps = TeamCommandRoleRules.ScaleFirePower(shipPeakDps, topKiller);
-
                 // --- Spawn each planned barrel with that mount’s own damage ---
                 for (int shot = 0; shot < shotCount; shot++)
                 {
@@ -494,7 +489,7 @@ namespace TitanOrbit.ECS
                         ref state, ref ecb, bulletEntity, mountIdx,
                         fireOrigin, fireForward, planned.Damage,
                         weaponCfg.ValueRO, in mount, bankIndex, firePowerExtras,
-                        categoryUpgradeScale, shipPeakDps, shipReferenceDps, shipVel,
+                        categoryUpgradeScale, shipVel,
                         ghostOwner.ValueRO.NetworkId, (byte)shipState.ValueRO.Team,
                         shipState.ValueRO.ShipLevel,
                         dt, gemPrefab, gemSpawnServerTime, mapW, mapH,
@@ -689,11 +684,6 @@ namespace TitanOrbit.ECS
             if (shotCount <= 0)
                 return;
 
-            // Missile tracers still share one hull ratio. Bullets use this shot's
-            // fire power ÷ the Bullet VFX Bank reference inside BulletShotMath.
-            SumPeakFirepowerDps(mounts, fallbackBankIndex, out float shipPeakDps, out float shipReferenceDps);
-            shipPeakDps = TeamCommandRoleRules.ScaleFirePower(shipPeakDps, topKiller);
-
             int megaOwnerNet = ghostOwner.NetworkId;
             bool shiftMouseAim = input.Overdrive;
 
@@ -774,7 +764,7 @@ namespace TitanOrbit.ECS
                     ref state, ref ecb, bulletEntity, m,
                     fireOrigin, fireForward, planned.Damage,
                     weaponCfg, in fireMount, mountBank, firePowerExtras: 0,
-                    categoryUpgradeScale, shipPeakDps, shipReferenceDps, shipVel,
+                    categoryUpgradeScale, shipVel,
                     megaOwnerNet, (byte)shipState.Team,
                     shipState.ShipLevel,
                     dt, gemPrefab, gemSpawnServerTime, mapW, mapH,
@@ -847,39 +837,6 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Tracer size is this hull’s fire power (level, abilities, upgrades).
-        /// Bullet type is not included — no bank multiplier, no fire rate.
-        /// Battery energy is not read — running dry slows the trigger, it does not
-        /// shrink the bullet.
-        /// </summary>
-        static void SumPeakFirepowerDps(
-            DynamicBuffer<ShipWeaponMountElement> mounts,
-            int bankIndex,
-            out float peakDps,
-            out float referenceDps)
-        {
-            _ = bankIndex;
-            float live = 0f;
-            float reference = 0f;
-            if (mounts.IsCreated)
-            {
-                for (int i = 0; i < mounts.Length; i++)
-                {
-                    ShipWeaponMountElement m = mounts[i];
-                    float fp = m.FirePower;
-                    if (fp <= 0.01f)
-                        continue;
-                    float refFp = m.ReferenceFirePower > 0.01f ? m.ReferenceFirePower : fp;
-                    live += fp;
-                    reference += refFp;
-                }
-            }
-
-            peakDps = live;
-            referenceDps = math.max(0.01f, reference);
-        }
-
-        /// <summary>
         /// One ship/MEGA shot: modifiers, spawn RPC, same-frame <see cref="TryResolveBulletHit"/>.
         /// Misses stay in the live buffer for Phase A next tick — never advance twice this tick.
         /// </summary>
@@ -896,8 +853,6 @@ namespace TitanOrbit.ECS
             int bankIndex,
             int firePowerExtras,
             float categoryUpgradeScale,
-            float shipPeakDps,
-            float shipReferenceDps,
             float3 shipVel,
             int ownerNetworkId,
             byte ownerTeam,
@@ -929,11 +884,8 @@ namespace TitanOrbit.ECS
                 ? math.max(0.25f, maxDistanceForLife / math.max(1f, muzzleSpeed))
                 : weaponCfg.BulletLifetime;
 
-            // Missiles and the Rockets bank keep each weapon's own base.
-            // Every other bullet, Titan guns included, divides by the bullet
-            // bank asset reference. Snipers divide by 50 instead.
-            bool fixedBulletReference = mount.WeaponKind != ShipWeaponKind.Missile
-                && !RocketHomingFire.IsRocketBank(bankIndex);
+            // Missiles use the same tracer size as guns: this shot's fire power
+            // ÷ the Bullet VFX Bank reference. Snipers still divide by 50.
             bool sniperVisual = mount.WeaponKind == ShipWeaponKind.Sniper;
             var plan = BulletShotMath.Build(
                 fireOrigin,
@@ -952,9 +904,6 @@ namespace TitanOrbit.ECS
                 bankIndex,
                 firePowerExtras,
                 categoryUpgradeScale,
-                shipPeakDps,
-                shipReferenceDps,
-                fixedBulletReference,
                 sniperVisual);
 
             byte homing = 0;

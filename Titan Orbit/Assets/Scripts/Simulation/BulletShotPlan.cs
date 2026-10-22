@@ -55,11 +55,9 @@ namespace TitanOrbit.Simulation
 
         /// <summary>
         /// One ship/MEGA shot: bank modifiers, visual scale, Starblast velocity.
-        /// Bullets scale as this shot's fire power ÷ the Bullet VFX Bank reference
-        /// (<see cref="BulletVisualScale.ResolveFixedBulletReferenceDamage"/>, default 4).
-        /// <paramref name="useFixedBulletReference"/> false keeps the per-weapon base (missiles).
+        /// Guns and missiles scale as this shot's fire power ÷ the Bullet VFX Bank
+        /// reference (<see cref="BulletVisualScale.ResolveFixedBulletReferenceDamage"/>, default 4).
         /// <paramref name="sniperVisual"/> divides fire power by 50.
-        /// Every other bullet uses the bullet bank asset reference.
         /// </summary>
         public static BulletShotPlan Build(
             float3 fireOrigin,
@@ -77,9 +75,6 @@ namespace TitanOrbit.Simulation
             int bankIndex,
             int firePowerExtras,
             float categoryUpgradeScale,
-            float shipPeakDps = 0f,
-            float shipReferenceDps = 0f,
-            bool useFixedBulletReference = true,
             bool sniperVisual = false)
         {
             // Fire power before the bullet-type multiplier. Type changes hit damage, not size.
@@ -93,34 +88,17 @@ namespace TitanOrbit.Simulation
                 firePowerExtras);
             float fireRateMul = fireRate / math.max(0.1f, hullFireRate);
 
-            // Bullets, Titan guns included: fire power ÷ the bullet bank asset
-            // reference (Bullet Reference Fire Power, live value 4).
+            // Guns and missiles: fire power ÷ the bullet bank asset reference
+            // (Bullet Reference Fire Power, live value 4).
             // A sniper is the one exception: fire power ÷ 50.
-            // Missiles keep each weapon's own base. Lasers never reach this builder.
+            // Lasers never reach this builder.
             _ = authoredBulletScale;
             _ = categoryUpgradeScale;
+            _ = referenceDamage;
             _ = referenceSpeed;
-            float visualScale;
-            if (sniperVisual)
-            {
-                _ = shipPeakDps;
-                _ = shipReferenceDps;
-                _ = referenceDamage;
-                visualScale = BulletVisualScale.ComputeSniperShotScale(bulletDamage);
-            }
-            else if (useFixedBulletReference)
-            {
-                _ = shipPeakDps;
-                _ = shipReferenceDps;
-                _ = referenceDamage;
-                visualScale = bulletDamage / math.max(0.01f, BulletVisualScale.ResolveFixedBulletReferenceDamage());
-            }
-            else
-            {
-                float scaleDamage = shipPeakDps > 0.01f ? shipPeakDps : damage;
-                float scaleReference = shipReferenceDps > 0.01f ? shipReferenceDps : referenceDamage;
-                visualScale = scaleDamage / scaleReference;
-            }
+            float visualScale = sniperVisual
+                ? BulletVisualScale.ComputeSniperShotScale(bulletDamage)
+                : bulletDamage / math.max(0.01f, BulletVisualScale.ResolveFixedBulletReferenceDamage());
 
             fireForward.y = 0f;
             if (math.lengthsq(fireForward) < 0.0001f)
