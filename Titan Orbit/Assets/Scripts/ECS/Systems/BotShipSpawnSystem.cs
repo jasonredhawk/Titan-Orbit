@@ -90,8 +90,8 @@ namespace TitanOrbit.ECS
                     bool keep = slot < keepCount;
                     if (!keep)
                     {
-                        if (found >= 0 && em.Exists(entities[found]))
-                            em.DestroyEntity(entities[found]);
+                        if (found >= 0)
+                            DestroyShip(em, entities[found]);
                         continue;
                     }
 
@@ -154,10 +154,38 @@ namespace TitanOrbit.ECS
             using var query = em.CreateEntityQuery(ComponentType.ReadOnly<BotShipTag>());
             using var entities = query.ToEntityArray(Allocator.Temp);
             for (int i = 0; i < entities.Length; i++)
+                DestroyShip(em, entities[i]);
+        }
+
+        /// <summary>
+        /// Destroys the bot and the ghost children listed on it. Destroying only the root
+        /// leaves those children in the world as a hull that keeps moving.
+        /// </summary>
+        static void DestroyShip(EntityManager em, Entity root)
+        {
+            if (!em.Exists(root) || em.HasComponent<Prefab>(root))
+                return;
+
+            var doomed = new NativeList<Entity>(8, Allocator.Temp);
+            if (em.HasBuffer<LinkedEntityGroup>(root))
             {
-                if (em.Exists(entities[i]))
-                    em.DestroyEntity(entities[i]);
+                DynamicBuffer<LinkedEntityGroup> links = em.GetBuffer<LinkedEntityGroup>(root);
+                for (int i = 0; i < links.Length; i++)
+                {
+                    Entity member = links[i].Value;
+                    if (member != Entity.Null)
+                        doomed.Add(member);
+                }
             }
+
+            doomed.Add(root);
+            for (int i = 0; i < doomed.Length; i++)
+            {
+                if (em.Exists(doomed[i]))
+                    em.DestroyEntity(doomed[i]);
+            }
+
+            doomed.Dispose();
         }
 
         /// <summary>

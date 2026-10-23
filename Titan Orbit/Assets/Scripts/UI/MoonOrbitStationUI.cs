@@ -1187,24 +1187,18 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Your Ship bar: Extra Level at current ship level with zero ability purchases.
-        /// MEGA hulls use the static catalog sum (no Extra Level, gem cap 0).
+        /// Your Ship bar: the hull you are flying, plus ability purchases and equipped
+        /// ship parts. Upgrade-tree cards stay on the purchase-time hull
+        /// (<see cref="GetPowerBreakdownForTreeNode"/>). A Titan keeps its frozen
+        /// catalog hull and only adds gear — ability purchases do not step a Titan.
         /// </summary>
         public ShipFamilyPowerScoreBreakdown GetCurrentShipPowerBreakdown()
         {
             if (!TryGetFlownChassisId(out string chassisId))
                 return default;
-            if (MegaShipCatalog.IsMegaChassisId(chassisId)
-                && MegaShipCatalog.TryParseCatalogIndex(chassisId, out ushort megaIndex))
-            {
-                var mega = MegaShipCatalog.Load();
-                return mega != null ? mega.GetPowerBreakdown(megaIndex) : default;
-            }
 
-            var config = ShipStatApplyLogic.Config;
-            return config != null
-                ? config.GetPowerScoreBreakdownForChassisIdAtShipLevel(chassisId, ShipLevel)
-                : default;
+            // Same ten slots as the tree. Fills grow when this player has bought abilities or gear.
+            return CurrentShipPowerScore.ForCurrentShip(chassisId, ShipLevel);
         }
 
         /// <summary>Tree node bar: Extra Level at the node's ship <paramref name="level"/> with zero ability purchases.</summary>

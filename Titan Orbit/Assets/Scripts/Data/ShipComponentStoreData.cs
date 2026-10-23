@@ -326,11 +326,12 @@ namespace TitanOrbit.Data
             ShipComponentStackAggregation.GearCardRole role = ShipComponentStackAggregation.GearCardRole.Unclassified,
             bool hasDisplacedPrimary = false,
             ShipComponentAbilityStats displacedAdjusted = default,
-            bool oldPrimaryIsThisCard = false)
+            bool oldPrimaryIsThisCard = false,
+            bool includeBulletTypeLine = true)
         {
             return BuildAbilityDescription(
                 entry, shipLevel, family, maxLines, richText: true, planetOrHullBankIndex, role,
-                hasDisplacedPrimary, displacedAdjusted, oldPrimaryIsThisCard);
+                hasDisplacedPrimary, displacedAdjusted, oldPrimaryIsThisCard, includeBulletTypeLine);
         }
 
         /// <summary>Plain-text variant (legacy equipment panel / short tooltips).</summary>
@@ -346,14 +347,8 @@ namespace TitanOrbit.Data
 
         /// <summary>
         /// Builds the Gear-tab card description as a column grid.
-        /// Weapon cards lead with the bullet type. Each stat row is
-        /// <c>VAL</c> (this part, before the moon roll), <c>BONUS</c> (that roll's percent, or —),
-        /// and <c>FINAL</c> (the part number after the roll).
-        /// Primary cards that would replace another piece add <c>OLD</c> before VAL:
-        /// that piece's own post-bonus total. FINAL is not a difference.
-        /// A following <c>hull</c> row is the amount that actually lands on the ship when
-        /// aggregation is smaller than FINAL (extra engines / turn-per-extra).
-        /// Called when a card is created and again when the Gear tab refreshes prices.
+        /// The bullet type sits under the card title, so this grid is stats only
+        /// unless <paramref name="includeBulletTypeLine"/> is true.
         /// </summary>
         static string BuildAbilityDescription(
             ShipFamilyComponentEntry entry,
@@ -365,7 +360,8 @@ namespace TitanOrbit.Data
             ShipComponentStackAggregation.GearCardRole role = ShipComponentStackAggregation.GearCardRole.Unclassified,
             bool hasDisplacedPrimary = false,
             ShipComponentAbilityStats displacedAdjusted = default,
-            bool oldPrimaryIsThisCard = false)
+            bool oldPrimaryIsThisCard = false,
+            bool includeBulletTypeLine = true)
         {
             if (entry == null)
                 return string.Empty;
@@ -406,11 +402,10 @@ namespace TitanOrbit.Data
             bool isPropulsion = ShipComponentAbilityStats.IsPropulsionComponent(entry.componentId);
             bool isEngine = ShipFamilyPartTypes.IsEngineLikeName(entry.componentId);
 
-            // --- Weapon bullet type ---
-            // [TITAN-ORBIT] Gear-tab weapon cards list which bullet bank this part fires
-            // (Fireballs, Rift, …) above the stat grid. Authored
-            // entry.bulletPrefabIndex overrides the family default when set.
-            TryQueueWeaponBulletType(lines, entry, family, planetOrHullBankIndex);
+            // The gear card prints the bullet type under the title. Other callers
+            // can still ask for the old line above the stat grid.
+            if (includeBulletTypeLine)
+                TryQueueWeaponBulletType(lines, entry, family, planetOrHullBankIndex);
 
             // Every primary card keeps OLD, including when that number matches this card.
             // DLTA is this part's post-bonus total minus OLD. Extras keep a real FINAL.

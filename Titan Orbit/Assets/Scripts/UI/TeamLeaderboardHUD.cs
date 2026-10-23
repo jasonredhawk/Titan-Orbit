@@ -34,10 +34,10 @@ namespace TitanOrbit.UI
     /// width is still-neutral worlds. Clicking a team tab opens that roster. The title line
     /// shows the team name and worlds owned on the left, a TAB keycap, and that team's score
     /// pinned to the right — the sum of every member's match score. Under that line, a gem
-    /// bar names one world and its level, then shows that world's surface gems over its cap.
-    /// Before the first moon landing the open team tab's home world is the target. A full
-    /// landing on a gem moon switches the bar to that planet and keeps it until the next
-    /// landing. A player earns 2 per
+    /// bar names one world owned by the team tab that is open, plus that world's level and
+    /// gem fill. It starts on that team's home world. Clicking the bar opens that team's
+    /// worlds, each with its own gem bar; picking one is remembered per team, so TAB back
+    /// restores it. A new moon landing retargets the team that owns that moon. A player earns 2 per
     /// deposited gem and 5 per delivered troop.
     /// An enemy kill pays half the victim's current score and leaves the victim with the other half.
     /// Layout uses the minimap's own rect size (not renderer bounds) so moving blips cannot drift
@@ -109,10 +109,30 @@ namespace TitanOrbit.UI
         /// <summary>Whether the last paint had a planet blip. Flipping this rewrites the dashes.</summary>
         bool _gemShownKnown;
         /// <summary>
-        /// Planet the local ship last fully landed on. 0 until the first moon landing.
-        /// Takeoff does not clear it — only landing on a different moon replaces it.
+        /// Planet id the gem bar shows for each team tab (index 0 = Team A). 0 means "not
+        /// chosen yet" — the bar then uses that team's home world. A click or a new landing
+        /// on a world that team owns writes the id. TAB away and back reads the same slot.
         /// </summary>
-        int _latchedMoonPlanetId;
+        readonly int[] _gemPlanetByTeam = new int[5];
+        /// <summary>
+        /// Moon planet id of the landing we already applied. 0 while the ship is not fully
+        /// landed, so the next touchdown counts as a new landing and can replace a manual pick.
+        /// </summary>
+        int _acknowledgedLandedPlanetId;
+        /// <summary>Click target over the world name and the main gem track. Toggles the picker.</summary>
+        Button _gemBarButton;
+        /// <summary>▼ / ▲ on the name line so the bar reads as something you can open.</summary>
+        TextMeshProUGUI _gemChevronText;
+        /// <summary>List of the open team's worlds. Hidden until the gem bar is clicked.</summary>
+        GameObject _gemPickerRoot;
+        RectTransform _gemPickContent;
+        TextMeshProUGUI _gemPickerEmpty;
+        /// <summary>True while the world list covers the roster.</summary>
+        bool _gemPickerOpen;
+        /// <summary>Pooled picker rows. Grown when a team holds more worlds than we have built.</summary>
+        readonly List<GemPlanetPickRow> _gemPickRows = new List<GemPlanetPickRow>(8);
+        /// <summary>Owned worlds for the open team, reused each picker refresh. Not a per-frame alloc.</summary>
+        readonly List<MinimapBlipAnchor> _gemPickScratch = new List<MinimapBlipAnchor>(8);
         /// <summary>Place-name catalog. Loaded once; null falls back to <see cref="PlanetDisplayNames"/>.</summary>
         static PlanetShipFamilyConfig s_PlanetNames;
         /// <summary>Title row. Rebuilt after the name or score width changes so SCORE stays on the right.</summary>
@@ -173,6 +193,10 @@ namespace TitanOrbit.UI
         const float GemBarHeight = 18f;
         /// <summary>Gap between the team score row and the world-name caption.</summary>
         const float GemBarGap = 3f;
+        /// <summary>One world in the picker: name line plus that world's gem bar.</summary>
+        const float GemPickRowHeight = 38f;
+        /// <summary>Gap between picker rows.</summary>
+        const float GemPickRowGap = 3f;
         const float TopChromePad = 4f;
         const float RowHeight = 40f;
         /// <summary>Command-deck rows sit a little taller so the gold rail and star rank read.</summary>
@@ -235,6 +259,27 @@ namespace TitanOrbit.UI
             /// Opens this team's roster. Disabled on the unowned remainder, which is not a team.
             /// </summary>
             public Button SelectButton;
+        }
+
+        /// <summary>
+        /// One world in the gem picker. The row is the place name, level, and that world's
+        /// own gem bar. Clicking it makes the main bar track this planet for the open team.
+        /// </summary>
+        sealed class GemPlanetPickRow
+        {
+            public GameObject Root;
+            public RectTransform Rect;
+            public Image Plate;
+            public Image Accent;
+            public TextMeshProUGUI Title;
+            public Image Fill;
+            public TextMeshProUGUI Value;
+            public int PlanetId;
+            public int ShownLevel = int.MinValue;
+            public int ShownCurrent = int.MinValue;
+            public int ShownMax = int.MinValue;
+            public bool ShownSelected;
+            public TeamId ShownTeam = TeamId.None;
         }
 
         /// <summary>Widgets for one pooled leaderboard row.</summary>
@@ -525,6 +570,10 @@ namespace TitanOrbit.UI
                 _seenPlaySession = generation;
                 _followedLocalTeam = TeamId.None;
                 _viewedTeamIndex = -1;
+                // A new match must not keep the previous map's per-team world picks.
+                for (int i = 0; i < _gemPlanetByTeam.Length; i++)
+                    _gemPlanetByTeam[i] = 0;
+                _acknowledgedLandedPlanetId = 0;
             }
 
             // Still on the team-pick screen, or the ack has not arrived yet.
@@ -692,31 +741,382 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Planet id the gem bar should follow.
-        /// A full gem-moon landing latches <see cref="ShipMoonDockState.MoonPlanetId"/>.
-        /// Leaving the moon does not clear the latch — the next different landing does.
-        /// With no latch yet, the open team tab's home id is used (Team A = 1).
+        /// Planet id the gem bar should show for the open team tab.
+        /// A new full landing writes that moon's world into the owning team's slot, which
+        /// replaces a manual pick for that team only. Other teams keep their last choice.
+        /// With nothing stored, the team's home id is used (Team A = 1).
         /// </summary>
         /// <param name="viewedTeam">Team whose roster is open.</param>
-        /// <returns>Stable <c>PlanetState.PlanetId</c>, or 0 when there is no team and no landing yet.</returns>
+        /// <returns>Stable <c>PlanetState.PlanetId</c>, or 0 when there is no team.</returns>
         int ResolveGemTargetPlanetId(TeamId viewedTeam)
         {
-            // Cached local-ship read. The bridge skips a map-wide gather while join settle is closed.
-            if (EcsGameBridge.TryGetLocalShipMoonDockState(out ShipMoonDockState dock)
-                && dock.IsFullyLanded
-                && dock.MoonPlanetId != 0)
-            {
-                _latchedMoonPlanetId = dock.MoonPlanetId;
-            }
+            // A fresh touchdown retargets the team that owns the moon. Same landing does not,
+            // so a click made while still docked holds until takeoff and the next landing.
+            NoteMoonLandingForTeam();
 
-            if (_latchedMoonPlanetId != 0)
-                return _latchedMoonPlanetId;
+            int index = (int)viewedTeam - 1;
+            if (index >= 0 && index < _gemPlanetByTeam.Length && _gemPlanetByTeam[index] != 0)
+            {
+                int savedId = _gemPlanetByTeam[index];
+                MinimapBlipAnchor chosen = FindPlanetAnchor(savedId);
+                // Blip not in yet — keep the id so a late ghost does not wipe the pick.
+                if (chosen == null)
+                    return savedId;
+
+                if (chosen.Team == viewedTeam)
+                    return chosen.PlanetId;
+
+                // Captured by someone else. This tab falls back to its home world.
+                _gemPlanetByTeam[index] = 0;
+            }
 
             if (viewedTeam == TeamId.None)
                 return 0;
 
-            // [TITAN-ORBIT] Home PlanetId is the team number. Neutrals start at 100.
+            // [TITAN-ORBIT] Home PlanetId is the team number. That is the default bar.
             return (int)viewedTeam;
+        }
+
+        /// <summary>
+        /// If the local ship has newly finished landing, store that world on the team that
+        /// owns it. Takeoff clears the ack so the next landing counts again. Does not change
+        /// the team tab — only that owner's remembered planet.
+        /// </summary>
+        void NoteMoonLandingForTeam()
+        {
+            bool landed = EcsGameBridge.TryGetLocalShipMoonDockState(out ShipMoonDockState dock)
+                && dock.IsFullyLanded
+                && dock.MoonPlanetId != 0;
+            if (!landed)
+            {
+                _acknowledgedLandedPlanetId = 0;
+                return;
+            }
+
+            if (dock.MoonPlanetId == _acknowledgedLandedPlanetId)
+                return;
+
+            // Not streamed yet — leave the ack clear so the next refresh can still apply it.
+            MinimapBlipAnchor planet = FindPlanetAnchor(dock.MoonPlanetId);
+            if (planet == null)
+                return;
+
+            _acknowledgedLandedPlanetId = dock.MoonPlanetId;
+            int index = (int)planet.Team - 1;
+            if (index < 0 || index >= _gemPlanetByTeam.Length)
+                return;
+
+            _gemPlanetByTeam[index] = planet.PlanetId;
+        }
+
+        /// <summary>
+        /// Opens or closes the list of worlds the open team holds. The main bar stays put
+        /// until a row is clicked.
+        /// </summary>
+        void ToggleGemPlanetPicker()
+        {
+            SetGemPickerOpen(!_gemPickerOpen);
+        }
+
+        /// <summary>
+        /// Shows or hides the world list. Opening it rebuilds rows immediately so the player
+        /// does not wait for the next leaderboard refresh.
+        /// </summary>
+        /// <param name="open">True to cover the roster with that team's worlds.</param>
+        void SetGemPickerOpen(bool open)
+        {
+            _gemPickerOpen = open;
+            if (_gemPickerRoot != null)
+            {
+                _gemPickerRoot.SetActive(open);
+                if (open)
+                    _gemPickerRoot.transform.SetAsLastSibling();
+            }
+
+            if (_gemChevronText != null)
+                _gemChevronText.text = open ? "▲" : "▼";
+
+            if (!open)
+                return;
+
+            CacheSceneRefs();
+            RefreshGemPlanetPicker();
+        }
+
+        /// <summary>
+        /// Remembers <paramref name="planetId"/> for the team tab that is open and repaints
+        /// the main bar. Held until another row is clicked or a new landing on that team.
+        /// </summary>
+        /// <param name="planetId">World the player chose in the picker.</param>
+        void SelectGemPlanetForViewedTeam(int planetId)
+        {
+            if (planetId == 0)
+                return;
+
+            int index = _viewedTeamIndex;
+            if (index < 0 || index >= _gemPlanetByTeam.Length)
+                return;
+
+            _gemPlanetByTeam[index] = planetId;
+            // Force the caption to rewrite even if the rounded gem count did not change.
+            _gemShownPlanetId = int.MinValue;
+            _gemShownKnown = false;
+            RefreshPlanetGemBar(IndexToTeam(index));
+            if (_gemPickerOpen)
+                RefreshGemPlanetPicker();
+        }
+
+        /// <summary>
+        /// Fills the picker with worlds the open team currently owns. Each row is a name,
+        /// level, and gem bar. Called on refresh while the list is open, and when it opens.
+        /// </summary>
+        void RefreshGemPlanetPicker()
+        {
+            if (!_gemPickerOpen || _gemPickContent == null)
+                return;
+
+            TeamId viewedTeam = IndexToTeam(Mathf.Max(0, _viewedTeamIndex));
+            CollectOwnedPlanets(viewedTeam, _gemPickScratch);
+            int targetId = ResolveGemTargetPlanetId(viewedTeam);
+
+            EnsureGemPickRowCount(_gemPickScratch.Count);
+
+            float y = 4f;
+            for (int i = 0; i < _gemPickRows.Count; i++)
+            {
+                GemPlanetPickRow row = _gemPickRows[i];
+                bool show = i < _gemPickScratch.Count;
+                row.Root.SetActive(show);
+                if (!show)
+                    continue;
+
+                PlaceGemPickRow(row.Rect, y);
+                y += GemPickRowHeight + GemPickRowGap;
+                PaintGemPickRow(row, _gemPickScratch[i], _gemPickScratch[i].PlanetId == targetId);
+            }
+
+            _gemPickContent.sizeDelta = new Vector2(0f, Mathf.Max(y, GemPickRowHeight));
+            if (_gemPickerEmpty != null)
+                _gemPickerEmpty.gameObject.SetActive(_gemPickScratch.Count == 0);
+        }
+
+        /// <summary>
+        /// Copies home and neutral blips whose current owner is <paramref name="team"/>.
+        /// Homes sort first, then planet id, so the list does not jump between refreshes.
+        /// </summary>
+        void CollectOwnedPlanets(TeamId team, List<MinimapBlipAnchor> into)
+        {
+            into.Clear();
+            if (_entitySync == null || team == TeamId.None)
+                return;
+
+            AddOwnedPlanets(_entitySync.HomePlanets, team, into);
+            AddOwnedPlanets(_entitySync.Planets, team, into);
+            into.Sort(CompareOwnedPlanets);
+        }
+
+        /// <summary>Appends owned planet blips, skipping a world already copied from the other list.</summary>
+        static void AddOwnedPlanets(IReadOnlyList<MinimapBlipAnchor> anchors, TeamId team, List<MinimapBlipAnchor> into)
+        {
+            if (anchors == null)
+                return;
+
+            for (int i = 0; i < anchors.Count; i++)
+            {
+                MinimapBlipAnchor anchor = anchors[i];
+                if (anchor == null || anchor.Team != team || anchor.PlanetId == 0)
+                    continue;
+                if (anchor.Kind != MinimapBlipKind.Planet && anchor.Kind != MinimapBlipKind.HomePlanet)
+                    continue;
+                if (ListHasPlanetId(into, anchor.PlanetId))
+                    continue;
+
+                into.Add(anchor);
+            }
+        }
+
+        /// <summary>True when <paramref name="into"/> already holds this planet id.</summary>
+        static bool ListHasPlanetId(List<MinimapBlipAnchor> into, int planetId)
+        {
+            for (int i = 0; i < into.Count; i++)
+            {
+                if (into[i] != null && into[i].PlanetId == planetId)
+                    return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>Home worlds first, then rising planet id. Stable so rows do not shuffle.</summary>
+        static int CompareOwnedPlanets(MinimapBlipAnchor a, MinimapBlipAnchor b)
+        {
+            int home = (b.IsHomePlanet ? 1 : 0) - (a.IsHomePlanet ? 1 : 0);
+            if (home != 0)
+                return home;
+
+            return a.PlanetId.CompareTo(b.PlanetId);
+        }
+
+        /// <summary>Builds extra picker rows until <paramref name="count"/> exist. Does not destroy extras.</summary>
+        void EnsureGemPickRowCount(int count)
+        {
+            while (_gemPickRows.Count < count)
+                _gemPickRows.Add(CreateGemPickRow(_gemPickContent, _gemPickRows.Count));
+        }
+
+        /// <summary>
+        /// One pooled world row: dark plate, owner rail, name and level, gem bar with numbers.
+        /// The whole row is the button that selects this planet for the open team.
+        /// </summary>
+        GemPlanetPickRow CreateGemPickRow(Transform parent, int index)
+        {
+            var go = new GameObject("GemPick_" + index, typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Button));
+            go.transform.SetParent(parent, false);
+            var plate = go.GetComponent<Image>();
+            plate.sprite = GetWhiteSprite();
+            plate.color = new Color(0.03f, 0.045f, 0.07f, 0.96f);
+            plate.raycastTarget = true;
+
+            var button = go.GetComponent<Button>();
+            button.targetGraphic = plate;
+            button.transition = Selectable.Transition.None;
+            button.navigation = new Navigation { mode = Navigation.Mode.None };
+
+            var row = new GemPlanetPickRow
+            {
+                Root = go,
+                Rect = go.GetComponent<RectTransform>(),
+                Plate = plate,
+            };
+            button.onClick.AddListener(() => SelectGemPlanetForViewedTeam(row.PlanetId));
+
+            var accent = CreateUiImage(go.transform, "Accent", Color.white);
+            var accentRt = accent.rectTransform;
+            accentRt.anchorMin = new Vector2(0f, 0f);
+            accentRt.anchorMax = new Vector2(0f, 1f);
+            accentRt.pivot = new Vector2(0f, 0.5f);
+            accentRt.anchoredPosition = Vector2.zero;
+            accentRt.sizeDelta = new Vector2(3f, 0f);
+            row.Accent = accent;
+
+            var title = CreateTmp(go.transform, "Title", 12f, TextAlignmentOptions.MidlineLeft,
+                new Color(0.92f, 0.95f, 1f, 1f));
+            var titleRt = title.rectTransform;
+            titleRt.anchorMin = new Vector2(0f, 1f);
+            titleRt.anchorMax = new Vector2(1f, 1f);
+            titleRt.pivot = new Vector2(0.5f, 1f);
+            titleRt.anchoredPosition = new Vector2(0f, -2f);
+            titleRt.sizeDelta = new Vector2(-16f, 16f);
+            titleRt.offsetMin = new Vector2(10f, titleRt.offsetMin.y);
+            titleRt.offsetMax = new Vector2(-6f, titleRt.offsetMax.y);
+            title.fontStyle = FontStyles.Bold;
+            title.richText = true;
+            row.Title = title;
+
+            var trackGo = new GameObject("Track", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            trackGo.transform.SetParent(go.transform, false);
+            var trackRt = trackGo.GetComponent<RectTransform>();
+            trackRt.anchorMin = new Vector2(0f, 0f);
+            trackRt.anchorMax = new Vector2(1f, 0f);
+            trackRt.pivot = new Vector2(0.5f, 0f);
+            trackRt.anchoredPosition = new Vector2(0f, 3f);
+            trackRt.sizeDelta = new Vector2(-16f, 14f);
+            trackRt.offsetMin = new Vector2(10f, trackRt.offsetMin.y);
+            trackRt.offsetMax = new Vector2(-6f, trackRt.offsetMax.y);
+            var track = trackGo.GetComponent<Image>();
+            track.sprite = GetWhiteSprite();
+            track.color = new Color(0.04f, 0.055f, 0.09f, 0.95f);
+            track.raycastTarget = false;
+
+            var fillGo = new GameObject("Fill", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            fillGo.transform.SetParent(trackGo.transform, false);
+            StretchFull(fillGo.GetComponent<RectTransform>());
+            var fill = fillGo.GetComponent<Image>();
+            fill.sprite = GetWhiteSprite();
+            fill.type = Image.Type.Filled;
+            fill.fillMethod = Image.FillMethod.Horizontal;
+            fill.fillOrigin = (int)Image.OriginHorizontal.Left;
+            fill.fillAmount = 0f;
+            fill.raycastTarget = false;
+            row.Fill = fill;
+
+            var value = CreateTmp(trackGo.transform, "Value", 10f, TextAlignmentOptions.Center,
+                new Color(0.94f, 0.96f, 1f, 1f));
+            StretchFull(value.rectTransform);
+            value.fontStyle = FontStyles.Bold;
+            value.outlineWidth = 0.18f;
+            value.outlineColor = new Color32(0, 0, 0, 220);
+            row.Value = value;
+
+            return row;
+        }
+
+        /// <summary>Pins one picker row under the previous one. Width follows the list.</summary>
+        static void PlaceGemPickRow(RectTransform rt, float yFromTop)
+        {
+            if (rt == null)
+                return;
+
+            rt.anchorMin = new Vector2(0f, 1f);
+            rt.anchorMax = new Vector2(1f, 1f);
+            rt.pivot = new Vector2(0.5f, 1f);
+            rt.anchoredPosition = new Vector2(0f, -yFromTop);
+            rt.sizeDelta = new Vector2(-8f, GemPickRowHeight);
+        }
+
+        /// <summary>
+        /// Writes one world's name, level, and gem fill. Skips TMP when those integers match
+        /// the last paint for this row. Selection still updates the plate every time it flips.
+        /// </summary>
+        void PaintGemPickRow(GemPlanetPickRow row, MinimapBlipAnchor planet, bool selected)
+        {
+            if (row == null || planet == null)
+                return;
+
+            int level = Mathf.Max(1, planet.PlanetLevel);
+            float max = PlanetEconomyMath.GetMaxGemsForLevel(level);
+            int cap = Mathf.Max(0, Mathf.RoundToInt(max));
+            int shown = Mathf.Clamp(Mathf.RoundToInt(planet.CurrentGems), 0, cap);
+            bool rebound = row.PlanetId != planet.PlanetId || row.ShownLevel != level;
+            row.PlanetId = planet.PlanetId;
+
+            if (rebound || row.ShownTeam != planet.Team)
+            {
+                row.ShownTeam = planet.Team;
+                if (row.Accent != null)
+                    row.Accent.color = GemFillForOwner(planet.Team);
+            }
+
+            if (row.Fill != null)
+            {
+                row.Fill.color = GemFillForOwner(planet.Team);
+                row.Fill.fillAmount = cap > 0 ? shown / (float)cap : 0f;
+            }
+
+            if (row.Title != null && rebound)
+            {
+                row.ShownLevel = level;
+                row.Title.text = FormatGemBarTitle(
+                    ResolveWorldName(planet.PlanetId, planet.IsHomePlanet, planet.ShipFamilyConfigIndex),
+                    level,
+                    known: true);
+            }
+
+            if (row.Value != null && (rebound || shown != row.ShownCurrent || cap != row.ShownMax))
+            {
+                row.ShownCurrent = shown;
+                row.ShownMax = cap;
+                row.Value.text = shown + " / " + cap;
+            }
+
+            if (row.Plate != null && (selected != row.ShownSelected || rebound))
+            {
+                row.ShownSelected = selected;
+                // Selected world is a lighter plate so the tracked bar is obvious in the stack.
+                row.Plate.color = selected
+                    ? new Color(0.08f, 0.12f, 0.18f, 0.98f)
+                    : new Color(0.03f, 0.045f, 0.07f, 0.96f);
+            }
         }
 
         /// <summary>
@@ -998,8 +1398,10 @@ namespace TitanOrbit.UI
             int teamScore = SumAnchorScores(_teamShips);
             ApplyViewedTeamHeader(viewedTeam, teamScore, viewedOwned, capturableTotal);
 
-            // World name, level, and reservoir. Landing on a moon retargets this bar.
+            // This team's world — home until they pick, then the planet remembered for this tab.
             RefreshPlanetGemBar(viewedTeam);
+            if (_gemPickerOpen)
+                RefreshGemPlanetPicker();
 
             if (_teamShips.Count == 0)
             {
@@ -1702,6 +2104,8 @@ namespace TitanOrbit.UI
                 && _gemTitleText != null
                 && _gemFill != null
                 && _gemValueText != null
+                && _gemBarButton != null
+                && _gemPickerRoot != null
                 && _tabCycleButton != null
                 && _contentRect != null
                 && _planetBarRoot != null
@@ -1715,6 +2119,8 @@ namespace TitanOrbit.UI
                 Destroy(existing.gameObject);
             _planetBarSegments.Clear();
             _rows.Clear();
+            _gemPickRows.Clear();
+            _gemPickerOpen = false;
             _commandDeckBanner = null;
             _crewBanner = null;
 
@@ -1853,7 +2259,23 @@ namespace TitanOrbit.UI
             gemTitleRt.offsetMax = new Vector2(-PanelSidePad, gemTitleRt.offsetMax.y);
             _gemTitleText.fontStyle = FontStyles.Bold;
             _gemTitleText.richText = true;
+            _gemTitleText.margin = new Vector4(0f, 0f, 18f, 0f);
             _gemTitleText.text = "—";
+
+            // Chevron sits on the name line. The hit plate covers the name and the bar.
+            _gemChevronText = CreateTmp(_panelRoot.transform, "PlanetGemChevron", 11f, TextAlignmentOptions.MidlineRight,
+                new Color(0.62f, 0.78f, 0.95f, 0.95f));
+            var chevronRt = _gemChevronText.rectTransform;
+            chevronRt.anchorMin = new Vector2(0f, 1f);
+            chevronRt.anchorMax = new Vector2(1f, 1f);
+            chevronRt.pivot = new Vector2(0.5f, 1f);
+            chevronRt.anchoredPosition = new Vector2(0f, gemTitleTop);
+            chevronRt.sizeDelta = new Vector2(-(PanelSidePad * 2f + 4f), GemTitleHeight);
+            chevronRt.offsetMin = new Vector2(PanelSidePad + 4f, chevronRt.offsetMin.y);
+            chevronRt.offsetMax = new Vector2(-PanelSidePad, chevronRt.offsetMax.y);
+            _gemChevronText.fontStyle = FontStyles.Bold;
+            _gemChevronText.text = "▼";
+            _gemChevronText.raycastTarget = false;
 
             float gemTop = gemTitleTop - GemTitleHeight - GemTitleToBarGap;
             var gemGo = new GameObject("PlanetGemBar", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
@@ -1897,6 +2319,28 @@ namespace TitanOrbit.UI
             _gemShownPlanetId = int.MinValue;
             _gemShownLevel = int.MinValue;
             _gemShownKnown = false;
+
+            // Transparent plate over the name and the track. Click opens this team's worlds.
+            float gemHitHeight = GemTitleHeight + GemTitleToBarGap + GemBarHeight;
+            var hitGo = new GameObject("PlanetGemHit", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Button));
+            hitGo.transform.SetParent(_panelRoot.transform, false);
+            var hitRt = hitGo.GetComponent<RectTransform>();
+            hitRt.anchorMin = new Vector2(0f, 1f);
+            hitRt.anchorMax = new Vector2(1f, 1f);
+            hitRt.pivot = new Vector2(0.5f, 1f);
+            hitRt.anchoredPosition = new Vector2(0f, gemTitleTop);
+            hitRt.sizeDelta = new Vector2(-(PanelSidePad * 2f + 4f), gemHitHeight);
+            hitRt.offsetMin = new Vector2(PanelSidePad + 4f, hitRt.offsetMin.y);
+            hitRt.offsetMax = new Vector2(-PanelSidePad, hitRt.offsetMax.y);
+            var hitImg = hitGo.GetComponent<Image>();
+            hitImg.sprite = GetWhiteSprite();
+            hitImg.color = new Color(0f, 0f, 0f, 0f);
+            hitImg.raycastTarget = true;
+            _gemBarButton = hitGo.GetComponent<Button>();
+            _gemBarButton.targetGraphic = hitImg;
+            _gemBarButton.transition = Selectable.Transition.None;
+            _gemBarButton.navigation = new Navigation { mode = Navigation.Mode.None };
+            _gemBarButton.onClick.AddListener(ToggleGemPlanetPicker);
 
             // --- Scroll area fills everything under the planet bar, title, name, and gem track ---
             float scrollTop = TopChromePad + PlanetControlBarHeight + 3f + HeaderHeight
@@ -1948,7 +2392,74 @@ namespace TitanOrbit.UI
             _commandDeckBanner = CreateSectionBanner(_contentRect, "CommandDeckBanner");
             _crewBanner = CreateSectionBanner(_contentRect, "CrewBanner");
 
+            BuildGemPlanetPicker(scrollTop);
             UpdatePanelLayoutIfNeeded();
+        }
+
+        /// <summary>
+        /// Dark list under the gem bar, covering the roster while open. Worlds are added later
+        /// from the minimap cache — this only builds the scroll plate.
+        /// </summary>
+        /// <param name="topInset">Distance from the panel top down to just under the gem track.</param>
+        void BuildGemPlanetPicker(float topInset)
+        {
+            _gemPickerRoot = new GameObject("GemPlanetPicker", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            _gemPickerRoot.transform.SetParent(_panelRoot.transform, false);
+            var rootRt = _gemPickerRoot.GetComponent<RectTransform>();
+            rootRt.anchorMin = Vector2.zero;
+            rootRt.anchorMax = Vector2.one;
+            rootRt.offsetMin = new Vector2(PanelSidePad, PanelSidePad);
+            rootRt.offsetMax = new Vector2(-PanelSidePad, -topInset);
+            var bg = _gemPickerRoot.GetComponent<Image>();
+            bg.sprite = GetWhiteSprite();
+            bg.color = new Color(0.012f, 0.016f, 0.028f, 0.98f);
+            bg.raycastTarget = true;
+
+            var scrollGo = new GameObject("Scroll", typeof(RectTransform), typeof(ScrollRect));
+            scrollGo.transform.SetParent(_gemPickerRoot.transform, false);
+            var scrollRt = scrollGo.GetComponent<RectTransform>();
+            StretchFull(scrollRt);
+            scrollRt.offsetMin = new Vector2(0f, 0f);
+            scrollRt.offsetMax = new Vector2(0f, 0f);
+            var scroll = scrollGo.GetComponent<ScrollRect>();
+            scroll.horizontal = false;
+            scroll.vertical = true;
+            scroll.movementType = ScrollRect.MovementType.Clamped;
+            scroll.scrollSensitivity = 28f;
+
+            var viewportGo = new GameObject("Viewport", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Mask));
+            viewportGo.transform.SetParent(scrollGo.transform, false);
+            var viewportRt = viewportGo.GetComponent<RectTransform>();
+            StretchFull(viewportRt);
+            var vpImg = viewportGo.GetComponent<Image>();
+            vpImg.sprite = GetWhiteSprite();
+            vpImg.color = Color.white;
+            vpImg.raycastTarget = true;
+            viewportGo.GetComponent<Mask>().showMaskGraphic = false;
+
+            var contentGo = new GameObject("Content", typeof(RectTransform));
+            contentGo.transform.SetParent(viewportGo.transform, false);
+            _gemPickContent = contentGo.GetComponent<RectTransform>();
+            _gemPickContent.anchorMin = new Vector2(0f, 1f);
+            _gemPickContent.anchorMax = new Vector2(1f, 1f);
+            _gemPickContent.pivot = new Vector2(0.5f, 1f);
+            _gemPickContent.anchoredPosition = Vector2.zero;
+            _gemPickContent.sizeDelta = new Vector2(0f, 40f);
+
+            _gemPickerEmpty = CreateTmp(viewportGo.transform, "Empty", 13f, TextAlignmentOptions.Center,
+                new Color(0.75f, 0.80f, 0.90f, 0.9f));
+            StretchFull(_gemPickerEmpty.rectTransform);
+            _gemPickerEmpty.text = "No worlds held.";
+            _gemPickerEmpty.raycastTarget = false;
+            _gemPickerEmpty.gameObject.SetActive(false);
+
+            scroll.viewport = viewportRt;
+            scroll.content = _gemPickContent;
+            scroll.verticalNormalizedPosition = 1f;
+
+            // Hidden until the gem bar is clicked. Later sibling so it covers the roster.
+            _gemPickerRoot.SetActive(false);
+            _gemPickerOpen = false;
         }
 
         /// <summary>

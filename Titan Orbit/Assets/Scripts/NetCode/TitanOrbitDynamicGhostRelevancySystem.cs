@@ -9,8 +9,9 @@ namespace TitanOrbit.NetCode
     /// [NETCODE] Restricts ghost replication so asteroids are <b>not</b> streamed.
     /// Clients hydrate asteroids from the match seed (<see cref="ClientMapHydrateSystem"/>).
     /// Planets remain always relevant (small count) so ownership / population / moon shield
-    /// GhostFields keep working. Ships are not in this query — they replicate only when
-    /// <see cref="TitanOrbitGemGhostRelevancySystem"/> adds them (owner, or inside the camera view).
+    /// GhostFields keep working. Ships are not in this query.
+    /// <see cref="TitanOrbitGemGhostRelevancySystem"/> adds player ships for their owner or the
+    /// camera view, and AI ships for every connection.
     /// <para>
     /// Uses <see cref="GhostRelevancyMode.SetIsRelevant"/> with
     /// <see cref="GhostRelevancy.DefaultRelevancyQuery"/> = Planet.
@@ -50,7 +51,8 @@ namespace TitanOrbit.NetCode
 
             Debug.Log(
                 "[TitanOrbitGhostRelevancy] SetIsRelevant — Planet always; " +
-                "ships only for the owner and inside that player's camera view; " +
+                "player ships for the owner and inside that player's camera view; " +
+                "AI ships for every connection; " +
                 "gems are event-hydrated RPCs (not ghosts); " +
                 "asteroids use client seed hydrate + occupancy catch-up; " +
                 "people transports are SpawnRpc (not ghosts).");

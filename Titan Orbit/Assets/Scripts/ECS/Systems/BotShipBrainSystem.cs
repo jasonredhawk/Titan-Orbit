@@ -46,12 +46,6 @@ namespace TitanOrbit.ECS
         const int MaxShipLevel = 6;
         const float DockShipRadius = 0.8f;
         const float DockZoneMultiplier = 1.05f;
-        /// <summary>Hull pad added to each rock radius when testing the flight corridor.</summary>
-        const float AvoidShipRadius = 1.8f;
-        /// <summary>Extra gap so the turn starts before the hull touches the rock.</summary>
-        const float AvoidPadding = 2.4f;
-        const float AvoidLookMin = 16f;
-        const float AvoidLookMax = 34f;
         /// <summary>Gap past the drawn rock so the hull sits close without touching it.</summary>
         const float MineSurfaceGap = 1.75f;
         /// <summary>Open fire once the rock surface is within this distance. Bullet range is ~30.</summary>
@@ -245,11 +239,13 @@ namespace TitanOrbit.ECS
                 float3 pos = em.GetComponentData<LocalTransform>(shipEntity).Position;
                 int networkId = em.GetComponentData<GhostOwner>(shipEntity).NetworkId;
                 bool landed = false;
+                bool docking = false;
                 int dockedPlanetId = 0;
                 if (em.HasComponent<ShipMoonDockState>(shipEntity))
                 {
                     var dock = em.GetComponentData<ShipMoonDockState>(shipEntity);
                     landed = dock.IsFullyLanded;
+                    docking = dock.MoonPlanetId != 0 && !dock.IsTakingOff;
                     if (landed)
                         dockedPlanetId = dock.MoonPlanetId;
                 }
@@ -262,10 +258,6 @@ namespace TitanOrbit.ECS
                 if (brain.GoalNetworkId != 0 &&
                     TryShipPosition(ships.AsArray(), brain.GoalNetworkId, out float3 tracked))
                     brain.Goal = tracked;
-
-                float3 velocity = float3.zero;
-                if (em.HasComponent<ShipKinematics>(shipEntity))
-                    velocity = em.GetComponentData<ShipKinematics>(shipEntity).Velocity;
 
                 BotTeamOrder liveOrder = haveOrders ? orders.Get(ship.Team) : default;
                 bool orderNow = liveOrder.IsActive(now) && liveOrder.Includes(networkId)
@@ -288,9 +280,8 @@ namespace TitanOrbit.ECS
                 }
 
                 var input = BuildInput(
-                    brain, ship, networkId, pos, velocity, landed, inOrbit,
+                    brain, ship, networkId, pos, landed, docking, inOrbit,
                     planets.AsArray(), ships.AsArray(),
-                    in _asteroidHash, _nearbyRocks, _nearbySeen,
                     mapW, mapH, orbitElapsed);
                 BotShipPresentation.ApplyCommanderSkin(
                     em, shipEntity, networkId, liveOrder, now, commanderShips, commanderOwners);
@@ -643,26 +634,24 @@ namespace TitanOrbit.ECS
             in ShipState ship,
             int networkId,
             float3 pos,
-            float3 velocity,
             bool landed,
+            bool docking,
             bool inOrbit,
             NativeArray<PlanetSnap> planets,
             NativeArray<ShipSnap> ships,
-            in BulletObstacleSpatialHash asteroidHash,
-            NativeList<int> nearbyRocks,
-            NativeHashSet<int> nearbySeen,
             float mapW,
             float mapH,
             double orbitElapsed)
         {
+            // Heading and thrust are separate, same as a player. AimPlanarDir is the
+            // direction to face. ShipPhysicsDriveLogic turns the hull toward it at the
+            // ship's rotation speed, then thrust accelerates along that facing.
             var input = new ShipInput();
             float3 aim = brain.Goal;
             bool thrust = true;
             bool releaseThrust = false;
             bool fire = false;
             bool deposit = false;
-            bool skipRockSteer = false;
-            float speed = math.length(new float2(velocity.x, velocity.z));
 
             switch (brain.Task)
             {
@@ -676,18 +665,12 @@ namespace TitanOrbit.ECS
                         float dist = ToroidalMapEcs.ToroidalDistance(pos, aim, mapW, mapH);
                         bool inside = dist <= dockRadius;
                         deposit = landed && ship.CurrentGems > 0.05f;
-                        if (landed || (inside && speed <= 2.35f))
+                        // Same as letting go of the stick. Thrust inside the dock zone
+                        // cancels landing, and the hull sinks into the moon mesh.
+                        if (landed || docking || inside)
                         {
                             thrust = false;
                             releaseThrust = true;
-                        }
-                        else if (inside)
-                        {
-                            float3 vel = velocity;
-                            vel.y = 0f;
-                            if (math.lengthsq(vel) > 0.25f)
-                                aim = pos - math.normalize(vel) * 6f;
-                            thrust = true;
                         }
                         else
                             thrust = true;
@@ -708,39 +691,11 @@ namespace TitanOrbit.ECS
                     break;
                 case BotTaskKind.Mine:
                 {
-                    // Face the rock and stop once it's in range. Thrust toward the
-                    // center from alongside it, plus a sideways dodge, becomes a circle.
+                    // Face the rock. Thrust is only on or off — the server turns the hull.
                     aim = brain.Goal;
                     float stop = math.max(2f, brain.GoalRadius);
                     float dist = ToroidalMapEcs.ToroidalDistance(pos, aim, mapW, mapH);
-                    float3 toRock = ToroidalMapEcs.ShortestOffsetXZ(pos, aim, mapW, mapH);
-                    toRock.y = 0f;
-                    float toLen = math.length(toRock);
-                    float3 vel = velocity;
-                    vel.y = 0f;
-                    float closing = toLen > 0.05f ? math.dot(vel, toRock / toLen) : 0f;
-                    bool near = dist <= stop + 8f;
-                    if (near)
-                    {
-                        skipRockSteer = true;
-                        if (dist < stop - 1.5f && closing > 2f && toLen > 0.05f)
-                        {
-                            aim = pos - (toRock / toLen) * 8f;
-                            thrust = true;
-                        }
-                        else
-                        {
-                            aim = brain.Goal;
-                            thrust = false;
-                        }
-                    }
-                    else
-                    {
-                        float lead = closing > 0.2f
-                            ? math.min(18f, (closing * closing) / 14f + 0.4f)
-                            : 0f;
-                        thrust = dist > stop + lead;
-                    }
+                    thrust = dist > stop;
                     break;
                 }
                 case BotTaskKind.Collect:
@@ -803,14 +758,15 @@ namespace TitanOrbit.ECS
                 releaseThrust = true;
                 deposit = true;
             }
+            else if (docking && (brain.Task == BotTaskKind.Deposit || brain.Task == BotTaskKind.Upgrade))
+            {
+                thrust = false;
+                releaseThrust = true;
+            }
             else if (inOrbit && !releaseThrust)
                 thrust = true;
             else if (landed && brain.Task != BotTaskKind.Deposit && brain.Task != BotTaskKind.Upgrade)
                 thrust = true;
-
-            if (thrust && !skipRockSteer)
-                aim = SteerAroundRocks(
-                    pos, aim, brain, speed, in asteroidHash, nearbyRocks, nearbySeen, mapW, mapH);
 
             float3 offset = ToroidalMapEcs.ShortestOffsetXZ(pos, aim, mapW, mapH);
             float len = math.length(new float2(offset.x, offset.z));
@@ -845,92 +801,6 @@ namespace TitanOrbit.ECS
 
             input.WantDepositGems = deposit && !thrust;
             return input;
-        }
-
-        /// <summary>
-        /// Bends the aim point off the nearest rock that crosses the flight line.
-        /// Only cells around the hull are read — the same grid bullet sweeps use.
-        /// The mining target is left alone so the hull can still reach that rock.
-        /// </summary>
-        static float3 SteerAroundRocks(
-            float3 pos,
-            float3 aim,
-            in BotShipBrain brain,
-            float speed,
-            in BulletObstacleSpatialHash asteroidHash,
-            NativeList<int> nearbyRocks,
-            NativeHashSet<int> nearbySeen,
-            float mapW,
-            float mapH)
-        {
-            if (!asteroidHash.IsCreated || asteroidHash.Count == 0 ||
-                !nearbyRocks.IsCreated || !nearbySeen.IsCreated)
-                return aim;
-
-            float3 toAim = ToroidalMapEcs.ShortestOffsetXZ(pos, aim, mapW, mapH);
-            toAim.y = 0f;
-            float aimLen = math.length(toAim);
-            if (aimLen < 0.5f)
-                return aim;
-
-            float3 forward = toAim / aimLen;
-            float3 side = new float3(-forward.z, 0f, forward.x);
-            float look = math.min(aimLen, math.clamp(math.max(AvoidLookMin, speed * 1.15f), AvoidLookMin, AvoidLookMax));
-            bool mining = brain.Task == BotTaskKind.Mine;
-            asteroidHash.GatherNearby(pos, look + AvoidPadding + 8f, nearbyRocks, nearbySeen);
-
-            float bestScore = 0f;
-            float bestAlong = 0f;
-            float bestLat = 0f;
-            float3 bestLateral = float3.zero;
-            float bestClearance = 0f;
-
-            for (int n = 0; n < nearbyRocks.Length; n++)
-            {
-                BulletObstacleEntry rock = asteroidHash.Entries[nearbyRocks[n]];
-                if (rock.Kind != BulletObstacleKind.Asteroid)
-                    continue;
-                if (mining &&
-                    ToroidalMapEcs.ToroidalDistance(brain.Goal, rock.Position, mapW, mapH) <=
-                    math.max(rock.Radius, brain.GoalRadius) + 2f)
-                    continue;
-
-                float3 toRock = ToroidalMapEcs.ShortestOffsetXZ(pos, rock.Position, mapW, mapH);
-                toRock.y = 0f;
-                float along = math.dot(toRock, forward);
-                if (along < 0.5f || along > look)
-                    continue;
-
-                float3 lateral = toRock - forward * along;
-                float lat = math.length(lateral);
-                float clearance = rock.Radius + AvoidShipRadius + AvoidPadding;
-                if (lat >= clearance)
-                    continue;
-
-                float overlap = (clearance - lat) / clearance;
-                float near = 1f - math.saturate(along / look);
-                float score = overlap * (0.4f + 0.6f * near);
-                if (score <= bestScore)
-                    continue;
-
-                bestScore = score;
-                bestAlong = along;
-                bestLat = lat;
-                bestLateral = lateral;
-                bestClearance = clearance;
-            }
-
-            if (bestScore <= 0f)
-                return aim;
-
-            float3 away = bestLat > 0.2f ? -math.normalizesafe(bestLateral, side) : side;
-            float blend = math.saturate((bestClearance - bestLat) / math.max(0.01f, bestClearance));
-            blend *= math.lerp(1f, 0.5f, math.saturate(bestAlong / look));
-            float3 steered = math.normalizesafe(math.lerp(forward, away, math.saturate(blend * 1.4f)), forward);
-            float aimDist = math.max(8f, math.min(aimLen, 24f));
-            float3 nudged = pos + steered * aimDist;
-            nudged.y = pos.y;
-            return nudged;
         }
 
         static bool IsGoalPlanet(in BotShipBrain brain, in PlanetSnap planet) =>

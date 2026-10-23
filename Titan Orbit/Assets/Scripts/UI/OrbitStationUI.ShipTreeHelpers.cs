@@ -678,11 +678,17 @@ namespace TitanOrbit.UI
                 currentShip, storePlanet.PlanetId, level, branchIndex);
         }
 
+        /// <summary>
+        /// Sidebar "Your Ship" bar. Tree cards stay at the hull as bought.
+        /// This card adds the local player's ability purchases and equipped ship parts
+        /// on top of that hull. See <see cref="CurrentShipPowerScore"/>.
+        /// </summary>
         internal ShipFamilyPowerScoreBreakdown GetCurrentShipPowerBreakdown()
         {
-            if (currentShip == null || CardShopSystem.Instance == null)
+            if (currentShip == null)
                 return default;
-            return CardShopSystem.Instance.GetPowerScoreBreakdownForChassisIdAtShipLevel(
+
+            return CurrentShipPowerScore.ForCurrentShip(
                 currentShip.CurrentChassisId, currentShip.ShipLevel);
         }
 

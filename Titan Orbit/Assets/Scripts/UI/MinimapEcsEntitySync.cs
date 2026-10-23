@@ -635,7 +635,7 @@ namespace TitanOrbit.UI
                                      em.IsComponentEnabled<GhostOwnerIsLocal>(entity)));
             anchor.BodySize = math.max(0.25f, lt.Scale);
 
-            // --- Chassis ladder (minimap scales the regular-ship X from ShipLevel; MEGA stays a triangle) ---
+            // --- Chassis ladder (minimap X/triangle size is fixed; ShipLevel still feeds camera zoom) ---
             anchor.ShipLevel = ship.ShipLevel;
             anchor.BranchIndex = ship.BranchIndex;
             anchor.ShipFamilyConfigIndex = ship.ShipFamilyConfigIndex;

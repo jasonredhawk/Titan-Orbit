@@ -17,11 +17,10 @@ namespace TitanOrbit.UI
 {
     /// <summary>
     /// Minimap showing a larger region around the player (not full map).
-    /// Displays: player/remote ships as a team-colored X that grows with
-    /// <see cref="MinimapBlipAnchor.ShipLevel"/> (9px at level 1, +0.5px per level;
-    /// local player and remotes share that ladder). A purchased MEGA swaps that mark
-    /// for a solid team-colored triangle
-    /// (<see cref="MinimapBlipAnchor.IsMega"/> — triangle size stays fixed).
+    /// Displays: player and remote ships as a team-colored X, all the same pixel size
+    /// (<see cref="ShipBlipSizePx"/>). A purchased MEGA swaps that mark for a solid
+    /// team-colored triangle of the same size
+    /// (<see cref="MinimapBlipAnchor.IsMega"/>).
     /// Troops do not paint the icon. A hairline under the X or triangle fills left to
     /// right in Troop Cap purple (<c>CurrentPeople / PeopleCapacity</c>), the same idea
     /// as a nameplate bar. Small colored
@@ -57,10 +56,11 @@ namespace TitanOrbit.UI
         [SerializeField] private float displaySize = 150f;
         [SerializeField] private RectTransform minimapContent;
         [SerializeField] private float sizeScaleFactor = 1.2f; // Increased from 0.5f - makes entities more visible when zoomed in
-        [Tooltip("Pixel size of a purchased MEGA on the minimap (other players). Larger than the regular X so capital hulls read immediately.")]
-        [SerializeField] private float megaShipBlipSize = 16f;
-        [Tooltip("Pixel size of the local player's MEGA triangle (replaces the X).")]
-        [SerializeField] private float megaPlayerBlipSize = 14f;
+        /// <summary>
+        /// Pixel size of every ship mark: the local player's X, every remote X, and the MEGA triangle.
+        /// One constant so a higher ship level or a capital hull cannot draw a bigger blip than the player's own.
+        /// </summary>
+        const float ShipBlipSizePx = 9f;
         [SerializeField] private float asteroidBlipScaleFactor = 1f; // Asteroids use physical scale for blip size
         [SerializeField] private float moonBlipScaleFactor = 0.85f;
         [SerializeField] private float moonBlipMinSize = 5f;
@@ -491,28 +491,6 @@ namespace TitanOrbit.UI
             float factor = GetShipLevelZoomFactor();
             minimapRadius = baseRadius * factor;
             maxPlanetDistance = baseMaxDist * factor;
-        }
-
-        /// <summary>
-        /// Pixel size of a regular-ship X on the minimap.
-        /// Same ladder for the local player and every other ship: 9px at level 1,
-        /// then +0.5px per level (11.5px at level 6).
-        /// MEGA triangles skip this and keep <see cref="megaShipBlipSize"/> / <see cref="megaPlayerBlipSize"/>.
-        /// [TITAN-ORBIT] Uses <see cref="MinimapBlipAnchor.ShipLevel"/> already filled by
-        /// <see cref="MinimapEcsEntitySync"/> — no extra ECS gather.
-        /// </summary>
-        /// <param name="shipLevel">Upgrade ladder level from the blip anchor (1–6 typical).</param>
-        /// <returns>RectTransform size in pixels for this ship's X this frame.</returns>
-        private static float GetRegularShipCrossSize(int shipLevel)
-        {
-            // --- Shared regular-ship X: 9px at L1, +0.5px/level (11.5px at L6) ---
-            const int minLevel = 1;
-            const int maxLevel = 6;
-            const float sizeAtLevel1 = 9f;
-            const float pixelsPerLevel = 0.5f;
-            int level = shipLevel > 0 ? shipLevel : minLevel;
-            level = Mathf.Clamp(level, minLevel, maxLevel);
-            return sizeAtLevel1 + (level - minLevel) * pixelsPerLevel;
         }
 
         // Exposed read‑only helpers so other systems (like Shapes panels) can match minimap math.
@@ -3173,15 +3151,12 @@ namespace TitanOrbit.UI
             // --- Local player ship (X, or solid triangle while flying a MEGA) ---
             TeamId playerTeam = playerAnchor.Team;
             Color playerColor = playerTeam == TeamId.None ? Color.white : GetTeamColor(playerTeam);
-            // Regular X uses the shared L1–L6 ladder; MEGA triangle stays at the authored capital size.
-            float localShipSize = playerAnchor.IsMega
-                ? megaPlayerBlipSize
-                : GetRegularShipCrossSize(playerAnchor.ShipLevel);
-            EnsureShipBlip(playerTransform, playerColor, localShipSize, playerAnchor.IsMega, isPlayer: true);
+            // Same pixel size as every remote ship (X or MEGA triangle).
+            EnsureShipBlip(playerTransform, playerColor, ShipBlipSizePx, playerAnchor.IsMega, isPlayer: true);
             if (blips.TryGetValue(playerTransform, out var playerRt) && playerRt != null)
             {
                 playerRt.localEulerAngles = Vector3.zero;
-                UpdateBlip(playerTransform, playerColor, localShipSize);
+                UpdateBlip(playerTransform, playerColor, ShipBlipSizePx);
                 UpdateShipTroopFill(playerAnchor);
                 UpdateShipRoleDots(playerAnchor);
             }
@@ -3219,12 +3194,9 @@ namespace TitanOrbit.UI
                 {
                     // Show blip when within visible area. MEGAs use a triangle so they
                     // do not look like regular fighters on the same team color.
-                    // Regular X uses the same L1–L6 ladder as the local player; triangle size stays fixed.
-                    float shipSize = ship.IsMega
-                        ? megaShipBlipSize
-                        : GetRegularShipCrossSize(ship.ShipLevel);
-                    EnsureShipBlip(ship.transform, shipColor, shipSize, ship.IsMega);
-                    UpdateBlip(ship.transform, shipColor, shipSize);
+                    // Pixel size matches the local player's X (ShipBlipSizePx).
+                    EnsureShipBlip(ship.transform, shipColor, ShipBlipSizePx, ship.IsMega);
+                    UpdateBlip(ship.transform, shipColor, ShipBlipSizePx);
                     UpdateShipTroopFill(ship);
                     UpdateShipRoleDots(ship);
                     // Remove any old ship edge marker (markers only for planets)

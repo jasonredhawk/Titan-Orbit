@@ -13,9 +13,10 @@ namespace TitanOrbit.NetCode
     /// <see cref="GhostRelevancyMode.SetIsRelevant"/>.
     /// <para>
     /// Planets stay always-relevant through <see cref="TitanOrbitDynamicGhostRelevancySystem"/>'s
-    /// default query (there are few of them). Ships are relevant only for their owner, or when
+    /// default query (there are few of them). Player ships are relevant for their owner, or when
     /// the hull overlaps that connection's camera rectangle on the torus. A ship already on screen
     /// uses a wider margin than a ship coming into view, so hulls do not pop at the edge.
+    /// AI ships have no owning connection, so they stay relevant to every in-game player.
     /// </para>
     /// Map width and height come from <see cref="MapStateSingleton"/>. When the map size is not
     /// ready yet, every ship stays relevant so join is not a blank world.
@@ -112,8 +113,10 @@ namespace TitanOrbit.NetCode
                     ShipRow ship = _ships[i];
                     var key = new RelevantGhostForConnection(connectionId, ship.GhostId);
                     bool was = _relevantPrev.ContainsKey(key);
+                    // Bots have no connection. Culling them with the camera despawns the ghost
+                    // the moment they leave view, then respawns a new hull when they return.
                     bool owner = ship.OwnerNetworkId == connectionId;
-                    bool inside = owner;
+                    bool inside = owner || BotShipIds.IsBot(ship.OwnerNetworkId);
                     if (!inside)
                     {
                         // Map size not rolled yet: everyone still sees every ship so join is not blank.

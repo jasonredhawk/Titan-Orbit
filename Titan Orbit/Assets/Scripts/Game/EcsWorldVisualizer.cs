@@ -1256,9 +1256,18 @@ namespace TitanOrbit.Game
                         continue;
                     }
 
-                    // --- Gem ghost despawned but GO lingered (relevancy drop / DestroyEntity) ---
-                    if (_proxyKinds.TryGetValue(kv.Key, out var pruneKind) &&
-                        pruneKind == ProxyVisualKind.Gem)
+                    if (!_proxyKinds.TryGetValue(kv.Key, out var pruneKind))
+                        continue;
+
+                    if (pruneKind == ProxyVisualKind.Ship &&
+                        !em.HasComponent<ShipTag>(kv.Key))
+                    {
+                        // Ghost root is gone but this GameObject is still being moved.
+                        _removeScratch.Add(kv.Key);
+                        continue;
+                    }
+
+                    if (pruneKind == ProxyVisualKind.Gem)
                     {
                         if (!em.HasComponent<GemTag>(kv.Key))
                         {
