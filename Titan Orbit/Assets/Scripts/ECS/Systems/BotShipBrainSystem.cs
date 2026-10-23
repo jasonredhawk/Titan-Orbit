@@ -343,7 +343,7 @@ namespace TitanOrbit.ECS
             return false;
         }
 
-        /// <summary>Zeros thrust and drops a copied commander hull. The entity stays in the world.</summary>
+        /// <summary>Zeros thrust and drops a copied commander material. The entity stays in the world.</summary>
         static void ParkIdle(EntityManager em, NativeArray<Entity> bots)
         {
             for (int i = 0; i < bots.Length; i++)

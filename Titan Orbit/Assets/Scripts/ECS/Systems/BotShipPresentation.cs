@@ -9,14 +9,15 @@ namespace TitanOrbit.ECS
 {
     /// <summary>
     /// Client hull identity for an AI ship, and the server write that copies a
-    /// commander's chassis and paint onto <see cref="BotShipLook"/> /
-    /// <see cref="ShipAccentColors"/>. Stats stay on <see cref="ShipState"/>.
+    /// commander's material onto <see cref="ShipAccentColors"/>. The bot's own
+    /// hull stays on <see cref="ShipState"/>. Stats stay there too.
     /// </summary>
     public static class BotShipPresentation
     {
         /// <summary>
-        /// Level, branch, and family the client should draw. An active
-        /// <see cref="BotShipLook"/> replaces the bot's own starter hull.
+        /// Level, branch, and family the client should draw. Commander material
+        /// orders leave <see cref="BotShipLook"/> inactive, so this stays the
+        /// bot's own hull. An active look would replace that hull.
         /// </summary>
         public static void Read(
             EntityManager em,
@@ -89,8 +90,9 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Copies the commanding player's chassis and paint while their order includes
-        /// this bot. Clears both when the order ends.
+        /// Copies the commanding player's material while their order includes this bot.
+        /// Family, level, branch, and MEGA stay on the bot, so the hull prefab is not
+        /// replaced. Clears the copied material when the order ends.
         /// </summary>
         public static void ApplyCommanderSkin(
             EntityManager em,
@@ -105,56 +107,40 @@ namespace TitanOrbit.ECS
                         && order.Includes(botNetworkId)
                         && order.CommanderNetworkId > 0
                         && !BotShipIds.IsBot(order.CommanderNetworkId);
-            BotShipLook desired = default;
             ShipAccentColors accents = default;
-            if (want && TryReadCommander(em, ships, owners, order.CommanderNetworkId, out desired, out accents))
-                desired.Active = 1;
+            bool haveMaterial = want
+                && TryReadCommanderMaterial(em, ships, owners, order.CommanderNetworkId, out accents);
 
-            WriteLook(em, bot, desired);
-            WriteAccents(em, bot, desired.Active != 0 ? accents : default);
+            // [TITAN-ORBIT] An active BotShipLook swaps the hull prefab. Material
+            // orders keep it cleared and write ShipAccentColors only.
+            WriteLook(em, bot, default);
+            WriteAccents(em, bot, haveMaterial ? accents : default);
         }
 
-        /// <summary>Drops a copied hull so the bot draws its own starter ship again.</summary>
+        /// <summary>Drops a copied material. The bot's own hull stays in place.</summary>
         public static void ClearCommanderSkin(EntityManager em, Entity bot)
         {
             WriteLook(em, bot, default);
             WriteAccents(em, bot, default);
         }
 
-        static bool TryReadCommander(
+        static bool TryReadCommanderMaterial(
             EntityManager em,
             NativeArray<Entity> ships,
             NativeArray<GhostOwner> owners,
             int commanderNetworkId,
-            out BotShipLook look,
             out ShipAccentColors accents)
         {
-            look = default;
             accents = default;
             int count = math.min(ships.Length, owners.Length);
             for (int i = 0; i < count; i++)
             {
                 if (owners[i].NetworkId != commanderNetworkId || !em.Exists(ships[i]))
                     continue;
-                if (!em.HasComponent<ShipState>(ships[i]))
+                if (!em.HasComponent<ShipAccentColors>(ships[i]))
                     return false;
 
-                ShipState state = em.GetComponentData<ShipState>(ships[i]);
-                look.FamilyIndex = state.ShipFamilyConfigIndex;
-                look.Level = math.max(1, state.ShipLevel);
-                look.BranchIndex = math.max(0, state.BranchIndex);
-                if (em.HasComponent<MegaShipState>(ships[i]))
-                {
-                    MegaShipState mega = em.GetComponentData<MegaShipState>(ships[i]);
-                    if (mega.IsMega)
-                    {
-                        look.Mega = 1;
-                        look.MegaCatalogIndex = mega.CatalogIndex;
-                    }
-                }
-
-                if (em.HasComponent<ShipAccentColors>(ships[i]))
-                    accents = em.GetComponentData<ShipAccentColors>(ships[i]);
+                accents = em.GetComponentData<ShipAccentColors>(ships[i]);
                 return true;
             }
 

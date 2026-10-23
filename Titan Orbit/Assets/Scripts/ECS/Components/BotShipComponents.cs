@@ -15,17 +15,16 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
-    /// Ghosted presentation override. While <see cref="Active"/> is set, clients draw this
-    /// hull with the commanding player's chassis and the bot's <see cref="ShipAccentColors"/>
-    /// carry that player's paint. Combat stats stay on <see cref="ShipState"/> — this does
-    /// not change health, guns, or the physics hull.
+    /// Ghosted hull override. Commander material orders leave <see cref="Active"/> at 0
+    /// and copy paint onto <see cref="ShipAccentColors"/> instead, so the mesh stays
+    /// this ship's own hull. Combat stats stay on <see cref="ShipState"/>.
     /// <para>
     /// [NETCODE] Baked on the ship ghost. A runtime-only add does not replicate.
     /// </para>
     /// </summary>
     public struct BotShipLook : IComponentData
     {
-        /// <summary>1 while this bot is copying a commander's hull.</summary>
+        /// <summary>1 would replace the mesh. Material orders keep this 0.</summary>
         [GhostField] public byte Active;
 
         /// <summary>PlanetShipFamilyConfig index of the commander's ship.</summary>
