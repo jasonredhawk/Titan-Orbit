@@ -331,6 +331,27 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
+        /// Short planet-bonus token for a power-bar rank line.
+        /// Stock rolls print <c>1.00×</c>. Anything else is the same signed
+        /// percent the Fleet Bonuses wheel uses (<c>+40%</c>, <c>-12%</c>).
+        /// </summary>
+        public static string FormatMultiplierCallout(float multiplier)
+        {
+            float mul = multiplier > 0.0001f ? multiplier : 1f;
+            bool identity = Mathf.Abs(mul - 1f) < 0.0001f;
+            if (identity)
+                return NeutralBaseText;
+
+            float signed = (mul - 1f) * 100f;
+            return FormatSignedPercent(new BonusRow
+            {
+                Multiplier = mul,
+                SignedPercent = signed,
+                IsIdentity = false
+            });
+        }
+
+        /// <summary>
         /// Player-facing value for one cell.
         /// Neutral 1× fields show the stock base (<c>1.00×</c>) so the board is
         /// a full lineage card, not only the live trade-offs. Active fields use

@@ -11,9 +11,12 @@ namespace TitanOrbit.Data
     /// <para>
     /// Three pools, never mixed. Regular hulls (levels 1–6) share one ceiling:
     /// every family's chassis at that chassis's tree level. Titans (level 7) share
-    /// a second ceiling: every armed catalog MEGA. Gear shares a third: every
-    /// component on every family, at the card's ship level. A Titan's guns would
-    /// squash regular bars, and a whole ship's health would squash a single part.
+    /// a second ceiling: every armed catalog MEGA. Gear shares a third, and that
+    /// third is split by part profile: engines with engines, weapons with weapons,
+    /// wings with wings, at the card's ship level. A weapon's energy cap does not
+    /// set the ceiling for an engine. Drones, rockets, and mines stay on the
+    /// unsplit gear ceiling. A Titan's guns would squash regular bars, and a
+    /// whole ship's health would squash a single part.
     /// Slot 0 on a ship is sustained DPS from the barrels that fire. On gear that
     /// lane stays empty: a bought weapon unlocks a bullet type, and ramming is not DPS.
     /// Paired with <see cref="UI.ShipUpgradeTreePowerBarUI"/>.
@@ -130,8 +133,10 @@ namespace TitanOrbit.Data
         Titans = 2,
 
         /// <summary>
-        /// Orbit Menu gear. Every purchasable component on every ship family,
-        /// scored at one ship level. Not whole hulls.
+        /// Orbit Menu gear. Purchasable components on every ship family, scored
+        /// at one ship level, compared inside one part profile (Engine, Wing, …).
+        /// Not whole hulls. A null profile on this pool is the unsplit gear ceiling
+        /// used by drones, rockets, and mines.
         /// </summary>
         Components = 3
     }
@@ -163,6 +168,13 @@ namespace TitanOrbit.Data
 
         /// <summary>Winning display-stat value (same units as the bar fill numerator).</summary>
         public float value;
+
+        /// <summary>
+        /// Planet fleet multiplier already inside <see cref="value"/> for this lane.
+        /// Gear only. 0 on ship and Titan lines (those do not name a world).
+        /// 1 is a real home-world roll and still prints as 1.00×.
+        /// </summary>
+        public float planetBonusMul;
 
         /// <summary>Existing menu thumbnail. Null when the tier has no preview baked.</summary>
         public Sprite previewSprite;
@@ -215,10 +227,26 @@ namespace TitanOrbit.Data
         /// <summary>
         /// One gear ceiling per ship level. Extra Level changes component numbers, so
         /// an L2 engine must not share a denominator with an L6 engine.
+        /// <para>
+        /// <see cref="maxes"/> / <see cref="leaders"/> are every part type together
+        /// (drones, rockets, mines). <see cref="byCategory"/> is the card-gear
+        /// comparison: one ceiling per part profile.
+        /// </para>
         /// </summary>
         struct ComponentComparePool
         {
             public int bankSignature;
+            public ShipPowerBarStatMaxes maxes;
+            public ShipPowerBarStatLeader[] leaders;
+            public Dictionary<string, ComponentCategoryCeiling> byCategory;
+        }
+
+        /// <summary>
+        /// Highest gear lane and who owns it, among parts of one profile
+        /// (all engines, or all wings) at one ship level.
+        /// </summary>
+        sealed class ComponentCategoryCeiling
+        {
             public ShipPowerBarStatMaxes maxes;
             public ShipPowerBarStatLeader[] leaders;
         }
@@ -453,9 +481,28 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
+        /// Part-profile bucket for a gear card (Engine, Weapon Bullet, Wing, …).
+        /// An Astro Eagle engine and a Hyper Falcon engine share this key.
+        /// A weapon never shares it with an engine. Idempotent on a key this
+        /// method already returned, so hover lookup can pass the stored label.
+        /// </summary>
+        public static string ResolveComponentCompareCategory(string componentId)
+        {
+            string raw = ShipComponentAbilityStats.ResolvePartTypeForSuggestedStats(componentId);
+            string normalized = ShipFamilyPartTypes.Normalize(raw, componentId);
+            if (string.IsNullOrWhiteSpace(normalized)
+                || string.Equals(normalized, ShipFamilyPartTypes.Unmapped, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalized, ShipFamilyPartTypes.Ignore, StringComparison.OrdinalIgnoreCase))
+                return ShipFamilyPartTypes.Hull;
+            return normalized;
+        }
+
+        /// <summary>
         /// Highest value of each of the ten gear lanes across every purchasable
         /// component on every ship family, scored at <paramref name="shipLevel"/>.
-        /// A cannon is compared with other cannons and engines, not with a finished hull.
+        /// Pass <paramref name="partCategory"/> (Engine, Wing, Weapon Bullet, …)
+        /// so a card is measured against the same profile only. Null keeps the
+        /// unsplit ceiling (drones, rockets, mines). Not a finished hull.
         /// Cached per ship level until the families’ bullet banks change or
         /// <see cref="InvalidateCache"/> runs.
         /// </summary>
@@ -465,9 +512,14 @@ namespace TitanOrbit.Data
         /// (Laserbolt, Lightning, …). Null uses each part’s authored default gun.
         /// The Orbit Menu passes the match’s rolled banks so the ceiling matches the card.
         /// </param>
+        /// <param name="partCategory">
+        /// Same-profile bucket from <see cref="ResolveComponentCompareCategory"/>.
+        /// Null returns the mixed ceiling across every part type.
+        /// </param>
         public static ShipPowerBarStatMaxes GetComponentMaxPerStat(
             int shipLevel,
-            Func<int, int> bankForFamilyConfigIndex = null)
+            Func<int, int> bankForFamilyConfigIndex = null,
+            string partCategory = null)
         {
             shipLevel = Mathf.Max(1, shipLevel);
             if (bankForFamilyConfigIndex != null)
@@ -478,17 +530,47 @@ namespace TitanOrbit.Data
             // --- Reuse this level when the rolled guns have not changed ---
             PlanetShipFamilyConfig config = PlanetShipFamilyConfig.LoadDefault();
             int bankSignature = ComputeFamilyBankSignature(config, bankForFamilyConfigIndex);
-            if (s_componentPools.TryGetValue(shipLevel, out ComponentComparePool cached)
-                && cached.bankSignature == bankSignature
-                && cached.leaders != null)
+            if (!s_componentPools.TryGetValue(shipLevel, out ComponentComparePool cached)
+                || cached.bankSignature != bankSignature
+                || cached.leaders == null
+                || cached.byCategory == null)
+            {
+                cached = BuildComponentComparePool(shipLevel, config, bankForFamilyConfigIndex, bankSignature);
+                s_componentPools[shipLevel] = cached;
+            }
+
+            // Null category: drones / rockets / mines still share one gear ceiling.
+            if (string.IsNullOrWhiteSpace(partCategory))
                 return cached.maxes;
 
+            string categoryKey = ResolveComponentCompareCategory(partCategory);
+            if (cached.byCategory.TryGetValue(categoryKey, out ComponentCategoryCeiling ceiling))
+                return ceiling.maxes;
+
+            ShipPowerBarStatMaxes empty = ShipPowerBarStatMaxes.CreateEmpty();
+            empty.EnsureMinimum();
+            return empty;
+        }
+
+        /// <summary>
+        /// One pass over every family’s store parts. Fills the mixed ceiling and
+        /// one ceiling per part profile so hover can name the best engine without
+        /// reading a weapon that happens to hold more energy.
+        /// </summary>
+        static ComponentComparePool BuildComponentComparePool(
+            int shipLevel,
+            PlanetShipFamilyConfig config,
+            Func<int, int> bankForFamilyConfigIndex,
+            int bankSignature)
+        {
             // --- Walk every family’s parts at this Extra Level ---
-            // [TITAN-ORBIT] One AstroEagle thruster must be readable next to a
-            // HyperFalcon thruster. That only works if every component shares one
-            // denominator. Whole ships stay out of this walk.
+            // [TITAN-ORBIT] An Astro Eagle engine is readable next to a Hyper Falcon
+            // engine because they share a denominator. A cannon’s energy cap is a
+            // different profile and does not shrink that engine’s bar. Whole ships
+            // stay out of this walk.
             var maxes = ShipPowerBarStatMaxes.CreateEmpty();
             ShipPowerBarStatLeader[] leaders = CreateEmptyLeaders();
+            var byCategory = new Dictionary<string, ComponentCategoryCeiling>(8, StringComparer.Ordinal);
             if (config?.families != null)
             {
                 for (int familyIndex = 0; familyIndex < config.families.Count; familyIndex++)
@@ -505,35 +587,77 @@ namespace TitanOrbit.Data
 
                     for (int c = 0; c < def.components.Count; c++)
                     {
-                        // One iteration = one store part (engine, gun, cargo, …).
+                        // One iteration = one store part (engine, gun, wing, …).
                         ShipFamilyComponentEntry entry = def.components[c];
                         if (entry == null || string.IsNullOrWhiteSpace(entry.componentId))
                             continue;
 
+                        // GetPowerBreakdown already multiplies by this family's live planet
+                        // roll, so a +40% energy world can beat a higher base engine.
                         ShipFamilyPowerScoreBreakdown breakdown =
                             ShipComponentStoreData.GetPowerBreakdown(entry, shipLevel, def, bank);
+                        ShipFamilySpecialBonuses planetBonuses = def.ResolveSpecialBonuses();
+                        string partName = ShipComponentStoreData.GetDisplayName(entry);
+                        string leaderKey = FormatComponentLeaderKey(def.familyId, entry.componentId);
+                        Sprite preview = ShipComponentStoreData.GetMenuPreviewSprite(def, entry);
                         maxes.AbsorbComponentCompare(breakdown);
                         AbsorbLeaders(
                             leaders,
                             breakdown,
                             familyLabel,
-                            ShipComponentStoreData.GetDisplayName(entry),
-                            FormatComponentLeaderKey(def.familyId, entry.componentId),
+                            partName,
+                            leaderKey,
                             treeLevel: 0,
-                            ShipComponentStoreData.GetMenuPreviewSprite(def, entry),
-                            useComponentCompare: true);
+                            preview,
+                            useComponentCompare: true,
+                            recordPlanetBonus: true,
+                            planetBonuses: planetBonuses);
+
+                        string category = ResolveComponentCompareCategory(entry.componentId);
+                        if (!byCategory.TryGetValue(category, out ComponentCategoryCeiling ceiling))
+                        {
+                            ceiling = new ComponentCategoryCeiling
+                            {
+                                maxes = ShipPowerBarStatMaxes.CreateEmpty(),
+                                leaders = CreateEmptyLeaders()
+                            };
+                            byCategory[category] = ceiling;
+                        }
+
+                        // Class field: assign back so the struct ceiling is the one we keep.
+                        ShipPowerBarStatMaxes catMax = ceiling.maxes;
+                        catMax.AbsorbComponentCompare(breakdown);
+                        ceiling.maxes = catMax;
+                        AbsorbLeaders(
+                            ceiling.leaders,
+                            breakdown,
+                            familyLabel,
+                            partName,
+                            leaderKey,
+                            treeLevel: 0,
+                            preview,
+                            useComponentCompare: true,
+                            recordPlanetBonus: true,
+                            planetBonuses: planetBonuses);
                     }
                 }
             }
 
             maxes.EnsureMinimum();
-            s_componentPools[shipLevel] = new ComponentComparePool
+            foreach (KeyValuePair<string, ComponentCategoryCeiling> pair in byCategory)
+            {
+                ShipPowerBarStatMaxes catMax = pair.Value.maxes;
+                catMax.EnsureMinimum();
+                pair.Value.maxes = catMax;
+            }
+
+            return new ComponentComparePool
             {
                 bankSignature = bankSignature,
                 maxes = maxes,
-                leaders = leaders
+                leaders = leaders,
+                byCategory = byCategory
             };
-            return maxes;
         }
 
         /// <summary>
@@ -578,16 +702,21 @@ namespace TitanOrbit.Data
 
         /// <summary>
         /// Hull or part that owns the catalog max for one display slot (0–9).
-        /// Regular families for L1–L6, Titans for L7, components for gear cards.
+        /// Regular families for L1–L6, Titans for L7, same-profile components for gear cards.
         /// Builds the matching cache on first call.
         /// </summary>
         /// <param name="statIndex">Power-bar slot (0 = DPS … 9 = Troop Cap).</param>
         /// <param name="pool">Which ceiling this bar was painted against.</param>
         /// <param name="shipLevel">Gear only. Extra Level of the component pool.</param>
+        /// <param name="partCategory">
+        /// Gear only. Part profile of the hovered card (Engine, Wing, …).
+        /// Null uses the mixed gear ceiling (drones, rockets, mines).
+        /// </param>
         public static ShipPowerBarStatLeader GetStatLeader(
             int statIndex,
             ShipPowerBarComparisonPool pool,
-            int shipLevel = 1)
+            int shipLevel = 1,
+            string partCategory = null)
         {
             if (statIndex < 0 || statIndex >= ShipPowerBarStatMaxes.StatCount)
                 return default;
@@ -606,13 +735,24 @@ namespace TitanOrbit.Data
             {
                 shipLevel = Mathf.Max(1, shipLevel);
                 if (!s_componentPools.TryGetValue(shipLevel, out ComponentComparePool componentPool)
-                    || componentPool.leaders == null)
+                    || componentPool.leaders == null
+                    || componentPool.byCategory == null)
                 {
                     GetComponentMaxPerStat(shipLevel, s_componentBankResolver);
                     s_componentPools.TryGetValue(shipLevel, out componentPool);
                 }
 
+                // Hover on an engine names the best engine, not the best weapon.
                 leaders = componentPool.leaders;
+                if (!string.IsNullOrWhiteSpace(partCategory) && componentPool.byCategory != null)
+                {
+                    string categoryKey = ResolveComponentCompareCategory(partCategory);
+                    if (componentPool.byCategory.TryGetValue(categoryKey, out ComponentCategoryCeiling ceiling)
+                        && ceiling?.leaders != null)
+                        leaders = ceiling.leaders;
+                    else
+                        leaders = null;
+                }
             }
             else
             {
@@ -692,7 +832,9 @@ namespace TitanOrbit.Data
             string chassisId,
             int treeLevel,
             Sprite preview,
-            bool useComponentCompare = false)
+            bool useComponentCompare = false,
+            bool recordPlanetBonus = false,
+            ShipFamilySpecialBonuses planetBonuses = default)
         {
             if (leaders == null)
                 return;
@@ -713,7 +855,12 @@ namespace TitanOrbit.Data
                     chassisId = chassisId ?? string.Empty,
                     treeLevel = treeLevel,
                     value = value,
-                    previewSprite = preview
+                    previewSprite = preview,
+                    // 0 hides the world name on ship lines. Gear stores the roll
+                    // that is already inside the value (1 = home world).
+                    planetBonusMul = recordPlanetBonus
+                        ? planetBonuses.MultiplierForPowerBarStat(stat)
+                        : 0f
                 };
             }
         }
@@ -749,6 +896,9 @@ namespace TitanOrbit.Data
                 hash = unchecked(hash * 31 + bank + 1);
             }
 
+            // Planet rolls change who wins a lane. A new match seed must not
+            // keep the previous game's ceilings.
+            hash = unchecked(hash * 31 + (int)ShipFamilyMatchBonuses.ActiveMatchSeed);
             return unchecked(hash * 31 + count);
         }
 

@@ -57,6 +57,9 @@ namespace TitanOrbit.ECS
 
         [ReadOnly] public ComponentLookup<PhysicsCollider> PhysicsColliders;
 
+        /// <summary>1 on clients so unowned AI hulls stay on the interpolated snapshot.</summary>
+        public byte SkipBots;
+
         /// <summary>
         /// Per-ship motor tick. Writes velocity, yaw, <see cref="ShipOrbitState"/>,
         /// <see cref="ShipTerritoryBoostLatch"/>, <see cref="ShipMoonDockState"/> takeoff
@@ -78,8 +81,17 @@ namespace TitanOrbit.ECS
             RefRO<ShipAsteroidContactState> asteroidContact,
             RefRO<ShipElectricShockState> electricShock,
             RefRO<MegaShipState> megaState,
+            RefRO<GhostOwner> ghostOwner,
             Entity entity)
         {
+            if (SkipBots != 0 && BotShipIds.IsBot(ghostOwner.ValueRO.NetworkId))
+            {
+                // A leftover client velocity would integrate in Unity Physics after this
+                // job and walk the hull off the interpolated pose until the next snapshot.
+                physicsVelocity.ValueRW = PhysicsVelocity.Zero;
+                return;
+            }
+
             // --- Stowed in planetary defense turret: freeze hull (server + predicted client) ---
             // [TITAN-ORBIT] Aim/Fire still flow through ShipInput for the pad; thrust = exit on server.
             if (turretControl.ValueRO.IsControlling)

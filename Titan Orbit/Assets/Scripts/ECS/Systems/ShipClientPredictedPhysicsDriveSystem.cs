@@ -150,6 +150,10 @@ namespace TitanOrbit.ECS
                 MinAccel = mobility.minAccel,
                 MinTurn = mobility.minTurn,
                 PhysicsColliders = SystemAPI.GetComponentLookup<PhysicsCollider>(true),
+                // Owner-predicted hulls with a bot network id have no owning client.
+                // Running the motor here applies empty input, then the snapshot yanks
+                // the pose back. Leave the interpolated transform alone.
+                SkipBots = 1,
             };
             state.Dependency = job.ScheduleParallel(state.Dependency);
             state.Dependency = planets.Dispose(state.Dependency);

@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using TitanOrbit.Data;
+using TitanOrbit.Game;
 using UnityEngine;
 
 namespace TitanOrbit.UI
@@ -103,13 +104,15 @@ namespace TitanOrbit.UI
         /// <param name="pool">Regular ships, Titans, or gear components.</param>
         /// <param name="thisChassisId">Hull id or component leader key. Matching RANK 1 says “this hull” or “this part”.</param>
         /// <param name="componentShipLevel">Gear only. Extra Level of the component ceiling.</param>
+        /// <param name="partCategory">Gear only. Same-profile bucket so RANK 1 stays inside engines, wings, weapons, and so on.</param>
         public static string BuildPowerBarTipBody(
             int statIndex,
             float thisValue,
             float maxValue,
             ShipPowerBarComparisonPool pool,
             string thisChassisId,
-            int componentShipLevel = 1)
+            int componentShipLevel = 1,
+            string partCategory = null)
         {
             StringBuilder sb = s_Sb;
             sb.Clear();
@@ -150,7 +153,7 @@ namespace TitanOrbit.UI
                 sb.AppendLine();
             }
 
-            AppendRankOneFooter(sb, statIndex, pool, thisChassisId, thisValue, componentShipLevel);
+            AppendRankOneFooter(sb, statIndex, pool, thisChassisId, thisValue, componentShipLevel, partCategory);
             return sb.ToString();
         }
 
@@ -185,13 +188,15 @@ namespace TitanOrbit.UI
         /// <param name="thisChassisId">Hovered hull or part. Matching RANK 1 says this card holds the max.</param>
         /// <param name="thisValue">Optional; when it meets the pool max we also treat this card as RANK 1.</param>
         /// <param name="componentShipLevel">Gear only. Extra Level of the component ceiling.</param>
+        /// <param name="partCategory">Gear only. Same-profile bucket (Engine, Wing, …). Null mixes every part type.</param>
         public static void AppendRankOneFooter(
             StringBuilder sb,
             int statIndex,
             ShipPowerBarComparisonPool pool,
             string thisChassisId,
             float thisValue = -1f,
-            int componentShipLevel = 1)
+            int componentShipLevel = 1,
+            string partCategory = null)
         {
             if (sb == null)
                 return;
@@ -200,7 +205,7 @@ namespace TitanOrbit.UI
                 pool = ShipPowerBarComparisonPool.RegularShips;
 
             ShipPowerBarStatLeader leader = ShipFamilyPowerBarNorm.GetStatLeader(
-                statIndex, pool, componentShipLevel);
+                statIndex, pool, componentShipLevel, partCategory);
             if (!leader.IsValid)
                 return;
 
@@ -224,14 +229,22 @@ namespace TitanOrbit.UI
                 sb.Append("<color=#").Append(HexThisHull).Append('>')
                     .Append(holder)
                     .Append(FormatValue(leader.value))
-                    .Append(unit)
-                    .Append("</color>");
+                    .Append(unit);
+                if (pool == ShipPowerBarComparisonPool.Components)
+                {
+                    float bonus = PlanetBonusForLeaderKey(thisChassisId, statIndex);
+                    if (bonus <= 0.0001f)
+                        bonus = leader.planetBonusMul;
+                    AppendGearPlanetCallout(sb, thisChassisId, bonus);
+                }
+
+                sb.Append("</color>");
                 sb.AppendLine();
                 return;
             }
 
             sb.Append("<color=#").Append(HexRankBody).Append('>')
-                .Append(FormatLeaderLine(in leader, unit))
+                .Append(FormatLeaderLine(in leader, unit, statIndex))
                 .Append("</color>");
             sb.AppendLine();
         }
@@ -240,14 +253,16 @@ namespace TitanOrbit.UI
         /// Compact identity string that leads with the <b>ship</b>, then its family.
         /// Regular: <c>Thumper · AstroEagle · L3 · 42</c>.
         /// Titan: <c>Void Reaper · Galactic Leopard · 88.1 DPS/s</c> (no L7 — the pool is Titan-only).
+        /// Gear adds the one world whose part won this lane, then that roll:
+        /// <c>Twin Engines · Hyper Falcon · Aetheris · +40% · 88</c>.
         /// </summary>
-        public static string FormatLeaderLine(in ShipPowerBarStatLeader leader, string unit)
+        public static string FormatLeaderLine(in ShipPowerBarStatLeader leader, string unit, int statIndex = -1)
         {
             string family = string.IsNullOrWhiteSpace(leader.familyId) ? string.Empty : leader.familyId.Trim();
             string ship = ResolveShipLabel(in leader);
             bool mega = MegaShipCatalog.IsMegaChassisId(leader.chassisId);
 
-            var line = new StringBuilder(64);
+            var line = new StringBuilder(96);
             line.Append(ship);
 
             // Family / Titan visual line. Regular hulls skip it when the ship token
@@ -266,8 +281,99 @@ namespace TitanOrbit.UI
             if (!mega && leader.treeLevel > 0)
                 line.Append(" · L").Append(leader.treeLevel);
 
+            // Gear only. Same middot as the family, then the planet roll on this lane.
+            if (leader.planetBonusMul > 0.0001f)
+            {
+                float bonus = statIndex >= 0
+                    ? PlanetBonusForLeaderKey(leader.chassisId, statIndex)
+                    : 0f;
+                if (bonus <= 0.0001f)
+                    bonus = leader.planetBonusMul;
+                AppendGearPlanetCallout(line, leader.chassisId, bonus);
+            }
+
             line.Append(" · ").Append(FormatValue(leader.value)).Append(unit ?? string.Empty);
             return line.ToString();
+        }
+
+        /// <summary>
+        /// The winning part's planet, then that world's roll on the hovered lane.
+        /// One name only — other worlds that share the family are the same roll
+        /// and stay off the line. Sits in the same middot list as the ship family.
+        /// </summary>
+        static void AppendGearPlanetCallout(StringBuilder line, string leaderKey, float bonusMul)
+        {
+            if (line == null)
+                return;
+
+            string planets = PlanetNamesForLeaderKey(leaderKey);
+            if (!string.IsNullOrEmpty(planets))
+                line.Append(" · ").Append(planets);
+            if (bonusMul > 0.0001f)
+                line.Append(" · ").Append(FamilyStatHudCopy.FormatMultiplierCallout(bonusMul));
+        }
+
+        /// <summary>
+        /// One world name for the family in a gear leader key (<c>AstroEagle|Engine_1</c>).
+        /// That key is the part that already won the lane (component × planet bonus).
+        /// Empty for hull ids and before planets exist.
+        /// </summary>
+        static string PlanetNamesForLeaderKey(string leaderKey)
+        {
+            if (!TrySplitComponentLeaderKey(leaderKey, out string familyId))
+                return string.Empty;
+
+            int index = IndexOfFamily(familyId);
+            if (index < 0)
+                return string.Empty;
+            return EcsGameBridge.FormatTopPlanetNameForFamilyConfigIndex(index);
+        }
+
+        /// <summary>
+        /// This family's planet roll on one power-bar lane. 0 when the key is a hull.
+        /// </summary>
+        static float PlanetBonusForLeaderKey(string leaderKey, int statIndex)
+        {
+            if (!TrySplitComponentLeaderKey(leaderKey, out string familyId))
+                return 0f;
+
+            PlanetShipFamilyConfig config = PlanetShipFamilyConfig.LoadDefault();
+            ShipFamilyDefinition family = config != null
+                ? config.GetFamilyDefinitionByFamilyId(familyId)
+                : null;
+            if (family == null)
+                return 0f;
+            return family.ResolveSpecialBonuses().MultiplierForPowerBarStat(statIndex);
+        }
+
+        static bool TrySplitComponentLeaderKey(string leaderKey, out string familyId)
+        {
+            familyId = string.Empty;
+            if (string.IsNullOrEmpty(leaderKey))
+                return false;
+
+            int bar = leaderKey.IndexOf('|');
+            if (bar <= 0)
+                return false;
+
+            familyId = leaderKey.Substring(0, bar);
+            return !string.IsNullOrEmpty(familyId);
+        }
+
+        static int IndexOfFamily(string familyId)
+        {
+            PlanetShipFamilyConfig config = PlanetShipFamilyConfig.LoadDefault();
+            if (config?.families == null || string.IsNullOrEmpty(familyId))
+                return -1;
+
+            for (int i = 0; i < config.families.Count; i++)
+            {
+                string id = config.families[i]?.shipFamilyDefinition?.familyId;
+                if (string.Equals(id, familyId, System.StringComparison.OrdinalIgnoreCase))
+                    return i;
+            }
+
+            return -1;
         }
 
         /// <summary>

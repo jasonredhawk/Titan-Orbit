@@ -94,6 +94,11 @@ namespace TitanOrbit.ECS
         public float TaskClock;
         /// <summary>People aboard when <see cref="TaskClock"/> was stamped.</summary>
         public int PeopleSnapshot;
+        /// <summary>
+        /// 1 while the last tick was thrusting toward the hold. Stays 0 until the hull
+        /// drifts out again, so thrust does not flip every tick at the stop radius.
+        /// </summary>
+        public byte ThrustHeld;
     }
 
     /// <summary>

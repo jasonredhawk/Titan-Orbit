@@ -309,17 +309,16 @@ namespace TitanOrbit.UI
         private GameObject _moonDockCardsToEquipmentDivider;
         private RectTransform _moonDockStoreScrollViewport;
         private RectTransform _moonDockStoreGridContent;
-        /// <summary>Component cards. Below the drone / rocket / mine block.</summary>
+        /// <summary>Component cards. Below the drone, rocket, and mine block.</summary>
         private GridLayoutGroup _moonDockStoreGrid;
-        /// <summary>Drones, rockets, and mines. Above the component grid.</summary>
+        /// <summary>Drones, rockets, and mines together, above the component grid.</summary>
         private GridLayoutGroup _moonDockPackGrid;
         private string _moonDockStoreBuiltForFamilyKey;
         private int _moonDockEquipmentCardLayoutVersionBuilt = -1;
         /// <summary>Bump when gear-card chrome changes so cached family grids rebuild in place.</summary>
-        private const int MoonDockEquipmentCardLayoutVersion = 18;
-        /// <summary>Page caption under GEAR. Packs are the top block; hull parts sit under them.</summary>
-        const string MoonDockGearHeaderSubtitle =
-            "Drones, rockets, and mines sit above components. They share LOADOUT slots.";
+        private const int MoonDockEquipmentCardLayoutVersion = 22;
+        /// <summary>Space between the gear scroll and the left and right edges of the page.</summary>
+        const float GearPageSidePadding = 16f;
 
         private sealed class MoonDockStoreCardBinding
         {
@@ -409,8 +408,10 @@ namespace TitanOrbit.UI
         const float GearTitleSideWidth = 36f;
         /// <summary>Hairline between side-by-side property segments so each color stays distinct.</summary>
         const float GearStripeGap = 1f;
-        /// <summary>Caption under the title. Kept even when the line is blank so every card lines up.</summary>
-        const float GearCaptionHeight = 12f;
+        /// <summary>Caption under the title. One line, kept even when the text is blank.</summary>
+        const float GearCaptionHeight = 10f;
+        /// <summary>Gap inside the card header between the color bar, the title, and the caption.</summary>
+        const float GearHeaderSpacing = 1f;
         private const float MoonDockSectionHeaderHeight = 60f;
         private const float MoonDockSectionHeaderTitleHeight = 22f;
         private const float MoonDockSectionHeaderSubtitleHeight = 36f;
@@ -3779,18 +3780,33 @@ namespace TitanOrbit.UI
             levelText = levelHidden.AddComponent<TextMeshProUGUI>();
         }
 
-        private static void CreateMoonDockSectionHeader(Transform parent, string title, string subtitle, Color accent)
+        private static void CreateMoonDockSectionHeader(
+            Transform parent,
+            string title,
+            string subtitle,
+            Color accent,
+            float topPadding = 0f,
+            float subtitleHeight = -1f)
         {
+            bool hasSubtitle = !string.IsNullOrEmpty(subtitle);
+            float subH = hasSubtitle
+                ? (subtitleHeight > 0f ? subtitleHeight : MoonDockSectionHeaderSubtitleHeight)
+                : 0f;
+            float textH = MoonDockSectionHeaderTitleHeight
+                + (hasSubtitle ? MoonDockSectionHeaderTextSpacing + subH : 0f);
+            float blockH = topPadding + textH;
+
             var blockGo = new GameObject("SectionHeader_" + title.Replace(" ", ""));
             blockGo.transform.SetParent(parent, false);
             var blockLe = blockGo.AddComponent<LayoutElement>();
-            blockLe.preferredHeight = MoonDockSectionHeaderHeight;
-            blockLe.minHeight = MoonDockSectionHeaderHeight;
+            blockLe.preferredHeight = blockH;
+            blockLe.minHeight = blockH;
             blockLe.flexibleHeight = 0f;
 
             var row = blockGo.AddComponent<HorizontalLayoutGroup>();
             row.spacing = 10f;
-            row.childAlignment = TextAnchor.MiddleLeft;
+            row.padding = new RectOffset(0, 0, Mathf.RoundToInt(topPadding), 0);
+            row.childAlignment = TextAnchor.UpperLeft;
             row.childControlWidth = true;
             row.childControlHeight = true;
             row.childForceExpandWidth = false;
@@ -3801,8 +3817,9 @@ namespace TitanOrbit.UI
             var accentLe = accentGo.AddComponent<LayoutElement>();
             accentLe.preferredWidth = 4f;
             accentLe.minWidth = 4f;
-            accentLe.preferredHeight = MoonDockSectionHeaderHeight;
-            accentLe.minHeight = MoonDockSectionHeaderHeight;
+            // The bar is only as tall as the title and its one-line description.
+            accentLe.preferredHeight = textH;
+            accentLe.minHeight = textH;
             accentLe.flexibleHeight = 0f;
             var accentImg = accentGo.AddComponent<Image>();
             accentImg.color = accent;
@@ -3812,8 +3829,8 @@ namespace TitanOrbit.UI
             textColGo.transform.SetParent(blockGo.transform, false);
             var textColLe = textColGo.AddComponent<LayoutElement>();
             textColLe.flexibleWidth = 1f;
-            textColLe.preferredHeight = MoonDockSectionHeaderTitleHeight + MoonDockSectionHeaderTextSpacing + MoonDockSectionHeaderSubtitleHeight;
-            textColLe.minHeight = textColLe.preferredHeight;
+            textColLe.preferredHeight = textH;
+            textColLe.minHeight = textH;
             textColLe.flexibleHeight = 0f;
             var textVlg = textColGo.AddComponent<VerticalLayoutGroup>();
             textVlg.spacing = MoonDockSectionHeaderTextSpacing;
@@ -3837,13 +3854,13 @@ namespace TitanOrbit.UI
             titleTmp.color = new Color(0.94f, 0.96f, 1f, 1f);
             titleTmp.raycastTarget = false;
 
-            if (!string.IsNullOrEmpty(subtitle))
+            if (hasSubtitle)
             {
                 var subGo = new GameObject("Subtitle");
                 subGo.transform.SetParent(textColGo.transform, false);
                 var subLe = subGo.AddComponent<LayoutElement>();
-                subLe.preferredHeight = MoonDockSectionHeaderSubtitleHeight;
-                subLe.minHeight = MoonDockSectionHeaderSubtitleHeight;
+                subLe.preferredHeight = subH;
+                subLe.minHeight = subH;
                 subLe.flexibleHeight = 0f;
                 var subTmp = subGo.AddComponent<TextMeshProUGUI>();
                 subTmp.text = subtitle;
@@ -3853,7 +3870,7 @@ namespace TitanOrbit.UI
                 subTmp.color = new Color(0.72f, 0.8f, 0.94f, 0.95f);
                 subTmp.enableWordWrapping = true;
                 subTmp.overflowMode = TextOverflowModes.Ellipsis;
-                subTmp.maxVisibleLines = 2;
+                subTmp.maxVisibleLines = subH > 36f ? 4 : 2;
                 subTmp.raycastTarget = false;
             }
         }
@@ -4343,7 +4360,7 @@ namespace TitanOrbit.UI
                 for (int c = 0; c < _moonDockStoreCards.Count; c++)
                 {
                     MoonDockStoreCardBinding existing = _moonDockStoreCards[c];
-                    if (existing != null && existing.isComponent && existing.powerBar == null)
+                    if (existing != null && existing.powerBar == null)
                     {
                         needsEquipmentRebuild = true;
                         break;
@@ -4435,9 +4452,14 @@ namespace TitanOrbit.UI
                     price = StoreItemData.GetPrice(card.supportItem, shipLevel);
                     canBuy = currentShip != null && (debugFreeGear || contributedGems >= price) && currentShip.HasEmptyEquipmentSlot;
                     if (card.titleText != null)
-                        card.titleText.text = StoreItemData.GetDisplayName(card.supportItem);
+                        card.titleText.text = GetPackGearCardTitle(card.supportItem);
                     ApplyGearCardLevel(card.levelText, shipLevel);
-                    ApplyPackGearStatGrid(card.descriptionText, card.supportItem, shipLevel);
+                    ApplyPackGearCard(
+                        card.descriptionText,
+                        card.powerBar,
+                        card.supportItem,
+                        shipLevel,
+                        family != null ? family.familyId : null);
                     ApplyGearCardStripes(card.root, StripesForPack(card.supportItem));
                     ApplyDroneBulletTypeCaption(card.roleText, card.supportItem, family);
                     ApplyMoonDockEquipmentTileIcon(
@@ -4502,7 +4524,7 @@ namespace TitanOrbit.UI
             if (_moonDockStoreGridContent == null)
                 return;
 
-            // --- Two blocks, packs on top ---
+            // --- Drones, rockets, mines, then hull parts ---
             // A cached family may still be one flat grid. Split it before parenting cards,
             // or the section headers would be treated as extra tiles.
             EnsureMoonDockGearSplitGrids();
@@ -4552,7 +4574,9 @@ namespace TitanOrbit.UI
                 float pad = _moonDockStoreGrid != null
                     ? _moonDockStoreGrid.padding.left + _moonDockStoreGrid.padding.right
                     : 0f;
-                return ComputeMoonDockStoreTileWidth(_moonDockStoreScrollViewport.rect.width - pad, MoonDockStoreTileSpacing);
+                return ComputeMoonDockStoreTileWidth(
+                    _moonDockStoreScrollViewport.rect.width - pad - GearPageSidePadding * 2f,
+                    MoonDockStoreTileSpacing);
             }
 
             if (cardsTabContent != null)
@@ -4641,7 +4665,7 @@ namespace TitanOrbit.UI
             moonDockStoreSection.transform.SetParent(storeParent, false);
             var sectionVlg = moonDockStoreSection.AddComponent<VerticalLayoutGroup>();
             sectionVlg.spacing = 4f;
-            sectionVlg.padding = new RectOffset(0, 0, 0, 0);
+            sectionVlg.padding = new RectOffset(0, 0, 8, 0);
             sectionVlg.childAlignment = TextAnchor.UpperCenter;
             sectionVlg.childControlWidth = true;
             sectionVlg.childControlHeight = true;
@@ -4650,12 +4674,6 @@ namespace TitanOrbit.UI
             var sectionLe = moonDockStoreSection.AddComponent<LayoutElement>();
             sectionLe.flexibleHeight = 1f;
             sectionLe.flexibleWidth = 1f;
-
-            CreateMoonDockSectionHeader(
-                moonDockStoreSection.transform,
-                "GEAR",
-                MoonDockGearHeaderSubtitle,
-                OrbitDockSidebarPanelUI.EquipmentAccent);
 
             var scrollGo = new GameObject("EquipmentStoreScroll");
             scrollGo.transform.SetParent(moonDockStoreSection.transform, false);
@@ -4700,30 +4718,33 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Makes sure the GEAR scroll has a pack block above a component block.
-        /// Older caches parented every card on one grid. Those are split in place
-        /// so a layout-version bump does not leave a second family section behind.
+        /// Makes sure the scroll has one drone/rocket/mine block, then hull parts.
+        /// A split into three pack sections is folded back into that one block.
         /// </summary>
         void EnsureMoonDockGearSplitGrids()
         {
             if (_moonDockStoreGridContent == null)
                 return;
 
-            ApplyMoonDockGearHeaderSubtitle(moonDockStoreSection);
+            RemoveGearPageHeader(moonDockStoreSection);
 
-            Transform packBlock = _moonDockStoreGridContent.Find("PackBlock");
-            Transform componentBlock = _moonDockStoreGridContent.Find("ComponentBlock");
-            if (packBlock != null && componentBlock != null)
+            Transform pack = _moonDockStoreGridContent.Find("PackBlock");
+            Transform components = _moonDockStoreGridContent.Find("ComponentBlock");
+            bool splitPacks = _moonDockStoreGridContent.Find("DroneBlock") != null
+                || _moonDockStoreGridContent.Find("RocketBlock") != null
+                || _moonDockStoreGridContent.Find("MineBlock") != null;
+            if (pack != null && components != null && !splitPacks
+                && pack.Find("SectionHeader_DRONES,ROCKETS,ANDMINES") != null)
             {
-                _moonDockPackGrid = packBlock.Find("PackGrid")?.GetComponent<GridLayoutGroup>();
-                _moonDockStoreGrid = componentBlock.Find("ComponentGrid")?.GetComponent<GridLayoutGroup>();
-                // Packs stay the first sibling so components scroll underneath them.
-                if (packBlock.GetSiblingIndex() > componentBlock.GetSiblingIndex())
-                    packBlock.SetAsFirstSibling();
+                _moonDockPackGrid = pack.Find("PackGrid")?.GetComponent<GridLayoutGroup>();
+                _moonDockStoreGrid = components.Find("ComponentGrid")?.GetComponent<GridLayoutGroup>();
+                if (pack.GetSiblingIndex() > components.GetSiblingIndex())
+                    pack.SetAsFirstSibling();
+                ConfigureGearScrollStack(_moonDockStoreGridContent.GetComponent<VerticalLayoutGroup>());
                 return;
             }
 
-            // --- Upgrade a flat card grid ---
+            // --- Upgrade a flat grid or the three separate pack sections ---
             // Unparent before Destroy. Otherwise the new vertical layout still
             // measures the doomed cards for the rest of this frame.
             for (int c = _moonDockStoreGridContent.childCount - 1; c >= 0; c--)
@@ -4748,28 +4769,58 @@ namespace TitanOrbit.UI
                 _moonDockStoreGridContent,
                 "PackBlock",
                 "PackGrid",
-                "DRONES · ROCKETS · MINES",
-                "Fighter, shield, and mining drones, then rockets and mines.",
-                ShipAbilityCategoryColors.WeaponForHud);
+                "DRONES, ROCKETS, AND MINES",
+                "Fighter drones shoot ships, shield drones block fire, and mining drones break asteroids. Guided rockets chase a target, two per purchase. Mines explode when a ship gets close, four per purchase.",
+                ShipAbilityCategoryColors.GetPowerBreakdownStatColorForHud(0, 0.92f),
+                subtitleHeight: 52f);
             _moonDockStoreGrid = CreateGearCardBlock(
                 _moonDockStoreGridContent,
                 "ComponentBlock",
                 "ComponentGrid",
                 "COMPONENTS",
-                "Offense, health, energy, movement, then cargo — same order as ship abilities.",
+                "Parts for this hull. They add firepower, health, engines, turning, or cargo.",
                 OrbitDockSidebarPanelUI.EquipmentAccent);
+        }
+
+        /// <summary>Drops the old GEAR page title so the scroll opens on the first section.</summary>
+        static void RemoveGearPageHeader(GameObject section)
+        {
+            if (section == null)
+                return;
+            Transform header = section.transform.Find("SectionHeader_GEAR");
+            if (header == null)
+                return;
+            header.SetParent(null, false);
+            Destroy(header.gameObject);
+        }
+
+        /// <summary>Name printed on a drone, rocket, or mine card.</summary>
+        static string GetPackGearCardTitle(StoreItemType item)
+        {
+            switch (item)
+            {
+                case StoreItemType.FighterDrone: return "Fighter Drones";
+                case StoreItemType.ShieldDrone: return "Shielded Drones";
+                case StoreItemType.MiningDrone: return "Mining Drones";
+                case StoreItemType.SmallRockets:
+                case StoreItemType.LargeRockets: return "Rockets";
+                case StoreItemType.SmallMines:
+                case StoreItemType.LargeMines: return "Mines";
+                default: return StoreItemData.GetDisplayName(item);
+            }
         }
 
         /// <summary>
         /// Vertical stack settings for the GEAR scroll body.
-        /// Child height comes from each block, so a short pack row does not stretch.
+        /// Side padding keeps the sections off the edges of the page.
         /// </summary>
         static void ConfigureGearScrollStack(VerticalLayoutGroup stack)
         {
             if (stack == null)
                 return;
             stack.spacing = 16f;
-            stack.padding = new RectOffset(0, 0, 0, 8);
+            int side = Mathf.RoundToInt(GearPageSidePadding);
+            stack.padding = new RectOffset(side, side, 0, 8);
             stack.childAlignment = TextAnchor.UpperLeft;
             stack.childControlWidth = true;
             stack.childControlHeight = true;
@@ -4788,7 +4839,8 @@ namespace TitanOrbit.UI
             string gridName,
             string title,
             string subtitle,
-            Color accent)
+            Color accent,
+            float subtitleHeight = 32f)
         {
             var blockGo = new GameObject(blockName);
             blockGo.transform.SetParent(parent, false);
@@ -4803,7 +4855,8 @@ namespace TitanOrbit.UI
             blockVlg.childForceExpandWidth = true;
             blockVlg.childForceExpandHeight = false;
 
-            CreateMoonDockSectionHeader(blockGo.transform, title, subtitle, accent);
+            CreateMoonDockSectionHeader(
+                blockGo.transform, title, subtitle, accent, topPadding: 10f, subtitleHeight: subtitleHeight);
 
             var gridGo = new GameObject(gridName);
             gridGo.transform.SetParent(blockGo.transform, false);
@@ -4819,17 +4872,6 @@ namespace TitanOrbit.UI
             grid.startAxis = GridLayoutGroup.Axis.Horizontal;
             grid.childAlignment = TextAnchor.UpperLeft;
             return grid;
-        }
-
-        /// <summary>Refreshes the GEAR page caption on a section that was built before packs moved above components.</summary>
-        static void ApplyMoonDockGearHeaderSubtitle(GameObject section)
-        {
-            if (section == null)
-                return;
-            Transform sub = section.transform.Find("SectionHeader_GEAR/TextCol/Subtitle");
-            var tmp = sub != null ? sub.GetComponent<TextMeshProUGUI>() : null;
-            if (tmp != null)
-                tmp.text = MoonDockGearHeaderSubtitle;
         }
 
         /// <summary>
@@ -4917,23 +4959,32 @@ namespace TitanOrbit.UI
         /// <summary>
         /// Paints a gear card’s power bar against every family’s components at
         /// <paramref name="shipLevel"/>, not against a whole ship.
+        /// Ship parts compare inside one profile (engines with engines). Drones,
+        /// rockets, and mines pass <paramref name="compareWithinPartCategory"/> false
+        /// and keep the mixed gear ceiling.
         /// </summary>
         private void ApplyMoonDockGearPowerBar(
             ShipUpgradeTreePowerBarUI powerBar,
             ShipFamilyPowerScoreBreakdown breakdown,
             string familyId,
             string componentId,
-            int shipLevel)
+            int shipLevel,
+            bool compareWithinPartCategory = true)
         {
             if (powerBar == null)
                 return;
 
-            // --- Component ceiling ---
-            // [TITAN-ORBIT] Store tiles and owned gear share this ceiling.
-            // Each lane is this part divided by the best part in any family.
+            // --- Same-profile ceiling ---
+            // [TITAN-ORBIT] Hovering an engine’s energy lane must name the best
+            // engine, not a weapon from another family that happens to hold more
+            // energy. The fill uses that same ceiling so the percent matches RANK 1.
+            string partCategory = compareWithinPartCategory
+                ? ShipFamilyPowerBarNorm.ResolveComponentCompareCategory(componentId)
+                : null;
             ShipPowerBarStatMaxes maxes = ShipFamilyPowerBarNorm.GetComponentMaxPerStat(
                 shipLevel,
-                s_ComponentFamilyBankResolver);
+                s_ComponentFamilyBankResolver,
+                partCategory);
             float trackW = Mathf.Max(40f, GetMoonDockItemTileWidth() - 10f);
             powerBar.ConfigureLayoutScale(1f, 1f);
             powerBar.ApplyEquipmentBreakdown(
@@ -4941,7 +4992,8 @@ namespace TitanOrbit.UI
                 in maxes,
                 trackW,
                 ShipFamilyPowerBarNorm.FormatComponentLeaderKey(familyId, componentId),
-                shipLevel);
+                shipLevel,
+                partCategory);
         }
 
         /// <summary>
@@ -4993,7 +5045,7 @@ namespace TitanOrbit.UI
                 gearRole = ShipComponentStackAggregation.GearCardRole.Unclassified;
             if (titleTmp != null)
                 titleTmp.text = ShipComponentStoreData.GetDisplayName(entry);
-            ApplyGearCardLevel(root.transform.Find("TitleRow/Level")?.GetComponent<TextMeshProUGUI>(), shipLevel);
+            ApplyGearCardLevel(root.transform.Find("CardHeader/TitleRow/Level")?.GetComponent<TextMeshProUGUI>(), shipLevel);
             GearCardStripes stripes = StripesForComponent(entry);
             ApplyGearCardStripes(root, stripes);
             ResolveOldPrimary(
@@ -5046,7 +5098,7 @@ namespace TitanOrbit.UI
                     iconImage = iconImg,
                     iconGlyph = iconGlyph,
                     titleText = titleTmp,
-                    levelText = root.transform.Find("TitleRow/Level")?.GetComponent<TextMeshProUGUI>(),
+                    levelText = root.transform.Find("CardHeader/TitleRow/Level")?.GetComponent<TextMeshProUGUI>(),
                     roleText = roleTmp,
                     descriptionText = descriptionTmp,
                     sublineText = sublineTmp,
@@ -5069,7 +5121,7 @@ namespace TitanOrbit.UI
                 MoonDockEquipmentCardBg,
                 accentColor,
                 $"{StoreItemData.GetPrice(itemType, shipLevel):F0}g",
-                includePowerBar: false,
+                includePowerBar: true,
                 includeRoleLabel: true,
                 out GameObject root,
                 out _,
@@ -5080,14 +5132,19 @@ namespace TitanOrbit.UI
                 out TextMeshProUGUI roleTmp,
                 out TextMeshProUGUI descriptionTmp,
                 out TextMeshProUGUI sublineTmp,
-                out _,
+                out ShipUpgradeTreePowerBarUI powerBar,
                 out Button buyBtn,
                 out Image buyImg);
 
             if (titleTmp != null)
-                titleTmp.text = StoreItemData.GetDisplayName(itemType);
-            ApplyGearCardLevel(root.transform.Find("TitleRow/Level")?.GetComponent<TextMeshProUGUI>(), shipLevel);
-            ApplyPackGearStatGrid(descriptionTmp, itemType, shipLevel);
+                titleTmp.text = GetPackGearCardTitle(itemType);
+            ApplyGearCardLevel(root.transform.Find("CardHeader/TitleRow/Level")?.GetComponent<TextMeshProUGUI>(), shipLevel);
+            ApplyPackGearCard(
+                descriptionTmp,
+                powerBar,
+                itemType,
+                shipLevel,
+                family != null ? family.familyId : null);
             ApplyGearCardStripes(root, StripesForPack(itemType));
             ApplyDroneBulletTypeCaption(roleTmp, itemType, family);
             HideGearCardBottomText(sublineTmp);
@@ -5110,10 +5167,11 @@ namespace TitanOrbit.UI
                     iconImage = iconImg,
                     iconGlyph = iconGlyph,
                     titleText = titleTmp,
-                    levelText = root.transform.Find("TitleRow/Level")?.GetComponent<TextMeshProUGUI>(),
+                    levelText = root.transform.Find("CardHeader/TitleRow/Level")?.GetComponent<TextMeshProUGUI>(),
                     roleText = roleTmp,
                     descriptionText = descriptionTmp,
                     sublineText = sublineTmp,
+                    powerBar = powerBar,
                     buyButton = buyBtn,
                     buyImage = buyImg,
                     buyLabel = buyBtn != null ? buyBtn.GetComponentInChildren<TextMeshProUGUI>() : null
@@ -5290,18 +5348,18 @@ namespace TitanOrbit.UI
             bool includePowerBar,
             bool includeRoleRow = false)
         {
-            const float verticalPadding = 9f;
+            const float verticalPadding = 10f;
             const float spacing = 4f;
-            // Subline is gone. Gaps match the children that remain: stripes, title,
-            // optional role, icon, stat plate, optional power bar, buy button.
-            int gaps = (includePowerBar ? 5 : 4) + (includeRoleRow ? 1 : 0);
-            float accent = GearStripeHeight;
-            float title = 16f;
+            const float title = 20f;
+            // Stripe, title, and caption sit in one header. The card gap starts under that block.
+            int gaps = includePowerBar ? 4 : 3;
+            int headerGaps = includeRoleRow ? 2 : 1;
             float role = includeRoleRow ? GearCaptionHeight : 0f;
+            float header = GearStripeHeight + title + role + headerGaps * GearHeaderSpacing;
             float descPlate = descHeight + 8f;
             float power = includePowerBar ? MoonDockEquipmentPowerBarHeight + 4f : 0f;
             float action = 22f;
-            return verticalPadding + gaps * spacing + accent + title + role + iconHeight + descPlate + power + action;
+            return verticalPadding + gaps * spacing + header + iconHeight + descPlate + power + action;
         }
 
         private static void ApplyMoonDockEquipmentTileIcon(Image iconImage, TextMeshProUGUI iconGlyph, Sprite sprite, string fallbackGlyph)
@@ -5394,7 +5452,7 @@ namespace TitanOrbit.UI
         {
             if (root == null)
                 return;
-            Transform stack = root.transform.Find("AccentStack");
+            Transform stack = root.transform.Find("CardHeader/AccentStack");
             if (stack == null)
                 return;
 
@@ -5490,70 +5548,130 @@ namespace TitanOrbit.UI
         static bool StatPresent(float value) => Mathf.Abs(value) > 0.0001f;
 
         /// <summary>
-        /// Pack cards use the same column grid as hull parts: a STAT / VAL header,
-        /// then one colored row per number. Level is not repeated here.
+        /// Paints a drone, rocket, or mine with the component card's stat grid and power bar.
+        /// The numbers come from that item. The columns and the bar widget do not.
         /// </summary>
-        static void ApplyPackGearStatGrid(TextMeshProUGUI description, StoreItemType item, int shipLevel)
+        void ApplyPackGearCard(
+            TextMeshProUGUI description,
+            ShipUpgradeTreePowerBarUI powerBar,
+            StoreItemType item,
+            int shipLevel,
+            string familyId)
         {
-            if (description == null)
-                return;
-            description.richText = true;
-            description.enableWordWrapping = false;
-            description.alignment = TextAlignmentOptions.TopLeft;
-            description.overflowMode = TextOverflowModes.Overflow;
-            description.maxVisibleLines = 12;
-            description.text = BuildPackGearStatGrid(item, shipLevel);
+            ShipComponentAbilityStats stats = ReadPackGearStats(item, shipLevel, out ShipComponentStoreData.PlainGearStat[] rows, out int rowCount);
+            if (description != null)
+            {
+                description.richText = true;
+                description.enableWordWrapping = false;
+                description.alignment = TextAlignmentOptions.TopLeft;
+                description.overflowMode = TextOverflowModes.Overflow;
+                description.maxVisibleLines = 12;
+                description.text = ShipComponentStoreData.FormatPlainGearStatGrid(rows, rowCount);
+            }
+
+            if (powerBar != null)
+            {
+                ApplyMoonDockGearPowerBar(
+                    powerBar,
+                    ShipFamilyPowerScoreBreakdown.FromSummedShipStats(stats),
+                    familyId,
+                    item.ToString(),
+                    shipLevel,
+                    compareWithinPartCategory: false);
+            }
         }
 
         /// <summary>
-        /// STAT / VAL rows for one drone, rocket, or mine at the purchase level.
-        /// Bullet type is the caption under the title, not a row in this grid.
-        /// Drone speed is movement, so it uses the same blue as move and turn.
+        /// Stat rows and the ability struct that feeds the power bar.
+        /// Fighter and mining speed is movement (blue). Rocket speed is bullet speed.
+        /// Mine fire and blast stay in the grid. The bar only has lanes components use,
+        /// so a mine lights no lane unless one of those fields is set.
         /// </summary>
-        static string BuildPackGearStatGrid(StoreItemType item, int shipLevel)
+        static ShipComponentAbilityStats ReadPackGearStats(
+            StoreItemType item,
+            int shipLevel,
+            out ShipComponentStoreData.PlainGearStat[] rows,
+            out int count)
         {
             int level = Mathf.Max(1, shipLevel);
-            var sb = new StringBuilder(256);
-            sb.Append("<size=85%><color=#9EC7F2>STAT<pos=36%>VAL</color></size>");
+            var stats = default(ShipComponentAbilityStats);
+            rows = new ShipComponentStoreData.PlainGearStat[4];
+            count = 0;
+
             switch (item)
             {
                 case StoreItemType.FighterDrone:
-                    AppendPackStatRow(sb, "Fire", StoreItemData.GetCombatDroneDamage(level), 0);
-                    AppendPackStatRow(sb, "Rate", DroneSwarmLogic.FighterFireRate, 0);
-                    AppendPackStatRow(sb, "Speed", DroneSwarmLogic.FighterBulletSpeed, 6);
-                    AppendPackStatRow(sb, "HP", StoreItemData.GetDroneMaxHp(item, level), 2);
-                    break;
-                case StoreItemType.ShieldDrone:
-                    AppendPackStatRow(sb, "HP", StoreItemData.GetDroneMaxHp(item, level), 2);
-                    break;
                 case StoreItemType.MiningDrone:
-                    AppendPackStatRow(sb, "Fire", StoreItemData.GetCombatDroneDamage(level), 0);
-                    AppendPackStatRow(sb, "Rate", DroneSwarmLogic.MiningFireRate, 0);
-                    AppendPackStatRow(sb, "Speed", DroneSwarmLogic.MiningBulletSpeed, 6);
-                    AppendPackStatRow(sb, "HP", StoreItemData.GetDroneMaxHp(item, level), 2);
+                {
+                    bool mining = item == StoreItemType.MiningDrone;
+                    float fire = StoreItemData.GetCombatDroneDamage(level);
+                    float rate = mining ? DroneSwarmLogic.MiningFireRate : DroneSwarmLogic.FighterFireRate;
+                    float speed = mining ? DroneSwarmLogic.MiningBulletSpeed : DroneSwarmLogic.FighterBulletSpeed;
+                    float hp = StoreItemData.GetDroneMaxHp(item, level);
+                    stats.firePower = fire;
+                    stats.fireRate = rate;
+                    stats.moveSpeed = speed;
+                    stats.healthCap = hp;
+                    AddPlainGearStat(rows, ref count, "Fire", fire, 0);
+                    AddPlainGearStat(rows, ref count, "Rate", rate, 1);
+                    AddPlainGearStat(rows, ref count, "Speed", speed, 6);
+                    AddPlainGearStat(rows, ref count, "HP", hp, 2);
                     break;
+                }
+                case StoreItemType.ShieldDrone:
+                {
+                    float hp = StoreItemData.GetDroneMaxHp(item, level);
+                    stats.healthCap = hp;
+                    AddPlainGearStat(rows, ref count, "HP", hp, 2);
+                    break;
+                }
                 case StoreItemType.SmallRockets:
                 case StoreItemType.LargeRockets:
                 {
                     RocketCatalog.LevelStats rocket = RocketCatalog.Get(level);
-                    AppendPackStatRow(sb, "Fire", rocket.firePower, 0);
-                    AppendPackStatRow(sb, "Speed", rocket.speed, 1);
-                    AppendPackStatRow(sb, "Turn", rocket.turnSpeedDegreesPerSecond, 7);
-                    AppendPackStatRow(sb, "Reload", rocket.fireCooldown, 0);
+                    stats.firePower = rocket.firePower;
+                    stats.bulletSpeed = rocket.speed;
+                    stats.turnSpeed = rocket.turnSpeedDegreesPerSecond;
+                    stats.fireRate = rocket.fireCooldown > 0.05f ? 1f / rocket.fireCooldown : 0f;
+                    AddPlainGearStat(rows, ref count, "Fire", rocket.firePower, 0);
+                    AddPlainGearStat(rows, ref count, "Speed", rocket.speed, 1);
+                    AddPlainGearStat(rows, ref count, "Turn", rocket.turnSpeedDegreesPerSecond, 7);
+                    AddPlainGearStat(rows, ref count, "Reload", rocket.fireCooldown, 0);
                     break;
                 }
                 case StoreItemType.SmallMines:
                 case StoreItemType.LargeMines:
                 {
                     MineCatalog.LevelStats mine = MineCatalog.Get(level);
-                    AppendPackStatRow(sb, "Fire", mine.firePower, 0);
-                    AppendPackStatRow(sb, "Blast", mine.blastRadius, 0);
-                    AppendPackStatRow(sb, "Reload", mine.deployCooldown, 0);
+                    stats.firePower = mine.firePower;
+                    stats.fireRate = mine.deployCooldown > 0.05f ? 1f / mine.deployCooldown : 0f;
+                    // Blast is the mine's area. Gear bars have no blast lane, so it
+                    // stays in the stat grid. Fire uses the same empty gear slot as
+                    // a component's fire power.
+                    AddPlainGearStat(rows, ref count, "Fire", mine.firePower, 0);
+                    AddPlainGearStat(rows, ref count, "Blast", mine.blastRadius, 0);
+                    AddPlainGearStat(rows, ref count, "Reload", mine.deployCooldown, 0);
                     break;
                 }
             }
 
-            return sb.ToString();
+            return stats;
+        }
+
+        /// <summary>Appends one stat row. Kept out of a local function so the out-array stays legal.</summary>
+        static void AddPlainGearStat(
+            ShipComponentStoreData.PlainGearStat[] rows,
+            ref int count,
+            string label,
+            float value,
+            int colorIndex)
+        {
+            rows[count++] = new ShipComponentStoreData.PlainGearStat
+            {
+                Label = label,
+                Value = value,
+                ColorIndex = colorIndex
+            };
         }
 
         /// <summary>
@@ -5570,19 +5688,6 @@ namespace TitanOrbit.UI
                 typeName = BulletBankProfileUtility.FormatFamilyBulletTypeName(
                     family, ResolveStoreFamilyBulletBankIndex());
             ApplyGearUnderTitleCaption(label, typeName);
-        }
-
-        /// <summary>One STAT / VAL row, tinted with the same ability color as a component line.</summary>
-        static void AppendPackStatRow(StringBuilder sb, string label, float value, int colorIndex)
-        {
-            if (sb.Length > 0)
-                sb.Append('\n');
-            Color color = ShipAbilityCategoryColors.GetPowerBreakdownStatColor(colorIndex);
-            sb.Append("<color=#").Append(ColorUtility.ToHtmlStringRGB(color)).Append('>');
-            sb.Append(label);
-            sb.Append("<pos=36%><b>");
-            sb.Append(value.ToString("0.##", CultureInfo.InvariantCulture));
-            sb.Append("</b></color>");
         }
 
         /// <summary>
@@ -6082,7 +6187,7 @@ namespace TitanOrbit.UI
 
             var cardVlg = root.AddComponent<VerticalLayoutGroup>();
             cardVlg.spacing = 4f;
-            cardVlg.padding = new RectOffset(4, 4, 5, 4);
+            cardVlg.padding = new RectOffset(4, 4, 6, 4);
             cardVlg.childAlignment = TextAnchor.UpperCenter;
             cardVlg.childControlWidth = true;
             cardVlg.childControlHeight = true;
@@ -6091,9 +6196,25 @@ namespace TitanOrbit.UI
             // the title, and the gaps grow differently on cards that omit the power bar.
             cardVlg.childForceExpandHeight = false;
 
+            // Color bar, title, and Primary / Extra / bullet type. Tight spacing so this
+            // block stays short. The page's side padding is unchanged.
+            var headerGo = new GameObject("CardHeader");
+            headerGo.transform.SetParent(root.transform, false);
+            var headerLe = headerGo.AddComponent<LayoutElement>();
+            headerLe.flexibleHeight = 0f;
+            headerLe.flexibleWidth = 1f;
+            var headerVlg = headerGo.AddComponent<VerticalLayoutGroup>();
+            headerVlg.spacing = GearHeaderSpacing;
+            headerVlg.padding = new RectOffset(0, 0, 0, 0);
+            headerVlg.childAlignment = TextAnchor.UpperCenter;
+            headerVlg.childControlWidth = true;
+            headerVlg.childControlHeight = true;
+            headerVlg.childForceExpandWidth = true;
+            headerVlg.childForceExpandHeight = false;
+
             // One row of property segments. Visible slices share the width equally.
             var stackGo = new GameObject("AccentStack");
-            stackGo.transform.SetParent(root.transform, false);
+            stackGo.transform.SetParent(headerGo.transform, false);
             var stackLe = stackGo.AddComponent<LayoutElement>();
             stackLe.preferredHeight = GearStripeHeight;
             stackLe.minHeight = GearStripeHeight;
@@ -6117,10 +6238,10 @@ namespace TitanOrbit.UI
             // Level stays at the left. An equal spacer on the right lets the name sit
             // on the card's center instead of sliding toward the level.
             var titleRowGo = new GameObject("TitleRow");
-            titleRowGo.transform.SetParent(root.transform, false);
+            titleRowGo.transform.SetParent(headerGo.transform, false);
             var titleRowLe = titleRowGo.AddComponent<LayoutElement>();
-            titleRowLe.preferredHeight = 16f;
-            titleRowLe.minHeight = 14f;
+            titleRowLe.preferredHeight = 20f;
+            titleRowLe.minHeight = 16f;
             titleRowLe.flexibleHeight = 0f;
             var titleRowHlg = titleRowGo.AddComponent<HorizontalLayoutGroup>();
             titleRowHlg.spacing = 4f;
@@ -6128,7 +6249,7 @@ namespace TitanOrbit.UI
             titleRowHlg.childControlWidth = true;
             titleRowHlg.childControlHeight = true;
             titleRowHlg.childForceExpandWidth = false;
-            titleRowHlg.childForceExpandHeight = true;
+            titleRowHlg.childForceExpandHeight = false;
 
             var levelGo = new GameObject("Level");
             levelGo.transform.SetParent(titleRowGo.transform, false);
@@ -6152,15 +6273,17 @@ namespace TitanOrbit.UI
             titleGo.transform.SetParent(titleRowGo.transform, false);
             var titleLe = titleGo.AddComponent<LayoutElement>();
             titleLe.flexibleWidth = 1f;
-            titleLe.preferredHeight = 16f;
-            titleLe.minHeight = 14f;
+            titleLe.preferredHeight = 20f;
+            titleLe.minHeight = 16f;
             titleText = titleGo.AddComponent<TextMeshProUGUI>();
             titleText.fontSize = 9.5f;
             titleText.fontStyle = FontStyles.Bold;
             titleText.alignment = TextAlignmentOptions.Center;
             titleText.color = Color.white;
-            titleText.enableWordWrapping = false;
+            titleText.enableWordWrapping = true;
+            titleText.lineSpacing = -8f;
             titleText.overflowMode = TextOverflowModes.Ellipsis;
+            titleText.maxVisibleLines = 2;
             titleText.raycastTarget = false;
             if (fontAsset != null) titleText.font = fontAsset;
 
@@ -6177,7 +6300,7 @@ namespace TitanOrbit.UI
             {
                 // Always the same height. Shield drones, rockets, and mines leave the text blank.
                 var roleGo = new GameObject("Role");
-                roleGo.transform.SetParent(root.transform, false);
+                roleGo.transform.SetParent(headerGo.transform, false);
                 var roleLe = roleGo.AddComponent<LayoutElement>();
                 roleLe.preferredHeight = GearCaptionHeight;
                 roleLe.minHeight = GearCaptionHeight;
@@ -6264,18 +6387,6 @@ namespace TitanOrbit.UI
                     MoonDockEquipmentPowerBarHeight,
                     MoonDockEquipmentPowerBarPairGap,
                     Mathf.Max(40f, MoonDockStoreTileMinWidth - 10f));
-            }
-            else
-            {
-                // Same slot the component power bar occupies, left empty so the buy
-                // button sits at the same height on drones, rockets, and mines.
-                var powerSlotGo = new GameObject("PowerBarSlot");
-                powerSlotGo.transform.SetParent(root.transform, false);
-                var powerSlotLe = powerSlotGo.AddComponent<LayoutElement>();
-                float slotHeight = MoonDockEquipmentPowerBarHeight + 4f;
-                powerSlotLe.preferredHeight = slotHeight;
-                powerSlotLe.minHeight = slotHeight;
-                powerSlotLe.flexibleHeight = 0f;
             }
 
             var sublineGo = new GameObject("Subline");
@@ -7715,11 +7826,14 @@ namespace TitanOrbit.UI
                 slotUi.powerBar.gameObject.SetActive(showComponentPowerBar);
                 if (showComponentPowerBar)
                 {
-                    // Same Extra Level as the numbers on this card, then the all-families part ceiling.
+                    // Same Extra Level as the numbers on this card, then the same-profile part ceiling.
                     int componentLevel = entry.itemLevel > 0 ? entry.itemLevel : shipLevel;
+                    string partCategory = ShipFamilyPowerBarNorm.ResolveComponentCompareCategory(
+                        componentEntry.componentId);
                     ShipPowerBarStatMaxes componentMaxes = ShipFamilyPowerBarNorm.GetComponentMaxPerStat(
                         componentLevel,
-                        s_ComponentFamilyBankResolver);
+                        s_ComponentFamilyBankResolver,
+                        partCategory);
                     slotUi.powerBar.ConfigureLayoutScale(1f, 1f);
                     slotUi.powerBar.ApplyEquipmentBreakdown(
                         ShipComponentStoreData.GetPowerBreakdown(
@@ -7732,7 +7846,8 @@ namespace TitanOrbit.UI
                         ShipFamilyPowerBarNorm.FormatComponentLeaderKey(
                             family != null ? family.familyId : null,
                             componentEntry.componentId),
-                        componentLevel);
+                        componentLevel,
+                        partCategory);
                 }
             }
 

@@ -52,6 +52,11 @@ namespace TitanOrbit.ECS
         const float MineShotReach = 20f;
         /// <summary>Hull pickup is about 2.5. Coast onto the crystal inside this distance.</summary>
         const float CollectArrive = 1.6f;
+        /// <summary>
+        /// After thrust latches off, the hull must drift this far past the hold before
+        /// thrust comes back. Stops the arrive-and-reverse twitch.
+        /// </summary>
+        const float CruiseResumeGap = 7f;
 
         struct PlanetSnap
         {
@@ -255,7 +260,8 @@ namespace TitanOrbit.ECS
                 bool inOrbit = em.HasComponent<ShipOrbitState>(shipEntity) &&
                                em.GetComponentData<ShipOrbitState>(shipEntity).InOrbitRing;
 
-                if (brain.GoalNetworkId != 0 &&
+                if ((brain.Task == BotTaskKind.Follow || brain.Task == BotTaskKind.Attack) &&
+                    brain.GoalNetworkId != 0 &&
                     TryShipPosition(ships.AsArray(), brain.GoalNetworkId, out float3 tracked))
                     brain.Goal = tracked;
 
@@ -267,6 +273,8 @@ namespace TitanOrbit.ECS
                     BotTeamOrder order = liveOrder.IsActive(now) && liveOrder.Includes(networkId)
                         ? liveOrder
                         : default;
+                    int taskBefore = (int)brain.Task;
+                    float3 goalBefore = brain.Goal;
                     Choose(
                         ref brain, ship, networkId, pos, landed, dockedPlanetId, order,
                         planets.AsArray(), ships.AsArray(),
@@ -277,10 +285,22 @@ namespace TitanOrbit.ECS
                         TryBuy(em, shipEntity, ref ship, ref brain);
                     if (!orderNow)
                         brain.NextDecisionTime = now + DecisionInterval;
+                    // A new goal starts from thrust-on. The latch then coasts once
+                    // brakes can finish the stop, instead of carrying the old coast.
+                    if ((int)brain.Task != taskBefore ||
+                        math.distancesq(goalBefore, brain.Goal) > 16f)
+                        brain.ThrustHeld = 1;
+                }
+
+                float speed = 0f;
+                if (em.HasComponent<ShipKinematics>(shipEntity))
+                {
+                    float3 planar = em.GetComponentData<ShipKinematics>(shipEntity).Velocity;
+                    speed = math.length(new float2(planar.x, planar.z));
                 }
 
                 var input = BuildInput(
-                    brain, ship, networkId, pos, landed, docking, inOrbit,
+                    ref brain, ship, networkId, pos, speed, landed, docking, inOrbit,
                     planets.AsArray(), ships.AsArray(),
                     mapW, mapH, orbitElapsed);
                 BotShipPresentation.ApplyCommanderSkin(
@@ -630,10 +650,11 @@ namespace TitanOrbit.ECS
         }
 
         static ShipInput BuildInput(
-            in BotShipBrain brain,
+            ref BotShipBrain brain,
             in ShipState ship,
             int networkId,
             float3 pos,
+            float speed,
             bool landed,
             bool docking,
             bool inOrbit,
@@ -646,6 +667,9 @@ namespace TitanOrbit.ECS
             // Heading and thrust are separate, same as a player. AimPlanarDir is the
             // direction to face. ShipPhysicsDriveLogic turns the hull toward it at the
             // ship's rotation speed, then thrust accelerates along that facing.
+            // Thrust latches off once brakes can finish the stop, and stays off until
+            // the hull is clearly outside the hold. Flipping it every tick aliases
+            // through the snapshot and looks like the client cannot catch the server.
             var input = new ShipInput();
             float3 aim = brain.Goal;
             bool thrust = true;
@@ -691,18 +715,23 @@ namespace TitanOrbit.ECS
                     break;
                 case BotTaskKind.Mine:
                 {
-                    // Face the rock. Thrust is only on or off — the server turns the hull.
                     aim = brain.Goal;
                     float stop = math.max(2f, brain.GoalRadius);
                     float dist = ToroidalMapEcs.ToroidalDistance(pos, aim, mapW, mapH);
-                    thrust = dist > stop;
+                    thrust = CruiseToward(dist, stop, speed, ref brain.ThrustHeld);
                     break;
                 }
                 case BotTaskKind.Collect:
                     aim = brain.Goal;
                     {
                         float dist = ToroidalMapEcs.ToroidalDistance(pos, aim, mapW, mapH);
-                        thrust = dist <= EngageRange && dist > CollectArrive;
+                        if (dist > EngageRange)
+                        {
+                            thrust = false;
+                            brain.ThrustHeld = 0;
+                        }
+                        else
+                            thrust = CruiseToward(dist, CollectArrive, speed, ref brain.ThrustHeld);
                     }
                     break;
                 case BotTaskKind.Attack:
@@ -713,7 +742,13 @@ namespace TitanOrbit.ECS
                         bool close = dist <= EngageRange;
                         // A runner who leaves close range is dropped. A waypoint with no
                         // hull is still flown to; guns stay off until an enemy is close.
-                        thrust = trackingEnemy && !close ? false : inOrbit || dist > 12f;
+                        if (trackingEnemy && !close)
+                        {
+                            thrust = false;
+                            brain.ThrustHeld = 0;
+                        }
+                        else
+                            thrust = CruiseToward(dist, 10f, speed, ref brain.ThrustHeld);
                         fire = trackingEnemy && close && !inOrbit;
                     }
                     break;
@@ -723,29 +758,40 @@ namespace TitanOrbit.ECS
                     else
                         aim = brain.Goal;
                     {
-                        float dist = ToroidalMapEcs.ToroidalDistance(pos, aim, mapW, mapH);
-                        thrust = dist > HoldDistance;
-                        if (TryNearestEnemy(ships, pos, ship.Team, networkId, EngageRange, mapW, mapH, out ShipSnap hostile))
+                        float hold = HoldDistance;
+                        if (TryStickyEnemy(ref brain, ships, pos, ship.Team, networkId, mapW, mapH, out ShipSnap hostile))
                         {
                             aim = hostile.Position;
+                            hold = FollowDistance;
                             fire = !inOrbit;
-                            if (inOrbit)
-                                thrust = true;
                         }
+
+                        float dist = ToroidalMapEcs.ToroidalDistance(pos, aim, mapW, mapH);
+                        thrust = CruiseToward(dist, hold, speed, ref brain.ThrustHeld);
                     }
                     break;
                 case BotTaskKind.Follow:
                     aim = brain.Goal;
-                    thrust = ToroidalMapEcs.ToroidalDistance(pos, aim, mapW, mapH) > FollowDistance;
+                    thrust = CruiseToward(
+                        ToroidalMapEcs.ToroidalDistance(pos, aim, mapW, mapH),
+                        FollowDistance, speed, ref brain.ThrustHeld);
                     break;
                 default:
                     if (brain.GoalPlanetId != 0 && TryPlanet(planets, brain.GoalPlanetId, out PlanetSnap holdHome))
                         aim = HoldOutsideRing(pos, holdHome, mapW, mapH);
                     else
                         aim = brain.Goal;
-                    thrust = inOrbit || ToroidalMapEcs.ToroidalDistance(pos, aim, mapW, mapH) > HoldDistance;
+                    thrust = CruiseToward(
+                        ToroidalMapEcs.ToroidalDistance(pos, aim, mapW, mapH),
+                        HoldDistance, speed, ref brain.ThrustHeld);
                     break;
             }
+
+            // Coasting must set releaseThrust. Otherwise the orbit override below
+            // forces thrust back on inside a ring and the hull spirals instead of
+            // settling on the passive orbit motor.
+            if (!thrust)
+                releaseThrust = true;
 
             // Releasing thrust inside the orbit annulus hands the hull to the passive
             // orbit motor, which keeps it on the ring facing the goal.
@@ -801,6 +847,72 @@ namespace TitanOrbit.ECS
 
             input.WantDepositGems = deposit && !thrust;
             return input;
+        }
+
+        /// <summary>
+        /// Player-style arrive: thrust stays on until space-brakes can finish the stop,
+        /// then stays off until the hull is <see cref="CruiseResumeGap"/> past the hold.
+        /// A raw <c>dist &gt; hold</c> test flips every tick as the hull crosses the line.
+        /// </summary>
+        static bool CruiseToward(float dist, float hold, float speed, ref byte held)
+        {
+            bool thrusting = held != 0;
+            if (thrusting)
+            {
+                float brake = math.max(0.5f, ShipMassLogic.DefaultBrakeDeceleration);
+                float brakeDist = math.min(36f, (speed * speed) / (2f * brake));
+                if (dist <= hold + brakeDist)
+                    thrusting = false;
+            }
+            else if (dist > hold + CruiseResumeGap)
+                thrusting = true;
+
+            held = (byte)(thrusting ? 1 : 0);
+            return thrusting;
+        }
+
+        /// <summary>
+        /// Keeps the enemy this hull is already facing while they stay in range.
+        /// Nearest-enemy every tick swaps the heading when two ships cross.
+        /// </summary>
+        static bool TryStickyEnemy(
+            ref BotShipBrain brain,
+            NativeArray<ShipSnap> ships,
+            float3 from,
+            TeamId team,
+            int selfId,
+            float mapW,
+            float mapH,
+            out ShipSnap best)
+        {
+            float stickRange = EngageRange * 1.35f;
+            if (brain.GoalNetworkId != 0 &&
+                TryShip(ships, brain.GoalNetworkId, out ShipSnap current) &&
+                current.Dead == 0 &&
+                current.Landed == 0 &&
+                current.Team != TeamId.None &&
+                current.Team != team &&
+                ToroidalMapEcs.ToroidalDistance(from, current.Position, mapW, mapH) <= stickRange)
+            {
+                best = current;
+                if (TryNearestEnemy(ships, from, team, selfId, EngageRange, mapW, mapH, out ShipSnap nearer) &&
+                    nearer.NetworkId != current.NetworkId)
+                {
+                    float currentDist = ToroidalMapEcs.ToroidalDistance(from, current.Position, mapW, mapH);
+                    float nearerDist = ToroidalMapEcs.ToroidalDistance(from, nearer.Position, mapW, mapH);
+                    if (nearerDist + 4f < currentDist)
+                        best = nearer;
+                }
+
+                brain.GoalNetworkId = best.NetworkId;
+                return true;
+            }
+
+            if (!TryNearestEnemy(ships, from, team, selfId, EngageRange, mapW, mapH, out best))
+                return false;
+
+            brain.GoalNetworkId = best.NetworkId;
+            return true;
         }
 
         static bool IsGoalPlanet(in BotShipBrain brain, in PlanetSnap planet) =>

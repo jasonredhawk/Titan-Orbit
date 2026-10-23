@@ -656,6 +656,41 @@ namespace TitanOrbit.Data
             TryGetPropulsionCumulativeGain(family, entry, shipLevel, out actualMoveGain, out actualAccelGain);
 
         /// <summary>
+        /// One number on a gear card that is not a hull part.
+        /// Drones, rockets, and mines pass these into the same VAL / BONUS / FINAL grid.
+        /// </summary>
+        public struct PlainGearStat
+        {
+            public string Label;
+            public float Value;
+            public int ColorIndex;
+        }
+
+        /// <summary>
+        /// Same column grid as a component card (STAT / VAL / BONUS / FINAL).
+        /// There is no moon roll, so BONUS stays blank and FINAL matches VAL.
+        /// </summary>
+        public static string FormatPlainGearStatGrid(PlainGearStat[] rows, int count)
+        {
+            if (rows == null || count <= 0)
+                return "<color=#888888>—</color>";
+
+            int n = Mathf.Min(count, rows.Length);
+            var lines = new List<GearStatRow>(n);
+            for (int i = 0; i < n; i++)
+            {
+                PlainGearStat row = rows[i];
+                if (string.IsNullOrEmpty(row.Label))
+                    continue;
+                TryQueueFleet(lines, row.Value, row.Value, row.Label, row.ColorIndex);
+            }
+
+            if (lines.Count == 0)
+                return "<color=#888888>—</color>";
+            return FormatGearStatGrid(lines, richText: true, statHeader: "STAT", showOldColumn: false);
+        }
+
+        /// <summary>
         /// One Gear-card stat row. Banner lines (bullet type) span the card.
         /// Numeric rows fill VAL / BONUS / FINAL. A dim row is the hull contribution
         /// sitting under its parent stat.

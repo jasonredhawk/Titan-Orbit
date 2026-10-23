@@ -59,6 +59,8 @@ namespace TitanOrbit.ECS
         NativeHashSet<long> _seenAsteroidPairs;
         NativeHashSet<long> _overkillPairs;
         NativeHashSet<Entity> _overkillRocks;
+        /// <summary>Asteroid wall hits whose PhysX pose must be eased, not published as a teleport.</summary>
+        NativeHashSet<Entity> _asteroidEase;
         NativeHashMap<long, double> _impactRearmUntil;
 
         /// <summary>Require the classified contact buffer from <see cref="ShipPhysicsContactCollectSystem"/>.</summary>
@@ -74,6 +76,7 @@ namespace TitanOrbit.ECS
             _seenAsteroidPairs = new NativeHashSet<long>(16, Allocator.Persistent);
             _overkillPairs = new NativeHashSet<long>(16, Allocator.Persistent);
             _overkillRocks = new NativeHashSet<Entity>(16, Allocator.Persistent);
+            _asteroidEase = new NativeHashSet<Entity>(16, Allocator.Persistent);
             _impactRearmUntil = new NativeHashMap<long, double>(32, Allocator.Persistent);
         }
 
@@ -98,6 +101,8 @@ namespace TitanOrbit.ECS
                 _overkillPairs.Dispose();
             if (_overkillRocks.IsCreated)
                 _overkillRocks.Dispose();
+            if (_asteroidEase.IsCreated)
+                _asteroidEase.Dispose();
             if (_impactRearmUntil.IsCreated)
                 _impactRearmUntil.Dispose();
         }
@@ -163,6 +168,7 @@ namespace TitanOrbit.ECS
             EnsureSetCapacity(ref _seenAsteroidPairs, math.max(8, pairs.Length));
             EnsureSetCapacity(ref _overkillPairs, math.max(8, pairs.Length));
             EnsureSetCapacity(ref _overkillRocks, math.max(8, pairs.Length));
+            EnsureSetCapacity(ref _asteroidEase, math.max(8, pairs.Length));
             _working.Clear();
             _megaUnconstrained.Clear();
             _megaKeepPhysX.Clear();
@@ -171,6 +177,7 @@ namespace TitanOrbit.ECS
             _seenAsteroidPairs.Clear();
             _overkillPairs.Clear();
             _overkillRocks.Clear();
+            _asteroidEase.Clear();
             double now = SystemAPI.Time.ElapsedTime;
             PruneImpactRearm(now);
 
@@ -205,6 +212,8 @@ namespace TitanOrbit.ECS
                     if (result == AsteroidContactResult.MegaPlow
                         || result == AsteroidContactResult.Overkill)
                         _megaUnconstrained.Add(pair.Ship);
+                    else if (result == AsteroidContactResult.Wall)
+                        _asteroidEase.Add(pair.Ship);
                     if (result == AsteroidContactResult.Overkill)
                     {
                         _overkillRocks.Add(pair.Other);
@@ -281,6 +290,53 @@ namespace TitanOrbit.ECS
                     pos.y = 0f;
                     lt.Position = pos;
                     transformLookup[ship] = lt;
+                }
+            }
+
+            // Asteroid wall: PhysX depenetration and contact spin are one-tick teleports.
+            // The ghost snapshot is this pose. Clients interpolate position and rotation,
+            // then extrapolation corrects when the next sample is metres away or facing
+            // the other way — that is the blink. Ease the separation and keep the
+            // pre-collision heading (the motor slerp) so both axes stay continuous.
+            if (_asteroidEase.Count > 0)
+            {
+                const float MaxSeparationStep = 0.75f;
+                foreach (Entity ship in _asteroidEase)
+                {
+                    if (_megaUnconstrained.Contains(ship))
+                        continue;
+                    if (!snapshotLookup.HasComponent(ship) || !transformLookup.HasComponent(ship))
+                        continue;
+
+                    var snap = snapshotLookup[ship];
+                    float3 bounced = _working.TryGetValue(ship, out float3 worked) ? worked : snap.Linear;
+                    bounced.y = 0f;
+                    float3 continuous = snap.Position + bounced * fixedDt;
+                    continuous.y = 0f;
+
+                    var lt = transformLookup[ship];
+                    float3 popped = lt.Position;
+                    popped.y = 0f;
+                    float3 delta = popped - continuous;
+                    float distSq = math.lengthsq(delta);
+                    if (distSq > 1e-8f)
+                    {
+                        float dist = math.sqrt(distSq);
+                        float maxStep = math.max(MaxSeparationStep, math.length(bounced) * fixedDt);
+                        continuous += delta * (math.min(dist, maxStep) / dist);
+                    }
+
+                    continuous.y = 0f;
+                    lt.Position = continuous;
+                    lt.Rotation = snap.Rotation;
+                    transformLookup[ship] = lt;
+
+                    if (velocityLookup.HasComponent(ship))
+                    {
+                        var pv = velocityLookup[ship];
+                        pv.Angular = float3.zero;
+                        velocityLookup[ship] = pv;
+                    }
                 }
             }
 

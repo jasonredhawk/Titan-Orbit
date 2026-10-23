@@ -52,6 +52,11 @@ namespace TitanOrbit.UI
         int _hoverComparisonLevel = 1;
         string _hoverChassisId;
         /// <summary>
+        /// Gear only. Part profile this bar was painted against (Engine, Wing, …).
+        /// Empty on ship-tree bars and on drone / rocket / mine cards.
+        /// </summary>
+        string _hoverPartCategory;
+        /// <summary>
         /// True after one ForceRebuild attempt this enable. Hide() SetActive(false) the
         /// Orbit Menu backdrop; the next land can leave this tray at 0×0 until a rebuild.
         /// We only try once so a truly empty equipment bar does not rebuild every LateUpdate.
@@ -285,7 +290,7 @@ namespace TitanOrbit.UI
         /// two abilities stacked in each column. Fill amount = value / pool max.
         /// Regular hulls use the L1–L6 ceiling. Titans use the Titan catalog.
         /// Gear passes <see cref="ShipPowerBarComparisonPool.Components"/> so each
-        /// lane is this part divided by the best part in any family.
+        /// lane is this part divided by the best part of the same profile in any family.
         /// Slot 0 on a ship is sustained DPS. On gear that lane stays empty.
         /// Called when a tree node or gear tile paints its colourful stats bar.
         /// </summary>
@@ -293,6 +298,7 @@ namespace TitanOrbit.UI
         /// <param name="chassisId">Hull id, or a component leader key, so RANK 1 can say “this hull” / “this part”.</param>
         /// <param name="pool">Which catalog the maxes belong to. Unset follows <paramref name="megaPool"/>.</param>
         /// <param name="comparisonShipLevel">Gear only. Extra Level of the component ceiling.</param>
+        /// <param name="partCategory">Gear only. Same-profile bucket (Engine, Wing, …). Null mixes every part type.</param>
         public void ApplyBreakdown(
             ShipFamilyPowerScoreBreakdown breakdown,
             in ShipPowerBarStatMaxes globalMaxes,
@@ -300,14 +306,15 @@ namespace TitanOrbit.UI
             bool megaPool = false,
             string chassisId = null,
             ShipPowerBarComparisonPool pool = ShipPowerBarComparisonPool.Unset,
-            int comparisonShipLevel = 1)
+            int comparisonShipLevel = 1,
+            string partCategory = null)
         {
             EnsureSlotLayers();
             if (pool == ShipPowerBarComparisonPool.Unset)
                 pool = megaPool ? ShipPowerBarComparisonPool.Titans : ShipPowerBarComparisonPool.RegularShips;
 
             // Hover tips must use this paint's breakdown, pool, and hull or part id.
-            BindHoverContext(breakdown, in globalMaxes, pool, chassisId, comparisonShipLevel);
+            BindHoverContext(breakdown, in globalMaxes, pool, chassisId, comparisonShipLevel, partCategory);
             TrackWidth = Mathf.Max(0f, trackWidth);
             float nodeW = TrackWidth > 0.01f ? TrackWidth : 100f;
             float scaledBarHeight = barHeight * _heightScale;
@@ -339,18 +346,23 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// Gear cards: same five stacked lanes as the ship tree, but
-        /// <paramref name="componentMaxes"/> must be the all-families component ceiling
+        /// <paramref name="componentMaxes"/> must be the same-profile component ceiling
         /// at <paramref name="shipLevel"/>, not a whole-ship ceiling.
         /// </summary>
         /// <param name="componentLeaderKey">
         /// <see cref="ShipFamilyPowerBarNorm.FormatComponentLeaderKey"/> for this part.
+        /// </param>
+        /// <param name="partCategory">
+        /// <see cref="ShipFamilyPowerBarNorm.ResolveComponentCompareCategory"/> for this part.
+        /// Null keeps the mixed gear ceiling (drones, rockets, mines).
         /// </param>
         public void ApplyEquipmentBreakdown(
             ShipFamilyPowerScoreBreakdown breakdown,
             in ShipPowerBarStatMaxes componentMaxes,
             float trackWidth,
             string componentLeaderKey,
-            int shipLevel)
+            int shipLevel,
+            string partCategory = null)
         {
             ApplyBreakdown(
                 breakdown,
@@ -359,7 +371,8 @@ namespace TitanOrbit.UI
                 megaPool: false,
                 componentLeaderKey,
                 ShipPowerBarComparisonPool.Components,
-                shipLevel);
+                shipLevel,
+                partCategory);
         }
 
         /// <summary>
@@ -718,7 +731,8 @@ namespace TitanOrbit.UI
             in ShipPowerBarStatMaxes maxes,
             ShipPowerBarComparisonPool pool,
             string chassisId,
-            int comparisonShipLevel)
+            int comparisonShipLevel,
+            string partCategory = null)
         {
             _hoverBreakdown = breakdown;
             _hoverMaxes = maxes;
@@ -729,6 +743,8 @@ namespace TitanOrbit.UI
             _hoverMegaPool = _hoverPool == ShipPowerBarComparisonPool.Titans;
             _hoverChassisId = chassisId;
             _hoverComparisonLevel = Mathf.Max(1, comparisonShipLevel);
+            // Ship-tree paints pass null so a reused bar cannot keep a gear profile.
+            _hoverPartCategory = partCategory;
             EnsureHoverRelay();
         }
 
@@ -1237,7 +1253,8 @@ namespace TitanOrbit.UI
                 _hoverChassisId,
                 _hoverRelay,
                 _hoverPool,
-                _hoverComparisonLevel);
+                _hoverComparisonLevel,
+                _hoverPartCategory);
         }
 
         /// <summary>Slot wrapper rect (fill + dim). Null when the segment was never built.</summary>

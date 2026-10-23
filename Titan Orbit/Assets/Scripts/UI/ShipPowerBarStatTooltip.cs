@@ -78,6 +78,7 @@ namespace TitanOrbit.UI
         /// <param name="owner">Hover relay that owns this showing; used so another bar's exit cannot hide it.</param>
         /// <param name="pool">Regular ships, Titans, or gear components. Unset follows <paramref name="megaPool"/>.</param>
         /// <param name="componentShipLevel">Gear only. Extra Level of the component ceiling.</param>
+        /// <param name="partCategory">Gear only. Same-profile bucket (Engine, Wing, …). Null mixes every part type.</param>
         public static void Show(
             int statIndex,
             in ShipFamilyPowerScoreBreakdown breakdown,
@@ -87,7 +88,8 @@ namespace TitanOrbit.UI
             string thisChassisId,
             object owner,
             ShipPowerBarComparisonPool pool = ShipPowerBarComparisonPool.Unset,
-            int componentShipLevel = 1)
+            int componentShipLevel = 1,
+            string partCategory = null)
         {
             if (statIndex < 0 || statIndex >= ShipAbilityCategoryColors.PowerBreakdownStatCount)
                 return;
@@ -109,9 +111,9 @@ namespace TitanOrbit.UI
                 : breakdown.GetDisplayStatValue(statIndex);
             float maxValue = maxes.Get(statIndex);
             string body = ShipPowerBarStatCopy.BuildPowerBarTipBody(
-                statIndex, thisValue, maxValue, pool, thisChassisId, componentShipLevel);
+                statIndex, thisValue, maxValue, pool, thisChassisId, componentShipLevel, partCategory);
 
-            ApplyRankThumb(statIndex, pool, thisChassisId, thisValue, componentShipLevel);
+            ApplyRankThumb(statIndex, pool, thisChassisId, thisValue, componentShipLevel, partCategory);
 
             if (s_Chrome.CaptionLabel != null)
                 s_Chrome.CaptionLabel.text = "STAT TELEMETRY";
@@ -283,13 +285,14 @@ namespace TitanOrbit.UI
             ShipPowerBarComparisonPool pool,
             string thisChassisId,
             float thisValue,
-            int componentShipLevel)
+            int componentShipLevel,
+            string partCategory)
         {
             if (s_RankThumb == null)
                 return;
 
             ShipPowerBarStatLeader leader = ShipFamilyPowerBarNorm.GetStatLeader(
-                statIndex, pool, componentShipLevel);
+                statIndex, pool, componentShipLevel, partCategory);
             bool thisIsLeader = leader.MatchesChassis(thisChassisId)
                                 || (thisValue >= 0f && thisValue + 0.0001f >= leader.value);
             if (!leader.IsValid || thisIsLeader || leader.previewSprite == null)

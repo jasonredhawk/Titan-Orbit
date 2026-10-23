@@ -212,6 +212,32 @@ namespace TitanOrbit.Data
         /// </summary>
         public float ResolveCameraHeightMul() => Mul(cameraHeightMul);
 
+        /// <summary>
+        /// Planet-bonus multiplier for one gear power-bar lane (0 = unused DPS …
+        /// 9 = Troop Cap). Zero or unset becomes 1, same as <see cref="Apply"/>.
+        /// Hover ranking multiplies the part by this so a stronger planet roll
+        /// can outrank a higher base part of the same type.
+        /// </summary>
+        public float MultiplierForPowerBarStat(int statIndex)
+        {
+            float raw;
+            switch (statIndex)
+            {
+                case 1: raw = bulletSpeedMul; break;
+                case 2: raw = healthCapMul; break;
+                case 3: raw = healthRegenMul; break;
+                case 4: raw = energyCapMul; break;
+                case 5: raw = energyRegenMul; break;
+                case 6: raw = moveSpeedMul; break;
+                case 7: raw = turnSpeedMul; break;
+                case 8: raw = maxGemsMul; break;
+                case 9: raw = maxPeopleMul; break;
+                default: raw = 1f; break;
+            }
+
+            return Mul(raw);
+        }
+
         static float ScaleMul(float authored, float extra)
         {
             float m = Mul(authored);

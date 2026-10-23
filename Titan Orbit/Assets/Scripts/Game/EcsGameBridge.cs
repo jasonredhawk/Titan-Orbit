@@ -3311,6 +3311,47 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// One world name for the family that won a gear lane.
+        /// Planets that share a family share that family's stat roll, so they tie.
+        /// The rank line names a single place (lowest planet id) instead of every host.
+        /// Empty before the map has replicated.
+        /// Hover only — uses the per-frame planet cache, not a new query.
+        /// </summary>
+        public static string FormatTopPlanetNameForFamilyConfigIndex(int familyConfigIndex)
+        {
+            if (familyConfigIndex < 0)
+                return string.Empty;
+
+            EnsurePlanetStateCacheForFrame();
+            int bestPlanetId = int.MaxValue;
+            bool found = false;
+            foreach (var kv in s_PlanetStateByIdCache)
+            {
+                PlanetState planet = kv.Value;
+                int planetFamily = planet.IsHomePlanet
+                    ? PlanetShipFamilyAssignment.HomeFamilyConfigIndex
+                    : planet.ShipFamilyConfigIndex;
+                if (planetFamily != familyConfigIndex)
+                    continue;
+                if (planet.PlanetId >= bestPlanetId)
+                    continue;
+                bestPlanetId = planet.PlanetId;
+                found = true;
+            }
+
+            if (!found || !s_PlanetStateByIdCache.TryGetValue(bestPlanetId, out PlanetState winner))
+                return string.Empty;
+
+            int winnerFamily = winner.IsHomePlanet
+                ? PlanetShipFamilyAssignment.HomeFamilyConfigIndex
+                : winner.ShipFamilyConfigIndex;
+            PlanetShipFamilyConfig config = PlanetShipFamilyConfig.LoadDefault();
+            if (config != null)
+                return config.GetPlanetDisplayName(winner.PlanetId, winner.IsHomePlanet, winnerFamily);
+            return PlanetDisplayNames.Resolve(winner.PlanetId, winner.IsHomePlanet);
+        }
+
+        /// <summary>
         /// Rolled gun on the planet that owns this family this match. Home family is
         /// Laserbolt. −1 when no planet has that config index yet (join settle).
         /// </summary>
