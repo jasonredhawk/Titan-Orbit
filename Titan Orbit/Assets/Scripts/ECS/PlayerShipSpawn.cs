@@ -157,6 +157,7 @@ namespace TitanOrbit.ECS
             spawnPos.z += math.sin(angle) * 8f;
             spawnPos = ToroidalMapEcs.Wrap(spawnPos);
 
+            // Same Instantiates as TrySpawn. No connection — the server brain writes ShipInput.
             ship = em.Instantiate(shipPrefab);
             em.SetComponentData(ship, new ShipState
             {
@@ -183,13 +184,7 @@ namespace TitanOrbit.ECS
                 em.AddComponentData(ship, new ShipAttributeUpgradeState());
 
             if (!em.HasComponent<BotShipTag>(ship))
-                em.AddComponentData(ship, new BotShipTag { FromGhostCollection = 1 });
-            else
-            {
-                var tag = em.GetComponentData<BotShipTag>(ship);
-                tag.FromGhostCollection = 1;
-                em.SetComponentData(ship, tag);
-            }
+                em.AddComponentData(ship, new BotShipTag());
             if (!em.HasComponent<BotShipBrain>(ship))
                 em.AddComponentData(ship, new BotShipBrain());
 

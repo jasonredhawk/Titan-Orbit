@@ -4240,6 +4240,8 @@ namespace TitanOrbit.UI
             }
 
             orbitDockSidebar.RefreshDepositStatus(shipGems, bankBalance, planetGems, planetLevel);
+            // World name (Helios, Aetheris, …) sits above the gem plate.
+            orbitDockSidebar.RefreshOrbitPlanetName(storePlanetId);
             // Do NOT re-apply auto-deposit every sidebar refresh — that spammed SetWantDepositGems
             // RPCs and could race HideMenu / metronome clear on the Windows client.
             orbitDockSidebar.RefreshAutoDepositToggle(GetSavedAutoDepositGems());

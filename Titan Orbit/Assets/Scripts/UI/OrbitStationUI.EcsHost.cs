@@ -265,6 +265,7 @@ namespace TitanOrbit.UI
             }
 
             orbitDockSidebar.RefreshDepositStatus(shipGems, bankGems, planetGems, planetLevel);
+            orbitDockSidebar.RefreshOrbitPlanetName(storePlanetId);
         }
 
         partial void OnOrbitStationEcsHide()

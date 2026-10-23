@@ -654,75 +654,209 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Reads the viewed team's home world from the minimap home-planet list.
-        /// Home <c>PlanetId</c> is the team number (Team A = 1) and stays that id after a capture,
-        /// so this tab always shows that spawn world's reservoir. No planet-entity query —
-        /// <see cref="MinimapEcsEntitySync"/> already copied <c>PlanetState.CurrentGems</c> onto the blip.
+        /// Chooses which world's gem reservoir the bar shows, then paints its name, level, and fill.
+        /// Runs on the leaderboard refresh (about four times a second), not every frame.
         /// </summary>
-        /// <param name="team">Team whose leaderboard tab is open.</param>
-        /// <param name="current">Gems in the surface reservoir, clamped to the cap.</param>
-        /// <param name="max">Cap for the home world's current level (100 at level 1, doubles each level).</param>
-        /// <returns>False until that home blip exists. The bar then shows "- / -" instead of a fake zero.</returns>
-        bool TryReadHomePlanetGems(TeamId team, out float current, out float max)
+        /// <param name="viewedTeam">Team tab that is open. Its home world is the target until the first landing.</param>
+        void RefreshPlanetGemBar(TeamId viewedTeam)
         {
-            current = 0f;
-            max = 0f;
-            if (_entitySync == null || team == TeamId.None)
-                return false;
-
-            IReadOnlyList<MinimapBlipAnchor> homes = _entitySync.HomePlanets;
-            if (homes == null)
-                return false;
-
-            // [TITAN-ORBIT] Spawn writes PlanetId = (int)team for homes. Neutrals use other ids.
-            int wantId = (int)team;
-            for (int i = 0; i < homes.Count; i++)
+            // --- Which world ---
+            int planetId = ResolveGemTargetPlanetId(viewedTeam);
+            MinimapBlipAnchor planet = FindPlanetAnchor(planetId);
+            if (planet == null)
             {
-                MinimapBlipAnchor home = homes[i];
-                if (home == null || !home.IsHomePlanet || home.PlanetId != wantId)
-                    continue;
-
-                int level = Mathf.Max(1, home.PlanetLevel);
-                max = PlanetEconomyMath.GetMaxGemsForLevel(level);
-                current = Mathf.Clamp(home.CurrentGems, 0f, max);
-                return true;
+                // Name can still resolve from the id. Gems wait for the blip so we never invent 0/100.
+                PaintPlanetGemBar(
+                    ResolveWorldName(planetId, IsHomePlanetId(planetId), familyIndex: -1),
+                    level: 0,
+                    current: 0f,
+                    max: 0f,
+                    fillColor: GemFillForOwner(TeamId.None),
+                    known: false,
+                    planetId);
+                return;
             }
 
-            return false;
+            // --- That world's reservoir ---
+            int level = Mathf.Max(1, planet.PlanetLevel);
+            float max = PlanetEconomyMath.GetMaxGemsForLevel(level);
+            float current = Mathf.Clamp(planet.CurrentGems, 0f, max);
+            PaintPlanetGemBar(
+                ResolveWorldName(planet.PlanetId, planet.IsHomePlanet, planet.ShipFamilyConfigIndex),
+                level,
+                current,
+                max,
+                GemFillForOwner(planet.Team),
+                known: true,
+                planet.PlanetId);
         }
 
         /// <summary>
-        /// Paints the home-world gem track under the team name and score.
-        /// The fill width is current/max. The same pair is drawn inside the bar.
-        /// Skips the text write when the rounded numbers have not changed (TMP assigns allocate).
+        /// Planet id the gem bar should follow.
+        /// A full gem-moon landing latches <see cref="ShipMoonDockState.MoonPlanetId"/>.
+        /// Leaving the moon does not clear the latch — the next different landing does.
+        /// With no latch yet, the open team tab's home id is used (Team A = 1).
         /// </summary>
-        /// <param name="current">Reservoir gems. Ignored when <paramref name="known"/> is false.</param>
-        /// <param name="max">Level cap. Zero cap draws an empty track.</param>
-        /// <param name="teamColor">Viewed team tint for the fill.</param>
-        /// <param name="known">False before the home ghost has arrived.</param>
-        void PaintHomeGemBar(float current, float max, Color teamColor, bool known)
+        /// <param name="viewedTeam">Team whose roster is open.</param>
+        /// <returns>Stable <c>PlanetState.PlanetId</c>, or 0 when there is no team and no landing yet.</returns>
+        int ResolveGemTargetPlanetId(TeamId viewedTeam)
         {
-            if (_gemFill == null || _gemValueText == null)
+            // Cached local-ship read. The bridge skips a map-wide gather while join settle is closed.
+            if (EcsGameBridge.TryGetLocalShipMoonDockState(out ShipMoonDockState dock)
+                && dock.IsFullyLanded
+                && dock.MoonPlanetId != 0)
+            {
+                _latchedMoonPlanetId = dock.MoonPlanetId;
+            }
+
+            if (_latchedMoonPlanetId != 0)
+                return _latchedMoonPlanetId;
+
+            if (viewedTeam == TeamId.None)
+                return 0;
+
+            // [TITAN-ORBIT] Home PlanetId is the team number. Neutrals start at 100.
+            return (int)viewedTeam;
+        }
+
+        /// <summary>
+        /// Finds a home or neutral blip with this <paramref name="planetId"/>.
+        /// Walks the minimap lists only — those already carry <c>CurrentGems</c> and level.
+        /// </summary>
+        /// <param name="planetId">Stable planet id. 0 never matches.</param>
+        /// <returns>The blip, or null when that world has not streamed in yet.</returns>
+        MinimapBlipAnchor FindPlanetAnchor(int planetId)
+        {
+            if (_entitySync == null || planetId == 0)
+                return null;
+
+            MinimapBlipAnchor found = FindPlanetInList(_entitySync.HomePlanets, planetId);
+            if (found != null)
+                return found;
+
+            return FindPlanetInList(_entitySync.Planets, planetId);
+        }
+
+        /// <summary>Linear search of one minimap planet list. Lists are small (homes plus neutrals).</summary>
+        static MinimapBlipAnchor FindPlanetInList(IReadOnlyList<MinimapBlipAnchor> anchors, int planetId)
+        {
+            if (anchors == null)
+                return null;
+
+            for (int i = 0; i < anchors.Count; i++)
+            {
+                MinimapBlipAnchor anchor = anchors[i];
+                if (anchor != null && anchor.PlanetId == planetId)
+                    return anchor;
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// True when <paramref name="planetId"/> is a team home (1–5). Used only to pick a
+        /// place name before the blip exists. Live blips use their own <c>IsHomePlanet</c> flag.
+        /// </summary>
+        static bool IsHomePlanetId(int planetId)
+        {
+            return planetId >= (int)TeamId.TeamA && planetId <= (int)TeamId.TeamE;
+        }
+
+        /// <summary>
+        /// Player-facing world name (Helios, Aetheris, …), same catalog the world label uses.
+        /// Designer <c>planetName</c> on the family config wins when that asset is present.
+        /// </summary>
+        static string ResolveWorldName(int planetId, bool isHome, int familyIndex)
+        {
+            if (planetId == 0)
+                return string.Empty;
+
+            if (s_PlanetNames == null)
+                s_PlanetNames = Resources.Load<PlanetShipFamilyConfig>("PlanetShipFamilyConfig");
+
+            if (s_PlanetNames != null)
+                return s_PlanetNames.GetPlanetDisplayName(planetId, isHome, familyIndex);
+
+            return PlanetDisplayNames.Resolve(planetId, isHome);
+        }
+
+        /// <summary>
+        /// Fill tint for the world that owns this reservoir. Unowned worlds use ice so the
+        /// track still shows a fill without pretending they belong to the open team tab.
+        /// </summary>
+        static Color GemFillForOwner(TeamId owner)
+        {
+            if (owner == TeamId.None)
+                return new Color(0.45f, 0.62f, 0.82f, 0.92f);
+
+            Color color = owner.ToColor();
+            color.a = 0.92f;
+            return color;
+        }
+
+        /// <summary>
+        /// Paints the world name, level, fill, and current/max under the team score.
+        /// Skips TMP writes when those values have not changed — assigning <c>.text</c> allocates.
+        /// </summary>
+        /// <param name="planetName">Catalog place name. Empty becomes "WORLD" once the blip is known.</param>
+        /// <param name="level">Planet level. Ignored while <paramref name="known"/> is false.</param>
+        /// <param name="current">Reservoir gems.</param>
+        /// <param name="max">Cap for <paramref name="level"/> (100 at level 1, doubles each level).</param>
+        /// <param name="fillColor">Owner tint, including alpha.</param>
+        /// <param name="known">False until a minimap blip for this planet exists.</param>
+        /// <param name="planetId">Stable id, so the title can change when the landing target changes.</param>
+        void PaintPlanetGemBar(
+            string planetName,
+            int level,
+            float current,
+            float max,
+            Color fillColor,
+            bool known,
+            int planetId)
+        {
+            if (_gemFill == null)
                 return;
 
             int cap = known ? Mathf.Max(0, Mathf.RoundToInt(max)) : 0;
             int shown = known ? Mathf.Clamp(Mathf.RoundToInt(current), 0, cap) : 0;
             float ratio = cap > 0 ? shown / (float)cap : 0f;
 
-            // Team tint on the filled portion. Empty track stays the dark plate behind it.
-            Color fill = teamColor;
-            fill.a = 0.92f;
-            _gemFill.color = fill;
+            // Owner tint on the filled portion. Empty track stays the dark plate behind it.
+            _gemFill.color = fillColor;
             _gemFill.fillAmount = ratio;
 
-            if (known == _gemShownKnown && shown == _gemShownCurrent && cap == _gemShownMax)
-                return;
+            if (_gemValueText != null &&
+                (known != _gemShownKnown || shown != _gemShownCurrent || cap != _gemShownMax))
+            {
+                _gemShownCurrent = shown;
+                _gemShownMax = cap;
+                // Numbers live in the track. The name and level are the caption above it.
+                _gemValueText.text = known ? shown + " / " + cap : "- / -";
+            }
+
+            if (_gemTitleText != null &&
+                (planetId != _gemShownPlanetId || level != _gemShownLevel || known != _gemShownKnown))
+            {
+                _gemShownPlanetId = planetId;
+                _gemShownLevel = level;
+                _gemTitleText.text = FormatGemBarTitle(planetName, level, known);
+            }
 
             _gemShownKnown = known;
-            _gemShownCurrent = shown;
-            _gemShownMax = cap;
-            // Numbers live in the track, not as a caption beside it.
-            _gemValueText.text = known ? shown + " / " + cap : "- / -";
+        }
+
+        /// <summary>
+        /// Caption above the track: place name, then the level in the ice caption color.
+        /// A dash until a blip exists, so a missing ghost is not labeled level 0.
+        /// </summary>
+        static string FormatGemBarTitle(string planetName, int level, bool known)
+        {
+            if (!known)
+                return "—";
+
+            string name = string.IsNullOrEmpty(planetName) ? "WORLD" : planetName;
+            int shownLevel = Mathf.Max(1, level);
+            return name + "  <size=85%><color=#9EB6D8>LV." + shownLevel + "</color></size>";
         }
 
         /// <summary>
@@ -864,9 +998,8 @@ namespace TitanOrbit.UI
             int teamScore = SumAnchorScores(_teamShips);
             ApplyViewedTeamHeader(viewedTeam, teamScore, viewedOwned, capturableTotal);
 
-            // Home-world reservoir under the title. Missing blip keeps the dash, not 0/100.
-            bool haveHome = TryReadHomePlanetGems(viewedTeam, out float gemCurrent, out float gemMax);
-            PaintHomeGemBar(gemCurrent, gemMax, teamColor, haveHome);
+            // World name, level, and reservoir. Landing on a moon retargets this bar.
+            RefreshPlanetGemBar(viewedTeam);
 
             if (_teamShips.Count == 0)
             {
@@ -1566,6 +1699,7 @@ namespace TitanOrbit.UI
             if (_panelRoot != null
                 && _titleText != null
                 && _scoreText != null
+                && _gemTitleText != null
                 && _gemFill != null
                 && _gemValueText != null
                 && _tabCycleButton != null
@@ -1704,10 +1838,25 @@ namespace TitanOrbit.UI
             scoreLayout.flexibleWidth = 0f;
             FitHeaderLabelWidth(_scoreText);
 
-            // --- Home gem bar: current / max, numbers drawn inside the track ---
-            // Sits on the same left/right inset as the title so it lines up with SCORE.
-            float gemTop = headerTop - HeaderHeight - GemBarGap;
-            var gemGo = new GameObject("HomeGemBar", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            // --- Planet gem block: world name + level, then current / max inside the track ---
+            // Same left/right inset as the team title so the caption lines up with SCORE.
+            float gemTitleTop = headerTop - HeaderHeight - GemBarGap;
+            _gemTitleText = CreateTmp(_panelRoot.transform, "PlanetGemTitle", 12f, TextAlignmentOptions.MidlineLeft,
+                new Color(0.92f, 0.95f, 1f, 1f));
+            var gemTitleRt = _gemTitleText.rectTransform;
+            gemTitleRt.anchorMin = new Vector2(0f, 1f);
+            gemTitleRt.anchorMax = new Vector2(1f, 1f);
+            gemTitleRt.pivot = new Vector2(0.5f, 1f);
+            gemTitleRt.anchoredPosition = new Vector2(0f, gemTitleTop);
+            gemTitleRt.sizeDelta = new Vector2(-(PanelSidePad * 2f + 4f), GemTitleHeight);
+            gemTitleRt.offsetMin = new Vector2(PanelSidePad + 4f, gemTitleRt.offsetMin.y);
+            gemTitleRt.offsetMax = new Vector2(-PanelSidePad, gemTitleRt.offsetMax.y);
+            _gemTitleText.fontStyle = FontStyles.Bold;
+            _gemTitleText.richText = true;
+            _gemTitleText.text = "—";
+
+            float gemTop = gemTitleTop - GemTitleHeight - GemTitleToBarGap;
+            var gemGo = new GameObject("PlanetGemBar", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
             gemGo.transform.SetParent(_panelRoot.transform, false);
             var gemRt = gemGo.GetComponent<RectTransform>();
             gemRt.anchorMin = new Vector2(0f, 1f);
@@ -1745,11 +1894,13 @@ namespace TitanOrbit.UI
             _gemValueText.text = "- / -";
             _gemShownCurrent = int.MinValue;
             _gemShownMax = int.MinValue;
+            _gemShownPlanetId = int.MinValue;
+            _gemShownLevel = int.MinValue;
             _gemShownKnown = false;
 
-            // --- Scroll area fills everything under the planet bar, title, and gem track ---
+            // --- Scroll area fills everything under the planet bar, title, name, and gem track ---
             float scrollTop = TopChromePad + PlanetControlBarHeight + 3f + HeaderHeight
-                + GemBarGap + GemBarHeight + 2f;
+                + GemBarGap + GemTitleHeight + GemTitleToBarGap + GemBarHeight + 2f;
             var scrollGo = new GameObject("Scroll", typeof(RectTransform), typeof(ScrollRect));
             scrollGo.transform.SetParent(_panelRoot.transform, false);
             var scrollRt = scrollGo.GetComponent<RectTransform>();

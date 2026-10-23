@@ -12,11 +12,6 @@ namespace TitanOrbit.ECS
     /// </summary>
     public struct BotShipTag : IComponentData
     {
-        /// <summary>
-        /// 1 when this hull was instantiated from the GhostCollection ship prefab.
-        /// 0 means the map spawned it before that prefab existed, so clients have no mesh.
-        /// </summary>
-        public byte FromGhostCollection;
     }
 
     /// <summary>

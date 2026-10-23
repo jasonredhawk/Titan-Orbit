@@ -9,12 +9,11 @@ using Unity.Transforms;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Spawns, despawns, and respawns AI ships while <see cref="TitanOrbitDebugFlags.AiShips"/> is on.
-    /// The inspector count is a per-team ceiling. Humans already on that team take slots first,
-    /// so a team of 12 with 11 configured bots keeps 11 bots beside one player and drops a bot
-    /// when a second player joins. Leaving brings a bot back while the ceiling still has room.
+    /// Spawns one AI hull per open team slot, the same way <see cref="PlayerShipSpawn.TrySpawn"/>
+    /// spawns a player. A living bot is left alone. It is destroyed only when a human takes
+    /// the slot, or when AI ships are turned off. Death sends it home in place — it is not
+    /// replaced with a new ghost.
     /// Runs on the dedicated server (WebGL clients only render the ghosts).
-    /// Runs after death bookkeeping so a dead bot can be sent home once the respawn timer elapses.
     /// Map size is not required here — home placement comes from <see cref="ShipHomeSpawnLogic"/>.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
@@ -23,18 +22,14 @@ namespace TitanOrbit.ECS
     public partial struct BotShipSpawnSystem : ISystem
     {
         EntityQuery _bots;
-        /// <summary>
-        /// One bit per team slot. Set when that slot has a collection hull, or after the
-        /// pre-collection copy was removed once. Stops a bad flag from spawning a new ship every tick.
-        /// </summary>
-        ulong _slotSettled;
 
         public void OnCreate(ref SystemState state)
         {
-            // ShipState is optional — leftover husks often lost it and must still be found.
             _bots = state.GetEntityQuery(
+                ComponentType.ReadOnly<BotShipTag>(),
                 ComponentType.ReadOnly<ShipTag>(),
-                ComponentType.ReadOnly<GhostOwner>());
+                ComponentType.ReadOnly<GhostOwner>(),
+                ComponentType.ReadOnly<ShipState>());
         }
 
         public void OnUpdate(ref SystemState state)
@@ -70,10 +65,11 @@ namespace TitanOrbit.ECS
                 ? PlanetGemMoonOrbitClock.GetElapsedSeconds(networkTime, hz, includeTickFraction: false)
                 : SystemAPI.Time.ElapsedTime;
 
+            // Players spawn after the ghost collection exists. Bots must wait for that same prefab.
             bool collectionReady = PlayerShipSpawn.IsShipGhostCollectionReady(em);
             using var entities = _bots.ToEntityArray(Allocator.Temp);
             using var owners = _bots.ToComponentDataArray<GhostOwner>(Allocator.Temp);
-            var matches = new NativeList<int>(8, Allocator.Temp);
+            using var ships = _bots.ToComponentDataArray<ShipState>(Allocator.Temp);
 
             for (int teamIndex = 1; teamIndex <= BotShipIds.TeamCount; teamIndex++)
             {
@@ -90,135 +86,28 @@ namespace TitanOrbit.ECS
                 for (int slot = 0; slot < BotShipIds.MaxPerTeam; slot++)
                 {
                     int networkId = BotShipIds.ForSlot(team, slot);
-                    int bit = (teamIndex - 1) * BotShipIds.MaxPerTeam + slot;
-                    ulong bitMask = 1UL << bit;
-                    CollectSlot(owners, networkId, matches);
+                    int found = FindSlot(owners, networkId);
                     bool keep = slot < keepCount;
                     if (!keep)
                     {
-                        DestroyMatches(em, entities, matches, keeper: -1);
+                        if (found >= 0 && em.Exists(entities[found]))
+                            em.DestroyEntity(entities[found]);
                         continue;
                     }
 
-                    int keeper = PickKeeper(em, entities, matches);
-                    bool settled = (_slotSettled & bitMask) != 0;
-                    // A hull spawned before the ghost collection existed has no client mesh.
-                    // Remove that slot once, then the empty slot spawns a real ghost next tick.
-                    if (!settled && collectionReady && keeper >= 0 && IsLegacyHull(em, entities[keeper]))
+                    if (found < 0)
                     {
-                        _slotSettled |= bitMask;
-                        DestroyMatches(em, entities, matches, keeper: -1);
+                        if (collectionReady)
+                            PlayerShipSpawn.TrySpawnBot(em, networkId, team, orbitElapsed, out _, out _);
                         continue;
                     }
 
-                    if (keeper < 0)
-                    {
-                        if (collectionReady
-                            && PlayerShipSpawn.TrySpawnBot(em, networkId, team, orbitElapsed, out _, out _))
-                            _slotSettled |= bitMask;
+                    Entity ship = entities[found];
+                    if (!em.Exists(ship))
                         continue;
-                    }
-
-                    if (!IsLegacyHull(em, entities[keeper]))
-                        _slotSettled |= bitMask;
-
-                    DestroyMatches(em, entities, matches, keeper);
-                    Entity ship = entities[keeper];
-                    if (!em.Exists(ship) || !em.HasComponent<ShipState>(ship))
-                        continue;
-                    TryRespawn(em, ship, em.GetComponentData<ShipState>(ship), team, now, orbitElapsed);
+                    TryRespawn(em, ship, ships[found], team, now, orbitElapsed);
                 }
             }
-
-            matches.Dispose();
-        }
-
-        static void CollectSlot(NativeArray<GhostOwner> owners, int networkId, NativeList<int> matches)
-        {
-            matches.Clear();
-            for (int i = 0; i < owners.Length; i++)
-            {
-                if (owners[i].NetworkId == networkId)
-                    matches.Add(i);
-            }
-        }
-
-        /// <summary>
-        /// Prefers the hull that came from the ghost collection and already has a ghost id.
-        /// A linked child or an early empty copy scores lower and is deleted.
-        /// </summary>
-        static int PickKeeper(EntityManager em, NativeArray<Entity> entities, NativeList<int> matches)
-        {
-            int keeper = -1;
-            int bestScore = -1;
-            int bestIndex = -1;
-            for (int i = 0; i < matches.Length; i++)
-            {
-                int index = matches[i];
-                Entity entity = entities[index];
-                if (!em.Exists(entity))
-                    continue;
-                int score = KeeperScore(em, entity);
-                int entityIndex = entity.Index;
-                if (score > bestScore || (score == bestScore && entityIndex > bestIndex))
-                {
-                    bestScore = score;
-                    bestIndex = entityIndex;
-                    keeper = index;
-                }
-            }
-
-            return keeper;
-        }
-
-        static int KeeperScore(EntityManager em, Entity entity)
-        {
-            int score = 0;
-            if (em.HasComponent<ShipState>(entity))
-                score += 4;
-            if (em.HasComponent<BotShipTag>(entity)
-                && em.GetComponentData<BotShipTag>(entity).FromGhostCollection != 0)
-                score += 8;
-            if (em.HasComponent<GhostInstance>(entity)
-                && em.GetComponentData<GhostInstance>(entity).ghostId != 0)
-                score += 2;
-            return score;
-        }
-
-        static bool IsLegacyHull(EntityManager em, Entity entity)
-        {
-            if (!em.Exists(entity) || !em.HasComponent<BotShipTag>(entity))
-                return true;
-            return em.GetComponentData<BotShipTag>(entity).FromGhostCollection == 0;
-        }
-
-        /// <summary>
-        /// Destroys every match except <paramref name="keeper"/>. Pass -1 to destroy the whole slot.
-        /// Linked children are included so an empty ghost child is not left in the world.
-        /// </summary>
-        static void DestroyMatches(
-            EntityManager em,
-            NativeArray<Entity> entities,
-            NativeList<int> matches,
-            int keeper)
-        {
-            Entity keeperEntity = keeper >= 0 ? entities[keeper] : Entity.Null;
-            var roots = new NativeList<Entity>(matches.Length, Allocator.Temp);
-            for (int i = 0; i < matches.Length; i++)
-            {
-                int index = matches[i];
-                if (index == keeper)
-                    continue;
-                Entity entity = entities[index];
-                if (!em.Exists(entity))
-                    continue;
-                if (keeperEntity != Entity.Null && InLinkedGroup(em, keeperEntity, entity))
-                    continue;
-                roots.Add(entity);
-            }
-
-            DestroyGroups(em, roots);
-            roots.Dispose();
         }
 
         static int HumanCount(in TeamStateSingleton team, TeamId id)
@@ -302,11 +191,11 @@ namespace TitanOrbit.ECS
             state.Health = state.MaxHealth;
             state.CurrentGems = 0f;
             state.CurrentPeople = 0;
-            state.CurrentEnergy = state.MaxEnergy;
             state.IsDead = false;
             state.IsEliminated = false;
             state.OverdriveLockout = false;
             state.OverdriveBurstActive = false;
+            state.CurrentEnergy = state.MaxEnergy;
             em.SetComponentData(ship, state);
 
             if (em.HasComponent<LocalTransform>(ship))

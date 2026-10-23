@@ -364,6 +364,7 @@ namespace TitanOrbit.UI
             }
 
             _sidebar?.RefreshDepositStatus(shipGems, bankGems, planetGems, planetLevel);
+            _sidebar?.RefreshOrbitPlanetName(_storePlanetId);
         }
 
         void RefreshFromEcs()

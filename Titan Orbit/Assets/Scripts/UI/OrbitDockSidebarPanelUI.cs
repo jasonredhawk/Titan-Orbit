@@ -13,10 +13,12 @@ using UnityEngine.UI;
 namespace TitanOrbit.UI
 {
     /// <summary>
-    /// Narrow left Orbit Menu dock. The top of the panel stays put: GEM DEPOSITS,
-    /// then the SHIPS / GEAR / CARDS buttons, then the live camera of the ship you
-    /// are flying. Everything under that picture (family bonuses, weapons, toggles,
-    /// and the LOADOUT list) lives in a scroll view, so the camera cannot scroll away.
+    /// Narrow left Orbit Menu dock. The top of the panel stays put: a header for
+    /// the docked planet (world name, level, and gem reservoir bar, matching the
+    /// leaderboard), then GEM DEPOSITS, then the SHIPS / GEAR / CARDS buttons,
+    /// then the live camera of the ship you are flying. Everything under that
+    /// picture (family bonuses, weapons, toggles, and the LOADOUT list) lives
+    /// in a scroll view, so the camera cannot scroll away.
     /// The WEAPONS plate names each owned bullet type and what that shot does.
     /// Hover still opens the full ordnance tooltip.
     /// The CARDS nav button follows <see cref="GameManager.ShowOrbitMenuCardsPanel"/> (default off)
@@ -59,7 +61,22 @@ namespace TitanOrbit.UI
         private const float CurrentShipNodeHeight = 220f;
         /// <summary>Family name line kept with the pinned camera.</summary>
         private const float FamilyNameHeight = 18f;
-        private const float BankBalanceBannerHeight = 96f;
+        /// <summary>
+        /// World-name line above the reservoir track. Tall enough for the large
+        /// name and level (the leaderboard uses a smaller caption).
+        /// </summary>
+        private const float PlanetHeaderTitleHeight = 30f;
+        /// <summary>Gap between the name line and the gem track.</summary>
+        private const float PlanetHeaderTitleGap = 2f;
+        /// <summary>Gem track height. Matches the leaderboard reservoir bar so the count fits inside.</summary>
+        private const float PlanetHeaderBarHeight = 18f;
+        /// <summary>Top inset so the name is not flush with the screen edge.</summary>
+        private const float PlanetHeaderPadTop = 8f;
+        /// <summary>
+        /// Ship → Bank plate only. The planet level and reservoir used to sit on
+        /// the bottom of this plate; they now live in the header bar above it.
+        /// </summary>
+        private const float BankBalanceBannerHeight = 78f;
         private const float AutoDepositToggleHeight = 38f;
         public const string AutoDepositGemsPrefsKey = "TitanOrbit_AutoDepositGems";
         public const int AutoDepositGemsDefaultEnabled = 1;
@@ -73,9 +90,36 @@ namespace TitanOrbit.UI
         private RectTransform _loadoutHost;
         private RectTransform _equipmentHost;
         private TextMeshProUGUI _bankText;
+        /// <summary>
+        /// Caption above the reservoir track: place name plus level
+        /// ("Helios  LV.2"). Set by <see cref="ApplyPlanetHeaderTitle"/>.
+        /// </summary>
+        private TextMeshProUGUI _planetNameText;
+        /// <summary>
+        /// Filled horizontal image inside the reservoir track. Width is the
+        /// fraction of this level's gem cap the planet currently holds.
+        /// </summary>
+        private Image _planetGemFill;
+        /// <summary>Current / max gems, drawn inside the track.</summary>
+        private TextMeshProUGUI _planetGemValueText;
+        /// <summary>Catalog place name for the docked planet. Empty until an id arrives.</summary>
+        private string _dockedPlanetName = string.Empty;
+        /// <summary>Last planet id painted into the header. <see cref="int.MinValue"/> until the first name refresh.</summary>
+        private int _shownPlanetId = int.MinValue;
+        /// <summary>Last level written into the caption.</summary>
+        private int _shownPlanetLevel = int.MinValue;
+        /// <summary>Last rounded gem count written into the track.</summary>
+        private int _shownPlanetGems = int.MinValue;
+        /// <summary>Last gem cap written into the track.</summary>
+        private int _shownPlanetMax = int.MinValue;
+        /// <summary>True after the reservoir fill has been tinted for an owner.</summary>
+        private bool _haveShownPlanetOwner;
+        /// <summary>Owner whose color is on the fill. Ignored until <see cref="_haveShownPlanetOwner"/>.</summary>
+        private TeamId _shownPlanetOwner;
+        /// <summary>1×1 sprite so the track and fill are not invisible without a sliced panel sprite.</summary>
+        private static Sprite s_WhiteSprite;
         private TextMeshProUGUI _shipGemsValueText;
         private TextMeshProUGUI _bankValueText;
-        private TextMeshProUGUI _planetProgressText;
         private Button _autoDepositToggle;
         private Image _autoDepositToggleBg;
         private TextMeshProUGUI _autoDepositToggleStateLabel;
@@ -151,6 +195,9 @@ namespace TitanOrbit.UI
             // --- Ensure setup ---
             if (_built)
             {
+                // A script reload can drop the runtime header. Put it back above GEM DEPOSITS.
+                if (_planetNameText == null || _planetGemFill == null)
+                    CreatePlanetHeader();
                 if (_autoDepositToggle == null)
                     CreateAutoDepositToggle(_contentRoot);
                 if (_damageModeButton == null)
@@ -302,18 +349,21 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Builds the dock chrome that must stay on screen: the GEM DEPOSITS
-        /// plate, the SHIPS / GEAR buttons, and the live ship camera.
+        /// Builds the dock chrome that must stay on screen: the planet header
+        /// (name, level, gem bar), the GEM DEPOSITS plate, the SHIPS / GEAR
+        /// buttons, and the live ship camera.
         /// Called once from <see cref="EnsureBuilt"/>. These objects are direct
         /// children of the dock, above <c>SidebarScroll</c>, so the scroll view's
         /// mask cannot clip the picture and scrolling cannot move it.
         /// </summary>
         private void BuildFixedDockHeader()
         {
-            // --- GEM DEPOSITS, above the nav buttons ---
-            // [TITAN-ORBIT] Cargo → bank → planet level is the first thing the
-            // player reads when the Orbit Menu opens. It used to sit under the
-            // camera, inside the scroll, so a long LOADOUT hid it.
+            // --- Planet header, then GEM DEPOSITS ---
+            // [TITAN-ORBIT] Name, level, and the reservoir bar are the header.
+            // Ship cargo and the bank sit on the plate directly under that bar.
+            // Both used to live under the camera, inside the scroll, so a long
+            // LOADOUT hid them.
+            CreatePlanetHeader();
             const int gemPadH = 8;
             const int gemPadTop = 6;
             const int gemPadBottom = 4;
@@ -848,6 +898,79 @@ namespace TitanOrbit.UI
             SetAutoDepositToggleVisual(enabled, notify: false);
         }
 
+        /// <summary>
+        /// Paints the docked planet's world name (and retints the reservoir bar)
+        /// in the header above GEM DEPOSITS. Level and gem count are painted by
+        /// <see cref="RefreshDepositStatus"/> on the same header.
+        /// Called whenever the left dock refreshes (sidebar paint and deposit beats).
+        /// The string is the same catalog the world label and minimap use: a designer
+        /// <c>planetName</c> override wins, otherwise <see cref="PlanetDisplayNames"/>
+        /// picks a stable name from the planet id. Skips the text write when the
+        /// name has not changed, because assigning <c>TextMeshProUGUI.text</c> allocates.
+        /// </summary>
+        /// <param name="planetId">
+        /// Ghosted <c>PlanetState.PlanetId</c> for the moon you are orbiting.
+        /// Zero or negative clears the name.
+        /// </param>
+        public void RefreshOrbitPlanetName(int planetId)
+        {
+            // --- Make sure the header exists ---
+            EnsureBuilt();
+            if (_planetNameText == null)
+                return;
+
+            // --- Resolve, then dirty-check ---
+            // [TITAN-ORBIT] Names are not ghosted. Every client derives the same
+            // string from the planet id, so this caption matches the world stamp.
+            string raw = ResolveDockedPlanetName(planetId);
+            bool changed = planetId != _shownPlanetId
+                || !string.Equals(raw, _dockedPlanetName, StringComparison.Ordinal);
+            _shownPlanetId = planetId;
+            if (!changed)
+            {
+                // The place name stayed put, but capture can still recolor the bar.
+                ApplyPlanetGemFillColor(planetId);
+                return;
+            }
+
+            _dockedPlanetName = raw ?? string.Empty;
+            ApplyPlanetHeaderTitle();
+            ApplyPlanetGemFillColor(planetId);
+        }
+
+        /// <summary>
+        /// Player-facing world name for the docked planet. Live <c>PlanetState</c>
+        /// supplies the home flag and family index so a designer override wins.
+        /// If that body is not in the ghost set yet, the name is still deterministic
+        /// from the id (homes under 100, neutrals from 100 up).
+        /// </summary>
+        /// <param name="planetId">Stable planet id. Zero or negative returns empty.</param>
+        /// <returns>Display name, or empty when there is no planet to name.</returns>
+        static string ResolveDockedPlanetName(int planetId)
+        {
+            // --- No moon yet ---
+            if (planetId <= 0)
+                return string.Empty;
+
+            // --- Home vs neutral when the ghost is missing ---
+            // Homes use team ids 1–5. Neutrals start at 100. That split matches
+            // PlanetDisplayNames even before PlanetState replicates.
+            bool isHome = planetId < PlanetDisplayNames.NeutralPlanetIdBase;
+            int familyIndex = -1;
+            if (EcsGameBridge.TryGetPlanetStateByPlanetId(planetId, out PlanetState state))
+            {
+                isHome = state.IsHomePlanet;
+                familyIndex = state.ShipFamilyConfigIndex;
+            }
+
+            // --- Catalog (cached Resources asset; no per-frame load) ---
+            PlanetShipFamilyConfig config = PlanetShipFamilyConfig.LoadDefault();
+            if (config != null)
+                return config.GetPlanetDisplayName(planetId, isHome, familyIndex);
+
+            return PlanetDisplayNames.Resolve(planetId, isHome);
+        }
+
         public void RefreshBank(float contributedGems) =>
             RefreshDepositStatus(0f, contributedGems, 0f, 1);
 
@@ -864,21 +987,101 @@ namespace TitanOrbit.UI
             if (_bankValueText != null && _bankValueText.text != bankStr)
                 _bankValueText.text = bankStr;
 
-            if (_planetProgressText == null)
+            // Level and reservoir live in the header bar, not on this plate.
+            PaintDockedPlanetGemBar(planetGems, planetLevel);
+        }
+
+        /// <summary>
+        /// Caption above the track: place name, then the level in the same ice
+        /// color the leaderboard uses. A dash until a planet name has arrived.
+        /// </summary>
+        void ApplyPlanetHeaderTitle()
+        {
+            if (_planetNameText == null)
                 return;
 
-            planetLevel = Mathf.Max(1, planetLevel);
-            string planetStr;
-            if (planetLevel >= PlanetEconomyMath.MaxPlanetLevel)
-                planetStr = $"Planet L{planetLevel} · max";
+            // --- Unknown moon ---
+            string title;
+            if (string.IsNullOrEmpty(_dockedPlanetName))
+                title = "—";
             else
             {
-                float maxGems = PlanetEconomyMath.GetMaxGemsForLevel(planetLevel);
-                planetStr = $"Planet L{planetLevel} · {planetGems:F0}/{maxGems:F0}";
+                // Level arrives from the deposit refresh. Until then, show LV.1
+                // rather than a bare name that jumps when the first gem paint lands.
+                // The level uses the same size as the place name so both read as the header.
+                int level = _shownPlanetLevel == int.MinValue ? 1 : Mathf.Max(1, _shownPlanetLevel);
+                title = _dockedPlanetName + "  <color=#9EB6D8>LV." + level + "</color>";
             }
 
-            if (_planetProgressText.text != planetStr)
-                _planetProgressText.text = planetStr;
+            if (_planetNameText.text != title)
+                _planetNameText.text = title;
+        }
+
+        /// <summary>
+        /// Fills the header track the way the leaderboard reservoir bar does:
+        /// team-colored fill from the left, and "current / cap" inside the track.
+        /// Also writes the level into the caption when it changes.
+        /// Skips TMP writes when the numbers have not changed.
+        /// </summary>
+        /// <param name="planetGems">Gems currently stored on the docked planet.</param>
+        /// <param name="planetLevel">Planet level (at least 1). Cap doubles each level from 100.</param>
+        void PaintDockedPlanetGemBar(float planetGems, int planetLevel)
+        {
+            if (_planetGemFill == null)
+                return;
+
+            // --- Cap and fill ---
+            // [TITAN-ORBIT] Same math as the leaderboard: level 1 holds 100, each
+            // level doubles. The filled image clips that fraction from the left.
+            planetLevel = Mathf.Max(1, planetLevel);
+            int cap = Mathf.Max(0, Mathf.RoundToInt(PlanetEconomyMath.GetMaxGemsForLevel(planetLevel)));
+            int shown = Mathf.Clamp(Mathf.RoundToInt(planetGems), 0, cap);
+            _planetGemFill.fillAmount = cap > 0 ? shown / (float)cap : 0f;
+
+            if (_planetGemValueText != null &&
+                (shown != _shownPlanetGems || cap != _shownPlanetMax))
+            {
+                _shownPlanetGems = shown;
+                _shownPlanetMax = cap;
+                _planetGemValueText.text = shown + " / " + cap;
+            }
+
+            if (planetLevel != _shownPlanetLevel)
+            {
+                _shownPlanetLevel = planetLevel;
+                ApplyPlanetHeaderTitle();
+            }
+
+            ApplyPlanetGemFillColor(_shownPlanetId);
+        }
+
+        /// <summary>
+        /// Tints the reservoir fill with the planet owner's team color.
+        /// Unowned worlds use the same ice as the leaderboard so the track
+        /// still reads as a fill. Skips the write when the owner has not changed.
+        /// </summary>
+        /// <param name="planetId">Docked planet. Zero or negative stays ice.</param>
+        void ApplyPlanetGemFillColor(int planetId)
+        {
+            if (_planetGemFill == null || planetId == int.MinValue)
+                return;
+
+            // --- Owner from the ghost, then a stable tint ---
+            TeamId owner = TeamId.None;
+            if (planetId > 0 &&
+                EcsGameBridge.TryGetPlanetStateByPlanetId(planetId, out PlanetState state))
+                owner = state.Ownership;
+
+            if (_haveShownPlanetOwner && owner == _shownPlanetOwner)
+                return;
+
+            _haveShownPlanetOwner = true;
+            _shownPlanetOwner = owner;
+            Color color = owner == TeamId.None
+                ? new Color(0.45f, 0.62f, 0.82f, 0.92f)
+                : owner.ToColor();
+            color.a = 0.92f;
+            _planetGemFill.color = color;
         }
 
         public void RefreshCurrentShip(
@@ -986,6 +1189,141 @@ namespace TitanOrbit.UI
             }
         }
 
+        /// <summary>
+        /// Builds the planet header at the top of the left dock, above GEM DEPOSITS.
+        /// The caption is the world name and level. Under it is a reservoir track
+        /// styled like the leaderboard gem bar: dark plate, team-colored fill from
+        /// the left, and the current / cap count inside the track.
+        /// Called once from <see cref="BuildFixedDockHeader"/>, and again from
+        /// <see cref="EnsureBuilt"/> if a script reload dropped the widgets.
+        /// Text stays as a dash until <see cref="RefreshOrbitPlanetName"/> runs.
+        /// </summary>
+        private void CreatePlanetHeader()
+        {
+            // --- Replace a previous name-only row ---
+            // [UNITY] Destroy is end-of-frame. The new host uses a different name
+            // so this frame still has one live header. SetAsFirstSibling keeps it
+            // above GEM DEPOSITS when the rest of the dock already exists.
+            DestroyChildIfPresent(transform, "PlanetNameHost");
+            DestroyChildIfPresent(transform, "PlanetHeaderHost");
+
+            const int padH = 8;
+            const int padBottom = 2;
+            float stack = PlanetHeaderTitleHeight + PlanetHeaderTitleGap + PlanetHeaderBarHeight;
+            var host = new GameObject("PlanetHeaderHost");
+            host.transform.SetParent(transform, false);
+            host.transform.SetAsFirstSibling();
+            var hostLe = host.AddComponent<LayoutElement>();
+            hostLe.preferredHeight = stack + PlanetHeaderPadTop + padBottom;
+            hostLe.minHeight = hostLe.preferredHeight;
+            hostLe.flexibleHeight = 0f;
+            hostLe.flexibleWidth = 1f;
+            var hostVlg = host.AddComponent<VerticalLayoutGroup>();
+            hostVlg.spacing = PlanetHeaderTitleGap;
+            hostVlg.padding = new RectOffset(padH, padH, (int)PlanetHeaderPadTop, padBottom);
+            hostVlg.childAlignment = TextAnchor.UpperCenter;
+            hostVlg.childControlWidth = true;
+            hostVlg.childControlHeight = true;
+            hostVlg.childForceExpandWidth = true;
+            hostVlg.childForceExpandHeight = false;
+
+            // --- Name + level (rich text, same ice "LV." as the leaderboard) ---
+            // Larger than the leaderboard caption: this line is the dock header.
+            _planetNameText = CreateBodyLabel(host.transform, "PlanetName", "—", PlanetHeaderTitleHeight);
+            _planetNameText.fontSize = 22f;
+            _planetNameText.fontStyle = FontStyles.Bold;
+            _planetNameText.alignment = TextAlignmentOptions.Center;
+            _planetNameText.color = new Color(0.92f, 0.95f, 1f, 1f);
+            _planetNameText.richText = true;
+            _planetNameText.enableWordWrapping = false;
+            _planetNameText.overflowMode = TextOverflowModes.Ellipsis;
+
+            // --- Reservoir track ---
+            // [UNITY] Filled horizontal clips the owner tint from the left as the
+            // planet fills toward this level's cap. The count sits on top of both
+            // the empty plate and the bright fill, so it gets a dark outline.
+            var barGo = new GameObject("PlanetGemBar");
+            barGo.transform.SetParent(host.transform, false);
+            var barLe = barGo.AddComponent<LayoutElement>();
+            barLe.preferredHeight = PlanetHeaderBarHeight;
+            barLe.minHeight = PlanetHeaderBarHeight;
+            barLe.flexibleHeight = 0f;
+            barLe.flexibleWidth = 1f;
+            var track = barGo.AddComponent<Image>();
+            track.sprite = GetWhiteSprite();
+            track.color = new Color(0.04f, 0.055f, 0.09f, 0.95f);
+            track.raycastTarget = false;
+
+            var fillGo = new GameObject("Fill", typeof(RectTransform));
+            fillGo.transform.SetParent(barGo.transform, false);
+            StretchFull(fillGo.GetComponent<RectTransform>());
+            _planetGemFill = fillGo.AddComponent<Image>();
+            _planetGemFill.sprite = GetWhiteSprite();
+            _planetGemFill.type = Image.Type.Filled;
+            _planetGemFill.fillMethod = Image.FillMethod.Horizontal;
+            _planetGemFill.fillOrigin = (int)Image.OriginHorizontal.Left;
+            _planetGemFill.fillAmount = 0f;
+            _planetGemFill.color = new Color(0.45f, 0.62f, 0.82f, 0.92f);
+            _planetGemFill.raycastTarget = false;
+
+            var valueGo = new GameObject("Value", typeof(RectTransform));
+            valueGo.transform.SetParent(barGo.transform, false);
+            StretchFull(valueGo.GetComponent<RectTransform>());
+            _planetGemValueText = valueGo.AddComponent<TextMeshProUGUI>();
+            _planetGemValueText.text = "0 / 0";
+            _planetGemValueText.fontSize = 12f;
+            _planetGemValueText.fontStyle = FontStyles.Bold;
+            _planetGemValueText.alignment = TextAlignmentOptions.Center;
+            _planetGemValueText.color = new Color(0.94f, 0.96f, 1f, 1f);
+            _planetGemValueText.outlineWidth = 0.18f;
+            _planetGemValueText.outlineColor = new Color32(0, 0, 0, 220);
+            _planetGemValueText.raycastTarget = false;
+            ApplyFont(_planetGemValueText);
+
+            // A rebuild must repaint even if the last numbers are still in the fields.
+            // Clearing the id forces the next name refresh to rewrite the new caption.
+            _shownPlanetId = int.MinValue;
+            _shownPlanetGems = int.MinValue;
+            _shownPlanetMax = int.MinValue;
+            _shownPlanetLevel = int.MinValue;
+            _haveShownPlanetOwner = false;
+        }
+
+        /// <summary>
+        /// Stretches a widget to its parent. Used by the gem track's fill and count,
+        /// which are not in a layout group — the track's own layout element sets the size.
+        /// </summary>
+        static void StretchFull(RectTransform rt)
+        {
+            if (rt == null)
+                return;
+
+            rt.anchorMin = Vector2.zero;
+            rt.anchorMax = Vector2.one;
+            rt.offsetMin = Vector2.zero;
+            rt.offsetMax = Vector2.zero;
+            rt.pivot = new Vector2(0.5f, 0.5f);
+        }
+
+        /// <summary>
+        /// 1×1 white sprite for the reservoir track and fill. A sliced panel sprite
+        /// would not clip as a horizontal fill. Created once.
+        /// </summary>
+        static Sprite GetWhiteSprite()
+        {
+            if (s_WhiteSprite != null)
+                return s_WhiteSprite;
+
+            Texture2D texture = Texture2D.whiteTexture;
+            s_WhiteSprite = Sprite.Create(
+                texture,
+                new Rect(0f, 0f, texture.width, texture.height),
+                new Vector2(0.5f, 0.5f),
+                100f);
+            s_WhiteSprite.name = "OrbitDockWhite";
+            return s_WhiteSprite;
+        }
+
         private void CreateBankBalanceBanner(Transform parent)
         {
             // --- Create instance ---
@@ -1072,19 +1410,8 @@ namespace TitanOrbit.UI
                 "0",
                 new Color(1f, 0.92f, 0.55f, 1f));
 
-            var planetGo = new GameObject("PlanetProgress");
-            planetGo.transform.SetParent(bannerGo.transform, false);
-            var planetLe = planetGo.AddComponent<LayoutElement>();
-            planetLe.preferredHeight = 18f;
-            planetLe.minHeight = 16f;
-            planetLe.flexibleHeight = 0f;
-            _planetProgressText = planetGo.AddComponent<TextMeshProUGUI>();
-            _planetProgressText.text = "Planet L1 · 0/100";
-            _planetProgressText.fontSize = 11f;
-            _planetProgressText.alignment = TextAlignmentOptions.Center;
-            _planetProgressText.color = new Color(0.72f, 0.82f, 0.95f, 0.95f);
-            _planetProgressText.raycastTarget = false;
-            ApplyFont(_planetProgressText);
+            // Planet level and gem count used to be a third line here
+            // ("Planet L2 · 0/200"). That readout is the header bar above this plate.
         }
 
         TextMeshProUGUI CreateGemFlowColumn(Transform parent, string label, string value, Color valueColor)
