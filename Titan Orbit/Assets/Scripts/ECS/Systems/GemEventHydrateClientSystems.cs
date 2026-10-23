@@ -30,6 +30,7 @@ namespace TitanOrbit.ECS
             public uint Seed;
             public float SpawnServerTime;
             public GemVisualTint Tint;
+            public int ExclusiveClaimNetworkId;
         }
 
         struct PendingConsume
@@ -74,6 +75,7 @@ namespace TitanOrbit.ECS
                     Seed = r.Seed,
                     SpawnServerTime = r.SpawnServerTime,
                     Tint = (GemVisualTint)r.IsBonus,
+                    ExclusiveClaimNetworkId = r.ExclusiveClaimNetworkId,
                 });
                 destroyEcb.DestroyEntity(reqEntity);
             }
@@ -134,7 +136,8 @@ namespace TitanOrbit.ECS
                     var b = bursts[i];
                     float elapsed = GemClientSimStepper.CoastElapsedSeconds(em, now, b.SpawnServerTime);
                     ClientLocalGemSpawn.SpawnBurst(
-                        em, gemPrefab, b.Origin, b.Remaining, b.Seed, b.SpawnServerTime, b.Tint, elapsed);
+                        em, gemPrefab, b.Origin, b.Remaining, b.Seed, b.SpawnServerTime, b.Tint, elapsed,
+                        b.ExclusiveClaimNetworkId);
                 }
 
                 for (int i = 0; i < spawns.Length; i++)
@@ -153,7 +156,7 @@ namespace TitanOrbit.ECS
                 {
                     var b = bursts[i];
                     ClientLocalGemSpawn.DeferBurst(
-                        b.Origin, b.Remaining, b.Seed, b.SpawnServerTime, b.Tint);
+                        b.Origin, b.Remaining, b.Seed, b.SpawnServerTime, b.Tint, b.ExclusiveClaimNetworkId);
                 }
 
                 for (int i = 0; i < spawns.Length; i++)

@@ -28,6 +28,13 @@ namespace TitanOrbit.Simulation
         public float BurstIntensity;
         public int ExcludePickupNetworkId;
         public float ExcludePickupUntilServerTime;
+
+        /// <summary>
+        /// Ship that may pull this asteroid-destroy gem during the first-dibs window.
+        /// 0 = anyone. Not part of <see cref="GemSpawnMath.ComputeSpawnId"/>.
+        /// </summary>
+        public int ExclusiveClaimNetworkId;
+
         public float3 LaunchDir;
         public float3 AddVelocity;
         public float LaunchSpeedMul;
@@ -96,6 +103,7 @@ namespace TitanOrbit.Simulation
         public float SpawnServerTime;
         public int ExcludePickupNetworkId;
         public float ExcludePickupUntilServerTime;
+        public int ExclusiveClaimNetworkId;
     }
 
     /// <summary>
@@ -239,6 +247,7 @@ namespace TitanOrbit.Simulation
                 SpawnServerTime = recipe.SpawnServerTime,
                 ExcludePickupNetworkId = recipe.ExcludePickupNetworkId,
                 ExcludePickupUntilServerTime = recipe.ExcludePickupUntilServerTime,
+                ExclusiveClaimNetworkId = recipe.ExclusiveClaimNetworkId,
             };
             return true;
         }

@@ -249,6 +249,8 @@ namespace TitanOrbit.ECS
 
             // Server-only DoT buffer — first burn hit must not wait on a deferred ECB AddBuffer.
             BulletBankHitEffects.EnsureBurnBuffer(em, e);
+            // Per-ship health totals for destroy-gem first dibs. Not a ghost field.
+            AsteroidDamageCredit.Ensure(em, e);
 
             // --- Not a replicated ghost ---
             // [NETCODE] The prefab is a ghost asset (GhostCollection / bake), but asteroids are

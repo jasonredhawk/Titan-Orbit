@@ -1137,6 +1137,13 @@ namespace TitanOrbit.ECS
         /// <see cref="TitanOrbit.Simulation.GemVisualTint"/>. Yellow and blue are separate RPCs.
         /// </summary>
         public byte IsBonus;
+
+        /// <summary>
+        /// Ship that dealt the most health damage to the destroyed asteroid.
+        /// 0 = anyone may pull. Clients dim every other ship for
+        /// <c>DestroyClaimExclusiveSeconds</c>.
+        /// </summary>
+        public int ExclusiveClaimNetworkId;
     }
 
     /// <summary>
@@ -1261,6 +1268,12 @@ namespace TitanOrbit.ECS
 
         /// <summary>Deploy extend duration.</summary>
         public float TractorExtendDuration;
+
+        /// <summary>
+        /// Asteroid-destroy first-dibs ship, or 0. Late joiners need this so reserved
+        /// gems stay dim until the window ends.
+        /// </summary>
+        public int ExclusiveClaimNetworkId;
     }
 
     /// <summary>Server connection tag: live-gem catch-up RPCs dumped once.</summary>

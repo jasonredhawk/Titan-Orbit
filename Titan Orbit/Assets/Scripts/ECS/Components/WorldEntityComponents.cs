@@ -85,7 +85,8 @@ namespace TitanOrbit.ECS
         /// [TITAN-ORBIT] Bitmask of every team whose triangle covers this rock (TeamA=bit0…TeamE=bit4).
         /// Overlaps set multiple bits — the asteroid is “both teams” for extra mining / destroy
         /// yield (yellow tint). Client rock tint prefers the local team when their bit is set.
-        /// Extra crystals are still free-for-all once they Instantiates.
+        /// Mining chips stay free-for-all. Destroy bursts are reserved for the top damager
+        /// for <see cref="GemExclusiveClaim"/>, then anyone may pull them.
         /// </summary>
         [GhostField] public byte TerritoryTeamsMask;
 
@@ -175,7 +176,7 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// <see cref="GhostOwner.NetworkId"/> of the ship that spilled this gem from
-        /// damage, or 0 if free for everyone (mining / asteroid burst).
+        /// damage, or 0 if that ship is not excluded (mining / asteroid burst).
         /// Paired with <see cref="ExcludePickupUntilServerTime"/>.
         /// </summary>
         public int ExcludePickupNetworkId;
@@ -185,6 +186,14 @@ namespace TitanOrbit.ECS
         /// show tractor beams again. 0 = no exclusion.
         /// </summary>
         public float ExcludePickupUntilServerTime;
+
+        /// <summary>
+        /// <see cref="GhostOwner.NetworkId"/> of the ship that dealt the most health
+        /// damage to the asteroid this crystal burst from. During
+        /// <see cref="GemExclusiveClaim"/> only that ship may tractor or absorb.
+        /// 0 = free for everyone (mining nuggets, cargo spills, no credited damage).
+        /// </summary>
+        public int ExclusiveClaimNetworkId;
 
         /// <summary>
         /// True after the server scoops this crystal into cargo. Clients hide via
@@ -375,5 +384,93 @@ namespace TitanOrbit.ECS
     public struct PlanetGemMoonShieldOwnerState : IComponentData
     {
         public TeamId Owner;
+    }
+
+    /// <summary>
+    /// Server-only running total of health removed from one asteroid by one ship.
+    /// Not ghosted — added at spawn after ghost identity is stripped. Overkill past
+    /// 0 HP is not counted; only health the rock actually lost.
+    /// </summary>
+    public struct AsteroidDamageCreditElement : IBufferElementData
+    {
+        /// <summary><see cref="GhostOwner.NetworkId"/> of the attacker. Bots count.</summary>
+        public int NetworkId;
+
+        /// <summary>Health actually subtracted (clamped to what the rock had left).</summary>
+        public float Damage;
+    }
+
+    /// <summary>
+    /// Accumulates per-ship asteroid health damage and names the top contributor
+    /// when the rock bursts its gems.
+    /// </summary>
+    public static class AsteroidDamageCredit
+    {
+        /// <summary>
+        /// Empty credit buffer on a freshly spawned rock. Clears a copied buffer so a
+        /// respawn cannot inherit the previous life's totals.
+        /// </summary>
+        public static void Ensure(EntityManager em, Entity asteroid)
+        {
+            if (!em.Exists(asteroid))
+                return;
+
+            if (!em.HasBuffer<AsteroidDamageCreditElement>(asteroid))
+                em.AddBuffer<AsteroidDamageCreditElement>(asteroid);
+            else
+                em.GetBuffer<AsteroidDamageCreditElement>(asteroid).Clear();
+        }
+
+        /// <summary>
+        /// Adds health this hit actually removed. No-op for unknown attackers
+        /// (<paramref name="networkId"/> ≤ 0) or when the rock has no credit buffer.
+        /// Does not add the buffer — that would be a structural change inside combat queries.
+        /// </summary>
+        public static void Record(EntityManager em, Entity asteroid, int networkId, float appliedDamage)
+        {
+            if (networkId <= 0 || appliedDamage <= 0.0001f || !em.Exists(asteroid))
+                return;
+            if (!em.HasBuffer<AsteroidDamageCreditElement>(asteroid))
+                return;
+
+            var credits = em.GetBuffer<AsteroidDamageCreditElement>(asteroid);
+            for (int i = 0; i < credits.Length; i++)
+            {
+                if (credits[i].NetworkId != networkId)
+                    continue;
+
+                var row = credits[i];
+                row.Damage += appliedDamage;
+                credits[i] = row;
+                return;
+            }
+
+            credits.Add(new AsteroidDamageCreditElement
+            {
+                NetworkId = networkId,
+                Damage = appliedDamage,
+            });
+        }
+
+        /// <summary>
+        /// Highest accumulated health damage. Exact ties keep the earlier contributor
+        /// (first ship to reach that total). 0 when nobody has credit.
+        /// </summary>
+        public static int ResolveTop(DynamicBuffer<AsteroidDamageCreditElement> credits)
+        {
+            int bestId = 0;
+            float best = 0f;
+            for (int i = 0; i < credits.Length; i++)
+            {
+                var row = credits[i];
+                if (row.NetworkId <= 0 || row.Damage <= best)
+                    continue;
+
+                best = row.Damage;
+                bestId = row.NetworkId;
+            }
+
+            return bestId;
+        }
     }
 }

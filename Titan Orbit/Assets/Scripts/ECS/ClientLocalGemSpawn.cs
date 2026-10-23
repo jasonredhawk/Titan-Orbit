@@ -36,6 +36,7 @@ namespace TitanOrbit.ECS
             public uint Seed;
             public float SpawnServerTime;
             public GemVisualTint Tint;
+            public int ExclusiveClaimNetworkId;
         }
 
         /// <summary>Removes a despawned gem from the SpawnId map.</summary>
@@ -69,7 +70,8 @@ namespace TitanOrbit.ECS
             float remainingValue,
             uint seed,
             float spawnServerTime,
-            GemVisualTint tint)
+            GemVisualTint tint,
+            int exclusiveClaimNetworkId = 0)
         {
             DeferredBursts.Add(new DeferredBurst
             {
@@ -78,6 +80,7 @@ namespace TitanOrbit.ECS
                 Seed = seed,
                 SpawnServerTime = spawnServerTime,
                 Tint = tint,
+                ExclusiveClaimNetworkId = exclusiveClaimNetworkId,
             });
         }
 
@@ -99,7 +102,8 @@ namespace TitanOrbit.ECS
                 var b = DeferredBursts[i];
                 float elapsed = GemClientSimStepper.CoastElapsedSeconds(em, nowServerTime, b.SpawnServerTime);
                 SpawnBurst(
-                    em, gemPrefab, b.Origin, b.RemainingValue, b.Seed, b.SpawnServerTime, b.Tint, elapsed);
+                    em, gemPrefab, b.Origin, b.RemainingValue, b.Seed, b.SpawnServerTime, b.Tint,
+                    elapsed, b.ExclusiveClaimNetworkId);
             }
 
             DeferredBursts.Clear();
@@ -179,7 +183,8 @@ namespace TitanOrbit.ECS
             uint seed,
             float spawnServerTime,
             GemVisualTint tint,
-            float integrateElapsedSeconds = 0f)
+            float integrateElapsedSeconds = 0f,
+            int exclusiveClaimNetworkId = 0)
         {
             origin.y = 0f;
             var settings = GemExplosionSettingsCache.ResolveOrDefault();
@@ -187,7 +192,11 @@ namespace TitanOrbit.ECS
             int count = GemBurstExpansion.FillRecipes(
                 origin, remainingValue, seed, spawnServerTime, tint, settings, BurstScratch);
             for (int i = 0; i < count; i++)
-                SpawnFromRecipe(em, gemPrefab, BurstScratch[i], integrateElapsedSeconds);
+            {
+                var recipe = BurstScratch[i];
+                recipe.ExclusiveClaimNetworkId = exclusiveClaimNetworkId;
+                SpawnFromRecipe(em, gemPrefab, recipe, integrateElapsedSeconds);
+            }
         }
 
         /// <summary>Hydrates from a late-join snapshot (pose is already current).</summary>
@@ -218,6 +227,7 @@ namespace TitanOrbit.ECS
                 SpawnServerTime = rpc.SpawnServerTime,
                 ExcludePickupNetworkId = rpc.ExcludePickupNetworkId,
                 ExcludePickupUntilServerTime = rpc.ExcludePickupUntilServerTime,
+                ExclusiveClaimNetworkId = rpc.ExclusiveClaimNetworkId,
             };
 
             byte phase = rpc.Phase;
@@ -268,6 +278,7 @@ namespace TitanOrbit.ECS
                 gem.Tint = (GemVisualTint)rpc.IsBonusGem;
                 gem.ExcludePickupNetworkId = rpc.ExcludePickupNetworkId;
                 gem.ExcludePickupUntilServerTime = rpc.ExcludePickupUntilServerTime;
+                gem.ExclusiveClaimNetworkId = rpc.ExclusiveClaimNetworkId;
                 em.SetComponentData(e, gem);
             }
 
@@ -439,6 +450,7 @@ namespace TitanOrbit.ECS
                 Tint = resolved.Tint,
                 ExcludePickupNetworkId = resolved.ExcludePickupNetworkId,
                 ExcludePickupUntilServerTime = resolved.ExcludePickupUntilServerTime,
+                ExclusiveClaimNetworkId = resolved.ExclusiveClaimNetworkId,
                 IsConsumed = false,
             });
             em.SetComponentData(e, new GemKinematics

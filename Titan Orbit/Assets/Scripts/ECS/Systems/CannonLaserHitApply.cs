@@ -423,6 +423,7 @@ namespace TitanOrbit.ECS
                     em, asteroid, muzzle, mapW, mapH, 0.0, out float3 rockSurface)
                 ? rockSurface
                 : xf.Position;
+            float healthBefore = rock.Health;
             rock.Health -= damage;
             rock.LastInteractTeam = attackerTeam;
             rock.LastInteractNetworkId = attackerNetworkId;
@@ -433,6 +434,7 @@ namespace TitanOrbit.ECS
             }
 
             em.SetComponentData(asteroid, rock);
+            AsteroidDamageCredit.Record(em, asteroid, attackerNetworkId, healthBefore - rock.Health);
             if (rock.IsDestroyed || rock.Health <= 0.01f)
                 AsteroidDeathPhysics.QueueStripColliders(ecb, em, asteroid);
         }

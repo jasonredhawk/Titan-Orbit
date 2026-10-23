@@ -21,6 +21,18 @@ namespace TitanOrbit.Simulation
         public const float DefaultSpeedRandomMax = 1f;
         public const float DefaultLinearDamping = 0.5f;
         public const float DefaultStopSpeedThreshold = 0.05f;
+
+        /// <summary>
+        /// How far a gem still coasts after an instant speed add, under default drag,
+        /// until it falls below <see cref="DefaultStopSpeedThreshold"/>.
+        /// Continuous form of the implicit-Euler damper: (speed − stop) / damping.
+        /// </summary>
+        public static float DefaultCoastDistance(float speed)
+        {
+            float damping = math.max(0.0001f, DefaultLinearDamping);
+            float leftover = math.max(0f, speed - DefaultStopSpeedThreshold);
+            return leftover / damping;
+        }
         public const float DefaultAngularSpeedMax = 1.5f;
         public const float DefaultAngularDamping = 0.05f;
 

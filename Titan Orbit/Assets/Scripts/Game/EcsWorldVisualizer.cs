@@ -149,8 +149,9 @@ namespace TitanOrbit.Game
         readonly Dictionary<Entity, GemVisualTint> _proxyGemBonusTint = new Dictionary<Entity, GemVisualTint>();
 
         /// <summary>
-        /// Local scoop fade for gems this ship expelled: 0 = normal tint, 1 = blocked
-        /// (alpha 0.3), 2 = delay elapsed (alpha 1). Other players' gems stay at 0.
+        /// Local scoop fade: 0 = normal tint, 1 = this ship cannot pull yet
+        /// (alpha 0.3 — own cargo spill, or another ship's asteroid first dibs),
+        /// 2 = delay elapsed (alpha 1).
         /// </summary>
         readonly Dictionary<Entity, byte> _proxyGemSelfPickupFade = new Dictionary<Entity, byte>();
 
@@ -1397,8 +1398,8 @@ namespace TitanOrbit.Game
                     float now = PlanetGemMoonOrbitClock.TryGetElapsedSeconds(out double tickNow, includeTickFraction: true)
                         ? (float)tickNow
                         : (float)Time.timeAsDouble;
-                    // Own expelled gems stay faded until SelfPickupBlockSeconds, then go opaque.
-                    // Other ships still see the normal tint — they can scoop immediately.
+                    // Dim while this ship cannot pull: own spill penalty, or another ship's
+                    // asteroid-destroy first dibs. The reserved ship keeps the normal tint.
                     byte fade = 0;
                     if (localNetworkId > 0 &&
                         GemSelfPickupBlock.IsPickupBlockedForShip(gemState, localNetworkId, now))

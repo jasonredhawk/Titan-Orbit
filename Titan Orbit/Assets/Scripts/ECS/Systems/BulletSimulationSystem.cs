@@ -1705,6 +1705,7 @@ namespace TitanOrbit.ECS
                         return true;
                     }
 
+                    float healthBefore = asteroid.Health;
                     asteroid.Health -= hitDamage;
                     // [TITAN-ORBIT] Destroy yellow / blue extras use last interactor ∩ mask / title.
                     asteroid.LastInteractTeam = (TeamId)b.OwnerTeam;
@@ -1719,6 +1720,8 @@ namespace TitanOrbit.ECS
                     asteroidHealthAfter = asteroid.Health;
                     asteroidLayoutSlot = AsteroidLayoutSlot.Read(state.EntityManager, bestEntity);
                     state.EntityManager.SetComponentData(bestEntity, asteroid);
+                    AsteroidDamageCredit.Record(
+                        state.EntityManager, bestEntity, b.OwnerNetworkId, healthBefore - asteroid.Health);
 
                     // [PHYSICS] Lethal hits drop the hull immediately. Waiting for
                     // AsteroidDestructionSystem left a server PhysX sphere after the client hid

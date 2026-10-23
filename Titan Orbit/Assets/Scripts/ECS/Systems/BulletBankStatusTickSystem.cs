@@ -214,6 +214,7 @@ namespace TitanOrbit.ECS
                     if (damage <= 0.0001f)
                         continue;
 
+                    float healthBefore = asteroid.Health;
                     asteroid.Health -= damage;
                     asteroid.LastInteractTeam = (TeamId)inst.SourceTeam;
                     asteroid.LastInteractNetworkId = inst.SourceNetworkId;
@@ -223,6 +224,11 @@ namespace TitanOrbit.ECS
                         asteroid.IsDestroyed = true;
                         AsteroidDeathPhysics.QueueStripColliders(ecb, state.EntityManager, entity);
                     }
+
+                    // Re-fetch the burn buffer: Record takes another buffer and drops this handle.
+                    AsteroidDamageCredit.Record(
+                        state.EntityManager, entity, inst.SourceNetworkId, healthBefore - asteroid.Health);
+                    instances = state.EntityManager.GetBuffer<BurnOverTimeElement>(entity);
 
                     float3 tickPos = BulletBankHitEffects.BurnTickWorldPosition(
                         bodyPos, transform.ValueRO.Rotation, inst.HitOffset);

@@ -992,6 +992,9 @@ namespace TitanOrbit.ECS
 
             // --- Apply combat damage ---
             // [TITAN-ORBIT] Health is independent of RemainingGems (AsteroidSettings ratios).
+            // Credit is health actually removed, so an overkill finisher does not outrank
+            // a ship that already took most of the rock.
+            float healthBefore = a.Health;
             a.Health -= damage;
             a.LastInteractTeam = interactTeam;
             a.LastInteractNetworkId = interactNetworkId;
@@ -1002,6 +1005,8 @@ namespace TitanOrbit.ECS
             }
 
             state.EntityManager.SetComponentData(asteroid, a);
+            AsteroidDamageCredit.Record(
+                state.EntityManager, asteroid, interactNetworkId, healthBefore - a.Health);
         }
 
         /// <summary>

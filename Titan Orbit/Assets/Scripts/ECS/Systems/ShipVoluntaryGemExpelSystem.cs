@@ -10,7 +10,7 @@ namespace TitanOrbit.ECS
 {
     /// <summary>
     /// Server-authoritative hold-V cargo dump. While <see cref="ShipInput.WantExpelGems"/>
-    /// is set, deducts <c>shipLevel + gem-capacity upgrades</c> (or leftover cargo) every
+    /// is set, deducts the square of the ship's level (or leftover cargo) every
     /// <see cref="GemEconomyConstants.VoluntaryGemExpelIntervalSeconds"/> and spawns one
     /// world gem along the ship's planar forward — not a random burst.
     /// <para>
@@ -80,10 +80,6 @@ namespace TitanOrbit.ECS
 
                 timer.ValueRW.Accum += dt;
 
-                int gemCapLevel = 0;
-                if (SystemAPI.HasComponent<ShipAttributeUpgradeState>(entity))
-                    gemCapLevel = SystemAPI.GetComponentRO<ShipAttributeUpgradeState>(entity).ValueRO.GemCapacity;
-
                 float3 forward = math.forward(transform.ValueRO.Rotation);
                 forward.y = 0f;
                 if (math.lengthsq(forward) < 0.01f)
@@ -111,7 +107,6 @@ namespace TitanOrbit.ECS
 
                     float amount = GemEconomyConstants.GetVoluntaryExpelAmount(
                         shipState.ValueRO.ShipLevel,
-                        gemCapLevel,
                         shipState.ValueRO.CurrentGems);
                     if (amount < GemEconomyConstants.MinGemSpawnValue)
                         break;

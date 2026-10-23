@@ -100,6 +100,15 @@ namespace TitanOrbit.Data
         [Min(0f)]
         public float SelfPickupBlockSeconds = 3f;
 
+        [Header("Asteroid destroy first dibs")]
+        [Tooltip(
+            "Seconds after an asteroid bursts its gems during which only the ship that " +
+            "dealt the most health damage to that rock may tractor or absorb them. " +
+            "Other ships see the dim blocked-gem tint. After this, any ship may pull. " +
+            "Mining chips and cargo spills are not reserved. Values at or below 0 fall back to 4.")]
+        [Min(0f)]
+        public float DestroyClaimExclusiveSeconds = 4f;
+
         /// <summary>Clamps min/max so Max ≥ Min and both stay in 1–10; keeps unit value ≥ 1.</summary>
         public void ClampCounts()
         {
@@ -120,6 +129,9 @@ namespace TitanOrbit.Data
             if (GemShrinkDurationSeconds > GemLifetimeSeconds)
                 GemShrinkDurationSeconds = GemLifetimeSeconds;
             SelfPickupBlockSeconds = Mathf.Max(0f, SelfPickupBlockSeconds);
+            // Old assets omit this field and deserialize 0. 0 means the four-second window.
+            if (DestroyClaimExclusiveSeconds <= 0f)
+                DestroyClaimExclusiveSeconds = 4f;
         }
 
         void OnValidate() => ClampCounts();

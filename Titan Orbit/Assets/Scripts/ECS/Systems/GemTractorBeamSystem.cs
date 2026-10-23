@@ -751,9 +751,10 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Loose gem with value, not already depositing, and not in the source ship's
-        /// damage-spill self-pickup penalty window. Does not read <c>IsBonusGem</c> or ship team —
-        /// yellow extra-yield crystals tractor like red, including for enemy ships.
+        /// Loose gem with value, not already depositing, and not blocked for this ship
+        /// (own damage-spill penalty, or another ship's asteroid-destroy first dibs).
+        /// Does not read <c>IsBonusGem</c> or ship team — yellow extra-yield crystals
+        /// tractor like red once the window allows this hull.
         /// </summary>
         static bool PassesGemEligibility(in GemState gem, int shipNetworkId, float nowServerTime) =>
             !gem.IsConsumed &&

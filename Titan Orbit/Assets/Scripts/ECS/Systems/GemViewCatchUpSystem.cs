@@ -71,6 +71,7 @@ namespace TitanOrbit.ECS
                         IsBonusGem = (byte)gem.ValueRO.Tint,
                         ExcludePickupNetworkId = gem.ValueRO.ExcludePickupNetworkId,
                         ExcludePickupUntilServerTime = gem.ValueRO.ExcludePickupUntilServerTime,
+                        ExclusiveClaimNetworkId = gem.ValueRO.ExclusiveClaimNetworkId,
                         TractorShipId = motion.ValueRO.TractorShipId,
                         TractorWingIndex = motion.ValueRO.TractorWingIndex,
                         TractorLockTick = motion.ValueRO.TractorLockTick,

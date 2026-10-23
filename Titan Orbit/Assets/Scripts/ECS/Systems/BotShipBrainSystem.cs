@@ -40,6 +40,12 @@ namespace TitanOrbit.ECS
         /// Farther enemies are ignored so a miner does not cross the map.
         /// </summary>
         const float EngageRange = 14f;
+        /// <summary>
+        /// Extra reach past the farthest a jam blast can still carry a gem.
+        /// Coast of <see cref="BulletBankHitEffects.MaxGemBlastImpulse"/> (8) at drag 0.5
+        /// is 15.9. Padding keeps that crystal inside the search.
+        /// </summary>
+        const float GemSearchPadding = 2f;
         const float DepositFill = 0.75f;
         const float FollowDistance = 8f;
         const float HoldDistance = 6f;
@@ -52,6 +58,13 @@ namespace TitanOrbit.ECS
         const float MineShotReach = 20f;
         /// <summary>Hull pickup is about 2.5. Coast onto the crystal inside this distance.</summary>
         const float CollectArrive = 1.6f;
+
+        /// <summary>
+        /// Loose-gem search. Reaches past the jam shove so a crystal pushed to the
+        /// end of that coast is still found, and the hull keeps flying to it.
+        /// </summary>
+        static float GemSearchRange =>
+            GemExplosionMath.DefaultCoastDistance(BulletBankHitEffects.MaxGemBlastImpulse) + GemSearchPadding;
         /// <summary>
         /// After thrust latches off, the hull must drift this far past the hold before
         /// thrust comes back. Stops the arrive-and-reverse twitch.
@@ -725,7 +738,9 @@ namespace TitanOrbit.ECS
                     aim = brain.Goal;
                     {
                         float dist = ToroidalMapEcs.ToroidalDistance(pos, aim, mapW, mapH);
-                        if (dist > EngageRange)
+                        // Past the jam coast the crystal is not one this search can own.
+                        // Inside it, keep flying — stopping here waits out the gem lifetime.
+                        if (dist > GemSearchRange)
                         {
                             thrust = false;
                             brain.ThrustHeld = 0;
@@ -1136,8 +1151,9 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// After the mine target is gone, scoop loose gems already within <see cref="EngageRange"/>.
-        /// Crystals farther out are left behind. A gem locked by another ship is left alone.
+        /// After the mine target is gone, scoop loose gems already within <see cref="GemSearchRange"/>.
+        /// That reach sits past the farthest a jam can shove a gem. Crystals farther out are
+        /// left behind. A gem locked by another ship is left alone.
         /// The same nearby gem is kept until it is scooped or leaves that range.
         /// </summary>
         static bool TryCollectBurst(
@@ -1162,8 +1178,8 @@ namespace TitanOrbit.ECS
 
             float3 origin = gathering ? brain.CollectOrigin : brain.Goal;
             if (gathering &&
-                TryGemNear(gems, brain.Goal, 4f, networkId, nearby, seen, mapW, mapH, out float3 kept) &&
-                ToroidalMapEcs.ToroidalDistance(pos, kept, mapW, mapH) <= EngageRange)
+                TryGemNear(gems, brain.Goal, GemSearchRange, networkId, nearby, seen, mapW, mapH, out float3 kept) &&
+                ToroidalMapEcs.ToroidalDistance(pos, kept, mapW, mapH) <= GemSearchRange)
             {
                 SetCollect(ref brain, kept, origin);
                 return true;
@@ -1218,8 +1234,8 @@ namespace TitanOrbit.ECS
             out float3 match)
         {
             match = default;
-            gems.GatherNearby(pos, EngageRange, nearby, seen);
-            float best = EngageRange;
+            gems.GatherNearby(pos, GemSearchRange, nearby, seen);
+            float best = GemSearchRange;
             bool found = false;
             for (int n = 0; n < nearby.Length; n++)
             {

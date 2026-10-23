@@ -522,7 +522,8 @@ namespace TitanOrbit.ECS
                 serverElapsed, mapW, mapH, ecb, gemPrefab, gemExpulsionPerHullDamage,
                 sourceKind: blastKind,
                 sourceGhostId: blastGhost);
-            ApplyBlastToAsteroids(em, hitPoint, radius, asteroidCenter, skipEntity, mapW, mapH);
+            ApplyBlastToAsteroids(
+                em, hitPoint, radius, asteroidCenter, skipEntity, ownerNet, mapW, mapH);
             ApplyBlastToTurrets(em, hitPoint, radius, shipCenter, skipEntity, ownerTeam, serverElapsed, defenseTargets, mapW, mapH);
             ApplyBlastToDrones(em, hitPoint, radius, shipCenter, ownerTeam, ownerNet, droneTargets, mapW, mapH);
         }
@@ -642,6 +643,7 @@ namespace TitanOrbit.ECS
             float radius,
             float centerDamage,
             Entity skipEntity,
+            int ownerNetworkId,
             float mapW,
             float mapH)
         {
@@ -671,6 +673,7 @@ namespace TitanOrbit.ECS
                     continue;
 
                 var asteroid = states[i];
+                float healthBefore = asteroid.Health;
                 asteroid.Health -= splash;
                 if (asteroid.Health <= 0f)
                 {
@@ -679,6 +682,8 @@ namespace TitanOrbit.ECS
                 }
 
                 em.SetComponentData(entities[i], asteroid);
+                AsteroidDamageCredit.Record(
+                    em, entities[i], ownerNetworkId, healthBefore - asteroid.Health);
             }
         }
 
@@ -777,6 +782,12 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
+        /// Fastest speed one concussive blast may add to a loose gem.
+        /// Bot gem search stays past the coast this speed can still travel.
+        /// </summary>
+        public const float MaxGemBlastImpulse = 8f;
+
+        /// <summary>
         /// Instant outward blast on loose gems around <paramref name="hitPoint"/>.
         /// Skips consumed gems and live tractor locks. Does not wrap gem transforms.
         /// </summary>
@@ -799,7 +810,7 @@ namespace TitanOrbit.ECS
             float radius = (push.radius > 0.1f ? push.radius : 6f) * strength;
             float force = (push.magnitude > 0f ? push.magnitude : 12f) * strength;
             // Gems are scripted pickups (explosion speeds ~2); keep the blast readable, not a teleport.
-            float impulse = math.min(force * 0.4f, 8f);
+            float impulse = math.min(force * 0.4f, MaxGemBlastImpulse);
             AddGemVelocityInRadius(em, hitPoint, radius, impulse, towardCenter: false, mapW, mapH);
         }
 

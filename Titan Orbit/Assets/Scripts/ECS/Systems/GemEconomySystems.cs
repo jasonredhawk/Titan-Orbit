@@ -110,15 +110,16 @@ namespace TitanOrbit.ECS
         public const float VoluntaryGemExpelLaunchSpeedMul = 2f;
 
         /// <summary>
-        /// Cargo dumped on one V-key pulse: <c>shipLevel + gemCapacity upgrades</c>,
-        /// or leftover hold if smaller. Level 6 with 6 gem-capacity upgrades → 12.
+        /// Cargo dumped on one V-key pulse: the square of the ship's level,
+        /// or leftover hold if smaller. Level 1 → 1, level 2 → 4, level 3 → 9,
+        /// level 4 → 16, level 5 → 25, level 6 → 36.
         /// </summary>
         /// <param name="shipLevel">Current hull level (1 = starter).</param>
-        /// <param name="gemCapacityLevel">Bottom-HUD gem-capacity upgrade count.</param>
         /// <param name="currentGems">Cargo remaining on the ship right now.</param>
-        public static float GetVoluntaryExpelAmount(int shipLevel, int gemCapacityLevel, float currentGems)
+        public static float GetVoluntaryExpelAmount(int shipLevel, float currentGems)
         {
-            float fullChunk = math.max(1, shipLevel) + math.max(0, gemCapacityLevel);
+            int level = math.max(1, shipLevel);
+            float fullChunk = level * level;
             return math.min(fullChunk, math.max(0f, currentGems));
         }
 
@@ -1267,12 +1268,11 @@ namespace TitanOrbit.ECS
                     rpcScale = 1f;
 
                 float bonusExtra = 0f;
-                // --- Territory gem bonus on destroy burst (extra yield, not exclusive loot) ---
+                // --- Territory gem bonus on destroy burst (extra yield, not exclusive loot colour) ---
                 // [TITAN-ORBIT] Extra yellow crystals Instantiates only when the last miner/shooter
                 // owns this rock (mask bit). Enemy-tinted asteroids must not dump bonus yield on
-                // kill. The gems themselves are free-for-all once they exist.
-                // Live PIT: stored TerritoryTeamsMask stays 0 until the 1s territory refresh,
-                // so team-tinted rocks used to dump only red leftovers.
+                // kill. Red, yellow, and blue bursts share one first-dibs window: the ship that
+                // removed the most health may pull them immediately; everyone else waits.
                 byte territoryMask = PlanetConnectionGraphCache.ResolveAsteroidTerritoryMask(
                     dead.TerritoryTeamsMask, dead.TerritoryTeam, pos, mapW, mapH);
                 if (dead.LastInteractTeam != TeamId.None &&
@@ -1298,23 +1298,34 @@ namespace TitanOrbit.ECS
 
                 if (canSpawnGems && remaining >= GemEconomyConstants.MinGemSpawnValue)
                 {
+                    // Health actually removed, not the last hit. 0 when the rock was only mined.
+                    int exclusiveClaimNetworkId = 0;
+                    if (em.HasBuffer<AsteroidDamageCreditElement>(entity))
+                    {
+                        exclusiveClaimNetworkId = AsteroidDamageCredit.ResolveTop(
+                            em.GetBuffer<AsteroidDamageCreditElement>(entity));
+                    }
+
+                    if (settings.DestroyClaimExclusiveSeconds <= 0f)
+                        exclusiveClaimNetworkId = 0;
+
                     // Deterministic seed so client immediate burst can match count/feel closely.
                     uint seed = math.hash(new uint2((uint)entity.Index, math.hash(pos)));
                     SpawnAsteroidDestructionGems(
                         ecb, gemPrefab, pos, remaining, seed, settings, spawnTime,
-                        GemVisualTint.Standard);
+                        GemVisualTint.Standard, exclusiveClaimNetworkId);
                     if (bonusExtra > 0f)
                     {
                         SpawnAsteroidDestructionGems(
                             ecb, gemPrefab, pos, bonusExtra, seed + 1337u, settings, spawnTime,
-                            GemVisualTint.TerritoryBonus);
+                            GemVisualTint.TerritoryBonus, exclusiveClaimNetworkId);
                     }
 
                     if (minerExtra > 0f)
                     {
                         SpawnAsteroidDestructionGems(
                             ecb, gemPrefab, pos, minerExtra, seed + 2741u, settings, spawnTime,
-                            GemVisualTint.MinerCommander);
+                            GemVisualTint.MinerCommander, exclusiveClaimNetworkId);
                     }
                 }
 
@@ -1382,19 +1393,25 @@ namespace TitanOrbit.ECS
             uint seed,
             GemExplosionSettings settings,
             float spawnServerTime,
-            GemVisualTint tint)
+            GemVisualTint tint,
+            int exclusiveClaimNetworkId)
         {
             var recipes = new GemSpawnRecipe[GemExplosionMath.AbsoluteMaxGemCount];
             int count = GemBurstExpansion.FillRecipes(
                 pos, remaining, seed, spawnServerTime, tint, settings, recipes);
             for (int i = 0; i < count; i++)
             {
+                var recipe = recipes[i];
+                recipe.ExclusiveClaimNetworkId = exclusiveClaimNetworkId;
                 GemSpawning.SpawnFromRecipe(
-                    ecb, gemPrefab, recipes[i], settings, emitNetwork: false);
+                    ecb, gemPrefab, recipe, settings, emitNetwork: false);
             }
 
             if (count > 0)
-                GemNetNotify.SendBurst(ref ecb, pos, remaining, seed, spawnServerTime, tint);
+            {
+                GemNetNotify.SendBurst(
+                    ref ecb, pos, remaining, seed, spawnServerTime, tint, exclusiveClaimNetworkId);
+            }
         }
     }
 
@@ -1498,6 +1515,7 @@ namespace TitanOrbit.ECS
                 Tint = resolved.Tint,
                 ExcludePickupNetworkId = resolved.ExcludePickupNetworkId,
                 ExcludePickupUntilServerTime = resolved.ExcludePickupUntilServerTime,
+                ExclusiveClaimNetworkId = resolved.ExclusiveClaimNetworkId,
             });
             ecb.SetComponent(gem, new GemMotionState
             {
@@ -1713,29 +1731,86 @@ namespace TitanOrbit.ECS
             return age < blockSeconds;
         }
 
-        /// <summary>Tractor window — full designer self-pickup penalty.</summary>
+        /// <summary>Tractor window — self-pickup penalty, or someone else's destroy first dibs.</summary>
         public static bool IsTractorBlockedForShip(
             in GemState gem,
             int shipNetworkId,
             float nowServerTime)
         {
+            if (GemExclusiveClaim.IsBlockedForShip(gem, shipNetworkId, nowServerTime))
+                return true;
+
             var settings = GemExplosionSettingsCache.ResolveOrDefault();
             return IsBlockedForShip(
                 gem, shipNetworkId, nowServerTime, settings.SelfPickupBlockSeconds);
         }
 
         /// <summary>
-        /// Absorb-zone window — same delay as tractor. The spilling hull cannot scoop
-        /// gems that are still inside its own explosion.
+        /// Absorb-zone window — same delays as tractor. The spilling hull cannot scoop
+        /// its own explosion, and other hulls cannot scoop a reserved destroy burst.
         /// </summary>
         public static bool IsPickupBlockedForShip(
             in GemState gem,
             int shipNetworkId,
             float nowServerTime)
         {
+            if (GemExclusiveClaim.IsBlockedForShip(gem, shipNetworkId, nowServerTime))
+                return true;
+
             var settings = GemExplosionSettingsCache.ResolveOrDefault();
             return IsBlockedForShip(
                 gem, shipNetworkId, nowServerTime, settings.SelfPickupBlockSeconds);
+        }
+    }
+
+    /// <summary>
+    /// Asteroid-destroy gems are reserved for the ship that dealt the most health
+    /// damage to that rock. Other ships cannot tractor or absorb until the window
+    /// ends; the owner can pull immediately. Checked from
+    /// <see cref="GemState.SpawnServerTime"/> plus
+    /// <see cref="GemExplosionSettings.DestroyClaimExclusiveSeconds"/> on the
+    /// ServerTick clock — the same fail-open age rule as <see cref="GemSelfPickupBlock"/>.
+    /// </summary>
+    public static class GemExclusiveClaim
+    {
+        /// <summary>Used when a legacy settings asset still deserializes 0.</summary>
+        public const float DefaultWindowSeconds = 2f;
+
+        /// <summary>
+        /// True when <paramref name="shipNetworkId"/> is not the reserved ship and the
+        /// first-dibs window is still open. The reserved ship always returns false.
+        /// Unknown ids (≤ 0) stay blocked so a ship cannot scoop before its id exists.
+        /// A spawn stamp far ahead of this clock fails open.
+        /// </summary>
+        public static bool IsBlockedForShip(in GemState gem, int shipNetworkId, float nowServerTime)
+        {
+            int owner = gem.ExclusiveClaimNetworkId;
+            if (owner <= 0)
+                return false;
+            if (shipNetworkId == owner)
+                return false;
+
+            float window = WindowSeconds();
+            if (window <= 0f)
+                return false;
+
+            float spawn = gem.SpawnServerTime;
+            if (spawn <= 0f)
+                return false;
+
+            float age = nowServerTime - spawn;
+            if (age < -0.25f)
+                return false;
+
+            return age < window;
+        }
+
+        /// <summary>Designer window, or <see cref="DefaultWindowSeconds"/> when unset.</summary>
+        public static float WindowSeconds()
+        {
+            var settings = GemExplosionSettingsCache.ResolveOrDefault();
+            float window = settings.DestroyClaimExclusiveSeconds;
+            return window > 0f ? window : DefaultWindowSeconds;
         }
     }
 }

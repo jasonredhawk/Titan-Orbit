@@ -28,7 +28,8 @@ namespace TitanOrbit.ECS
             float remainingValue,
             uint seed,
             float spawnServerTime,
-            GemVisualTint tint)
+            GemVisualTint tint,
+            int exclusiveClaimNetworkId = 0)
         {
             origin.y = 0f;
             var rpc = new GemBurstRpc
@@ -38,6 +39,7 @@ namespace TitanOrbit.ECS
                 Seed = seed,
                 SpawnServerTime = spawnServerTime,
                 IsBonus = (byte)tint,
+                ExclusiveClaimNetworkId = exclusiveClaimNetworkId,
             };
             ViewInterestFanout.EmitPoint(ref ecb, rpc, origin, ViewInterestTuning.GemKeepMargin, 0);
         }

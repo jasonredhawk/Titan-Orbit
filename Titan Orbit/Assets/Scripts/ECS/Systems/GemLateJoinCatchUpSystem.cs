@@ -91,6 +91,7 @@ namespace TitanOrbit.ECS
                         IsBonusGem = (byte)s.Tint,
                         ExcludePickupNetworkId = s.ExcludePickupNetworkId,
                         ExcludePickupUntilServerTime = s.ExcludePickupUntilServerTime,
+                        ExclusiveClaimNetworkId = s.ExclusiveClaimNetworkId,
                         TractorShipId = motion[g].TractorShipId,
                         TractorWingIndex = motion[g].TractorWingIndex,
                         TractorLockTick = motion[g].TractorLockTick,

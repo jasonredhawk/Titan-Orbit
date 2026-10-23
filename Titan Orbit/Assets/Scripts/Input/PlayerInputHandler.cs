@@ -72,7 +72,7 @@ namespace TitanOrbit.Input
         /// <summary>
         /// True while V is held to dump cargo as world gems. Server pulses every
         /// <c>GemEconomyConstants.VoluntaryGemExpelIntervalSeconds</c> (0.5s = 2 dumps/sec).
-        /// Chunk size is ship level + gem-capacity upgrades.
+        /// Chunk size is the square of the ship's level (level 6 dumps 36).
         /// </summary>
         public bool ExpelGemsHeld =>
             !IsTextEntryFocused() &&
