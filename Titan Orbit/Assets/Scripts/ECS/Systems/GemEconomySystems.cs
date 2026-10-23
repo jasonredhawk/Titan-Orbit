@@ -1774,7 +1774,7 @@ namespace TitanOrbit.ECS
     public static class GemExclusiveClaim
     {
         /// <summary>Used when a legacy settings asset still deserializes 0.</summary>
-        public const float DefaultWindowSeconds = 2f;
+        public const float DefaultWindowSeconds = 4f;
 
         /// <summary>
         /// True when <paramref name="shipNetworkId"/> is not the reserved ship and the
