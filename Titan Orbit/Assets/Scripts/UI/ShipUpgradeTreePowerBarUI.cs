@@ -14,7 +14,8 @@ namespace TitanOrbit.UI
     /// and the rest of the lane is a dimmed matching color.
     /// Equipment cards use the same five stacked columns, but each lane fills against
     /// other components from every ship family — not against a whole hull. Hovering a
-    /// slot opens <see cref="ShipPowerBarStatTooltip"/> (stat details + small RANK 1).
+    /// slot that actually contributes opens <see cref="ShipPowerBarStatTooltip"/>
+    /// (stat details + small RANK 1). A gear lane that paints as zero has no card.
     /// Built at runtime by <see cref="Create"/> /
     /// <see cref="CreateInTrack"/>, or upgraded in place from the serialized node prefab.
     /// </summary>
@@ -1184,9 +1185,42 @@ namespace TitanOrbit.UI
             return nearest;
         }
 
+        /// <summary>
+        /// True when hovering this lane should open STAT TELEMETRY.
+        /// Gear lanes that paint as zero (no contribution from this part) do not.
+        /// Ship hull lanes still open, including an unarmed DPS slot the player
+        /// may want explained. Called from the hover probe before the card is built.
+        /// </summary>
+        /// <param name="statIndex">Slot 0–9 under the pointer.</param>
+        public bool SlotAcceptsStatHover(int statIndex)
+        {
+            if (statIndex < 0 || statIndex >= ShipAbilityCategoryColors.PowerBreakdownStatCount)
+                return false;
+
+            // --- Gear: empty lanes stay silent ---
+            // [TITAN-ORBIT] Slot 0 on a part is always 0 — a purchased weapon unlocks
+            // a bullet type, it is not added ship DPS. Other lanes are 0 when this
+            // part does not author that stat (a thruster has no Health Cap). Those
+            // tracks stay on the card as dim zeroes. The caller does not want a
+            // hover card that only restates zero. Same cutoff as the fill paint
+            // in ApplyBreakdown, so a minute nonzero sliver still tips.
+            if (_hoverPool == ShipPowerBarComparisonPool.Components)
+                return _hoverBreakdown.GetComponentCompareStatValue(statIndex) > 0.0001f;
+
+            return true;
+        }
+
         /// <summary>Opens the shared STAT TELEMETRY card for one painted slot.</summary>
         public void ShowStatTooltip(int statIndex)
         {
+            // Zero gear lanes never open a card. Hide in case the pointer slid
+            // here from a lane that did contribute.
+            if (!SlotAcceptsStatHover(statIndex))
+            {
+                ShipPowerBarStatTooltip.HideIfOwner(_hoverRelay);
+                return;
+            }
+
             // Prefer the slot so the card sits beside the hovered lane. A 0px slot
             // (stale layout) would park the tip at the origin — use the dark tray instead.
             RectTransform anchor = GetSlotRect(statIndex);

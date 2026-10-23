@@ -26,8 +26,7 @@ MonoBehaviour:
     probeVolumeBlendStatesCS: {fileID: 0}
   m_RendererFeatures:
   - {fileID: 4724995757024405748}
-  - {fileID: 6761974728119602096}
-  m_RendererFeatureMap: f4e8aa5e9b8e9241b0cbbc51305cd75d
+  m_RendererFeatureMap: f4e8aa5e9b8e9241
   m_UseNativeRenderPass: 0
   xrSystemData: {fileID: 0}
   postProcessData: {fileID: 11400000, guid: 41439944d30ece34e96484bdb6645b55, type: 2}
@@ -69,17 +68,3 @@ MonoBehaviour:
   m_Name: Shapes Render Feature
   m_EditorClassIdentifier: ShapesRuntime::Shapes.ShapesRenderFeature
   m_Active: 1
---- !u!114 &6761974728119602096
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 875232a1324cecb4b92d69dab220d639, type: 3}
-  m_Name: Ship Fitted Shadow
-  m_EditorClassIdentifier: TitanOrbit.Game::TitanOrbit.Game.ShipFittedShadowFeature
-  m_Active: 1
-  applyShader: {fileID: 4800000, guid: 09f76d15d5e65f6408c188b1eb55cc51, type: 3}

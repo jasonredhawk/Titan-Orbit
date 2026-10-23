@@ -2,6 +2,7 @@ using TitanOrbit;
 using TitanOrbit.Core;
 using Unity.Entities;
 using Unity.Mathematics;
+using Unity.NetCode;
 
 namespace TitanOrbit.ECS
 {
@@ -11,6 +12,41 @@ namespace TitanOrbit.ECS
     /// </summary>
     public struct BotShipTag : IComponentData
     {
+        /// <summary>
+        /// 1 when this hull was instantiated from the GhostCollection ship prefab.
+        /// 0 means the map spawned it before that prefab existed, so clients have no mesh.
+        /// </summary>
+        public byte FromGhostCollection;
+    }
+
+    /// <summary>
+    /// Ghosted presentation override. While <see cref="Active"/> is set, clients draw this
+    /// hull with the commanding player's chassis and the bot's <see cref="ShipAccentColors"/>
+    /// carry that player's paint. Combat stats stay on <see cref="ShipState"/> — this does
+    /// not change health, guns, or the physics hull.
+    /// <para>
+    /// [NETCODE] Baked on the ship ghost. A runtime-only add does not replicate.
+    /// </para>
+    /// </summary>
+    public struct BotShipLook : IComponentData
+    {
+        /// <summary>1 while this bot is copying a commander's hull.</summary>
+        [GhostField] public byte Active;
+
+        /// <summary>PlanetShipFamilyConfig index of the commander's ship.</summary>
+        [GhostField] public byte FamilyIndex;
+
+        /// <summary>Commander upgrade-tree level used only for the mesh.</summary>
+        [GhostField] public int Level;
+
+        /// <summary>Commander branch used only for the mesh.</summary>
+        [GhostField] public int BranchIndex;
+
+        /// <summary>1 when the commander is flying a MEGA hull.</summary>
+        [GhostField] public byte Mega;
+
+        /// <summary>MEGA catalog index when <see cref="Mega"/> is 1.</summary>
+        [GhostField] public ushort MegaCatalogIndex;
     }
 
     /// <summary>
@@ -83,6 +119,8 @@ namespace TitanOrbit.ECS
         public byte LimitAudience;
         /// <summary>Ship to follow, escort, or attack. 0 when unused.</summary>
         public int SubjectNetworkId;
+        /// <summary>Player who sent the Comms Matrix sentence. 0 when unused.</summary>
+        public int CommanderNetworkId;
         public int PlanetId;
         public float WaypointX;
         public float WaypointZ;

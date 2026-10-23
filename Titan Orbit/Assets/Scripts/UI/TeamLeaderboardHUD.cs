@@ -5,6 +5,7 @@ using TitanOrbit.ECS;
 using TitanOrbit.Game;
 using TitanOrbit.Input;
 using TitanOrbit.NetCode;
+using TitanOrbit.Simulation;
 using TMPro;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -32,7 +33,11 @@ namespace TitanOrbit.UI
     /// planet (homes + neutrals). Each team's colored tab is that team's owned share; leftover
     /// width is still-neutral worlds. Clicking a team tab opens that roster. The title line
     /// shows the team name and worlds owned on the left, a TAB keycap, and that team's score
-    /// pinned to the right — the sum of every member's match score. A player earns 2 per
+    /// pinned to the right — the sum of every member's match score. Under that line, a gem
+    /// bar names one world and its level, then shows that world's surface gems over its cap.
+    /// Before the first moon landing the open team tab's home world is the target. A full
+    /// landing on a gem moon switches the bar to that planet and keeps it until the next
+    /// landing. A player earns 2 per
     /// deposited gem and 5 per delivered troop.
     /// An enemy kill pays half the victim's current score and leaves the victim with the other half.
     /// Layout uses the minimap's own rect size (not renderer bounds) so moving blips cannot drift
@@ -85,6 +90,31 @@ namespace TitanOrbit.UI
         TextMeshProUGUI _titleText;
         /// <summary>Team total, right edge of the title row. Separate from the name so it stays justified.</summary>
         TextMeshProUGUI _scoreText;
+        /// <summary>World name and level above the gem track. Rewritten only when the target planet or its level changes.</summary>
+        TextMeshProUGUI _gemTitleText;
+        /// <summary>
+        /// Owner-colored fill. <see cref="Image.fillAmount"/> is current gems divided by that world's cap.
+        /// </summary>
+        Image _gemFill;
+        /// <summary>Current / max drawn on top of the track so the numbers stay readable at any fill.</summary>
+        TextMeshProUGUI _gemValueText;
+        /// <summary>Last integers written into <see cref="_gemValueText"/>. MinValue forces the first paint.</summary>
+        int _gemShownCurrent = int.MinValue;
+        /// <summary>Last cap written into <see cref="_gemValueText"/>.</summary>
+        int _gemShownMax = int.MinValue;
+        /// <summary>Last planet id written into the title. MinValue forces the first paint.</summary>
+        int _gemShownPlanetId = int.MinValue;
+        /// <summary>Last level written into the title.</summary>
+        int _gemShownLevel = int.MinValue;
+        /// <summary>Whether the last paint had a planet blip. Flipping this rewrites the dashes.</summary>
+        bool _gemShownKnown;
+        /// <summary>
+        /// Planet the local ship last fully landed on. 0 until the first moon landing.
+        /// Takeoff does not clear it — only landing on a different moon replaces it.
+        /// </summary>
+        int _latchedMoonPlanetId;
+        /// <summary>Place-name catalog. Loaded once; null falls back to <see cref="PlanetDisplayNames"/>.</summary>
+        static PlanetShipFamilyConfig s_PlanetNames;
         /// <summary>Title row. Rebuilt after the name or score width changes so SCORE stays on the right.</summary>
         RectTransform _headerRect;
         /// <summary>Clickable TAB keycap. Same cycle as the keyboard key.</summary>
@@ -135,6 +165,14 @@ namespace TitanOrbit.UI
         // Tall enough to click a team slice with the mouse, not only to read the planet count.
         const float PlanetControlBarHeight = 18f;
         const float HeaderHeight = 24f;
+        /// <summary>World-name caption above the gem track.</summary>
+        const float GemTitleHeight = 14f;
+        /// <summary>Gap between that caption and the gem track.</summary>
+        const float GemTitleToBarGap = 1f;
+        /// <summary>Gem track under the world name. Same height as the planet-control bar so the numbers fit.</summary>
+        const float GemBarHeight = 18f;
+        /// <summary>Gap between the team score row and the world-name caption.</summary>
+        const float GemBarGap = 3f;
         const float TopChromePad = 4f;
         const float RowHeight = 40f;
         /// <summary>Command-deck rows sit a little taller so the gold rail and star rank read.</summary>
@@ -289,6 +327,8 @@ namespace TitanOrbit.UI
             if (_accentStripe != null)
                 _accentStripe.color = new Color(teamColor.r, teamColor.g, teamColor.b, 0.95f);
             ApplyViewedTeamHeader(TeamId.TeamA, 2170, 4, 10);
+            // Demo reservoir so the name, level, and gem track can be judged without a live world.
+            PaintPlanetGemBar("Helios", 3, 640f, 800f, TeamId.TeamA.ToColor(), known: true, planetId: 1);
 
             // Demo: 10 capturable worlds — A leads, some still neutral.
             int[] demoCounts = { 4, 2, 1, 0, 0 };
@@ -614,6 +654,78 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
+        /// Reads the viewed team's home world from the minimap home-planet list.
+        /// Home <c>PlanetId</c> is the team number (Team A = 1) and stays that id after a capture,
+        /// so this tab always shows that spawn world's reservoir. No planet-entity query —
+        /// <see cref="MinimapEcsEntitySync"/> already copied <c>PlanetState.CurrentGems</c> onto the blip.
+        /// </summary>
+        /// <param name="team">Team whose leaderboard tab is open.</param>
+        /// <param name="current">Gems in the surface reservoir, clamped to the cap.</param>
+        /// <param name="max">Cap for the home world's current level (100 at level 1, doubles each level).</param>
+        /// <returns>False until that home blip exists. The bar then shows "- / -" instead of a fake zero.</returns>
+        bool TryReadHomePlanetGems(TeamId team, out float current, out float max)
+        {
+            current = 0f;
+            max = 0f;
+            if (_entitySync == null || team == TeamId.None)
+                return false;
+
+            IReadOnlyList<MinimapBlipAnchor> homes = _entitySync.HomePlanets;
+            if (homes == null)
+                return false;
+
+            // [TITAN-ORBIT] Spawn writes PlanetId = (int)team for homes. Neutrals use other ids.
+            int wantId = (int)team;
+            for (int i = 0; i < homes.Count; i++)
+            {
+                MinimapBlipAnchor home = homes[i];
+                if (home == null || !home.IsHomePlanet || home.PlanetId != wantId)
+                    continue;
+
+                int level = Mathf.Max(1, home.PlanetLevel);
+                max = PlanetEconomyMath.GetMaxGemsForLevel(level);
+                current = Mathf.Clamp(home.CurrentGems, 0f, max);
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Paints the home-world gem track under the team name and score.
+        /// The fill width is current/max. The same pair is drawn inside the bar.
+        /// Skips the text write when the rounded numbers have not changed (TMP assigns allocate).
+        /// </summary>
+        /// <param name="current">Reservoir gems. Ignored when <paramref name="known"/> is false.</param>
+        /// <param name="max">Level cap. Zero cap draws an empty track.</param>
+        /// <param name="teamColor">Viewed team tint for the fill.</param>
+        /// <param name="known">False before the home ghost has arrived.</param>
+        void PaintHomeGemBar(float current, float max, Color teamColor, bool known)
+        {
+            if (_gemFill == null || _gemValueText == null)
+                return;
+
+            int cap = known ? Mathf.Max(0, Mathf.RoundToInt(max)) : 0;
+            int shown = known ? Mathf.Clamp(Mathf.RoundToInt(current), 0, cap) : 0;
+            float ratio = cap > 0 ? shown / (float)cap : 0f;
+
+            // Team tint on the filled portion. Empty track stays the dark plate behind it.
+            Color fill = teamColor;
+            fill.a = 0.92f;
+            _gemFill.color = fill;
+            _gemFill.fillAmount = ratio;
+
+            if (known == _gemShownKnown && shown == _gemShownCurrent && cap == _gemShownMax)
+                return;
+
+            _gemShownKnown = known;
+            _gemShownCurrent = shown;
+            _gemShownMax = cap;
+            // Numbers live in the track, not as a caption beside it.
+            _gemValueText.text = known ? shown + " / " + cap : "- / -";
+        }
+
+        /// <summary>
         /// Sets a header label's layout width to the rendered line so the flexible spacer
         /// can shove the score to the far right instead of leaving a gap inside the text.
         /// </summary>
@@ -751,6 +863,10 @@ namespace TitanOrbit.UI
             // Painted before the empty-list return so the header stays.
             int teamScore = SumAnchorScores(_teamShips);
             ApplyViewedTeamHeader(viewedTeam, teamScore, viewedOwned, capturableTotal);
+
+            // Home-world reservoir under the title. Missing blip keeps the dash, not 0/100.
+            bool haveHome = TryReadHomePlanetGems(viewedTeam, out float gemCurrent, out float gemMax);
+            PaintHomeGemBar(gemCurrent, gemMax, teamColor, haveHome);
 
             if (_teamShips.Count == 0)
             {
@@ -1450,6 +1566,8 @@ namespace TitanOrbit.UI
             if (_panelRoot != null
                 && _titleText != null
                 && _scoreText != null
+                && _gemFill != null
+                && _gemValueText != null
                 && _tabCycleButton != null
                 && _contentRect != null
                 && _planetBarRoot != null
@@ -1586,8 +1704,52 @@ namespace TitanOrbit.UI
             scoreLayout.flexibleWidth = 0f;
             FitHeaderLabelWidth(_scoreText);
 
-            // --- Scroll area fills everything under the planet bar + title ---
-            float scrollTop = TopChromePad + PlanetControlBarHeight + 3f + HeaderHeight + 2f;
+            // --- Home gem bar: current / max, numbers drawn inside the track ---
+            // Sits on the same left/right inset as the title so it lines up with SCORE.
+            float gemTop = headerTop - HeaderHeight - GemBarGap;
+            var gemGo = new GameObject("HomeGemBar", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            gemGo.transform.SetParent(_panelRoot.transform, false);
+            var gemRt = gemGo.GetComponent<RectTransform>();
+            gemRt.anchorMin = new Vector2(0f, 1f);
+            gemRt.anchorMax = new Vector2(1f, 1f);
+            gemRt.pivot = new Vector2(0.5f, 1f);
+            gemRt.anchoredPosition = new Vector2(0f, gemTop);
+            gemRt.sizeDelta = new Vector2(-(PanelSidePad * 2f + 4f), GemBarHeight);
+            gemRt.offsetMin = new Vector2(PanelSidePad + 4f, gemRt.offsetMin.y);
+            gemRt.offsetMax = new Vector2(-PanelSidePad, gemRt.offsetMax.y);
+            var gemTrack = gemGo.GetComponent<Image>();
+            gemTrack.sprite = GetWhiteSprite();
+            gemTrack.color = new Color(0.04f, 0.055f, 0.09f, 0.95f);
+            gemTrack.raycastTarget = false;
+
+            var fillGo = new GameObject("Fill", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            fillGo.transform.SetParent(gemGo.transform, false);
+            StretchFull(fillGo.GetComponent<RectTransform>());
+            _gemFill = fillGo.GetComponent<Image>();
+            _gemFill.sprite = GetWhiteSprite();
+            // [UNITY] Filled horizontal clips the team tint from the left as the reservoir fills.
+            _gemFill.type = Image.Type.Filled;
+            _gemFill.fillMethod = Image.FillMethod.Horizontal;
+            _gemFill.fillOrigin = (int)Image.OriginHorizontal.Left;
+            _gemFill.fillAmount = 0f;
+            _gemFill.color = ScoreGold;
+            _gemFill.raycastTarget = false;
+
+            _gemValueText = CreateTmp(gemGo.transform, "Value", 12f, TextAlignmentOptions.Center,
+                new Color(0.94f, 0.96f, 1f, 1f));
+            StretchFull(_gemValueText.rectTransform);
+            _gemValueText.fontStyle = FontStyles.Bold;
+            // Dark halo so the digits stay readable on both the empty plate and a bright team fill.
+            _gemValueText.outlineWidth = 0.18f;
+            _gemValueText.outlineColor = new Color32(0, 0, 0, 220);
+            _gemValueText.text = "- / -";
+            _gemShownCurrent = int.MinValue;
+            _gemShownMax = int.MinValue;
+            _gemShownKnown = false;
+
+            // --- Scroll area fills everything under the planet bar, title, and gem track ---
+            float scrollTop = TopChromePad + PlanetControlBarHeight + 3f + HeaderHeight
+                + GemBarGap + GemBarHeight + 2f;
             var scrollGo = new GameObject("Scroll", typeof(RectTransform), typeof(ScrollRect));
             scrollGo.transform.SetParent(_panelRoot.transform, false);
             var scrollRt = scrollGo.GetComponent<RectTransform>();

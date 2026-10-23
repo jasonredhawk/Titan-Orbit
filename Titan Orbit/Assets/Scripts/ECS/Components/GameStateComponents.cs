@@ -64,6 +64,15 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
+    /// Server-only. One instance asks <c>MapGenerationSystem</c> to tear down the live map and
+    /// roll a new one on this ServerWorld. Consumed when generation is idle-complete.
+    /// Not a ghost — an empty dedicated host adds it, then the next sim tick starts the roll.
+    /// </summary>
+    public struct MapRegenerateRequest : IComponentData
+    {
+    }
+
+    /// <summary>
     /// [NETCODE] Toroidal map dimensions and async loading progress during map generation.
     /// Ghost-serialized so clients know world bounds and loading screen state.
     /// </summary>

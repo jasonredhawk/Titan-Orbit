@@ -278,6 +278,7 @@ namespace TitanOrbit.ECS
             ship.IsDead = false;
             ship.IsEliminated = false;
             ship.OverdriveLockout = false;
+            ship.OverdriveBurstActive = false;
             kinematics.Velocity = float3.zero;
             kinematics.FormationHeading = float3.zero;
             orbit.OrbitPlanetId = 0;

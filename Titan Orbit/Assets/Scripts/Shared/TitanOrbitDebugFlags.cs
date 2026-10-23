@@ -150,19 +150,24 @@ namespace TitanOrbit
         public static bool ShowMapSeamLines = true;
 
         /// <summary>
-        /// When true, the server spawns generalist AI ships (one per team by default).
-        /// Editor / MPPM host only — <c>GameManager</c> forces this off on a dedicated server.
+        /// When true, the server spawns generalist AI ships for each team that has a home planet.
+        /// Honored on the dedicated server so WebGL clients see the same hulls as the Editor host.
+        /// Bots stay parked until a real player has a ship in the match.
         /// </summary>
         public static bool AiShips;
 
         /// <summary>
-        /// How many AI ships to keep on each team that already has a home planet.
-        /// Clamped to <see cref="AiShipsPerTeamCap"/>. Ignored when <see cref="AiShips"/> is false.
+        /// How many AI ships to keep on each team that already has a home planet, before
+        /// human players take those slots. Clamped to <see cref="AiShipsPerTeamCap"/>.
+        /// Ignored when <see cref="AiShips"/> is false.
         /// </summary>
         public static int AiShipsPerTeam;
 
-        /// <summary>Inspector cap so a debug toggle cannot fill the match with hulls.</summary>
-        public const int AiShipsPerTeamCap = 2;
+        /// <summary>
+        /// Upper bound for the inspector count. A team holds 12 players. Live spawns
+        /// still leave room for humans already on that team.
+        /// </summary>
+        public const int AiShipsPerTeamCap = 12;
 
         /// <summary>
         /// When true, beta testers get the field-notes screen and the server accepts

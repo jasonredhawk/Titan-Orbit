@@ -73,7 +73,13 @@ namespace TitanOrbit.UI
         /// <summary>[TITAN-ORBIT] Max hull (<c>ShipState.MaxHealth</c>).</summary>
         public float MaxHealth;
 
-        /// <summary>[TITAN-ORBIT] Gems currently in cargo (<c>ShipState.CurrentGems</c>).</summary>
+        /// <summary>
+        /// [TITAN-ORBIT] Live gem count copied from the ghost this blip tracks.
+        /// Ships: cargo in the hold (<c>ShipState.CurrentGems</c>).
+        /// Planets and home worlds: the surface reservoir (<c>PlanetState.CurrentGems</c>),
+        /// which the leaderboard gem bar reads. The cap is not stored here — it comes from
+        /// <see cref="PlanetLevel"/> via <c>PlanetEconomyMath.GetMaxGemsForLevel</c>.
+        /// </summary>
         public float CurrentGems;
 
         /// <summary>[TITAN-ORBIT] Max gem cargo (<c>ShipState.GemCapacity</c>).</summary>

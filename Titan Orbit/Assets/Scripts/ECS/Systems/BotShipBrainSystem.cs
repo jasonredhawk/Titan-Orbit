@@ -168,6 +168,13 @@ namespace TitanOrbit.ECS
             }
 
             using var bots = _bots.ToEntityArray(Allocator.Temp);
+            // No human hull in the match: keep the bots spawned, but do not mine, haul, or fight.
+            if (!MatchHasHuman())
+            {
+                ParkIdle(em, bots);
+                return;
+            }
+
             bool anyDecide = false;
             for (int i = 0; i < bots.Length; i++)
             {
@@ -203,6 +210,8 @@ namespace TitanOrbit.ECS
                 RefreshGemHash(mapW, mapH);
             }
             NativeArray<RockSnap> rocks = _mineRocks.AsArray();
+            using var commanderShips = _ships.ToEntityArray(Allocator.Temp);
+            using var commanderOwners = _ships.ToComponentDataArray<GhostOwner>(Allocator.Temp);
 
             for (int i = 0; i < bots.Length; i++)
             {
@@ -221,6 +230,10 @@ namespace TitanOrbit.ECS
                 {
                     em.SetComponentData(shipEntity, new ShipInput());
                     ClearDeposit(em, shipEntity);
+                    int idleId = em.GetComponentData<GhostOwner>(shipEntity).NetworkId;
+                    BotTeamOrder idleOrder = haveOrders ? orders.Get(ship.Team) : default;
+                    BotShipPresentation.ApplyCommanderSkin(
+                        em, shipEntity, idleId, idleOrder, now, commanderShips, commanderOwners);
                     continue;
                 }
 
@@ -279,6 +292,8 @@ namespace TitanOrbit.ECS
                     planets.AsArray(), ships.AsArray(),
                     in _asteroidHash, _nearbyRocks, _nearbySeen,
                     mapW, mapH, orbitElapsed);
+                BotShipPresentation.ApplyCommanderSkin(
+                    em, shipEntity, networkId, liveOrder, now, commanderShips, commanderOwners);
                 em.SetComponentData(shipEntity, input);
                 em.SetComponentData(shipEntity, brain);
 
@@ -294,6 +309,51 @@ namespace TitanOrbit.ECS
         {
             if (em.HasComponent<ShipDepositIntent>(ship))
                 em.SetComponentData(ship, new ShipDepositIntent());
+        }
+
+        /// <summary>
+        /// True when a real player already has a team ship. Dead humans still count —
+        /// they are in the match. Bots and hulls waiting on Join Team do not.
+        /// </summary>
+        bool MatchHasHuman()
+        {
+            using var owners = _ships.ToComponentDataArray<GhostOwner>(Allocator.Temp);
+            using var states = _ships.ToComponentDataArray<ShipState>(Allocator.Temp);
+            int count = math.min(owners.Length, states.Length);
+            for (int i = 0; i < count; i++)
+            {
+                if (BotShipIds.IsBot(owners[i].NetworkId))
+                    continue;
+                if (states[i].Team == TeamId.None || states[i].AwaitingTeamSelection)
+                    continue;
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>Zeros thrust and drops a copied commander hull. The entity stays in the world.</summary>
+        static void ParkIdle(EntityManager em, NativeArray<Entity> bots)
+        {
+            for (int i = 0; i < bots.Length; i++)
+            {
+                Entity ship = bots[i];
+                if (!em.Exists(ship))
+                    continue;
+
+                if (em.HasComponent<ShipInput>(ship))
+                    em.SetComponentData(ship, new ShipInput());
+
+                if (em.HasComponent<BotShipBrain>(ship))
+                {
+                    BotShipBrain brain = em.GetComponentData<BotShipBrain>(ship);
+                    if (brain.Task != BotTaskKind.None || brain.GoalNetworkId != 0 || brain.GoalPlanetId != 0)
+                        em.SetComponentData(ship, new BotShipBrain());
+                }
+
+                ClearDeposit(em, ship);
+                BotShipPresentation.ClearCommanderSkin(em, ship);
+            }
         }
 
         static void Choose(

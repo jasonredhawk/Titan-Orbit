@@ -150,6 +150,7 @@ namespace TitanOrbit.ECS
                 AudienceD = limitAudience != 0 ? extraD : 0,
                 LimitAudience = limitAudience,
                 SubjectNetworkId = subject,
+                CommanderNetworkId = speakerNetworkId,
                 PlanetId = sentence.PlanetId,
                 WaypointX = hasWaypoint ? sentence.WaypointX : speakerPos.x,
                 WaypointZ = hasWaypoint ? sentence.WaypointZ : speakerPos.z,

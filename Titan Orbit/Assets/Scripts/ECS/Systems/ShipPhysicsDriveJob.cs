@@ -86,6 +86,7 @@ namespace TitanOrbit.ECS
             {
                 physicsVelocity.ValueRW = PhysicsVelocity.Zero;
                 physicsDamping.ValueRW = default;
+                shipState.ValueRW.OverdriveBurstActive = false;
                 return;
             }
 
@@ -94,6 +95,7 @@ namespace TitanOrbit.ECS
             {
                 physicsVelocity.ValueRW = PhysicsVelocity.Zero;
                 physicsDamping.ValueRW = default;
+                shipState.ValueRW.OverdriveBurstActive = false;
                 return;
             }
 

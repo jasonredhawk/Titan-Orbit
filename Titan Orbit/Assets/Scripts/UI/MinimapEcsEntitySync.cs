@@ -463,6 +463,9 @@ namespace TitanOrbit.UI
                     var planet = em.GetComponentData<PlanetState>(entity);
                     anchor.Team = planet.Ownership;
                     anchor.PlanetLevel = planet.PlanetLevel;
+                    // Surface reservoir for the leaderboard gem bar. Same read as the other
+                    // planet fields — no extra entity query.
+                    anchor.CurrentGems = planet.CurrentGems;
                     anchor.Population = ResolvePlanetCrew(planet);
                     anchor.PlanetId = planet.PlanetId;
                     anchor.IsHomePlanet = planet.IsHomePlanet;
@@ -739,6 +742,9 @@ namespace TitanOrbit.UI
             var anchor = GetOrCreateAnchor(entity, kind);
             anchor.Team = state.Ownership;
             anchor.PlanetLevel = state.PlanetLevel;
+            // Surface reservoir for the leaderboard gem bar. Same read as the other
+            // planet fields — no extra entity query.
+            anchor.CurrentGems = state.CurrentGems;
             anchor.Population = ResolvePlanetCrew(state);
             anchor.PlanetId = state.PlanetId;
             // Home + family index — world labels and the minimap hover tip resolve the name from these.

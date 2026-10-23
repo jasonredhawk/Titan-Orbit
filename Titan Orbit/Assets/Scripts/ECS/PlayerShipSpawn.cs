@@ -1,5 +1,6 @@
 using TitanOrbit.Core;
 using TitanOrbit.Data;
+using TitanOrbit.Generation;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
@@ -138,11 +139,23 @@ namespace TitanOrbit.ECS
                 return false;
 
             Entity shipPrefab = ResolveGhostCollectionShipPrefab(em, prefabs.Ship, out bool usedCollection);
-            if (shipPrefab == Entity.Null || !em.Exists(shipPrefab))
+            // GamePrefabs.Ship alone does not replicate a hull. GhostSend can still stamp a
+            // ghost id, and the client never builds a mesh. Wait until the collection prefab exists.
+            if (!usedCollection || shipPrefab == Entity.Null || !em.Exists(shipPrefab))
                 return false;
 
             if (!ShipHomeSpawnLogic.TryFindHomeSpawnPosition(em, team, orbitElapsed, out spawnPos))
                 return false;
+
+            // Same home point would stack every bot on one pixel. Step them around that point.
+            int slot = networkId - BotShipIds.First;
+            slot %= BotShipIds.MaxPerTeam;
+            if (slot < 0)
+                slot += BotShipIds.MaxPerTeam;
+            float angle = slot * (2f * math.PI / math.max(1, BotShipIds.MaxPerTeam));
+            spawnPos.x += math.cos(angle) * 8f;
+            spawnPos.z += math.sin(angle) * 8f;
+            spawnPos = ToroidalMapEcs.Wrap(spawnPos);
 
             ship = em.Instantiate(shipPrefab);
             em.SetComponentData(ship, new ShipState
@@ -170,7 +183,13 @@ namespace TitanOrbit.ECS
                 em.AddComponentData(ship, new ShipAttributeUpgradeState());
 
             if (!em.HasComponent<BotShipTag>(ship))
-                em.AddComponentData(ship, new BotShipTag());
+                em.AddComponentData(ship, new BotShipTag { FromGhostCollection = 1 });
+            else
+            {
+                var tag = em.GetComponentData<BotShipTag>(ship);
+                tag.FromGhostCollection = 1;
+                em.SetComponentData(ship, tag);
+            }
             if (!em.HasComponent<BotShipBrain>(ship))
                 em.AddComponentData(ship, new BotShipBrain());
 
@@ -185,6 +204,21 @@ namespace TitanOrbit.ECS
                 $"[BotShipSpawn] Spawned AI ship networkId={networkId} team={team} at {spawnPos} " +
                 $"(collectionPrefab={usedCollection}, ghostId={ghostId}).");
             return true;
+        }
+
+        /// <summary>True once the registered ship ghost prefab can be instantiated.</summary>
+        public static bool IsShipGhostCollectionReady(EntityManager em)
+        {
+            using var prefabQuery = em.CreateEntityQuery(ComponentType.ReadOnly<GamePrefabs>());
+            if (prefabQuery.CalculateEntityCount() != 1)
+                return false;
+
+            GamePrefabs prefabs = prefabQuery.GetSingleton<GamePrefabs>();
+            if (prefabs.Ship == Entity.Null)
+                return false;
+
+            ResolveGhostCollectionShipPrefab(em, prefabs.Ship, out bool usedCollection);
+            return usedCollection;
         }
 
         /// <summary>

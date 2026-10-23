@@ -1243,6 +1243,8 @@ namespace TitanOrbit.NetCode
             public string LobbyId;
             public long CreatedAtEpochSeconds;
             public bool IsLatest;
+            /// <summary>True when this lobby belongs to a newly rolled map.</summary>
+            public bool FreshMap;
         }
 
         sealed class DedicatedServerPrep
@@ -1299,16 +1301,20 @@ namespace TitanOrbit.NetCode
         }
 
         /// <summary>
-        /// Tears down the current UGS lobby + Relay listen and publishes a fresh empty match on the
-        /// same ServerWorld. Hard-gated: refuses when any NetCode player is still connected so an
-        /// in-progress conquest map cannot be wiped by idle/self-heal/heartbeat paths.
+        /// Tears down the current UGS lobby + Relay listen and publishes a lobby on this ServerWorld.
+        /// Hard-gated: refuses when any NetCode player is still connected so an in-progress conquest
+        /// map cannot be wiped by idle/self-heal/heartbeat paths.
+        /// <paramref name="rollNewMap"/> destroys planets, asteroids, gems, and ships and rolls a new
+        /// layout. Listing refreshes (stale, heartbeat, self-heal) keep the map and its start time.
         /// </summary>
         /// <param name="config">Dedicated CLI config (ports, idle seconds, IsLatest).</param>
         /// <param name="forceIsLatest">When true, the new lobby is published as IsLatest=1.</param>
+        /// <param name="rollNewMap">True for the empty-hour reset. False when only the listing is stale.</param>
         /// <returns>New lobby ids/timestamps, or null when skipped/failed.</returns>
         public async Task<DedicatedMatchRecreateResult> RecreateDedicatedMatchAsync(
             TitanOrbitServerCommandLine config,
-            bool forceIsLatest = false)
+            bool forceIsLatest = false,
+            bool rollNewMap = false)
         {
             // --- RecreateDedicatedMatchAsync ---
             if (_recreateDedicatedMatchInProgress)
@@ -1361,8 +1367,31 @@ namespace TitanOrbit.NetCode
                 await ClearNetworkConnectionsAsync(serverWorld);
                 // [TITAN-ORBIT] New lobby on the same ServerWorld must not keep orphan ships —
                 // NetCode reuses low NetworkIds, which falsely offered "rescue my ship" to new joiners.
-                // clearSessionShips drops match-only ship saves. This recreate is a new game.
+                // clearSessionShips drops match-only ship saves.
                 WipeOrphanPlayerShipsAndResetRosters(serverWorld, clearSessionShips: true);
+                bool queuedNewMap = false;
+                if (rollNewMap)
+                    queuedNewMap = MapRegeneration.TryRequest(serverWorld.EntityManager);
+                if (queuedNewMap)
+                {
+                    DedicatedServerFileLog.Append("match", "Queued new map roll (empty match)");
+                    Debug.Log("[TitanOrbitSessionManager] Queued a new map roll for the empty match.");
+                }
+
+                // Join Game age is the map start. A listing refresh copies the existing start.
+                // A new map stamps the time the roll was queued (including a retry while that roll runs).
+                bool stampFreshMap = rollNewMap &&
+                    (queuedNewMap || TitanOrbitDedicatedServerHost.HasPendingFreshMap);
+                prep.CreatedAtEpochSeconds = TitanOrbitDedicatedServerHost.ResolveLobbyCreatedAtEpoch(stampFreshMap);
+                long nowEpoch = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+                int idleSeconds = Mathf.Max(60, config.EmptyMatchRecreateSeconds);
+                long idleKillAt = nowEpoch + idleSeconds;
+                if (!rollNewMap &&
+                    TitanOrbitDedicatedServerHost.TryGetEmptyIdleKillAtEpochSeconds(out long liveKill) &&
+                    liveKill > nowEpoch)
+                {
+                    idleKillAt = liveKill;
+                }
                 ResetServerDriverIfNeeded();
                 ListenServer(serverWorld, config.ServerPort);
                 for (int i = 0; i < 90; i++)
@@ -1384,7 +1413,8 @@ namespace TitanOrbit.NetCode
                     prep.MaxPlayers,
                     prep.ServerListenAddress,
                     publishAsLatest,
-                    prep.HostAllocationId);
+                    prep.HostAllocationId,
+                    idleKillAt);
                 if (prep.Lobby == null)
                 {
                     // [TITAN-ORBIT] Old lobby still open — do not close it after a failed create.
@@ -1429,6 +1459,7 @@ namespace TitanOrbit.NetCode
                     LobbyId = prep.Lobby.Id,
                     CreatedAtEpochSeconds = prep.CreatedAtEpochSeconds,
                     IsLatest = publishAsLatest,
+                    FreshMap = stampFreshMap,
                 };
             }
             finally
@@ -1441,7 +1472,7 @@ namespace TitanOrbit.NetCode
         /// <summary>
         /// Relay told this process the allocation is dead. Publish a new join code on the same
         /// lobby and listen again. The conquest map and ships stay; players who were dropped can
-        /// Join the same game. Does not wait out the 30-minute empty recycle.
+        /// Join the same game. Does not wait out the one-hour empty map roll.
         /// </summary>
         public async Task<bool> RebindDedicatedRelayKeepMatchAsync()
         {
@@ -1786,7 +1817,7 @@ namespace TitanOrbit.NetCode
             using (var ships = em.CreateEntityQuery(typeof(ShipTag), typeof(GhostOwner)))
             using (var entities = ships.ToEntityArray(Allocator.Temp))
             {
-                int destroyed = entities.Length;
+                int destroyed = 0;
                 for (int i = 0; i < entities.Length; i++)
                 {
                     Entity ship = entities[i];
@@ -1798,11 +1829,15 @@ namespace TitanOrbit.NetCode
                     int ownerId = em.HasComponent<GhostOwner>(ship)
                         ? em.GetComponentData<GhostOwner>(ship).NetworkId
                         : 0;
+                    // AI hulls have no player to resume. Leave them parked for the next joiner.
+                    if (em.HasComponent<BotShipTag>(ship) || BotShipIds.IsBot(ownerId))
+                        continue;
                     if (em.HasComponent<MegaShipState>(ship))
                         MegaShipStatApplyLogic.ReleaseMegaOccupancy(em, ship);
                     if (ownerId > 0)
                         MegaShipPlanetLogic.FreeSlotsOccupiedBy(em, ownerId);
                     em.DestroyEntity(ship);
+                    destroyed++;
                 }
 
                 if (destroyed > 0)
@@ -2424,7 +2459,8 @@ namespace TitanOrbit.NetCode
             int cap,
             string serverListenAddress,
             bool isLatest,
-            string hostAllocationId)
+            string hostAllocationId,
+            long idleKillAtEpochSeconds = 0)
         {
             await TitanOrbitLobbyService.AcquireLobbyApiGateAsync();
             try
@@ -2443,11 +2479,14 @@ namespace TitanOrbit.NetCode
                     { TitanOrbitLobbyService.LobbyActivePlayersKey, new DataObject(DataObject.VisibilityOptions.Public, "0", DataObject.IndexOptions.N4) },
                 };
 
-                // [TITAN-ORBIT] Brand-new lobby is empty — publish idle-kill deadline for Join Game countdown.
+                // [TITAN-ORBIT] Idle-kill is wall-clock from when the match became empty, not map age.
+                // createdAt is the map start and can be hours old on a listing refresh.
                 int idleSeconds = _serverConfig != null
                     ? _serverConfig.EmptyMatchRecreateSeconds
                     : TitanOrbitServerCommandLine.DefaultEmptyMatchRecreateSeconds;
-                long idleKillAt = createdAt + Mathf.Max(60, idleSeconds);
+                long idleKillAt = idleKillAtEpochSeconds > 0
+                    ? idleKillAtEpochSeconds
+                    : createdAt + Mathf.Max(60, idleSeconds);
                 lobbyData[TitanOrbitLobbyService.LobbyIdleKillAtEpochKey] = new DataObject(
                     DataObject.VisibilityOptions.Public,
                     idleKillAt.ToString(CultureInfo.InvariantCulture));
@@ -2523,7 +2562,7 @@ namespace TitanOrbit.NetCode
                             {
                                 var result = recreateTask.Result;
                                 TitanOrbitDedicatedServerHost.NotifyLobbyReplacedFromSession(
-                                    result.LobbyId, result.CreatedAtEpochSeconds, result.IsLatest);
+                                    result.LobbyId, result.CreatedAtEpochSeconds, result.IsLatest, freshMap: false);
                             }
                         }
                     }
@@ -2563,6 +2602,15 @@ namespace TitanOrbit.NetCode
                         {
                             TitanOrbitLobbyService.LobbyServerAliveEpochKey,
                             new DataObject(DataObject.VisibilityOptions.Public, now.ToString(CultureInfo.InvariantCulture), DataObject.IndexOptions.N5)
+                        },
+                        {
+                            // Map start, not "now". A listing refresh must not make a day-old game look new.
+                            TitanOrbitLobbyService.LobbyCreatedAtEpochKey,
+                            new DataObject(
+                                DataObject.VisibilityOptions.Public,
+                                TitanOrbitDedicatedServerHost.ResolveLobbyCreatedAtEpoch(freshMap: false)
+                                    .ToString(CultureInfo.InvariantCulture),
+                                DataObject.IndexOptions.N3)
                         },
                         {
                             TitanOrbitLobbyService.LobbyActivePlayersKey,

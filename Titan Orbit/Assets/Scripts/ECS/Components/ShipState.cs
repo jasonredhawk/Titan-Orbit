@@ -97,6 +97,14 @@ namespace TitanOrbit.ECS
         /// Replaces the old non-ghosted Engaged latch that desynced bloom/speed.
         /// </summary>
         [GhostField] public bool OverdriveLockout;
+
+        /// <summary>
+        /// [TITAN-ORBIT] True while the OVERDRIVE burst is actually applying this tick
+        /// (Shift + thrust, energy left, not locked out, not a MEGA). Ghosted so remote
+        /// clients can tint nozzle smoke — <see cref="ShipInput"/> is owner commands,
+        /// not a snapshot other players receive. Written by <see cref="ShipPhysicsDriveLogic"/>.
+        /// </summary>
+        [GhostField] public bool OverdriveBurstActive;
     }
 
     /// <summary>

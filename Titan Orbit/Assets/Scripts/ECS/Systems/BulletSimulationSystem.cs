@@ -994,6 +994,8 @@ namespace TitanOrbit.ECS
             int spawnPdPlanetId = 0;
             byte spawnPdSlotIndex = 0;
             float spawnPdHealthAfter = -1f;
+            // Resolved hit damage (bullet-type bonus included). The spawn packet stays the raw shot.
+            float spawnAppliedDamage = spawn.Damage;
             GatherHashedObstaclesForSegment(plan.Origin, firstEnd);
             for (int s = 0; s < spawnSteps; s++)
             {
@@ -1005,6 +1007,7 @@ namespace TitanOrbit.ECS
                         out spawnAsteroidLayoutSlot,
                         out spawnPdPlanetId, out spawnPdSlotIndex,
                         out spawnPdHealthAfter,
+                        out spawnAppliedDamage,
                         hashedObstaclesAlreadyGathered: true))
                 {
                     spawnHit = true;
@@ -1017,8 +1020,12 @@ namespace TitanOrbit.ECS
             var bullets = state.EntityManager.GetBuffer<BulletElement>(bulletEntity);
             if (spawnHit)
             {
+                // Hit floats and VFX must show the bonus. The in-flight tracer already
+                // left with the unscaled shot via SendSpawn.
+                var hitReport = spawn;
+                hitReport.Damage = spawnAppliedDamage;
                 BulletNetNotify.SendHit(
-                    ref ecb, spawn, spawnHitPoint, spawnAsteroidHealthAfter,
+                    ref ecb, hitReport, spawnHitPoint, spawnAsteroidHealthAfter,
                     spawnPdPlanetId, spawnPdSlotIndex, spawnPdHealthAfter,
                     mountIdx, spawnAsteroidLayoutSlot,
                     s_TroopShipNetworkId, s_TroopSeatId, s_TroopHealthAfter, s_TroopSequence);
@@ -1176,8 +1183,12 @@ namespace TitanOrbit.ECS
                             out float3 hitPoint, out float asteroidHealthAfter,
                             out int asteroidLayoutSlot,
                             out int pdPlanetId, out byte pdSlotIndex, out float pdHealthAfter,
+                            out float appliedDamage,
                             hashedObstaclesAlreadyGathered: true))
                     {
+                        // Same packet the hull actually lost. Raw b.Damage skips the
+                        // vs-asteroid / vs-ship / vs-moon row, so the float looked flat.
+                        b.Damage = appliedDamage;
                         BulletNetNotify.SendHit(
                             ref ecb, b, hitPoint, asteroidHealthAfter,
                             pdPlanetId, pdSlotIndex, pdHealthAfter,
@@ -1282,6 +1293,10 @@ namespace TitanOrbit.ECS
         /// <param name="planetaryDefenseHealthAfter">
         /// Turret Health after damage (0 = destroyed); &lt; 0 / unused when PlanetId is 0.
         /// </param>
+        /// <param name="appliedDamage">
+        /// Damage after the bullet type's vs-asteroid / vs-ship / vs-moon row.
+        /// This is what HP lost. The hit float must print it, not the raw shot.
+        /// </param>
         /// <returns>True when this segment scored a hit and applied damage (or planet block).</returns>
         bool TryResolveBulletHit(
             ref SystemState state,
@@ -1301,10 +1316,13 @@ namespace TitanOrbit.ECS
             out int planetaryDefensePlanetId,
             out byte planetaryDefenseSlotIndex,
             out float planetaryDefenseHealthAfter,
+            out float appliedDamage,
             bool hashedObstaclesAlreadyGathered = false)
         {
             hitPoint = to;
             asteroidHealthAfter = -1f;
+            // Until a real impact, report the shot as fired. Callers only read this on a hit.
+            appliedDamage = b.Damage;
             asteroidLayoutSlot = -1;
             planetaryDefensePlanetId = 0;
             planetaryDefenseSlotIndex = 0;
@@ -1493,9 +1511,14 @@ namespace TitanOrbit.ECS
 
             // --- Pass 2: apply damage (or planet block) only to the nearest winner ---
             hitPoint = bestHit;
+            // --- Target bonus ---
+            // Fire time only applies the flat fire-power row (every target). The
+            // vs-asteroid / vs-ship / vs-moon ability waits until we know what we hit.
+            // appliedDamage is what HP loses and what the hit float must print.
             float hitDamage = BulletBankCombatLogic.ResolveHitDamage(
                 profile, BulletBankAbilityTargeting.FromHitKind((byte)bestKind), b.Damage,
                 b.FirePowerExtraLevels);
+            appliedDamage = hitDamage;
 
             // Heal mode: allies gain HP; enemy ships / drones / PD / moons / transports take
             // no damage and no on-hit status. Asteroids still take full damage.
@@ -1829,13 +1852,15 @@ namespace TitanOrbit.ECS
                 state.EntityManager, hitPoint, profile, mapW, mapH, bullet.FirePowerExtraLevels,
                 bullet.StrengthScale);
 
-            // --- Splash damage (center = full hitDamage, edge = 0) ---
-            // [TITAN-ORBIT] Skip the primary hit so it is not double-dipped.
+            // --- Splash damage ---
+            // Each body in the blast uses its own target row (a rocket that is
+            // stronger vs rocks does not also bonus ships). The primary hit already
+            // took full damage, so the blast skips that entity.
             if (hitDamage > 0.01f)
             {
                 BulletBankHitEffects.TryApplyConcussiveBlastDamage(
                     state.EntityManager, hitPoint, profile, mapW, mapH,
-                    in bullet, hitDamage, skipEntity, serverElapsed,
+                    in bullet, skipEntity, serverElapsed,
                     s_DefenseHitTargets, s_DroneHitTargets,
                     ecb, gemPrefab, ShipDamageLogic.ExcessDamageGemExpulsionPerHullDamage);
             }

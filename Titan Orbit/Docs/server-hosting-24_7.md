@@ -11,7 +11,7 @@ Match rotation is handled inside the server process. Lifecycle rules:
 |-----------|----------------|
 | **Players connected** | Match keeps running and stays `IsOpen=1`. Idle teardown does **not** run. |
 | **Last player leaves** (0 connections) | Empty-idle countdown **starts/resets from that moment**. Orphan ships wiped; map stays until timeout. |
-| **Empty for 1 hour** (`emptyMatchRecreateSeconds`, default 3600) | In-process recreate: new Relay + lobby, wipe ships, same process (only when **0 players**). |
+| **Empty for 1 hour** (`emptyMatchRecreateSeconds`, default 3600) | In-process new map + new Relay + lobby, same process (only when **0 players**). Join Game age is that map's start. |
 | **Empty process recycle** (RSS / struggling / idle count) | Spawn new IsLatest sibling **first**, wait until browseable, then close old + exit **0**. systemd must be `Restart=on-failure` so a second Unity is not started. Handoff failure → demote-keep-open + exit 1 (cold restart with brief overlap). |
 | **In-process idle recreate** | Create new lobby **before** closing old (no zero-lobby window). |
 | **RSS over budget** (`rssRecycleMb`, default **3500**) while empty | Triggers empty recycle handoff above. |
@@ -21,7 +21,7 @@ Match rotation is handled inside the server process. Lifecycle rules:
 | **Match age** (`ageThresholdSeconds`, default **0**) | Does **not** open a second game. Set above 0 only for rotation tests. |
 | **Roster full** (teams × max per team, else `--maxPlayers`) | Close listing (`IsOpen=0`) and spawn successor capacity. Not while seats remain. |
 
-That means you only need to start ONE server instance. It keeps that match until the roster is full, then spawns the next one. An empty match is replaced in-process after one hour. It does not open a second lobby just because the first one is old.
+That means you only need to start ONE server instance. It keeps that match until the roster is full, then spawns the next one. An empty match rolls a new map in-process after one hour. A stale listing is refreshed after 10 seconds and keeps that map's age. It does not open a second lobby just because the first one is old.
 
 ## Build artifacts
 
@@ -64,7 +64,7 @@ WantedBy=multi-user.target
 Notes:
 - Dedicated auto-boot is gated by `--titanOrbitDedicated=1` (and batchmode/nographics for editor-less runs).
 - The process can spawn additional match server processes using the same executable path it is running from.
-- Override idle with `--emptyMatchRecreateSeconds=` (default 3600). `--ageThresholdSeconds=0` (default) does not open a second game; set it above 0 only for rotation tests.
+- Override idle with `--emptyMatchRecreateSeconds=` (default 3600, rolls a new map). Stale listing refresh: `--staleLobbyRecreateSeconds=` (default 10, same map). `--ageThresholdSeconds=0` (default) does not open a second game; set it above 0 only for rotation tests.
 - Process recycle: `--maxInProcessEmptyRecreates=6`, `--rssRecycleMb=3500`, `--strugglingSamplesBeforeRecycle=3`, `--memoryLogIntervalSeconds=60` (0 disables each). Hang quit: `--mainThreadHangQuitSeconds=300`.
 - systemd: **`Restart=on-failure`** (not `always`). Successful empty handoff exits **0** with a live sibling; exit **1** still restarts after crashes.
 - Grep handoff / gaps: `grep -E 'Recycle handoff|published NEW lobby first|memory' TitanOrbitDedicatedServer.log`

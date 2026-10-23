@@ -1,8 +1,10 @@
 using System.Collections.Generic;
+using TitanOrbit.Core;
 using TitanOrbit.Data;
 using TitanOrbit.ECS;
 using Unity.Entities;
 using Unity.Mathematics;
+using Unity.NetCode;
 using UnityEngine;
 using UnityEngine.Rendering;
 
@@ -10,10 +12,14 @@ namespace TitanOrbit.Game
 {
     /// <summary>
     /// Client-only cosmetic smoke that streams out of damaged engine and thruster nozzles.
+    /// Hull damage keeps a grey plume. OVERDRIVE adds a second plume on the same nozzles,
+    /// tinted with the ship team color, so both can run together.
     /// Profile comes from <see cref="ShipDamageSmokeSettings"/> on
     /// <see cref="ShipFamilyDefinition.damageSmokeSettings"/> (shared asset today, per-family later).
-    /// Reads ghosted <see cref="ShipState.Health"/> / <see cref="ShipState.MaxHealth"/> — no server
-    /// sim change. Attached by <see cref="EcsWorldVisualizer"/> on hybrid ship proxies.
+    /// Damage reads ghosted hull HP. Overdrive on this machine uses pending Shift/thrust;
+    /// other ships use ghosted <see cref="ShipState.OverdriveBurstActive"/>.
+    /// The team plume is created on the first burst and stays stopped afterward.
+    /// Attached by <see cref="EcsWorldVisualizer"/> on hybrid ship proxies.
     /// <para>
     /// One prefab instance is spawned per propulsion nozzle (thruster VFX mounts, plus engine
     /// mounts when those are the jets). Instances stay parented to the hull proxy so mount scale
@@ -63,6 +69,30 @@ namespace TitanOrbit.Game
 
         /// <summary>True while systems should be emitting.</summary>
         bool _wasEmitting;
+
+        /// <summary>Soft grey used for hull-damage smoke. The overdrive plume does not use this.</summary>
+        static readonly Color DamageSmokeGrey = new Color(0.78f, 0.78f, 0.8f, 0.85f);
+
+        /// <summary>Team-colored nozzle smoke, parallel to <see cref="_smokeInstances"/>.</summary>
+        readonly List<GameObject> _overdriveInstances = new List<GameObject>();
+
+        /// <summary>Particle systems on <see cref="_overdriveInstances"/> only.</summary>
+        readonly List<ParticleSystem> _overdriveParticles = new List<ParticleSystem>();
+
+        /// <summary>Materials owned by the overdrive plume, so team tint never touches damage smoke.</summary>
+        readonly List<Material> _overdriveMaterials = new List<Material>();
+
+        /// <summary>True while the overdrive plume should be emitting.</summary>
+        bool _overdriveWasEmitting;
+
+        /// <summary>Last speed factor written to the overdrive rate-over-distance.</summary>
+        float _overdriveSpeedFactor = -1f;
+
+        /// <summary>Team last written onto the overdrive materials.</summary>
+        TeamId _overdriveTintTeam;
+
+        /// <summary>True after a team tint has been applied at least once.</summary>
+        bool _overdriveTintSet;
 
         /// <summary>
         /// Links this applier to a ship ghost and rebuilds smoke from the family settings asset.
@@ -117,6 +147,9 @@ namespace TitanOrbit.Game
             _wasEmitting = false;
             _handedToDebris = false;
             _deathEmissionLocked = false;
+            _overdriveWasEmitting = false;
+            _overdriveSpeedFactor = -1f;
+            _overdriveTintSet = false;
 
             if (_config == null || !_config.enabled || _config.smokePrefab == null)
                 return;
@@ -205,8 +238,9 @@ namespace TitanOrbit.Game
             }
 
             // [HYBRID] Soft alpha-blended grey smoke (not opaque squares).
-            EnsureUrpSmokeMaterials(go);
-            CollectAndConfigureParticleSystems(go);
+            // Team overdrive smoke is a second prefab instance — this material stays grey.
+            EnsureUrpSmokeMaterials(go, DamageSmokeGrey, "ShipDamageSmoke_SoftGrey", null);
+            CollectAndConfigureParticleSystems(go, _particleSystems);
 
             _smokeInstances.Add(go);
             _smokeAnchors.Add(anchor);
@@ -230,10 +264,19 @@ namespace TitanOrbit.Game
             else
                 aft.Normalize();
             Quaternion aim = Quaternion.LookRotation(aft, transform.up);
+            SyncEmitterList(_smokeInstances, aim);
+            if (_overdriveInstances.Count > 0)
+                SyncEmitterList(_overdriveInstances, aim);
+        }
 
-            for (int i = 0; i < _smokeInstances.Count; i++)
+        /// <summary>
+        /// Snaps one emitter list onto the shared nozzle aft faces.
+        /// </summary>
+        void SyncEmitterList(List<GameObject> instances, Quaternion aim)
+        {
+            for (int i = 0; i < instances.Count; i++)
             {
-                GameObject go = _smokeInstances[i];
+                GameObject go = instances[i];
                 Transform anchor = i < _smokeAnchors.Count ? _smokeAnchors[i] : null;
                 if (go == null || anchor == null)
                     continue;
@@ -254,7 +297,15 @@ namespace TitanOrbit.Game
         /// <param name="worldScaleMul">0–1 multiplier on <see cref="ShipDamageSmokeSettings.maxWorldScale"/>.</param>
         void ApplyWorldNormalizedScale(float worldScaleMul)
         {
-            if (_config == null || _smokeInstances.Count == 0)
+            ApplyWorldNormalizedScale(_smokeInstances, worldScaleMul);
+        }
+
+        /// <summary>
+        /// Sets local scale so <paramref name="instances"/> match a target world size.
+        /// </summary>
+        void ApplyWorldNormalizedScale(List<GameObject> instances, float worldScaleMul)
+        {
+            if (_config == null || instances == null || instances.Count == 0)
                 return;
 
             float targetWorld = Mathf.Max(0.05f, _config.maxWorldScale * Mathf.Clamp01(worldScaleMul));
@@ -262,9 +313,9 @@ namespace TitanOrbit.Game
             if (parentLossy < 0.0001f)
                 parentLossy = 0.0001f;
             Vector3 local = Vector3.one * (targetWorld / parentLossy);
-            for (int i = 0; i < _smokeInstances.Count; i++)
+            for (int i = 0; i < instances.Count; i++)
             {
-                GameObject go = _smokeInstances[i];
+                GameObject go = instances[i];
                 if (go == null)
                     continue;
                 // Assigning the same localScale still dirties the transform and can
@@ -277,9 +328,15 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Builds a soft, alpha-blended smoke material so puffs are cloudy — not opaque grey squares.
+        /// Builds a soft, alpha-blended smoke material so puffs are cloudy — not opaque squares.
         /// </summary>
-        static void EnsureUrpSmokeMaterials(GameObject root)
+        /// <param name="tint">Albedo multiplied with the particle vertex color (white).</param>
+        /// <param name="materialName">Instance material name.</param>
+        /// <param name="created">
+        /// When set, receives each new material so a later tint can edit it
+        /// without touching the other plume.
+        /// </param>
+        static void EnsureUrpSmokeMaterials(GameObject root, Color tint, string materialName, List<Material> created)
         {
             if (root == null)
                 return;
@@ -308,10 +365,11 @@ namespace TitanOrbit.Game
                     continue;
 
                 Material edit = new Material(shader);
-                edit.name = "ShipDamageSmoke_SoftGrey";
-                // Mid grey — readable on dark maps; alpha comes from the soft smoke texture.
-                ApplySoftTransparentParticleMaterial(edit, smokeTex, new Color(0.78f, 0.78f, 0.8f, 0.85f));
+                edit.name = string.IsNullOrEmpty(materialName) ? "ShipDamageSmoke_Soft" : materialName;
+                ApplySoftTransparentParticleMaterial(edit, smokeTex, tint);
                 pr.sharedMaterial = edit;
+                if (created != null)
+                    created.Add(edit);
             }
         }
 
@@ -404,6 +462,8 @@ namespace TitanOrbit.Game
 
             float scaleMul = Mathf.Lerp(0.55f, 1f, _intensity);
             ApplyWorldNormalizedScale(scaleMul);
+            if (_overdriveInstances.Count > 0)
+                ApplyWorldNormalizedScale(_overdriveInstances, 1f);
         }
 
         /// <summary>
@@ -440,6 +500,8 @@ namespace TitanOrbit.Game
                     _lastAppliedIntensity = 0f;
                     _lastAppliedSpeedFactor = 0f;
                 }
+
+                StopOverdriveEmission();
                 return;
             }
 
@@ -458,6 +520,8 @@ namespace TitanOrbit.Game
             // onto the chunks before the live hull is hidden.
             if (ship.IsDead)
             {
+                // Wreck keeps the grey damage plume. The team plume stops with the burst.
+                StopOverdriveEmission();
                 HoldMaximumEmission();
                 return;
             }
@@ -504,17 +568,17 @@ namespace TitanOrbit.Game
                 _lastAppliedIntensity = _intensity;
                 _lastAppliedSpeedFactor = speedFactor;
                 _wasEmitting = shouldEmit;
-                return;
             }
-
-            if (speedChanged)
+            else if (speedChanged)
             {
                 ApplyRateOverDistanceOnly(_intensity, speedFactor);
                 _lastAppliedSpeedFactor = speedFactor;
             }
 
-            if (shouldEmit)
+            if (shouldEmit && !(emitToggled || intensityChanged))
                 ResumeStoppedEmitters();
+
+            UpdateOverdriveSmoke(em, ship, speed);
         }
 
         /// <summary>
@@ -614,9 +678,10 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>Caches particle systems on <paramref name="root"/> and forces world simulation space.</summary>
-        void CollectAndConfigureParticleSystems(GameObject root)
+        /// <param name="dest">Damage or overdrive list. The two plumes must not share a list.</param>
+        void CollectAndConfigureParticleSystems(GameObject root, List<ParticleSystem> dest)
         {
-            if (root == null)
+            if (root == null || dest == null)
                 return;
 
             ParticleSystem[] systems = root.GetComponentsInChildren<ParticleSystem>(true);
@@ -668,7 +733,7 @@ namespace TitanOrbit.Game
                     new Keyframe(1f, 0.15f)));
 
                 ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
-                _particleSystems.Add(ps);
+                dest.Add(ps);
             }
         }
 
@@ -805,7 +870,325 @@ namespace TitanOrbit.Game
             _nozzleLocalRear.Clear();
             _nozzleHasRear.Clear();
             _particleSystems.Clear();
+            for (int i = 0; i < _overdriveInstances.Count; i++)
+            {
+                if (_overdriveInstances[i] != null)
+                    Destroy(_overdriveInstances[i]);
+            }
+
+            _overdriveInstances.Clear();
+            _overdriveParticles.Clear();
+            for (int i = 0; i < _overdriveMaterials.Count; i++)
+            {
+                if (_overdriveMaterials[i] != null)
+                    Destroy(_overdriveMaterials[i]);
+            }
+
+            _overdriveMaterials.Clear();
+            _overdriveWasEmitting = false;
+            _overdriveSpeedFactor = -1f;
+            _overdriveTintSet = false;
             _initialized = false;
+        }
+
+        /// <summary>
+        /// True while this hull's OVERDRIVE burst should pour nozzle smoke.
+        /// Local owner uses pending Shift + thrust (same rule as engine bloom) so the plume
+        /// matches the button. Remotes use ghosted <see cref="ShipState.OverdriveBurstActive"/>
+        /// because their <see cref="ShipInput"/> is not in the client snapshot.
+        /// MEGA hulls never burst — Shift is heading lock.
+        /// </summary>
+        bool ResolveOverdriveBurst(EntityManager em, in ShipState ship)
+        {
+            if (ship.IsDead)
+                return false;
+
+            bool isMega = em.HasComponent<MegaShipState>(_shipEntity)
+                && em.GetComponentData<MegaShipState>(_shipEntity).IsMega;
+            if (isMega)
+                return false;
+
+            if (!IsLocalOwnerProxy(em))
+                return ship.OverdriveBurstActive;
+
+            bool thrustHeld;
+            bool shiftHeld;
+            if (ShipPendingInput.HasValue)
+            {
+                thrustHeld = ShipPendingInput.Latest.Thrust;
+                shiftHeld = ShipPendingInput.Latest.Overdrive;
+            }
+            else if (em.HasComponent<ShipInput>(_shipEntity))
+            {
+                var input = em.GetComponentData<ShipInput>(_shipEntity);
+                thrustHeld = input.Thrust;
+                shiftHeld = input.Overdrive;
+            }
+            else
+            {
+                return ship.OverdriveBurstActive;
+            }
+
+            // Presentation does not run the orbit motor. Burst already requires thrust,
+            // which is what takes the ship out of passive orbit.
+            return ShipOverdriveTuning.IsBurstActive(
+                shiftHeld,
+                thrustHeld,
+                useOrbit: false,
+                ship.CurrentEnergy,
+                ship.OverdriveLockout);
+        }
+
+        /// <summary>
+        /// True only for this machine's predicted hull. A stale <see cref="LocalPlayerShipTag"/>
+        /// on a remote must not read local Shift.
+        /// </summary>
+        bool IsLocalOwnerProxy(EntityManager em)
+        {
+            if (em.HasComponent<GhostOwnerIsLocal>(_shipEntity) &&
+                em.IsComponentEnabled<GhostOwnerIsLocal>(_shipEntity))
+                return true;
+
+            if (!em.HasComponent<LocalPlayerShipTag>(_shipEntity))
+                return false;
+
+            if (em.HasComponent<GhostOwner>(_shipEntity))
+            {
+                int ownerId = em.GetComponentData<GhostOwner>(_shipEntity).NetworkId;
+                int localId = EcsGameBridge.GetLocalNetworkId();
+                if (localId > 0 && ownerId != localId)
+                    return false;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Team hue lifted slightly toward white so the puff still reads as smoke.
+        /// Alpha matches <see cref="DamageSmokeGrey"/>.
+        /// </summary>
+        static Color TeamSmokeTint(TeamId team)
+        {
+            Color c = Color.Lerp(team.ToColor(), Color.white, 0.18f);
+            c.a = DamageSmokeGrey.a;
+            return c;
+        }
+
+        /// <summary>
+        /// Starts or stops the team-colored plume. Damage emitters are not written here.
+        /// The prefab copies are created on the first burst, then left stopped.
+        /// </summary>
+        void UpdateOverdriveSmoke(EntityManager em, in ShipState ship, float speed)
+        {
+            bool burst = ResolveOverdriveBurst(em, ship);
+            if (!burst && _overdriveInstances.Count == 0)
+                return;
+
+            if (burst)
+                EnsureOverdriveEmitters();
+            if (_overdriveInstances.Count == 0)
+                return;
+
+            if (!_overdriveTintSet || ship.Team != _overdriveTintTeam)
+            {
+                _overdriveTintTeam = ship.Team;
+                _overdriveTintSet = true;
+                TintOverdriveMaterials(TeamSmokeTint(ship.Team));
+            }
+
+            // Spawned this frame, after the earlier anchor sync.
+            SyncSmokeToAnchors();
+
+            float speedFactor = math.saturate(speed / math.max(0.01f, _config.trailSpeedReference));
+            bool emitToggled = burst != _overdriveWasEmitting;
+            bool speedChanged = burst && math.abs(speedFactor - _overdriveSpeedFactor) >= 0.05f;
+            if (emitToggled)
+            {
+                ApplyOverdriveEmission(burst, speedFactor);
+                _overdriveWasEmitting = burst;
+                _overdriveSpeedFactor = speedFactor;
+                return;
+            }
+
+            if (speedChanged)
+            {
+                ApplyOverdriveRateOverDistance(speedFactor);
+                _overdriveSpeedFactor = speedFactor;
+            }
+
+            if (burst)
+                ResumeOverdriveEmitters();
+        }
+
+        /// <summary>
+        /// One team-colored prefab per damage nozzle. Names avoid "Thruster" so attribute
+        /// scale does not treat them as mounts.
+        /// </summary>
+        void EnsureOverdriveEmitters()
+        {
+            if (_overdriveInstances.Count > 0 || _config == null || _config.smokePrefab == null)
+                return;
+            if (_smokeAnchors.Count == 0)
+                return;
+
+            for (int i = 0; i < _smokeAnchors.Count; i++)
+            {
+                GameObject go = Instantiate(_config.smokePrefab, transform);
+                go.name = $"ShipOverdriveSmoke_{i}";
+                Transform anchor = _smokeAnchors[i];
+                if (anchor == null)
+                {
+                    go.transform.localPosition = _config.localOffset;
+                    go.transform.localRotation = Quaternion.Euler(_config.localEuler);
+                }
+
+                EnsureUrpSmokeMaterials(go, TeamSmokeTint(TeamId.None), "ShipOverdriveSmoke_Team", _overdriveMaterials);
+                CollectAndConfigureParticleSystems(go, _overdriveParticles);
+                _overdriveInstances.Add(go);
+            }
+
+            _overdriveTintSet = false;
+            ApplyWorldNormalizedScale(_overdriveInstances, 1f);
+            ConfigureOverdriveMainModules();
+        }
+
+        /// <summary>
+        /// Lifetime and size are written once, before any puffs exist. Later bursts only change
+        /// emission rate — main-module writes restart the system and delete the trail.
+        /// </summary>
+        void ConfigureOverdriveMainModules()
+        {
+            if (_config == null)
+                return;
+
+            float life = _config.maxLifetime;
+            float startSize = _config.maxStartSize;
+            for (int i = 0; i < _overdriveParticles.Count; i++)
+            {
+                ParticleSystem ps = _overdriveParticles[i];
+                if (ps == null)
+                    continue;
+
+                var main = ps.main;
+                main.startLifetime = new ParticleSystem.MinMaxCurve(life * 0.8f, life);
+                main.startSize = new ParticleSystem.MinMaxCurve(startSize * 0.65f, startSize);
+                main.startSpeed = new ParticleSystem.MinMaxCurve(0.15f, 0.55f);
+                main.startColor = new ParticleSystem.MinMaxGradient(Color.white);
+
+                var emission = ps.emission;
+                emission.enabled = true;
+                emission.rateOverTime = 0f;
+                emission.rateOverDistance = 0f;
+            }
+        }
+
+        /// <summary>Stops spawning team puffs. Already-born puffs keep fading in world space.</summary>
+        void StopOverdriveEmission()
+        {
+            if (!_overdriveWasEmitting && _overdriveInstances.Count == 0)
+                return;
+
+            ApplyOverdriveEmission(false, 0f);
+            _overdriveWasEmitting = false;
+            _overdriveSpeedFactor = 0f;
+        }
+
+        /// <summary>
+        /// Turns the team plume on or off by emission rate only. The system stays playing, so
+        /// puffs already in the world keep fading and the next burst starts ahead of them.
+        /// </summary>
+        void ApplyOverdriveEmission(bool emit, float speedFactor)
+        {
+            if (_config == null)
+                return;
+
+            speedFactor = math.saturate(speedFactor);
+            float rateOverTime = emit ? _config.maxEmissionRate : 0f;
+            float rateOverDistance = emit ? _config.maxRateOverDistance * speedFactor : 0f;
+
+            for (int i = 0; i < _overdriveInstances.Count; i++)
+            {
+                GameObject go = _overdriveInstances[i];
+                if (go != null && !go.activeSelf)
+                    go.SetActive(true);
+            }
+
+            for (int i = 0; i < _overdriveParticles.Count; i++)
+            {
+                ParticleSystem ps = _overdriveParticles[i];
+                if (ps == null)
+                    continue;
+
+                // Keep the module enabled. Stop() / disabling it latches "do not emit", and the
+                // only public restart (Stop + Clear + Play) deletes the trail still on screen.
+                var emission = ps.emission;
+                emission.enabled = true;
+                emission.rateOverTime = rateOverTime;
+                emission.rateOverDistance = rateOverDistance;
+
+                if (emit && !ps.isPlaying)
+                    ps.Play();
+            }
+        }
+
+        /// <summary>Speed-only trail density for the team plume.</summary>
+        void ApplyOverdriveRateOverDistance(float speedFactor)
+        {
+            if (_config == null)
+                return;
+
+            float rateOverDistance = _config.maxRateOverDistance * math.saturate(speedFactor);
+            for (int i = 0; i < _overdriveParticles.Count; i++)
+            {
+                ParticleSystem ps = _overdriveParticles[i];
+                if (ps == null)
+                    continue;
+
+                var emission = ps.emission;
+                emission.rateOverDistance = rateOverDistance;
+            }
+        }
+
+        /// <summary>
+        /// Play() if a parent-scale write stopped the team plume while the burst is still held.
+        /// Does not clear particles — a Stop+Clear here blinks out the previous trail.
+        /// </summary>
+        void ResumeOverdriveEmitters()
+        {
+            if (_config == null)
+                return;
+
+            for (int i = 0; i < _overdriveParticles.Count; i++)
+            {
+                ParticleSystem ps = _overdriveParticles[i];
+                if (ps == null || ps.isPlaying)
+                    continue;
+
+                var emission = ps.emission;
+                emission.enabled = true;
+                if (emission.rateOverTime.constant <= 0f)
+                    emission.rateOverTime = _config.maxEmissionRate;
+                ps.Play();
+            }
+        }
+
+        /// <summary>Writes the team color onto overdrive materials only.</summary>
+        void TintOverdriveMaterials(Color tint)
+        {
+            for (int i = 0; i < _overdriveMaterials.Count; i++)
+            {
+                Material mat = _overdriveMaterials[i];
+                if (mat == null)
+                    continue;
+
+                if (mat.HasProperty("_BaseColor"))
+                    mat.SetColor("_BaseColor", tint);
+                if (mat.HasProperty("_Color"))
+                    mat.SetColor("_Color", tint);
+                if (mat.HasProperty("_TintColor"))
+                    mat.SetColor("_TintColor", tint);
+                mat.color = tint;
+            }
         }
     }
 }

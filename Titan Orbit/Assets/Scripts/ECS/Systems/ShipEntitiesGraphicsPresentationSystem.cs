@@ -135,14 +135,13 @@ namespace TitanOrbit.ECS
                 return;
             }
 
-            if (!ShipStatApplyLogic.TryResolveChassisId(
+            if (!BotShipPresentation.TryResolveChassis(
                     EntityManager,
                     shipEntity,
-                    ship.Team,
-                    ship.ShipLevel,
-                    branchIndex,
+                    ship,
                     out string chassisId,
-                    allowFallback: true))
+                    out int presentLevel,
+                    out int presentBranch))
                 return;
 
             if (!catalog.TryGetEntry(chassisId, out var entry) || entry.RenderParts == null || entry.RenderParts.Count == 0)
@@ -153,8 +152,8 @@ namespace TitanOrbit.ECS
                 var applied = EntityManager.GetComponentData<ShipClientVisualState>(shipEntity);
                 var chassisKey = new FixedString64Bytes(chassisId);
                 if (applied.ChassisId.Equals(chassisKey)
-                    && applied.AppliedShipLevel == ship.ShipLevel
-                    && applied.AppliedBranchIndex == branchIndex
+                    && applied.AppliedShipLevel == presentLevel
+                    && applied.AppliedBranchIndex == presentBranch
                     && applied.AppliedTeam == ship.Team)
                 {
                     return;
@@ -164,7 +163,7 @@ namespace TitanOrbit.ECS
             _shipsToResync.Add(new PendingVisualResync
             {
                 ShipEntity = shipEntity,
-                BranchIndex = branchIndex,
+                BranchIndex = presentBranch,
             });
         }
 
@@ -174,14 +173,13 @@ namespace TitanOrbit.ECS
             int branchIndex,
             ShipChassisVisualCatalog catalog)
         {
-            if (!ShipStatApplyLogic.TryResolveChassisId(
+            if (!BotShipPresentation.TryResolveChassis(
                     EntityManager,
                     shipEntity,
-                    ship.Team,
-                    ship.ShipLevel,
-                    branchIndex,
+                    ship,
                     out string chassisId,
-                    allowFallback: true))
+                    out int presentLevel,
+                    out int presentBranch))
                 return;
 
             if (!catalog.TryGetEntry(chassisId, out var entry) || entry.RenderParts == null || entry.RenderParts.Count == 0)
@@ -194,8 +192,8 @@ namespace TitanOrbit.ECS
             var visualState = new ShipClientVisualState
             {
                 ChassisId = new FixedString64Bytes(chassisId),
-                AppliedShipLevel = ship.ShipLevel,
-                AppliedBranchIndex = branchIndex,
+                AppliedShipLevel = presentLevel,
+                AppliedBranchIndex = presentBranch,
                 AppliedTeam = ship.Team,
             };
 

@@ -68,13 +68,15 @@ namespace TitanOrbit.Data
         /// Used for leaderboards and team lists so bots feel consistent across rounds.
         /// </summary>
         /// <param name="id">AI entity or connection id used as hash input.</param>
-        /// <returns>Deterministic name from <see cref="DefaultPlayerNames"/> or fallback "AI {id}".</returns>
+        /// <returns>Deterministic "Bot …" name so players can tell an AI hull from a person.</returns>
         public static string GetNameForAI(ulong id)
         {
             // --- Deterministic index from network id ---
             int count = DefaultPlayerNames.Count;
             // [STANDARD] Modulo maps any ulong into list index; empty list falls back to generic label.
-            return count > 0 ? DefaultPlayerNames[(int)(id % (ulong)count)] : ("AI " + id);
+            return count > 0
+                ? "Bot " + DefaultPlayerNames[(int)(id % (ulong)count)]
+                : "Bot " + id;
         }
     }
 }

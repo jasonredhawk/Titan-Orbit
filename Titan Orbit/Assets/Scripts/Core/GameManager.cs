@@ -223,10 +223,10 @@ namespace TitanOrbit.Core
         [SerializeField] bool debugDisableMegaShipAutoFire;
 
         [Header("Debug — AI Ships")]
-        [Tooltip("ON: the local host spawns generalist AI ships for each team that already has a home planet. They mine, deposit, level, haul troops, and fight nearby enemies. A seated commander can retask them from the Comms Matrix. OFF by default. Dedicated server always stays off.")]
+        [Tooltip("ON: the server spawns AI ships for each team that already has a home planet. They stay parked until a real player has a ship, then mine, deposit, level, haul troops, and fight nearby enemies. A Comms Matrix order retasks them and copies that player's ship skin. Dedicated server and WebGL use this same switch.")]
         [SerializeField] bool debugAiShips;
 
-        [Tooltip("AI ships per team while Debug AI Ships is on. Clamped to 1–2.")]
+        [Tooltip("AI ships per team while Debug AI Ships is on. Clamped to 1–12. Humans on that team take slots first, so a count of 11 beside one player fills a 12-player team. A new player removes one bot; a player who leaves frees the slot and a bot returns.")]
         [SerializeField] int debugAiShipsPerTeam = 1;
 
         [Header("Debug — Asteroid Destroy Hitch")]
@@ -617,14 +617,15 @@ namespace TitanOrbit.Core
             TitanOrbitDebugFlags.InfiniteRockets = false;
             TitanOrbitDebugFlags.InfiniteMines = false;
             TitanOrbitDebugFlags.SelfHarmRocketsAndMines = false;
-            TitanOrbitDebugFlags.AiShips = false;
-            TitanOrbitDebugFlags.AiShipsPerTeam = 0;
 #else
             TitanOrbitDebugFlags.CycleAllBulletBanks = debugCycleAllBulletBanks;
             TitanOrbitDebugFlags.CycleAllThrusterVfx = debugCycleAllThrusterVfx;
             TitanOrbitDebugFlags.InfiniteRockets = debugInfiniteRockets;
             TitanOrbitDebugFlags.InfiniteMines = debugInfiniteMines;
             TitanOrbitDebugFlags.SelfHarmRocketsAndMines = debugSelfHarmRocketsAndMines;
+#endif
+            // [TITAN-ORBIT] AI ships are match simulation. WebGL never runs the brain —
+            // the dedicated server must publish the same toggle the Editor host uses.
             TitanOrbitDebugFlags.AiShips = debugAiShips;
             int aiPerTeam = debugAiShipsPerTeam;
             if (aiPerTeam < 1)
@@ -632,7 +633,6 @@ namespace TitanOrbit.Core
             if (aiPerTeam > TitanOrbitDebugFlags.AiShipsPerTeamCap)
                 aiPerTeam = TitanOrbitDebugFlags.AiShipsPerTeamCap;
             TitanOrbitDebugFlags.AiShipsPerTeam = debugAiShips ? aiPerTeam : 0;
-#endif
             // [TITAN-ORBIT] Asteroid auto-aim is gameplay, not a local cheat. SampleScene
             // leaves this on. WebGL never runs MegaShipAutoFireSystem — the dedicated
             // server must publish the same toggle the Editor host uses.

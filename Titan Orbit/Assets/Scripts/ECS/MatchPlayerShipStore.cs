@@ -218,6 +218,7 @@ namespace TitanOrbit.ECS
             var saved = snapshot.Ship;
             saved.AwaitingTeamSelection = false;
             saved.OverdriveLockout = false;
+            saved.OverdriveBurstActive = false;
             saved.CurrentGems = 0f;
             saved.CurrentPeople = 0;
             em.SetComponentData(ship, saved);
@@ -377,6 +378,7 @@ namespace TitanOrbit.ECS
             shipState.IsEliminated = false;
             shipState.AwaitingTeamSelection = false;
             shipState.OverdriveLockout = false;
+            shipState.OverdriveBurstActive = false;
             em.SetComponentData(ship, shipState);
         }
 

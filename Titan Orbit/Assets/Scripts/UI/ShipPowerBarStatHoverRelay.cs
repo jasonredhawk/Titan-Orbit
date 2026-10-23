@@ -187,6 +187,21 @@ namespace TitanOrbit.UI
                     s_Live[i]._hoverSlot = -1;
             }
 
+            // --- Zero gear lanes ---
+            // [TITAN-ORBIT] A dim gear slot (this part adds nothing to that stat)
+            // still sits under the pointer. It must own the hit so a hull bar
+            // behind it cannot pop a card, and it must not open STAT TELEMETRY.
+            // Once the card is already hidden, later frames on the same empty
+            // lane do nothing.
+            if (!hit.Owner.SlotAcceptsStatHover(slot))
+            {
+                bool alreadyQuiet = slot == hit._hoverSlot && ShipPowerBarStatTooltip.ActiveSlot < 0;
+                hit._hoverSlot = slot;
+                if (!alreadyQuiet)
+                    ShipPowerBarStatTooltip.Hide();
+                return;
+            }
+
             if (slot == hit._hoverSlot && ShipPowerBarStatTooltip.ActiveSlot == slot
                 && ReferenceEquals(ShipPowerBarStatTooltip.ActiveOwner, hit))
                 return;

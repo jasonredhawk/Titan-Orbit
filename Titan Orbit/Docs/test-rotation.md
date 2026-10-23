@@ -27,7 +27,7 @@ TitanOrbitServer.exe -batchmode -nographics ^
 
 `--emptyMatchRecreateSeconds` controls how long a lobby may sit with zero players before the headless server deletes it and publishes a new lobby (default 1 hour). Relay stay-alive uses UTP transport heartbeats only (no periodic allocation swap).
 
-The dedicated server also publishes `ServerAliveAt` on each lobby heartbeat (every ~15s). Clients skip listings older than ~120s without a fresh heartbeat, and the server regenerates the map after in-process Netcode restarts so empty overnight lobbies do not serve a zero-blueprint world.
+The dedicated server also publishes `ServerAliveAt` on each lobby heartbeat (every ~15s). Clients skip listings older than ~120s without a fresh heartbeat. An empty match rolls a new map after `emptyMatchRecreateSeconds` (default 1 hour). A stale listing is refreshed after 10 seconds and keeps the same map age.
 
 ### Linux command variant
 

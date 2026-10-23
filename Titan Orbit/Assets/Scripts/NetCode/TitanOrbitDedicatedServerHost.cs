@@ -23,8 +23,9 @@ namespace TitanOrbit.NetCode
     /// - While any NetCode player is connected, this match must keep running and stay joinable
     ///   (IsOpen=1). Age rotation may spawn a successor and demote IsLatest, but must not close
     ///   or wipe an occupied conquest map.
-    /// - Idle teardown / in-process recreate starts only when player count hits zero; the empty
-    ///   countdown resets at that moment (last player left). Until then, keep the sim alive.
+    /// - Idle teardown starts only when player count hits zero; the empty countdown starts at that
+    ///   moment (last player left). After one hour empty, roll a new map on this process.
+    ///   A stale listing refresh does not reset that clock or the map age. Until players leave, keep the sim alive.
     /// - A real game end (one team left) closes this lobby for new joiners immediately, spawns
     ///   a fresh IsLatest process, and exits this process once the end-screen players leave.
     ///   The next Join Game is that new match — never the finished map.
@@ -48,7 +49,11 @@ namespace TitanOrbit.NetCode
         const int MaxSpawnAttemptsPerHandoff = 5;
         const float SpawnRetryDelaySeconds = 10f;
         const float SuccessorPollIntervalSeconds = 3f;
-        const float SelfHealPollIntervalSeconds = 90f;
+        /// <summary>
+        /// How often to notice a closed or heartbeat-dead listing and refresh it.
+        /// Same cadence as <see cref="TitanOrbitServerCommandLine.DefaultStaleLobbyRecreateSeconds"/>.
+        /// </summary>
+        const float SelfHealPollIntervalSeconds = 10f;
         /// <summary>How often we evaluate RSS / struggling empty-recycle (seconds).</summary>
         const float MemoryHealthPollSeconds = 15f;
         /// <summary>After a full handoff fails, wait before starting another (avoids spawn spam every 3s).</summary>
@@ -72,6 +77,10 @@ namespace TitanOrbit.NetCode
 
         TitanOrbitServerCommandLine _config;
         string _activeLobbyId;
+        /// <summary>Unix seconds when this process's current map was rolled. Join Game age uses this, not lobby-object age.</summary>
+        long _gameStartedAtEpochSeconds;
+        /// <summary>Set when a new map roll is queued, committed when the replacement lobby is published.</summary>
+        long _pendingFreshMapEpoch;
         long _createdAtEpochSeconds;
         bool _matchIsLatest;
         bool _spawnedFromAge;
@@ -143,10 +152,46 @@ namespace TitanOrbit.NetCode
         int _hangWatchdogPausedFlag;
 
         /// <summary>Called from <see cref="TitanOrbitSessionManager"/> after heartbeat-driven recreate.</summary>
-        public static void NotifyLobbyReplacedFromSession(string newLobbyId, long createdAtEpochSeconds, bool isLatest)
+        public static void NotifyLobbyReplacedFromSession(
+            string newLobbyId,
+            long createdAtEpochSeconds,
+            bool isLatest,
+            bool freshMap)
         {
             if (s_Instance != null)
-                s_Instance.NotifyLobbyReplaced(newLobbyId, createdAtEpochSeconds, isLatest);
+                s_Instance.NotifyLobbyReplaced(newLobbyId, createdAtEpochSeconds, isLatest, freshMap);
+        }
+
+        /// <summary>True after a new map roll is queued and before its lobby publish commits.</summary>
+        public static bool HasPendingFreshMap =>
+            s_Instance != null && s_Instance._pendingFreshMapEpoch > 0;
+
+        /// <summary>
+        /// CreatedAt written onto the next lobby. A fresh map uses the queued roll time.
+        /// A listing refresh keeps the map's original start so Join Game age does not reset.
+        /// </summary>
+        /// <param name="freshMap">True only for the empty-hour map roll.</param>
+        public static long ResolveLobbyCreatedAtEpoch(bool freshMap)
+        {
+            // --- ResolveLobbyCreatedAtEpoch ---
+            if (s_Instance == null)
+                return DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+
+            // A roll already queued keeps that stamp, including heartbeats before the new lobby commits.
+            if (s_Instance._pendingFreshMapEpoch > 0)
+                return s_Instance._pendingFreshMapEpoch;
+
+            if (freshMap)
+            {
+                s_Instance._pendingFreshMapEpoch = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+                return s_Instance._pendingFreshMapEpoch;
+            }
+
+            if (s_Instance._gameStartedAtEpochSeconds > 0)
+                return s_Instance._gameStartedAtEpochSeconds;
+            if (s_Instance._createdAtEpochSeconds > 0)
+                return s_Instance._createdAtEpochSeconds;
+            return DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         }
 
         /// <summary>
@@ -196,6 +241,8 @@ namespace TitanOrbit.NetCode
             _config = config ?? TitanOrbitServerCommandLine.Parse();
             _activeLobbyId = lobbyId;
             _createdAtEpochSeconds = createdAtEpochSeconds;
+            _gameStartedAtEpochSeconds = createdAtEpochSeconds;
+            _pendingFreshMapEpoch = 0;
             _matchIsLatest = isLatest;
             _emptySinceUtc = DateTime.UtcNow;
             _localLobbyUnjoinableSinceUtc = null;
@@ -250,19 +297,33 @@ namespace TitanOrbit.NetCode
             TryBeginMatchEndClose();
         }
 
-        public void NotifyLobbyReplaced(string newLobbyId, long createdAtEpochSeconds, bool isLatest)
+        public void NotifyLobbyReplaced(string newLobbyId, long createdAtEpochSeconds, bool isLatest, bool freshMap)
         {
             // --- NotifyLobbyReplaced ---
             _activeLobbyId = newLobbyId;
-            _createdAtEpochSeconds = createdAtEpochSeconds;
             _matchIsLatest = isLatest;
             _spawnedFromAge = false;
             _spawnedFromFull = false;
-            _emptySinceUtc = DateTime.UtcNow;
             _localLobbyUnjoinableSinceUtc = null;
+            if (createdAtEpochSeconds > 0)
+            {
+                _createdAtEpochSeconds = createdAtEpochSeconds;
+                _gameStartedAtEpochSeconds = createdAtEpochSeconds;
+            }
+
+            // A new map starts its empty-hour clock over. A listing refresh must not,
+            // or a stale lobby would keep the same conquest world alive forever.
+            if (freshMap)
+            {
+                _emptySinceUtc = DateTime.UtcNow;
+                _pendingFreshMapEpoch = 0;
+            }
+
             DedicatedServerFileLog.Append(
                 "lobby",
                 "Lobby replaced id=" + newLobbyId + " isLatest=" + isLatest +
+                " freshMap=" + freshMap +
+                " gameStartedAt=" + _gameStartedAtEpochSeconds +
                 " emptyInProcessRecreates=" + _successfulEmptyInProcessRecreates);
         }
 
@@ -508,7 +569,8 @@ namespace TitanOrbit.NetCode
                 if ((pendingEmptyRecreate || pendingStaleRecreate) && !_handoffInProgress &&
                     TitanOrbitSessionManager.Instance != null)
                 {
-                    string reason = pendingStaleRecreate ? "stale_lobby_recreate" : "empty_match_recreate";
+                    // Empty-hour wins when both are due — that path rolls a new map.
+                    string reason = pendingEmptyRecreate ? "empty_match_recreate" : "stale_lobby_recreate";
                     bool isIdleEmptyRecreate = reason == "empty_match_recreate";
 
                     // [TITAN-ORBIT] Prefer process recycle over another Relay swap when already thrashing
@@ -536,7 +598,8 @@ namespace TitanOrbit.NetCode
                     yield return RunInProcessRecreateCoroutine(
                         reason,
                         forceIsLatest: true,
-                        countAsEmptyRecycle: isIdleEmptyRecreate);
+                        countAsEmptyRecycle: isIdleEmptyRecreate,
+                        rollNewMap: isIdleEmptyRecreate);
                 }
 
                 yield return wait;
@@ -603,7 +666,7 @@ namespace TitanOrbit.NetCode
 
                 var result = await TitanOrbitSessionManager.Instance.RecreateDedicatedMatchAsync(_config, forceIsLatest: true);
                 if (result != null)
-                    NotifyLobbyReplaced(result.LobbyId, result.CreatedAtEpochSeconds, result.IsLatest);
+                    NotifyLobbyReplaced(result.LobbyId, result.CreatedAtEpochSeconds, result.IsLatest, freshMap: false);
             }
             catch (Exception e)
             {
@@ -732,7 +795,11 @@ namespace TitanOrbit.NetCode
         /// <param name="countAsEmptyRecycle">
         /// When true, increments the empty-recreate counter used for process recycle.
         /// </param>
-        IEnumerator RunInProcessRecreateCoroutine(string reason, bool forceIsLatest, bool countAsEmptyRecycle = false)
+        IEnumerator RunInProcessRecreateCoroutine(
+            string reason,
+            bool forceIsLatest,
+            bool countAsEmptyRecycle = false,
+            bool rollNewMap = false)
         {
             // --- RunInProcessRecreateCoroutine ---
             if (IsRecreateInProgress() || TitanOrbitSessionManager.Instance == null)
@@ -744,7 +811,7 @@ namespace TitanOrbit.NetCode
                 " forceLatest=" + forceIsLatest +
                 " emptyRecreateCount=" + _successfulEmptyInProcessRecreates);
             Task<TitanOrbitSessionManager.DedicatedMatchRecreateResult> recreateTask =
-                TitanOrbitSessionManager.Instance.RecreateDedicatedMatchAsync(_config, forceIsLatest);
+                TitanOrbitSessionManager.Instance.RecreateDedicatedMatchAsync(_config, forceIsLatest, rollNewMap);
             while (!recreateTask.IsCompleted)
                 yield return null;
 
@@ -760,9 +827,9 @@ namespace TitanOrbit.NetCode
             if (recreateTask.Result != null)
             {
                 var result = recreateTask.Result;
-                NotifyLobbyReplaced(result.LobbyId, result.CreatedAtEpochSeconds, result.IsLatest);
+                NotifyLobbyReplaced(result.LobbyId, result.CreatedAtEpochSeconds, result.IsLatest, result.FreshMap);
                 _spawnedFromAge = false;
-                if (countAsEmptyRecycle)
+                if (countAsEmptyRecycle && result.FreshMap)
                     NoteSuccessfulEmptyInProcessRecreate(reason);
             }
             else
@@ -905,7 +972,7 @@ namespace TitanOrbit.NetCode
                 // [TITAN-ORBIT] Match request must recreate in-process — never exit (would empty Join Game).
                 var result = await TitanOrbitSessionManager.Instance.RecreateDedicatedMatchAsync(_config, forceIsLatest: true);
                 if (result != null)
-                    NotifyLobbyReplaced(result.LobbyId, result.CreatedAtEpochSeconds, result.IsLatest);
+                    NotifyLobbyReplaced(result.LobbyId, result.CreatedAtEpochSeconds, result.IsLatest, freshMap: false);
             }
             catch (Exception e)
             {

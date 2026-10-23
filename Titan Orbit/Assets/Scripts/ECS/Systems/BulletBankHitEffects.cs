@@ -460,10 +460,12 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// [TITAN-ORBIT] AoE damage for Concussive Push. Center takes
-        /// <paramref name="centerDamage"/>; linear falloff to 0 at blast radius.
+        /// AoE damage for Concussive Push. Linear falloff to 0 at the blast radius.
         /// Skips <paramref name="skipEntity"/> (the primary hit already took full damage).
-        /// Hits enemy ships, asteroids, enemy turrets, and enemy drones.
+        /// Ships, turrets, and drones use the vs-ship row. Asteroids use the vs-asteroid
+        /// row. The shot's raw <see cref="BulletElement.Damage"/> is the base — the
+        /// primary hit's already-scaled number is not reused, or a rock bonus would
+        /// leak onto ships (and a ship bonus would miss rocks in the same blast).
         /// </summary>
         public static void TryApplyConcussiveBlastDamage(
             EntityManager em,
@@ -472,7 +474,6 @@ namespace TitanOrbit.ECS
             float mapW,
             float mapH,
             in BulletElement bullet,
-            float centerDamage,
             Entity skipEntity,
             double serverElapsed,
             List<PlanetaryDefenseHitTarget> defenseTargets,
@@ -481,7 +482,7 @@ namespace TitanOrbit.ECS
             Entity gemPrefab,
             float gemExpulsionPerHullDamage)
         {
-            if (profile == null || centerDamage <= 0.01f)
+            if (profile == null || bullet.Damage <= 0.01f)
                 return;
             if (!profile.TryGetResolvedAbility(
                     BulletBankAbilityType.ConcussivePush, bullet.FirePowerExtraLevels,
@@ -506,15 +507,24 @@ namespace TitanOrbit.ECS
             byte ownerTeam = bullet.OwnerTeam;
             int ownerNet = bullet.OwnerNetworkId;
 
+            // --- Per-target bonus ---
+            // Same rows as a direct hit. A vs-asteroid rocket bonuses rocks in the
+            // blast and leaves ships at the unscaled shot.
+            int extras = bullet.FirePowerExtraLevels;
+            float shipCenter = BulletBankCombatLogic.ResolveHitDamage(
+                profile, BulletBankDamageTarget.ShipOrDrone, bullet.Damage, extras);
+            float asteroidCenter = BulletBankCombatLogic.ResolveHitDamage(
+                profile, BulletBankDamageTarget.Asteroid, bullet.Damage, extras);
+
             ShipMatchStatsLogic.ClassifyBulletSource(in bullet, out byte blastKind, out int blastGhost);
             ApplyBlastToShips(
-                em, hitPoint, radius, centerDamage, skipEntity, ownerTeam, ownerNet,
+                em, hitPoint, radius, shipCenter, skipEntity, ownerTeam, ownerNet,
                 serverElapsed, mapW, mapH, ecb, gemPrefab, gemExpulsionPerHullDamage,
                 sourceKind: blastKind,
                 sourceGhostId: blastGhost);
-            ApplyBlastToAsteroids(em, hitPoint, radius, centerDamage, skipEntity, mapW, mapH);
-            ApplyBlastToTurrets(em, hitPoint, radius, centerDamage, skipEntity, ownerTeam, serverElapsed, defenseTargets, mapW, mapH);
-            ApplyBlastToDrones(em, hitPoint, radius, centerDamage, ownerTeam, ownerNet, droneTargets, mapW, mapH);
+            ApplyBlastToAsteroids(em, hitPoint, radius, asteroidCenter, skipEntity, mapW, mapH);
+            ApplyBlastToTurrets(em, hitPoint, radius, shipCenter, skipEntity, ownerTeam, serverElapsed, defenseTargets, mapW, mapH);
+            ApplyBlastToDrones(em, hitPoint, radius, shipCenter, ownerTeam, ownerNet, droneTargets, mapW, mapH);
         }
 
         /// <summary>

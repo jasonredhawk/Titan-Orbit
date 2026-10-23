@@ -943,7 +943,9 @@ namespace TitanOrbit.NetCode
                 IsOpen = true,
                 IsLatest = false,
                 IsDedicatedServer = isDedicatedServerLobby,
-                CreatedAtEpochSeconds = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                // Missing CreatedAt must not pretend the match started at this query.
+                // FormatLobbyActiveDuration shows "—" until the server's map-start epoch arrives.
+                CreatedAtEpochSeconds = 0,
                 ActivePlayers = activePlayersFromServer,
                 MapLoadingSteps = -1,
                 MapTeamCount = -1,

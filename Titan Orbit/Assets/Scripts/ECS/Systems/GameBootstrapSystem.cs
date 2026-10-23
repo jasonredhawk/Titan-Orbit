@@ -86,6 +86,40 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
+    /// Asks the server <see cref="MapGenerationSystem"/> to roll a new map on the current world.
+    /// The request sits until the previous roll is finished, then that system clears bodies and starts over.
+    /// </summary>
+    public static class MapRegeneration
+    {
+        /// <summary>
+        /// Queues one regeneration. No-op while a roll is already in progress or a request is waiting.
+        /// </summary>
+        /// <param name="em">Dedicated or host ServerWorld entity manager.</param>
+        /// <returns>True when a new request entity was created.</returns>
+        public static bool TryRequest(EntityManager em)
+        {
+            // --- TryRequest ---
+            using (var pending = em.CreateEntityQuery(typeof(MapRegenerateRequest)))
+            {
+                if (!pending.IsEmptyIgnoreFilter)
+                    return false;
+            }
+
+            using (var maps = em.CreateEntityQuery(typeof(MapStateSingleton)))
+            {
+                if (maps.IsEmptyIgnoreFilter)
+                    return false;
+                MapStateSingleton map = maps.GetSingleton<MapStateSingleton>();
+                if (!map.LoadingComplete)
+                    return false;
+            }
+
+            em.CreateEntity(typeof(MapRegenerateRequest));
+            return true;
+        }
+    }
+
+    /// <summary>
     /// Server procedural map spawn: rolls layout from <see cref="MapGenerationLogic"/>, instantiates
     /// planets and asteroids incrementally, then applies starting neutral captures one-at-a-time in
     /// round-robin order so sticky planet connections can rebuild between claims.
@@ -196,7 +230,19 @@ namespace TitanOrbit.ECS
         public void OnUpdate(ref SystemState state)
         {
             if (_phase == Phase.Done)
-                return;
+            {
+                // [TITAN-ORBIT] HasSingleton is the steady-state check (every sim tick once the map
+                // is built). Do not allocate an EntityQuery here.
+                if (!SystemAPI.HasSingleton<MapRegenerateRequest>())
+                    return;
+                Entity request = SystemAPI.GetSingletonEntity<MapRegenerateRequest>();
+                state.EntityManager.DestroyEntity(request);
+                PrepareForRegeneration(ref state);
+                _spawnIndex = 0;
+                _asteroidLayoutSlot = 0;
+                _claimIndex = 0;
+                _phase = Phase.Idle;
+            }
 
             if (_phase == Phase.Idle)
             {
@@ -656,6 +702,114 @@ namespace TitanOrbit.ECS
             if (_spawnQueue.IsCreated) _spawnQueue.Dispose();
             if (_claimQueue.IsCreated) _claimQueue.Dispose();
             if (_neutralPlanetIdsByLayoutIndex.IsCreated) _neutralPlanetIdsByLayoutIndex.Dispose();
+        }
+
+        /// <summary>
+        /// Drops the previous match's bodies so <see cref="BeginGeneration"/> can roll a new map
+        /// on this ServerWorld. Prefab entities stay. Singletons (map, match, bullets) stay and
+        /// their dynamic buffers are cleared.
+        /// </summary>
+        void PrepareForRegeneration(ref SystemState state)
+        {
+            // --- PrepareForRegeneration ---
+            DisposeNativeCollections();
+            var em = state.EntityManager;
+            DestroyInstances<PlanetGemMoonShieldColliderTag>(em);
+            DestroyInstances<PlanetGemMoonColliderTag>(em);
+            DestroyInstances<PeopleTransportTag>(em);
+            DestroyInstances<GemTag>(em);
+            DestroyInstances<ShipTag>(em);
+            DestroyInstances<BotShipTag>(em);
+            DestroyInstances<AsteroidTag>(em);
+            DestroyInstances<PlanetTag>(em);
+
+            // SystemAPI lookups are stale after the destroys above. Query the manager directly.
+            if (TryGetSingletonEntity(em, typeof(MapStateSingleton), out Entity mapEntity))
+            {
+                ClearBuffer<MapLayoutEntryElement>(em, mapEntity);
+                ClearBuffer<BulletElement>(em, mapEntity);
+                ClearBuffer<BulletSpawnEventElement>(em, mapEntity);
+                ClearBuffer<BulletHitEventElement>(em, mapEntity);
+                ClearBuffer<GravityWellElement>(em, mapEntity);
+                ClearBuffer<PlayerNameElement>(em, mapEntity);
+            }
+
+            if (TryGetSingletonEntity(em, typeof(AsteroidRespawnQueueTag), out Entity respawnQueue))
+                ClearBuffer<PendingAsteroidRespawnElement>(em, respawnQueue);
+
+            if (TryGetSingletonEntity(em, typeof(PlanetConnectionGraphTag), out Entity graph))
+            {
+                ClearBuffer<PlanetConnectionEdgeElement>(em, graph);
+                ClearBuffer<PlanetConnectionTriangleElement>(em, graph);
+                if (em.HasComponent<PlanetConnectionGraphState>(graph))
+                {
+                    var graphState = em.GetComponentData<PlanetConnectionGraphState>(graph);
+                    graphState.OwnershipFingerprint = 0;
+                    graphState.NextEdgeSequence = 1;
+                    graphState.RebuildInProgress = false;
+                    em.SetComponentData(graph, graphState);
+                }
+            }
+
+            if (TryGetSingletonEntity(em, typeof(MatchStateSingleton), out Entity matchEntity))
+                em.SetComponentData(matchEntity, new MatchStateSingleton());
+
+            MatchEndServerSignal.Clear();
+            MatchPlayerShipStore.Clear();
+            UnityEngine.Debug.Log("[MapGeneration] Previous map cleared — rolling a new one.");
+        }
+
+        static bool TryGetSingletonEntity(EntityManager em, ComponentType type, out Entity entity)
+        {
+            entity = Entity.Null;
+            using var query = em.CreateEntityQuery(type);
+            if (query.CalculateEntityCount() != 1)
+                return false;
+            entity = query.GetSingletonEntity();
+            return true;
+        }
+
+        static void DestroyInstances<T>(EntityManager em) where T : unmanaged, IComponentData
+        {
+            // --- DestroyInstances ---
+            // [TITAN-ORBIT] Prefab assets live in the same world and carry the same tag.
+            // Copy linked-group members first — destroying the root invalidates that buffer.
+            using var query = em.CreateEntityQuery(
+                ComponentType.ReadOnly<T>(),
+                ComponentType.Exclude<Prefab>());
+            using var roots = query.ToEntityArray(Allocator.Temp);
+            var doomed = new NativeList<Entity>(roots.Length, Allocator.Temp);
+            for (int i = 0; i < roots.Length; i++)
+            {
+                Entity root = roots[i];
+                if (!em.Exists(root))
+                    continue;
+                if (em.HasBuffer<LinkedEntityGroup>(root))
+                {
+                    DynamicBuffer<LinkedEntityGroup> links = em.GetBuffer<LinkedEntityGroup>(root);
+                    for (int l = 0; l < links.Length; l++)
+                        doomed.Add(links[l].Value);
+                }
+                else
+                {
+                    doomed.Add(root);
+                }
+            }
+
+            for (int i = 0; i < doomed.Length; i++)
+            {
+                Entity entity = doomed[i];
+                if (em.Exists(entity))
+                    em.DestroyEntity(entity);
+            }
+
+            doomed.Dispose();
+        }
+
+        static void ClearBuffer<T>(EntityManager em, Entity entity) where T : unmanaged, IBufferElementData
+        {
+            if (em.HasBuffer<T>(entity))
+                em.GetBuffer<T>(entity).Clear();
         }
 
         /// <summary>Fresh map generation must not inherit player ships from a prior match on the same server world.</summary>

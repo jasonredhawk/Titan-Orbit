@@ -28,7 +28,9 @@ namespace TitanOrbit.ECS
     /// <see cref="ShipTerritoryBoostLatch"/>, and OVERDRIVE via ghosted
     /// <see cref="ShipState.OverdriveLockout"/> (<see cref="ShipOverdriveTuning.StepLockout"/>):
     /// burst = Shift ∧ Thrust ∧ energy &gt; 0 ∧ ¬lockout; lockout sets at energy 0 and clears at
-    /// ≥25% MaxEnergy (or Shift release). Normal RMB thrust is free. When the cruise cap drops
+    /// ≥25% MaxEnergy (or Shift release). The same burst is written to ghosted
+    /// <see cref="ShipState.OverdriveBurstActive"/> so remote clients can show team-colored
+    /// nozzle smoke. Normal RMB thrust is free. When the cruise cap drops
     /// (OVERDRIVE ends or the territory latch expires), leftover boost speed snaps down by that
     /// drop so the return to cruise is immediate — ram overspeed above the old cap still decays.
     /// Drain rate = <see cref="ShipMotorConfig.ThrustEnergyDrainPerSecond"/>
@@ -156,6 +158,7 @@ namespace TitanOrbit.ECS
                 orbitState = default;
                 ClearTerritoryBoostLatch(ref territoryLatch);
                 shipState.OverdriveLockout = false;
+                shipState.OverdriveBurstActive = false;
                 return;
             }
 
@@ -193,6 +196,7 @@ namespace TitanOrbit.ECS
                     orbitState = default;
                     ClearTerritoryBoostLatch(ref territoryLatch);
                     shipState.OverdriveLockout = false;
+                    shipState.OverdriveBurstActive = false;
                     return;
                 }
             }
@@ -220,6 +224,7 @@ namespace TitanOrbit.ECS
                 orbitState = default;
                 ClearTerritoryBoostLatch(ref territoryLatch);
                 shipState.OverdriveLockout = false;
+                shipState.OverdriveBurstActive = false;
                 return;
             }
 
@@ -395,6 +400,9 @@ namespace TitanOrbit.ECS
                     }
                 }
             }
+
+            // Remotes read this for team-colored nozzle smoke. Local bloom still uses pending input.
+            shipState.OverdriveBurstActive = overdriveActive;
 
             // --- Start from post-collision velocity (Unity Physics may have bounced us last tick) ---
             float3 vel = physicsVelocity.Linear;

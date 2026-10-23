@@ -1,4 +1,5 @@
 using TitanOrbit.Core;
+using TitanOrbit.Data;
 using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
 using Unity.Entities;
@@ -131,7 +132,9 @@ namespace TitanOrbit.ECS
             Entity gemPrefab,
             float gemSpawnServerTime,
             ref float gemCarry,
-            Entity attackerEntity = default)
+            Entity attackerEntity = default,
+            int bankIndex = 0,
+            int firePowerExtraLevels = 0)
         {
             var result = new Result { HitPoint = muzzle };
             if (damage <= 0.0001f || target == Entity.Null || !em.Exists(target))
@@ -142,7 +145,7 @@ namespace TitanOrbit.ECS
                 ApplyShip(
                     em, ecb, target, attackerTeam, attackerNetworkId, muzzle, damage, healFriendly,
                     mapW, mapH, serverElapsed, gemPrefab, gemSpawnServerTime, ref gemCarry, ref result,
-                    attackerEntity);
+                    attackerEntity, bankIndex, firePowerExtraLevels);
                 return result;
             }
 
@@ -153,17 +156,34 @@ namespace TitanOrbit.ECS
             {
                 ApplyPlanet(
                     em, target, attackerTeam, muzzle, damage, range, mapW, mapH,
-                    moonElapsed, serverElapsed, ref result);
+                    moonElapsed, serverElapsed, ref result, bankIndex, firePowerExtraLevels);
                 return result;
             }
 
             if (em.HasComponent<AsteroidState>(target) && em.HasComponent<LocalTransform>(target))
             {
-                ApplyAsteroid(em, ecb, target, attackerTeam, attackerNetworkId, muzzle, mapW, mapH, damage, ref result);
+                ApplyAsteroid(
+                    em, ecb, target, attackerTeam, attackerNetworkId, muzzle, mapW, mapH,
+                    ScaleFor(bankIndex, BulletBankDamageTarget.Asteroid, damage, firePowerExtraLevels),
+                    ref result);
                 return result;
             }
 
             return result;
+        }
+
+        /// <summary>
+        /// Bullet-type bonus for this victim. Flat fire power is already in
+        /// <paramref name="damage"/>. Heal slices must not call this — a vs-ship
+        /// row would turn a heal into a bigger heal.
+        /// </summary>
+        static float ScaleFor(int bankIndex, BulletBankDamageTarget target, float damage, int extras)
+        {
+            if (damage <= 0.0001f)
+                return damage;
+            if (!BulletBankCombatLogic.TryGetProfile(bankIndex, out BulletBankProfile profile) || profile == null)
+                return damage;
+            return BulletBankCombatLogic.ResolveHitDamage(profile, target, damage, extras);
         }
 
         static void ApplyShip(
@@ -182,7 +202,9 @@ namespace TitanOrbit.ECS
             float gemSpawnServerTime,
             ref float gemCarry,
             ref Result result,
-            Entity attackerEntity)
+            Entity attackerEntity,
+            int bankIndex,
+            int firePowerExtraLevels)
         {
             var ship = em.GetComponentData<ShipState>(target);
             if (ship.IsDead)
@@ -209,6 +231,10 @@ namespace TitanOrbit.ECS
                              moonDock.LandingProgress >= GemEconomyConstants.MoonLandingCompleteThreshold;
             }
 
+            // Hostile hulls pick up the vs-ship row. Allies above already healed
+            // with the unscaled slice.
+            float hullDamage = ScaleFor(
+                bankIndex, BulletBankDamageTarget.ShipOrDrone, damage, firePowerExtraLevels);
             float health = ship.Health;
             float gems = ship.CurrentGems;
             bool isDead = ship.IsDead;
@@ -216,7 +242,7 @@ namespace TitanOrbit.ECS
                 ref health,
                 ref gems,
                 ref isDead,
-                CardEffectQuery.ScaleIncomingDamage(em, target, damage),
+                CardEffectQuery.ScaleIncomingDamage(em, target, hullDamage),
                 ship.Team,
                 attackerTeam,
                 gemExpulsionPerHullDamage: ShipDamageLogic.ExcessDamageGemExpulsionPerHullDamage,
@@ -276,7 +302,9 @@ namespace TitanOrbit.ECS
             float mapH,
             double moonElapsed,
             double serverElapsed,
-            ref Result result)
+            ref Result result,
+            int bankIndex,
+            int firePowerExtraLevels)
         {
             var planetState = em.GetComponentData<PlanetState>(planet);
             var planetXf = em.GetComponentData<LocalTransform>(planet);
@@ -352,8 +380,10 @@ namespace TitanOrbit.ECS
             {
                 result.HitPoint = bestPos;
                 var moon = em.GetComponentData<PlanetGemMoonState>(planet);
+                float moonDamage = ScaleFor(
+                    bankIndex, BulletBankDamageTarget.GemMoon, damage, firePowerExtraLevels);
                 PlanetGemMoonCombatLogic.ApplyBulletDamage(
-                    ref moon, damage, attackerTeam, planetState.Ownership, serverElapsed);
+                    ref moon, moonDamage, attackerTeam, planetState.Ownership, serverElapsed);
                 em.SetComponentData(planet, moon);
                 return;
             }
@@ -364,7 +394,12 @@ namespace TitanOrbit.ECS
                 : bestPos;
 
             if (bestPad >= 0)
-                PlanetaryDefenseHitScan.ApplyDamage(em, planet, bestPad, damage, serverElapsed);
+            {
+                // Pads share the ship row (same bucket as a bullet's planetary-defense hit).
+                float padDamage = ScaleFor(
+                    bankIndex, BulletBankDamageTarget.ShipOrDrone, damage, firePowerExtraLevels);
+                PlanetaryDefenseHitScan.ApplyDamage(em, planet, bestPad, padDamage, serverElapsed);
+            }
         }
 
         static void ApplyAsteroid(

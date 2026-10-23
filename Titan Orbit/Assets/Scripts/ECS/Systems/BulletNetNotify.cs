@@ -145,6 +145,7 @@ namespace TitanOrbit.ECS
             {
                 Sequence = bullet.Sequence,
                 HitPosition = hitPosition,
+                // Caller sets bullet.Damage to the resolved hit (target bonus included).
                 Damage = bullet.Damage,
                 OwnerTeam = bullet.OwnerTeam,
                 OwnerNetworkId = bullet.OwnerNetworkId,
@@ -169,6 +170,7 @@ namespace TitanOrbit.ECS
             {
                 Sequence = bullet.Sequence,
                 HitPosition = hitPosition,
+                // Caller sets bullet.Damage to the resolved hit (target bonus included).
                 Damage = bullet.Damage,
                 OwnerTeam = bullet.OwnerTeam,
                 BankIndex = bullet.BankIndex,

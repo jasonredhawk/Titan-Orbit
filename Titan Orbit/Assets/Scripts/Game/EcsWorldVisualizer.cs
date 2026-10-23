@@ -2622,16 +2622,20 @@ namespace TitanOrbit.Game
                     team = ClientTeamFlowState.ResolvePresentationTeam(team);
 
                 string chassisId = null;
-                if (team != TeamId.None)
+                if (team != TeamId.None && em.HasComponent<ShipState>(entity))
                 {
-                    ShipStatApplyLogic.TryResolveChassisId(
-                        em,
-                        entity,
-                        team,
-                        shipLevel,
-                        branchIndex,
-                        out chassisId,
-                        allowFallback: true);
+                    var presented = em.GetComponentData<ShipState>(entity);
+                    if (BotShipPresentation.TryResolveChassis(
+                            em,
+                            entity,
+                            presented,
+                            out chassisId,
+                            out int presentedLevel,
+                            out int presentedBranch))
+                    {
+                        shipLevel = presentedLevel;
+                        branchIndex = presentedBranch;
+                    }
                 }
 
                 // [TITAN-ORBIT] Chassis swap while moon-docked: keep the old hull's spinning
@@ -2772,9 +2776,12 @@ namespace TitanOrbit.Game
                 if (em.HasComponent<ShipState>(entity))
                 {
                     var ship = em.GetComponentData<ShipState>(entity);
-                    _proxyShipLevels[entity] = Mathf.Max(1, ship.ShipLevel);
+                    BotShipPresentation.Read(
+                        em, entity, ship,
+                        out int presentLevel, out int presentBranch, out _, out _, out _);
+                    _proxyShipLevels[entity] = presentLevel;
                     _proxyTeams[entity] = ship.Team;
-                    _proxyBranchIndices[entity] = Mathf.Max(0, ship.BranchIndex);
+                    _proxyBranchIndices[entity] = presentBranch;
                     ApplyShipDeathOrStowPresentation(em, entity, go, in ship);
 
                     // Owner paint comes from local prefs so your hull does not wait on

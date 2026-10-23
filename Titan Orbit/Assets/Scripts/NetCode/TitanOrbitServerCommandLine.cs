@@ -29,8 +29,11 @@ namespace TitanOrbit.NetCode
         /// </summary>
         public const int DefaultAgeThresholdSeconds = 0;
 
-        /// <summary>When our lobby is closed or heartbeat-stale and empty, recreate after this many seconds (faster than empty idle refresh).</summary>
-        public const int DefaultStaleLobbyRecreateSeconds = 120;
+        /// <summary>
+        /// When our lobby is closed or heartbeat-stale and empty, refresh the listing after this
+        /// many seconds. Keeps the same map. Faster than the one-hour empty map roll.
+        /// </summary>
+        public const int DefaultStaleLobbyRecreateSeconds = 10;
 
         /// <summary>
         /// After this many successful <b>1-hour idle</b> in-process recreates
@@ -120,7 +123,8 @@ namespace TitanOrbit.NetCode
             // [TITAN-ORBIT] 0 disables age rotation. Do not clamp to 60 — that used to open a
             // second game every minute when the flag was passed as 0.
             config.AgeThresholdSeconds = Math.Max(0, GetArgInt("ageThresholdSeconds", DefaultAgeThresholdSeconds));
-            config.StaleLobbyRecreateSeconds = Mathf.Max(30, GetArgInt("staleLobbyRecreateSeconds", DefaultStaleLobbyRecreateSeconds));
+            // [TITAN-ORBIT] Floor is 10s. A higher floor used to ignore --staleLobbyRecreateSeconds=10.
+            config.StaleLobbyRecreateSeconds = Mathf.Max(10, GetArgInt("staleLobbyRecreateSeconds", DefaultStaleLobbyRecreateSeconds));
             // [TITAN-ORBIT] 0 = unlimited in-process empty recreates (not recommended for 24/7 hosts).
             config.MaxInProcessEmptyRecreates = Mathf.Max(0, GetArgInt("maxInProcessEmptyRecreates", DefaultMaxInProcessEmptyRecreates));
             // [TITAN-ORBIT] 0 = disable background hang watchdog.

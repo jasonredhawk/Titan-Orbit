@@ -147,6 +147,9 @@ namespace TitanOrbit.ECS.Authoring
                 AddComponent(entity, new MegaShipState());
                 // [NETCODE] Colorize accents + player thruster style — must bake so remotes see both.
                 AddComponent(entity, new ShipAccentColors());
+                // [NETCODE] AI hull skin copy. Inactive on player ships. Must bake so WebGL
+                // clients rebuild the mesh when a commander retasks a bot.
+                AddComponent(entity, new BotShipLook());
                 AddBuffer<MegaShipGunnerSlotElement>(entity);
                 AddComponent(entity, new ShipDepositIntent());
                 // [NETCODE] Server bumps BeatSequence each deposit chunk; clients play SFX/UI from it.

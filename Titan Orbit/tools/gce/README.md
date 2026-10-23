@@ -154,11 +154,11 @@ The headless server publishes **Unity Gaming Services (UGS) lobbies** so clients
 | Trigger | When | Action |
 |---------|------|--------|
 | Boot | systemd starts | Relay + lobby (`IsLatest=1`, `IsOpen=1`) + heartbeat every 15s |
-| Empty recreate | 0 players for `--emptyMatchRecreateSeconds` (default 3600s; countdown starts when last player leaves) | In-process new Relay + lobby — **never while players are connected** |
+| Empty recreate | 0 players for `--emptyMatchRecreateSeconds` (default 3600s; countdown starts when last player leaves) | In-process new map + Relay + lobby — **never while players are connected** |
 | Empty process recycle | Idle count / RSS / STRUGGLING while empty | **Spawn IsLatest sibling first**, wait until browseable, close old, exit **0** (`Restart=on-failure`). Failure → demote-keep-open + exit 1 |
 | Memory telemetry | Every `--memoryLogIntervalSeconds` (default **60**) + after each idle recreate | `memory` lines: `rssMb`, `emptyRecreates`, `rssDeltaMb`, entity counts |
 | Main-thread hang | Update stamps stale for `--mainThreadHangQuitSeconds` (default **300**; paused during recreate) | Background watchdog `Environment.Exit(1)` → systemd restart |
-| Stale lobby | Our lobby closed or heartbeat-stale while empty (`--staleLobbyRecreateSeconds=120`) | In-process recreate as latest |
+| Stale lobby | Our lobby closed or heartbeat-stale while empty (`--staleLobbyRecreateSeconds=10`) | Refresh the listing as latest. Same map, same game age |
 | Self-heal | No joinable `IsLatest` lobby in UGS while this server is empty | Immediate in-process recreate (never exits — repairing availability) |
 | Age rotation | Off unless `--ageThresholdSeconds` is greater than 0 | Does not open a second game while seats remain |
 | Full rotation | Roster full (teams × max per team, else `--maxPlayers`) | Close listing + **`SpawnNextMatch`** (sibling OS process; not managed by systemd) |

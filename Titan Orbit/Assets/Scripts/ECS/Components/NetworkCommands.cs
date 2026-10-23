@@ -590,7 +590,11 @@ namespace TitanOrbit.ECS
         /// <summary>World hit position (logical / unbounded XZ).</summary>
         public float3 HitPosition;
 
-        /// <summary>Damage for impact VFX intensity.</summary>
+        /// <summary>
+        /// Damage this impact actually dealt, after the bullet type's vs-asteroid /
+        /// vs-ship / vs-moon row and before card resist. Impact VFX and the damage
+        /// float both read this. The spawn packet still carries the unscaled shot.
+        /// </summary>
         public float Damage;
 
         /// <summary>Shooter team as byte.</summary>

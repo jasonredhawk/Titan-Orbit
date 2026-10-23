@@ -962,6 +962,10 @@ namespace TitanOrbit.Game
             }
         }
 
+        /// <summary>
+        /// How long this map has existed. <paramref name="createdAtEpochSeconds"/> is the server
+        /// map-roll time (lobby <c>CreatedAtEpoch</c>), not the moment the UGS lobby object was created.
+        /// </summary>
         static string FormatLobbyActiveDuration(long createdAtEpochSeconds)
         {
             if (createdAtEpochSeconds <= 0)

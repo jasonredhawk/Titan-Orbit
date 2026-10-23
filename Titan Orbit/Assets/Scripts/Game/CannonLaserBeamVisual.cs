@@ -392,7 +392,9 @@ namespace TitanOrbit.Game
                     // Kill snapshot clears the lock in the same tick it counts the
                     // last slice. Report that slice before the beam (and its sticky
                     // aim) is dropped, or the streak freezes a snapshot early.
-                    ReportReplicatedBurn(em, binding.ShipEntity, team, mounts[m], gunners[m], key, Entity.Null, default);
+                    ReportReplicatedBurn(
+                        em, binding.ShipEntity, team, mounts[m], gunners[m], key, Entity.Null, default,
+                        mapW, mapH);
                     HideMountImmediate(key);
                     continue;
                 }
@@ -402,7 +404,9 @@ namespace TitanOrbit.Game
                         localFiring && !localMouseAim, out Vector3 muzzle, out Vector3 end,
                         out Entity beamHit))
                 {
-                    ReportReplicatedBurn(em, binding.ShipEntity, team, mounts[m], gunners[m], key, Entity.Null, default);
+                    ReportReplicatedBurn(
+                        em, binding.ShipEntity, team, mounts[m], gunners[m], key, Entity.Null, default,
+                        mapW, mapH);
                     HideMountImmediate(key);
                     continue;
                 }
@@ -415,7 +419,7 @@ namespace TitanOrbit.Game
                 // the beam is too short to draw. Local Time.deltaTime used to reach
                 // 0 HP a round-trip before AsteroidDestroyedRpc froze the streak.
                 ReportReplicatedBurn(
-                    em, binding.ShipEntity, team, mounts[m], gunners[m], key, beamHit, end);
+                    em, binding.ShipEntity, team, mounts[m], gunners[m], key, beamHit, end, mapW, mapH);
                 slot.LastUsed = now;
                 slot.LastSeenLive = now;
                 if (SilenceVendorAudio(slot.Root))
@@ -453,7 +457,9 @@ namespace TitanOrbit.Game
             in MegaShipGunnerSlotElement gunner,
             BeamKey key,
             Entity clippedHit,
-            Vector3 impactDisplayPos)
+            Vector3 impactDisplayPos,
+            float mapW,
+            float mapH)
         {
             if (!_live.TryGetValue(key, out BeamSlot slot) || slot == null)
                 return;
@@ -468,7 +474,8 @@ namespace TitanOrbit.Game
             }
 
             TryNotifyBeamDamageFloat(
-                em, shooter, ownerTeam, in mount, in gunner, impactDisplayPos, clippedHit, burnTicks);
+                em, shooter, ownerTeam, in mount, in gunner, impactDisplayPos, clippedHit, burnTicks,
+                mapW, mapH);
         }
 
         /// <summary>
@@ -484,7 +491,9 @@ namespace TitanOrbit.Game
             in MegaShipGunnerSlotElement slot,
             Vector3 impactDisplayPos,
             Entity clippedHit,
-            uint burnTicks)
+            uint burnTicks,
+            float mapW,
+            float mapH)
         {
             Entity target = clippedHit;
             if (target == Entity.Null && slot.TargetGhostId != 0)
@@ -504,6 +513,11 @@ namespace TitanOrbit.Game
                 slice = TeamCommandRoleRules.ScaleFirePower(
                     slice, ShipTopOfTeamRoles.IsKiller(ownerTeam, net));
             }
+
+            // Same target row the server applies in CannonLaserHitApply. Without this
+            // the streak prints raw fire power while the rock or hull loses the bonus.
+            slice = ScaleLaserSliceForTarget(
+                em, in mount, in slot, target, ownerTeam, mapW, mapH, slice);
 
             if (slice <= 0.01f)
                 return;
@@ -543,6 +557,43 @@ namespace TitanOrbit.Game
 
             ticks = delta;
             return true;
+        }
+
+        /// <summary>
+        /// Multiplies one laser float by this barrel's vs-asteroid / vs-ship / vs-moon
+        /// row. Ships and drones share the ship row. A planet lock uses
+        /// <see cref="CannonLaserHitApply.FocusMoon"/> for the moon row and the ship
+        /// row for a turret pad. Mega lasers stamp 0 extra levels, matching the server.
+        /// </summary>
+        static float ScaleLaserSliceForTarget(
+            EntityManager em,
+            in ShipWeaponMountElement mount,
+            in MegaShipGunnerSlotElement gunner,
+            Entity target,
+            TeamId ownerTeam,
+            float mapW,
+            float mapH,
+            float slice)
+        {
+            if (slice <= 0.01f || target == Entity.Null || !em.Exists(target))
+                return slice;
+
+            // Asteroids and ships are the body itself. A planet lock is a moon
+            // only when the aim is on the shield; a pad on that same planet is a ship.
+            BulletBankDamageTarget kind = BulletBankDamageTarget.ShipOrDrone;
+            if (em.HasComponent<AsteroidState>(target))
+                kind = BulletBankDamageTarget.Asteroid;
+            else if (em.HasComponent<ShipState>(target))
+                kind = BulletBankDamageTarget.ShipOrDrone;
+            else if (TryResolveRampFocus(
+                         em, target, ownerTeam, gunner.AimWorldX, gunner.AimWorldZ, mapW, mapH, out int focus)
+                     && focus == CannonLaserHitApply.FocusMoon)
+                kind = BulletBankDamageTarget.GemMoon;
+
+            int bank = BulletBankFireResolve.ResolveMegaMountFireBank(in mount, 0);
+            if (!BulletBankCombatLogic.TryGetProfile(bank, out BulletBankProfile profile) || profile == null)
+                return slice;
+            return BulletBankCombatLogic.ResolveHitDamage(profile, kind, slice, 0);
         }
 
         /// <summary>

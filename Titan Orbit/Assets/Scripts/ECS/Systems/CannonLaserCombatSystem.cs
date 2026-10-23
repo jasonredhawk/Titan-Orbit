@@ -342,11 +342,20 @@ namespace TitanOrbit.ECS
             if (!_gemCarry.TryGetValue(target, out float carry))
                 carry = 0f;
 
+            // Cannon barrels keep their catalog bank (they do not follow the B-key).
+            // Mega guns stamp 0 extra levels; the laser uses that same rung so a
+            // vs-asteroid / vs-ship / vs-moon row matches a projectile of this bank.
+            int hullBank = 0;
+            if (EntityManager.HasComponent<ShipLoadoutState>(mega))
+                hullBank = BulletBankFireResolve.ResolveFireBankIndex(
+                    EntityManager.GetComponentData<ShipLoadoutState>(mega));
+            int laserBank = BulletBankFireResolve.ResolveMegaMountFireBank(in mount, hullBank);
+
             var hit = CannonLaserHitApply.Apply(
                 EntityManager, ecb, target, ship.Team, attackerNet,
                 muzzle, TeamCommandRoleRules.ScaleFirePower(slice * rampMul, topKiller),
                 heal, acquireRange, mapW, mapH, moonElapsed, serverElapsed,
-                gemPrefab, gemSpawnServerTime, ref carry, mega);
+                gemPrefab, gemSpawnServerTime, ref carry, mega, laserBank, 0);
             _gemCarry[target] = carry;
 
             // Apply can AddComponent (first ship hit stamps attribution, a pad
