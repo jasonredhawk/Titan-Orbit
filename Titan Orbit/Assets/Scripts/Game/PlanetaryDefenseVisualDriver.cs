@@ -461,16 +461,15 @@ namespace TitanOrbit.Game
                 return;
             }
 
-            // --- Wait for map GO load before Instantiates pads/turrets ---
+            // --- Wait for map GO load before creating pads/turrets ---
             // [TITAN-ORBIT] Settling can latch OFF while MapLoadingProxyCount is still below the
             // Join Team gate. RebuildSlots then Instantiates ~80 turret prefabs + TMP plates in a
-            // burst and the hybrid map drain stalls. Pads are presentation-only — defer until
-            // the map proxy build is ready.
+            // burst and the hybrid map drain stalls. Do not create new pads until the map is ready.
+            // A later dip below that ratio (asteroids despawning) must not ClearAllGroups — the
+            // guns are still live on the server, and wiping the slot objects is what made pads
+            // and turrets vanish together.
             if (!EcsGameBridge.IsMapProxyCountReady(out _, out _, out _))
-            {
-                ClearAllGroups();
                 return;
-            }
 
             var visualizer = EcsWorldVisualizer.Active;
             if (visualizer == null)
@@ -530,8 +529,16 @@ namespace TitanOrbit.Game
                     continue;
 
                 var buffer = em.GetBuffer<PlanetaryDefenseSlotElement>(planetEntity);
+                // Owned planets always have slots on the server. Length 0 on the client is a
+                // snapshot blip (planet chunk lost the send budget). Keep the last drawn pad
+                // and turret until a real buffer arrives. A true wipe sets Ownership to None
+                // above, which still drops the group.
                 if (buffer.Length == 0)
+                {
+                    if (_groupsByPlanetId.ContainsKey(planet.PlanetId))
+                        _alivePlanetIds.Add(planet.PlanetId);
                     continue;
+                }
 
                 _alivePlanetIds.Add(planet.PlanetId);
                 var config = PlanetaryDefenseConfig.ResolveForFamily(

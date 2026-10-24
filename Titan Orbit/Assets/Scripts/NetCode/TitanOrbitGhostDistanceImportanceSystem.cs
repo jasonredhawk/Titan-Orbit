@@ -52,8 +52,11 @@ namespace TitanOrbit.NetCode
 
             // --- Already configured? ---
             // [STANDARD] Avoid duplicate singletons if a previous play mode left state (editor).
+            // Still swap the scaler so a leftover GhostImportance keeps the planet send slot.
             if (SystemAPI.HasSingleton<GhostImportance>() && SystemAPI.HasSingleton<GhostDistanceData>())
             {
+                ref var existing = ref SystemAPI.GetSingletonRW<GhostImportance>().ValueRW;
+                existing.BatchScaleImportanceFunction = TitanOrbitPlanetSendSlot.BatchScaleFunctionPointer;
                 _bootstrapped = true;
                 return;
             }
@@ -68,10 +71,11 @@ namespace TitanOrbit.NetCode
             });
 
             // --- Importance scale function ---
-            // [NETCODE] BatchScaleFunctionPointer downscales far chunks per connection position.
+            // [NETCODE] Distance scaling, then one reserved planet chunk so AI ship chunks
+            // (importance 100, always relevant) cannot fill all MaxSendChunks and skip planets.
             state.EntityManager.AddComponentData(gridEntity, new GhostImportance
             {
-                BatchScaleImportanceFunction = GhostDistanceImportance.BatchScaleFunctionPointer,
+                BatchScaleImportanceFunction = TitanOrbitPlanetSendSlot.BatchScaleFunctionPointer,
                 GhostConnectionComponentType = ComponentType.ReadOnly<GhostConnectionPosition>(),
                 GhostImportanceDataType = ComponentType.ReadOnly<GhostDistanceData>(),
                 GhostImportancePerChunkDataType = ComponentType.ReadOnly<GhostDistancePartitionShared>(),
@@ -80,7 +84,7 @@ namespace TitanOrbit.NetCode
             _bootstrapped = true;
             UnityEngine.Debug.Log(
                 "[TitanOrbitGhostSend] Distance importance enabled: TileSize=" + TileSizeWorld +
-                " (streams far map ghosts after nearby / high-importance chunks).");
+                " (nearest planet chunk keeps one send slot ahead of nearby AI ship chunks).");
         }
     }
 
