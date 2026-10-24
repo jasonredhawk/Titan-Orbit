@@ -151,6 +151,8 @@ namespace TitanOrbit.ECS
                 return;
 
             // --- Dead / team select: freeze the hull ---
+            // ShipDeathColliderSystem drops the physics hull while IsDead so this
+            // frozen body does not stay solid after the mesh explodes.
             if (shipState.IsDead || shipState.AwaitingTeamSelection)
             {
                 physicsVelocity = PhysicsVelocity.Zero;

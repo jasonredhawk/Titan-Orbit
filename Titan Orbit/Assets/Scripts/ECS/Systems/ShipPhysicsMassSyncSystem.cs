@@ -32,6 +32,12 @@ namespace TitanOrbit.ECS
                              RefRW<PhysicsMass>, RefRO<PhysicsCollider>>()
                          .WithAll<ShipTag, Simulate>())
             {
+                // Dead hulls wear the shared no-collide sphere. Keep the last living
+                // inertia; ShipDeathColliderSystem restores the real hull before this
+                // system on the respawn tick.
+                if (shipState.ValueRO.IsDead)
+                    continue;
+
                 float baseMass = motor.ValueRO.Mass > 0f ? motor.ValueRO.Mass : ShipMassLogic.DefaultBaseMass;
                 float movementMass = ShipMassLogic.ComputeMovementMass(
                     motor.ValueRO.HullMassReference,

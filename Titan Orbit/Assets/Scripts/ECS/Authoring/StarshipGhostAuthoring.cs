@@ -83,6 +83,9 @@ namespace TitanOrbit.ECS.Authoring
                 // Runtime hull bookkeeping — bake so predicted ghosts are not AddComponent'd
                 // every chassis pick (structural change + covering bake).
                 AddComponent(entity, new ShipHullColliderState());
+                // [PHYSICS] Death parks the solid hull blob here and swaps PhysicsCollider
+                // to the shared no-collide sphere. Bake so that swap is not a structural add.
+                AddComponent(entity, new ShipDeathHeldHullCollider());
                 AddComponent(entity, new ShipMotorConfig
                 {
                     EngineThrust = authoring.EngineThrust,

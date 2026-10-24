@@ -72,6 +72,8 @@ namespace TitanOrbit.ECS
                 shipState.ValueRW.CurrentPeople = 0;
                 PeopleTransportEscortLogic.ClearAll(state.EntityManager, entity);
                 kinematics.ValueRW.Velocity = Unity.Mathematics.float3.zero;
+                // Physics hull stays on this ghost until respawn. ShipDeathColliderSystem
+                // swaps it to the shared no-collide sphere before the next solver step.
                 orbitState.ValueRW.OrbitPlanetId = 0;
                 orbitState.ValueRW.InOrbitRing = false;
                 orbitState.ValueRW.UsingOrbitMotor = false;
