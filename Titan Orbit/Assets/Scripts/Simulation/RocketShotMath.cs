@@ -91,5 +91,81 @@ namespace TitanOrbit.Simulation
                 firePowerExtraLevels: 0);
             return math.max(0.1f, damage / math.max(0.01f, reference));
         }
+
+        /// <summary>
+        /// Store-rocket mesh size for any fire power. Walks the live
+        /// <see cref="RocketCatalog"/> rows and lerps <c>visualScale</c> between the
+        /// two fire-power steps that bracket <paramref name="firePower"/>.
+        /// Level 1 is 1 at 40, level 6 is 2 at 240, and each step is +0.2, so
+        /// 50 lands at 1.1 and 80 lands at about 1.333. Outside the ladder the
+        /// size stays on the nearest end row. No per-shot allocation.
+        /// </summary>
+        public static float InterpolateVisualScale(float firePower)
+        {
+            RocketCatalog catalog = RocketCatalog.LoadDefault();
+            int count = catalog != null && catalog.levels != null && catalog.levels.Length > 0
+                ? catalog.levels.Length
+                : RocketCatalog.ReferenceMaxLevel;
+            if (count < 1)
+                return 1f;
+
+            int bankIndex = -1;
+            float loPower = 0f;
+            float loScale = 1f;
+            float hiPower = 0f;
+            float hiScale = 1f;
+            bool haveLo = false;
+            bool haveHi = false;
+            for (int i = 0; i < count; i++)
+            {
+                RocketCatalog.LevelStats row = catalog != null && catalog.levels != null && i < catalog.levels.Length
+                    ? RocketCatalog.Sanitize(catalog.levels[i])
+                    : RocketCatalog.GetBakedStats(i + 1);
+                float power = row.firePower;
+                float scale;
+                if (row.visualScale > 0.01f)
+                {
+                    scale = row.visualScale;
+                }
+                else
+                {
+                    if (bankIndex < 0)
+                    {
+                        int found = BulletBankProfileUtility.FindRocketBankIndex();
+                        bankIndex = found >= 0 ? found : 0;
+                    }
+
+                    scale = ResolveVisualScaleFromDamage(power, bankIndex);
+                }
+
+                if (power <= firePower && (!haveLo || power >= loPower))
+                {
+                    loPower = power;
+                    loScale = scale;
+                    haveLo = true;
+                }
+
+                if (power >= firePower && (!haveHi || power <= hiPower))
+                {
+                    hiPower = power;
+                    hiScale = scale;
+                    haveHi = true;
+                }
+            }
+
+            if (haveLo && haveHi)
+            {
+                float span = hiPower - loPower;
+                if (span <= 0.0001f)
+                    return loScale;
+                return math.lerp(loScale, hiScale, (firePower - loPower) / span);
+            }
+
+            if (haveLo)
+                return loScale;
+            if (haveHi)
+                return hiScale;
+            return 1f;
+        }
     }
 }

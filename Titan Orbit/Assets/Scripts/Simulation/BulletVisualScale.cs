@@ -18,8 +18,10 @@ namespace TitanOrbit.Simulation
         /// <summary>
         /// Fallback ship-bullet tracer reference when <see cref="BulletVfxBank"/> is missing.
         /// The live value is <see cref="BulletVfxBank.BulletReferenceFirePower"/> on
-        /// Resources/BulletVfxBank (default 4). Guns and missiles divide by it.
-        /// Snipers use <see cref="SniperVisualReferenceFirePower"/>. Lasers, turrets, and ramming do not use it.
+        /// Resources/BulletVfxBank (default 4). Guns divide by it.
+        /// Snipers use <see cref="SniperVisualReferenceFirePower"/>. Missiles follow the
+        /// store-rocket size curve (<see cref="ComputeMissileShotScale"/>). Lasers, turrets,
+        /// and ramming do not use it.
         /// </summary>
         public const float FixedBulletReferenceDamage = 4f;
 
@@ -36,11 +38,25 @@ namespace TitanOrbit.Simulation
         }
 
         /// <summary>
-        /// Size divisor for a sniper only. Guns and missiles divide fire power by
+        /// Size divisor for a sniper only. Guns divide fire power by
         /// <see cref="BulletVfxBank.BulletReferenceFirePower"/> on the bullet bank asset.
-        /// The sniper does not.
+        /// Missiles do not — a rocket mesh at that divisor is enormous.
         /// </summary>
         public const float SniperVisualReferenceFirePower = 50f;
+
+        /// <summary>
+        /// Rocket mesh scale before the bank global multiply.
+        /// <paramref name="curveScale"/> is the store-rocket size for this fire power
+        /// (1.1 at fire power 50). <paramref name="authoredBankScale"/> is the MEGA
+        /// Weapon Missile bank scale (1 = that curve unchanged).
+        /// </summary>
+        [BurstCompile]
+        public static float ComputeMissileShotScale(float curveScale, float authoredBankScale)
+        {
+            float curve = curveScale > 0.01f ? curveScale : 1f;
+            float authored = authoredBankScale > 0.01f ? authoredBankScale : 1f;
+            return curve * authored;
+        }
 
         /// <summary>
         /// Tracer scale for a sniper, before the bank global multiply.

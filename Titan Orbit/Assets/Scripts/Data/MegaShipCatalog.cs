@@ -404,7 +404,7 @@ namespace TitanOrbit.Data
         [BulletVfxBankCategory(true, "Default (Rockets)")]
         public int weaponMissileBankIndex = InheritTypeTableBankIndex;
 
-        [Tooltip("Tracer / impact visual scale for MEGA missile launchers. 1 = default bank size. 0 uses 1.")]
+        [Tooltip("Multiplier on the store-rocket size curve. 1 = the curve for this launcher's fire power (50 → 1.1). 0 uses 1. Does not change damage.")]
         [Min(0.05f)]
         public float weaponMissileBankScale = DefaultWeaponBankScale;
 

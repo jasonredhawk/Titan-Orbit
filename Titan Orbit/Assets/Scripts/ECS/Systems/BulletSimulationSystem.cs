@@ -884,9 +884,14 @@ namespace TitanOrbit.ECS
                 ? math.max(0.25f, maxDistanceForLife / math.max(1f, muzzleSpeed))
                 : weaponCfg.BulletLifetime;
 
-            // Missiles use the same tracer size as guns: this shot's fire power
-            // ÷ the Bullet VFX Bank reference. Snipers still divide by 50.
+            // Guns: fire power ÷ the Bullet VFX Bank reference. Snipers divide by 50.
+            // Missiles lerp the live store-rocket size curve from this shot's fire power
+            // (50 sits halfway from 40 to 60, so size 1.1). Damage is unchanged.
             bool sniperVisual = mount.WeaponKind == ShipWeaponKind.Sniper;
+            bool missileVisual = mount.WeaponKind == ShipWeaponKind.Missile;
+            float authoredScale = missileVisual
+                ? ShipWeaponMountElement.ResolveAuthoredScale(in mount, weaponCfg.BulletScale)
+                : 1f;
             var plan = BulletShotMath.Build(
                 fireOrigin,
                 fireForward,
@@ -897,14 +902,14 @@ namespace TitanOrbit.ECS
                 lifetime,
                 weaponCfg.FireRate,
                 mount.BulletRange,
-                // Ignored for size. Fire power sets the tracer; bullet type does not.
-                1f,
+                authoredScale,
                 refDamage,
                 refMuzzleSpeed,
                 bankIndex,
                 firePowerExtras,
                 categoryUpgradeScale,
-                sniperVisual);
+                sniperVisual,
+                missileVisual);
 
             byte homing = 0;
             float turnSpeedDeg = 0f;
