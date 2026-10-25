@@ -53,6 +53,22 @@ namespace TitanOrbit.NetCode
         public const byte ExperimentalForcedInputLatencyTicks = 0;
 
         /// <summary>
+        /// Remote-ship interpolation buffer in network ticks. Two snapshots at 60 Hz is 33 ms
+        /// (inside the 30–50 ms arcade window). One interval is the minimum that has a pair
+        /// to blend; the second absorbs one late snapshot. Ignored if InterpolationTimeMS is set,
+        /// so that override stays 0.
+        /// </summary>
+        public const uint RemoteInterpolationTimeNetTicks = 2;
+
+        /// <summary>
+        /// How far an interpolated ship may be invented past the newest snapshot, in sim ticks.
+        /// Package default is 20 (~333 ms). Arcade ships can reverse in one tick, so a long
+        /// extrapolation runs ahead and then snaps back when the real snapshot arrives.
+        /// Two ticks covers one dropped 60 Hz snapshot and then holds.
+        /// </summary>
+        public const uint RemoteMaxExtrapolationSimTicks = 2;
+
+        /// <summary>
         /// Re-applies every frame so a later handshake cannot restore merged tick batches
         /// or the package's too-short predicted-spawn lifetime.
         /// </summary>
@@ -89,6 +105,11 @@ namespace TitanOrbit.NetCode
             clientTickRate.PredictionLoopUpdateMode = PredictionLoopUpdateMode.RequirePredictedGhost;
             // [NETCODE] Official input-delay knob — not a second pose smoother.
             clientTickRate.ForcedInputLatencyTicks = ExperimentalForcedInputLatencyTicks;
+            // [NETCODE] Remote OwnerPredicted hulls are interpolated, not predicted.
+            // Two network ticks of buffer; do not dead-reckon more than one missed snapshot.
+            clientTickRate.InterpolationTimeMS = 0;
+            clientTickRate.InterpolationTimeNetTicks = RemoteInterpolationTimeNetTicks;
+            clientTickRate.MaxExtrapolationTimeSimTicks = RemoteMaxExtrapolationSimTicks;
             state.EntityManager.SetComponentData(clientTickEntity, clientTickRate);
 
             // --- ClientServerTickRate: match Hz, allow Relay catch-up ---

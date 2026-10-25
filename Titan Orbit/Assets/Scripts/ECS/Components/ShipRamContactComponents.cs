@@ -63,4 +63,47 @@ namespace TitanOrbit.ECS
         /// </summary>
         public double LastImpactTime;
     }
+
+    /// <summary>
+    /// Prediction-only latch for one ship↔ship overlap. Remembers that the contact
+    /// sample was already queued and that the local display ease already started.
+    /// It does not move the hull. Not ghosted — prediction rollback restores it
+    /// with the hull, and a resim of the same hit does not send a second sample.
+    /// </summary>
+    public struct ShipShipSlideLatch : IComponentData
+    {
+        /// <summary>The other hull this latch belongs to. Null when idle.</summary>
+        public Entity Other;
+
+        /// <summary>1 after this overlap has queued <c>ShipShipContactSampleRpc</c>.</summary>
+        public byte SampleSent;
+
+        /// <summary>1 after this overlap has started the local display ease.</summary>
+        public byte DisplayNoted;
+    }
+
+    /// <summary>Client singleton tag for <see cref="ShipShipContactSampleElement"/>.</summary>
+    public struct ShipShipContactSampleQueueTag : IComponentData { }
+
+    /// <summary>
+    /// One server contact sample on the client. Keyed by the other hull's
+    /// <see cref="GhostOwner.NetworkId"/>. Replaced when a newer
+    /// <see cref="ShipShipContactSampleRpc"/> arrives for that id.
+    /// </summary>
+    public struct ShipShipContactSampleElement : IBufferElementData
+    {
+        public int OtherNetworkId;
+        public float3 OtherVelocity;
+        public float OtherMovementMass;
+        public float OtherRammingMass;
+    }
+
+    /// <summary>
+    /// Collider-local XZ radius (before <c>LocalTransform.Scale</c>) for the client
+    /// ship-touch test. Written once when the remote hull stops pairing with ships.
+    /// </summary>
+    public struct ShipPlanarHullRadius : IComponentData
+    {
+        public float Unscaled;
+    }
 }

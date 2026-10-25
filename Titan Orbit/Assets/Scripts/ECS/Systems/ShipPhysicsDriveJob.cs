@@ -3,6 +3,7 @@ using TitanOrbit.Simulation;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Entities;
+using Unity.Mathematics;
 using Unity.NetCode;
 using Unity.Physics;
 using Unity.Transforms;
@@ -61,11 +62,9 @@ namespace TitanOrbit.ECS
         public byte SkipBots;
 
         /// <summary>
-        /// Per-ship motor tick. Writes velocity, yaw, <see cref="ShipOrbitState"/>,
-        /// <see cref="ShipTerritoryBoostLatch"/>, <see cref="ShipMoonDockState"/> takeoff
-        /// fields, and <see cref="ShipState.OverdriveLockout"/>.
-        /// Position stays physics-owned except while fully moon-docked (surface attach)
-        /// or taking off (forced outward exit).
+        /// Per-ship motor tick. Writes velocity and yaw. Position is integrated by
+        /// <see cref="ShipDeterministicTickSystem"/> except while moon-docked or taking off,
+        /// where this motor already pinned the hull.
         /// </summary>
         void Execute(
             RefRO<ShipInput> input,
@@ -74,6 +73,7 @@ namespace TitanOrbit.ECS
             RefRO<ShipTurretControlState> turretControl,
             RefRW<ShipState> shipState,
             RefRW<PhysicsVelocity> physicsVelocity,
+            RefRW<ShipKinematics> kinematics,
             RefRW<PhysicsDamping> physicsDamping,
             RefRW<LocalTransform> transform,
             RefRW<ShipOrbitState> orbitState,
@@ -86,17 +86,25 @@ namespace TitanOrbit.ECS
         {
             if (SkipBots != 0 && BotShipIds.IsBot(ghostOwner.ValueRO.NetworkId))
             {
-                // A leftover client velocity would integrate in Unity Physics after this
-                // job and walk the hull off the interpolated pose until the next snapshot.
+                // Leave the ghost velocity alone. Zero only the solver body so Unity Physics
+                // cannot walk an interpolated bot off the snapshot.
                 physicsVelocity.ValueRW = PhysicsVelocity.Zero;
                 return;
             }
+
+            // Flight speed lives on the ghosted kinematics. The solver body is zeroed
+            // after the tick so ExportPhysicsWorld cannot wipe the accumulated speed.
+            var seeded = physicsVelocity.ValueRO;
+            seeded.Linear = kinematics.ValueRO.Velocity;
+            seeded.Linear.y = 0f;
+            seeded.Angular = float3.zero;
+            physicsVelocity.ValueRW = seeded;
 
             // --- Stowed in planetary defense turret: freeze hull (server + predicted client) ---
             // [TITAN-ORBIT] Aim/Fire still flow through ShipInput for the pad; thrust = exit on server.
             if (turretControl.ValueRO.IsControlling)
             {
-                physicsVelocity.ValueRW = PhysicsVelocity.Zero;
+                CommitFlight(ref physicsVelocity, ref kinematics, float3.zero);
                 physicsDamping.ValueRW = default;
                 shipState.ValueRW.OverdriveBurstActive = false;
                 return;
@@ -105,7 +113,7 @@ namespace TitanOrbit.ECS
             // --- Electric shock: lock thrust, turn, and leave velocity at zero ---
             if (electricShock.ValueRO.IsActive(Elapsed))
             {
-                physicsVelocity.ValueRW = PhysicsVelocity.Zero;
+                CommitFlight(ref physicsVelocity, ref kinematics, float3.zero);
                 physicsDamping.ValueRW = default;
                 shipState.ValueRW.OverdriveBurstActive = false;
                 return;
@@ -144,6 +152,24 @@ namespace TitanOrbit.ECS
                     ? ShipPhysicsDriveLogic.MeasurePhysicsHullRadiusXZ(
                         PhysicsColliders[entity], transform.ValueRO)
                     : -1f);
+
+            CommitFlight(ref physicsVelocity, ref kinematics, physicsVelocity.ValueRO.Linear);
+        }
+
+        /// <summary>
+        /// Stores the motor result on <see cref="ShipKinematics"/>. That is the value the next
+        /// tick integrates. <see cref="PhysicsVelocity"/> is kept in step until the tick zeros it.
+        /// </summary>
+        static void CommitFlight(ref RefRW<PhysicsVelocity> physicsVelocity, ref RefRW<ShipKinematics> kinematics, float3 linear)
+        {
+            linear.y = 0f;
+            var kin = kinematics.ValueRO;
+            kin.Velocity = linear;
+            kinematics.ValueRW = kin;
+            var pv = physicsVelocity.ValueRO;
+            pv.Linear = linear;
+            pv.Angular = float3.zero;
+            physicsVelocity.ValueRW = pv;
         }
     }
 }

@@ -27,6 +27,22 @@ namespace TitanOrbit.Simulation
         public const float DefaultShipShipRestitution = 0.75f;
 
         /// <summary>
+        /// Ship-vs-ship bounce used by the deterministic tick. A slow close produces a
+        /// small push; a fast close produces a larger one. Mass splits that same impulse.
+        /// This is not <c>AsteroidSettings.BounceRestitution</c> (the world-wall coefficient).
+        /// </summary>
+        public const float ShipShipTickRestitution = 0.45f;
+
+        /// <summary>
+        /// Approach slower than this (world units/sec along the normal) does not change
+        /// velocity. Overlap still separates. Keeps resting hulls from vibrating.
+        /// </summary>
+        public const float ShipShipTickRestEpsilon = 0.05f;
+
+        /// <summary>Largest positional split applied to one hull along the normal in one tick.</summary>
+        public const float ShipShipTickMaxSeparation = 0.75f;
+
+        /// <summary>
         /// Client bounce against an interpolated remote (no <c>PhysicsVelocity</c>).
         /// Lower than <see cref="DefaultShipShipRestitution"/> so a frozen ghost does not
         /// feel like a magnetic wall.
@@ -41,9 +57,30 @@ namespace TitanOrbit.Simulation
 
         /// <summary>
         /// Extra gap written on top of the measured penetration so the next physics step
-        /// does not immediately re-generate a deep overlap.
+        /// does not immediately re-generate a deep overlap. Applied only on the tick that
+        /// clears the remaining overlap, so it does not stack across a multi-tick slide.
         /// </summary>
         public const float ShipShipDepenetrationSkin = 0.06f;
+
+        /// <summary>
+        /// Absolute cap on ship↔ship separation speed (world units/sec).
+        /// At 60 Hz this is about 0.13 units per tick — a slide, not the solver's 25 u/s pop.
+        /// </summary>
+        public const float ShipShipMaxDepenetrationSpeed = 8f;
+
+        /// <summary>
+        /// Contacts closing slower than this (relative normal speed, world units/sec) do not
+        /// change velocity. <c>MinShipShipSeparatingSpeed</c> stays unused — a 6 u/s kick
+        /// chatters against a ~13.5 cruise.
+        /// </summary>
+        public const float ShipShipRestingClosingSpeed = 0.5f;
+
+        /// <summary>
+        /// Closing speed (world units/sec) that separates a light tap from a real impact.
+        /// A tap uses restitution 0 (a small shared slowdown, no rebound). A faster close
+        /// uses <c>AsteroidSettings.BounceRestitution</c> and may play the display ease.
+        /// </summary>
+        public const float ShipShipTapClosingSpeed = 2f;
 
         /// <summary>
         /// Default bounce when hitting an infinite-mass wall (planets / moons).
@@ -164,6 +201,69 @@ namespace TitanOrbit.Simulation
             velocityA = vA;
             velocityB = vB;
             return true;
+        }
+
+        /// <summary>
+        /// One deterministic ship↔ship overlap. Both sides receive the same mass-weighted
+        /// impulse and the same split of the overlap. Callers that do not own a hull
+        /// (a client looking at an interpolated ship) discard that side's delta.
+        /// A little closing speed yields a little velocity change. Resting overlap
+        /// still separates and does not add a bounce.
+        /// </summary>
+        public static void ComputeDeterministicShipShip(
+            float3 velocityA,
+            float3 velocityB,
+            float3 normalAFromB,
+            float massA,
+            float massB,
+            float penetration,
+            out float3 deltaVelocityA,
+            out float3 deltaVelocityB,
+            out float3 deltaPositionA,
+            out float3 deltaPositionB,
+            out float closingSpeed)
+        {
+            deltaVelocityA = float3.zero;
+            deltaVelocityB = float3.zero;
+            deltaPositionA = float3.zero;
+            deltaPositionB = float3.zero;
+            closingSpeed = 0f;
+
+            float3 n = normalAFromB;
+            n.y = 0f;
+            if (math.lengthsq(n) < 1e-8f)
+                n = new float3(1f, 0f, 0f);
+            else
+                n = math.normalize(n);
+
+            float depth = math.max(0f, penetration) + ShipShipDepenetrationSkin;
+            depth = math.min(depth, ShipShipTickMaxSeparation);
+            float mA = math.max(MinCollisionMass, massA);
+            float mB = math.max(MinCollisionMass, massB);
+            float share = 1f / (mA + mB);
+            if (depth > 0f)
+            {
+                deltaPositionA = n * (depth * mB * share);
+                deltaPositionB = -n * (depth * mA * share);
+            }
+
+            float3 vA = velocityA;
+            float3 vB = velocityB;
+            vA.y = 0f;
+            vB.y = 0f;
+            float vnRel = math.dot(vA - vB, n);
+            closingSpeed = math.max(0f, -vnRel);
+            if (vnRel >= -ShipShipTickRestEpsilon)
+                return;
+
+            float3 bouncedA = vA;
+            float3 bouncedB = vB;
+            if (!ApplyTwoBodyImpulse(
+                    ref bouncedA, ref bouncedB, n, mA, mB, ShipShipTickRestitution))
+                return;
+
+            deltaVelocityA = bouncedA - vA;
+            deltaVelocityB = bouncedB - vB;
         }
 
         /// <summary>
@@ -355,9 +455,88 @@ namespace TitanOrbit.Simulation
         }
 
         /// <summary>
+        /// One ship↔ship velocity solve. Closing speed and the two masses set the push.
+        /// There is no dead band that turns a real approach into a zero-restitution merge.
+        /// Overlap separation is <see cref="ComputeDeterministicShipShip"/>.
+        /// </summary>
+        /// <param name="velocityA">Planar velocity of body A (the ship the normal points toward).</param>
+        /// <param name="velocityB">Planar velocity of body B.</param>
+        /// <param name="normalAFromB">Unit normal from B toward A.</param>
+        /// <param name="rammingMassA">Ramming mass of A.</param>
+        /// <param name="rammingMassB">Ramming mass of B.</param>
+        /// <param name="restitution">Bounce coefficient. The tick passes <see cref="ShipShipTickRestitution"/>.</param>
+        public static ShipShipContactResult ResolveShipShipContact(
+            float3 velocityA,
+            float3 velocityB,
+            float3 normalAFromB,
+            float rammingMassA,
+            float rammingMassB,
+            float restitution)
+        {
+            var result = new ShipShipContactResult
+            {
+                VelocityA = velocityA,
+                VelocityB = velocityB,
+            };
+
+            // --- Flatten to the play plane ---
+            float3 n = normalAFromB;
+            n.y = 0f;
+            if (math.lengthsq(n) < 1e-8f)
+                return result;
+            n = math.normalize(n);
+
+            float3 vA = velocityA;
+            float3 vB = velocityB;
+            vA.y = 0f;
+            vB.y = 0f;
+
+            // Negative ⇒ A is still approaching B along the separation normal.
+            float vnRel = math.dot(vA - vB, n);
+            float closing = math.max(0f, -vnRel);
+            result.ClosingSpeed = closing;
+            result.IsValid = true;
+
+            // Already separating, or a numerical rest: leave velocity alone.
+            if (vnRel >= -ShipShipTickRestEpsilon)
+            {
+                result.VelocityA = vA;
+                result.VelocityB = vB;
+                return result;
+            }
+
+            // Impulse scales with closing speed and with both masses. A light hit is a light push.
+            result.IsImpact = true;
+            result.AppliedImpulse = ApplyTwoBodyImpulse(
+                ref vA, ref vB, n, rammingMassA, rammingMassB, restitution);
+            result.VelocityA = vA;
+            result.VelocityB = vB;
+            return result;
+        }
+
+        /// <summary>
+        /// Velocity result of one <see cref="ResolveShipShipContact"/> call.
+        /// Positions are not part of this result — callers leave physics poses or restore
+        /// the pre-collision pose themselves.
+        /// </summary>
+        public struct ShipShipContactResult
+        {
+            public float3 VelocityA;
+            public float3 VelocityB;
+            public bool AppliedImpulse;
+            public bool IsValid;
+            /// <summary>Approach speed along the normal, world units/sec. Zero when separating.</summary>
+            public float ClosingSpeed;
+            /// <summary>True when <see cref="ClosingSpeed"/> reached <see cref="ShipShipTapClosingSpeed"/>.</summary>
+            public bool IsImpact;
+        }
+
+        /// <summary>
         /// Pushes overlapping hulls apart along the contact normal. When both may move,
         /// the heavier ship travels less. When only one may move (predicted local vs an
         /// interpolated remote), that ship takes the full penetration plus skin.
+        /// Live ship↔ship bounce does not call this. The server keeps the physics pose.
+        /// A predicting client restores its pre-collision pose instead of taking a share.
         /// </summary>
         public static void ApplyMassWeightedDepenetration(
             ref float3 posA,

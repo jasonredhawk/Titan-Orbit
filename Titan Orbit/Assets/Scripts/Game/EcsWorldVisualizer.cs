@@ -2175,8 +2175,8 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Applies NetCode presentation pose to the GameObject proxy. No extra lerp on the local owner —
-        /// prediction owns sim feel; proxies are render shells only. Remotes use the wrapped
-        /// chart; a wrap jump snaps so ghost interpolation does not streak across the map.
+        /// prediction owns sim feel; proxies are render shells only. Remotes copy the interpolated
+        /// snapshot. A second velocity step used to replace that pose near the map edge.
         /// </summary>
         void ApplyShipProxyTransform(
             Entity entity,
@@ -2187,8 +2187,6 @@ namespace TitanOrbit.Game
             float scale)
         {
             Vector3 pos = lt.Position;
-            if (!isLocalPlayerShip)
-                pos = ResolveRemoteWrappedPose(em, entity, go.position, lt.Position);
             Quaternion rot = lt.Rotation;
             go.SetPositionAndRotation(pos, rot);
             go.localScale = Vector3.one * scale;
@@ -2197,51 +2195,6 @@ namespace TitanOrbit.Game
                 ShipDisplayPose.SetLocalPose(pos, rot);
 
             MegaShipWeaponVisualSync.Apply(em, entity, go.gameObject);
-        }
-
-        /// <summary>
-        /// Remote ghosts interpolate <see cref="LocalTransform"/> in Euclidean space. A wrap
-        /// snapshot ( +edge → −edge ) would lerp across the whole map. Snap when the jump is
-        /// a wrap, or when interpolated motion fights velocity near an edge.
-        /// </summary>
-        static Vector3 ResolveRemoteWrappedPose(
-            EntityManager em,
-            Entity entity,
-            Vector3 previousDisplay,
-            float3 interpolated)
-        {
-            Vector3 raw = interpolated;
-            if (!ToroidalMapEcs.HasValidMapSize)
-                return raw;
-
-            if (ToroidalMapEcs.IsWrapJump(previousDisplay, raw))
-                return raw;
-
-            if (!em.HasComponent<ShipKinematics>(entity))
-                return raw;
-
-            float3 vel = em.GetComponentData<ShipKinematics>(entity).Velocity;
-            float3 planarVel = new float3(vel.x, 0f, vel.z);
-            float speedSq = math.lengthsq(planarVel);
-            if (speedSq < 4f)
-                return raw;
-
-            float3 delta = new float3(raw.x - previousDisplay.x, 0f, raw.z - previousDisplay.z);
-            if (math.lengthsq(delta) < 1f)
-                return raw;
-
-            float3 planarDir = math.normalize(planarVel);
-            float3 planarDelta = math.normalize(delta);
-            bool opposing = math.dot(planarDir, planarDelta) < -0.25f;
-            float halfW = ToroidalMapEcs.MapWidth * 0.5f;
-            float halfH = ToroidalMapEcs.MapHeight * 0.5f;
-            bool nearEdge = math.abs(previousDisplay.x) > halfW * 0.8f ||
-                            math.abs(previousDisplay.z) > halfH * 0.8f;
-            if (!opposing || !nearEdge)
-                return raw;
-
-            float3 predicted = (float3)previousDisplay + vel * UnityEngine.Time.deltaTime;
-            return ToroidalMapEcs.Wrap(predicted);
         }
 
         /// <summary>

@@ -61,20 +61,15 @@ namespace TitanOrbit.ECS
                 return;
             }
 
-            float3 linear = velocity.ValueRO.Linear;
+            float3 linear = kinematics.ValueRO.Velocity;
             linear.y = 0f;
-            float yawRate = velocity.ValueRO.Angular.y;
-            velocity.ValueRW = new PhysicsVelocity
-            {
-                Linear = linear,
-                Angular = new float3(0f, yawRate, 0f),
-            };
             kinematics.ValueRW = new ShipKinematics
             {
                 Velocity = linear,
                 FormationHeading = PeopleTransportMath.StepEscortFormationHeading(
                     kinematics.ValueRO.FormationHeading, transform.ValueRO.Rotation, dt),
             };
+            velocity.ValueRW = PhysicsVelocity.Zero;
         }
     }
 }

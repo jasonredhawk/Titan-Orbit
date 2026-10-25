@@ -13,18 +13,12 @@ using Unity.Transforms;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// After Unity Physics exports contacts, applies one bounce pass from
+    /// After Unity Physics exports contacts, applies world-body bounce from
     /// <see cref="ShipCollisionImpulseLogic"/> and <see cref="AsteroidSettings.BounceRestitution"/>.
-    /// World bodies (asteroid, planet, moon, moon shield) use the same wall reflect.
-    /// Predicted ship↔ship uses two-body impulse at that same <c>e</c>. Client remotes have
-    /// no <see cref="PhysicsVelocity"/> (static interpolated hulls). When the local ship is
-    /// the one closing, this pass applies that ship's share of the two-body impulse and
-    /// keeps only its movement-mass share of the PhysX shove — a static remote otherwise
-    /// reflects the owner like a wall and prediction yo-yos the hull, drones, and escorts.
-    /// When the remote is the one closing, a moving wall from ghosted
-    /// <see cref="ShipKinematics"/> plus the full solver separation stays, so the owner
-    /// rides the interpolated hull. PhysX materials stay restitution 0 so this pass owns rebound.
-    /// MEGA hulls plow asteroids only (restore pre-collision motion). A regular hull that
+    /// Asteroids, planets, moons, and moon shields use the wall reflect.
+    /// Ship-vs-ship is not solved here. <see cref="ShipDeterministicTickSystem"/> already
+    /// integrated the hull and applied the mass-weighted impulse. A second rewrite
+    /// would fight that tick. MEGA plow stays here. A regular hull that
     /// deals more damage than the asteroid has left does not reflect: into-rock speed drops
     /// by remainingHealth / collisionDamage (5 HP vs 20 damage keeps 75% of that speed)
     /// and the pre-collision pose is restored so depenetration cannot pop the hull back.
@@ -55,13 +49,21 @@ namespace TitanOrbit.ECS
         NativeHashSet<Entity> _megaKeepPhysX;
         NativeHashSet<long> _seenShipPairs;
         NativeHashSet<Entity> _seenPlowRocks;
-        NativeHashSet<Entity> _pusherPoseCorrected;
         NativeHashSet<long> _seenAsteroidPairs;
         NativeHashSet<long> _overkillPairs;
         NativeHashSet<Entity> _overkillRocks;
         /// <summary>Asteroid wall hits whose PhysX pose must be eased, not published as a teleport.</summary>
         NativeHashSet<Entity> _asteroidEase;
         NativeHashMap<long, double> _impactRearmUntil;
+        NativeHashSet<Entity> _shipShipTouched;
+        NativeList<ShipShipContactOutbound> _contactOutbound;
+        EntityQuery _slideLatchQuery;
+        /// <summary>Strongest local impact this tick. Presentation reads it once.</summary>
+        float3 _pendingBumpNormal;
+        float _pendingBumpClosing;
+        /// <summary>Local simulated hulls tested against interpolated ships this tick.</summary>
+        NativeList<Entity> _clientLocals;
+        NativeList<float> _clientLocalRadii;
 
         /// <summary>Require the classified contact buffer from <see cref="ShipPhysicsContactCollectSystem"/>.</summary>
         public void OnCreate(ref SystemState state)
@@ -72,12 +74,16 @@ namespace TitanOrbit.ECS
             _megaKeepPhysX = new NativeHashSet<Entity>(16, Allocator.Persistent);
             _seenShipPairs = new NativeHashSet<long>(16, Allocator.Persistent);
             _seenPlowRocks = new NativeHashSet<Entity>(16, Allocator.Persistent);
-            _pusherPoseCorrected = new NativeHashSet<Entity>(16, Allocator.Persistent);
             _seenAsteroidPairs = new NativeHashSet<long>(16, Allocator.Persistent);
             _overkillPairs = new NativeHashSet<long>(16, Allocator.Persistent);
             _overkillRocks = new NativeHashSet<Entity>(16, Allocator.Persistent);
             _asteroidEase = new NativeHashSet<Entity>(16, Allocator.Persistent);
             _impactRearmUntil = new NativeHashMap<long, double>(32, Allocator.Persistent);
+            _shipShipTouched = new NativeHashSet<Entity>(16, Allocator.Persistent);
+            _contactOutbound = new NativeList<ShipShipContactOutbound>(8, Allocator.Persistent);
+            _clientLocals = new NativeList<Entity>(4, Allocator.Persistent);
+            _clientLocalRadii = new NativeList<float>(4, Allocator.Persistent);
+            _slideLatchQuery = state.GetEntityQuery(ComponentType.ReadWrite<ShipShipSlideLatch>());
         }
 
         /// <summary>Persistent scratch from <see cref="OnCreate"/>.</summary>
@@ -93,8 +99,6 @@ namespace TitanOrbit.ECS
                 _seenShipPairs.Dispose();
             if (_seenPlowRocks.IsCreated)
                 _seenPlowRocks.Dispose();
-            if (_pusherPoseCorrected.IsCreated)
-                _pusherPoseCorrected.Dispose();
             if (_seenAsteroidPairs.IsCreated)
                 _seenAsteroidPairs.Dispose();
             if (_overkillPairs.IsCreated)
@@ -105,6 +109,14 @@ namespace TitanOrbit.ECS
                 _asteroidEase.Dispose();
             if (_impactRearmUntil.IsCreated)
                 _impactRearmUntil.Dispose();
+            if (_shipShipTouched.IsCreated)
+                _shipShipTouched.Dispose();
+            if (_contactOutbound.IsCreated)
+                _contactOutbound.Dispose();
+            if (_clientLocals.IsCreated)
+                _clientLocals.Dispose();
+            if (_clientLocalRadii.IsCreated)
+                _clientLocalRadii.Dispose();
         }
 
         /// <summary>
@@ -113,6 +125,9 @@ namespace TitanOrbit.ECS
         /// </summary>
         public void OnUpdate(ref SystemState state)
         {
+            _pendingBumpClosing = 0f;
+            _pendingBumpNormal = float3.zero;
+
             // --- Join-crash gate (client only) ---
             // [TITAN-ORBIT] ShipTag lookups during TeamChoice Instantiates Crash!!! —
             // use ShouldSkipShipSimulation (not full GhostSpawnBacklog / map Instantiates trickle).
@@ -151,9 +166,14 @@ namespace TitanOrbit.ECS
             var territoryLookup = SystemAPI.GetComponentLookup<ShipTerritoryBoostLatch>(true);
             var contactLookup = SystemAPI.GetComponentLookup<ShipAsteroidContactState>(false);
             var velocityLookup = SystemAPI.GetComponentLookup<PhysicsVelocity>(false);
-            var kinematicsLookup = SystemAPI.GetComponentLookup<ShipKinematics>(true);
+            var kinematicsLookup = SystemAPI.GetComponentLookup<ShipKinematics>(false);
             var transformLookup = SystemAPI.GetComponentLookup<LocalTransform>(false);
+            var latchLookup = SystemAPI.GetComponentLookup<ShipShipSlideLatch>(false);
             bool isClient = state.World.IsClient();
+
+            EnsureSetCapacity(ref _shipShipTouched, math.max(16, pairs.Length * 2));
+            _shipShipTouched.Clear();
+            _contactOutbound.Clear();
 
             // Working velocities start from the pre-collision snapshot so multiple contacts
             // in one tick accumulate correctly without reading PhysX's inelastic result.
@@ -164,7 +184,6 @@ namespace TitanOrbit.ECS
             EnsureSetCapacity(ref _megaUnconstrained, pairCap);
             EnsureSetCapacity(ref _megaKeepPhysX, pairCap);
             EnsureSetCapacity(ref _seenShipPairs, math.max(8, pairs.Length));
-            EnsureSetCapacity(ref _pusherPoseCorrected, pairCap);
             EnsureSetCapacity(ref _seenAsteroidPairs, math.max(8, pairs.Length));
             EnsureSetCapacity(ref _overkillPairs, math.max(8, pairs.Length));
             EnsureSetCapacity(ref _overkillRocks, math.max(8, pairs.Length));
@@ -173,7 +192,6 @@ namespace TitanOrbit.ECS
             _megaUnconstrained.Clear();
             _megaKeepPhysX.Clear();
             _seenShipPairs.Clear();
-            _pusherPoseCorrected.Clear();
             _seenAsteroidPairs.Clear();
             _overkillPairs.Clear();
             _overkillRocks.Clear();
@@ -187,19 +205,9 @@ namespace TitanOrbit.ECS
 
                 if (pair.Kind == ShipPhysicsContactKind.Ship)
                 {
-                    long key = PackEntityPairKey(pair.Ship, pair.Other);
-                    if (!_seenShipPairs.Add(key))
-                        continue;
-                    // Keep MEGA plow from undoing the solver pose. Predicted pairs get a
-                    // snapshot two-body rewrite (not stacked on PhysX). Interpolated remotes
-                    // have no PhysicsVelocity — local-closing uses a two-body share; remote-closing
-                    // stays a moving wall from ghosted kinematics.
-                    _megaKeepPhysX.Add(pair.Ship);
-                    _megaKeepPhysX.Add(pair.Other);
-                    ApplyShipVsShip(
-                        pair, ref _working, snapshotLookup, velocityLookup, kinematicsLookup,
-                        motorLookup, shipStateLookup, megaLookup, transformLookup,
-                        ref _pusherPoseCorrected, isClient, restitution, fixedDt);
+                    // Ship-vs-ship velocity and separation already ran in
+                    // ShipDeterministicTickSystem. Do not apply a second impulse.
+                    continue;
                 }
                 else if (pair.Kind == ShipPhysicsContactKind.Asteroid)
                 {
@@ -260,14 +268,25 @@ namespace TitanOrbit.ECS
                 }
             }
 
-            // --- Write PhysicsVelocity ---
+            // --- Write the wall bounce onto ghosted flight speed ---
+            // PhysicsVelocity stays zero so the solver cannot integrate the hull again.
             foreach (var kv in _working)
             {
                 Entity e = kv.Key;
+                float3 bounced = kv.Value;
+                bounced.y = 0f;
+                if (kinematicsLookup.HasComponent(e))
+                {
+                    var kin = kinematicsLookup[e];
+                    kin.Velocity = bounced;
+                    kinematicsLookup[e] = kin;
+                }
+
                 if (!velocityLookup.HasComponent(e))
                     continue;
                 var pv = velocityLookup[e];
-                pv.Linear = kv.Value;
+                pv.Linear = float3.zero;
+                pv.Angular = float3.zero;
                 velocityLookup[e] = pv;
             }
 
@@ -345,6 +364,8 @@ namespace TitanOrbit.ECS
             // bounced velocity already written above stays.
             UndoFriendlyMoonShieldRimSnaps(ref state, fixedDt);
 
+            ReleaseStaleSlideLatches(latchLookup);
+
             // Client predicts the rock vanishing so the next physics step cannot pin the MEGA
             // while HitRpc is still in flight. Server authority + self-damage stay in ramming.
             // SoftDestroy strips PhysicsCollider (structural) and invalidates ComponentLookup —
@@ -378,6 +399,9 @@ namespace TitanOrbit.ECS
                         state.EntityManager, rock);
                 }
             }
+
+            if (!isClient)
+                FlushContactSamples(ref state);
         }
 
         static void EnsureMapCapacity(ref NativeHashMap<Entity, float3> map, int needed)
@@ -622,13 +646,17 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Predicted ship↔ship: snapshot two-body impulse (ramming mass) at the shared <c>e</c>.
-        /// Client local vs an interpolated remote (no <see cref="PhysicsVelocity"/>) is handled
-        /// by <see cref="ApplyLocalVsInterpolatedRemote"/>.
+        /// Client-only ship touch against interpolated hulls. The solver does not pair
+        /// those hulls, so this is a distance test: one local ship against each remote,
+        /// and only a velocity impulse. No position write. mapW/mapH from
+        /// <see cref="ToroidalMapEcs"/>.
         /// </summary>
-        static void ApplyShipVsShip(
-            ShipPhysicsContactElement pair,
+        void ApplyClientRemoteShipTouches(
+            ref SystemState state,
             ref NativeHashMap<Entity, float3> working,
+            ref NativeList<ShipShipContactOutbound> outbound,
+            ref NativeList<Entity> locals,
+            ref NativeList<float> localRadii,
             ComponentLookup<ShipPreCollisionVelocity> snapshots,
             ComponentLookup<PhysicsVelocity> velocities,
             ComponentLookup<ShipKinematics> kinematics,
@@ -636,143 +664,400 @@ namespace TitanOrbit.ECS
             ComponentLookup<ShipState> shipStates,
             ComponentLookup<MegaShipState> megas,
             ComponentLookup<LocalTransform> transforms,
-            ref NativeHashSet<Entity> pusherPoseCorrected,
+            ComponentLookup<PhysicsCollider> colliders,
+            ComponentLookup<ShipPlanarHullRadius> hullRadii,
+            ComponentLookup<ShipShipSlideLatch> latches,
+            ComponentLookup<GhostOwner> owners,
+            ComponentLookup<GhostOwnerIsLocal> localOwners,
+            ComponentLookup<LocalPlayerShipTag> localPlayers,
+            ref float3 pendingBumpNormal,
+            ref float pendingBumpClosing,
+            bool hasContactSamples,
+            DynamicBuffer<ShipShipContactSampleElement> contactSamples,
+            float restitution)
+        {
+            if (!ToroidalMapEcs.TryGetMapSize(out float mapW, out float mapH))
+                return;
+
+            const float BroadPhase = 80f;
+            float broadSq = BroadPhase * BroadPhase;
+            locals.Clear();
+            localRadii.Clear();
+            foreach (var (localTransform, entity) in SystemAPI.Query<RefRO<LocalTransform>>()
+                         .WithAll<ShipTag, Simulate, PhysicsVelocity>()
+                         .WithEntityAccess())
+            {
+                if (shipStates.HasComponent(entity) && shipStates[entity].IsDead)
+                    continue;
+                if (megas.HasComponent(entity) && megas[entity].IsMega)
+                    continue;
+                locals.Add(entity);
+                localRadii.Add(PlanarHullRadius(
+                    entity, math.max(0.01f, localTransform.ValueRO.Scale), hullRadii, colliders));
+            }
+
+            if (locals.Length == 0)
+                return;
+
+            foreach (var (remoteTransform, remoteEntity) in SystemAPI.Query<RefRO<LocalTransform>>()
+                         .WithAll<ShipTag>()
+                         .WithNone<PhysicsVelocity, Prefab>()
+                         .WithEntityAccess())
+            {
+                if (shipStates.HasComponent(remoteEntity) && shipStates[remoteEntity].IsDead)
+                    continue;
+
+                float remoteScale = math.max(0.01f, remoteTransform.ValueRO.Scale);
+                float remoteRadius = PlanarHullRadius(remoteEntity, remoteScale, hullRadii, colliders);
+                float3 remotePos = remoteTransform.ValueRO.Position;
+                for (int i = 0; i < locals.Length; i++)
+                {
+                    Entity local = locals[i];
+                    if (!transforms.HasComponent(local))
+                        continue;
+                    var localLt = transforms[local];
+                    float3 offset = ToroidalMapEcs.ShortestOffsetXZ(remotePos, localLt.Position, mapW, mapH);
+                    if (math.lengthsq(offset) > broadSq)
+                        continue;
+                    float reach = localRadii[i] + remoteRadius;
+                    if (math.lengthsq(offset) > reach * reach)
+                        continue;
+                    float dist = math.length(offset);
+                    float3 normal = dist > 1e-4f ? offset / dist : new float3(1f, 0f, 0f);
+                    _shipShipTouched.Add(local);
+                    _shipShipTouched.Add(remoteEntity);
+                    ApplyShipVsShip(
+                        new ShipPhysicsContactElement
+                        {
+                            Ship = local,
+                            Other = remoteEntity,
+                            NormalShipFromOther = normal,
+                            Kind = ShipPhysicsContactKind.Ship,
+                        },
+                        ref working, ref outbound, snapshots, velocities, kinematics, motors,
+                        shipStates, megas, latches, owners, localOwners, localPlayers,
+                        ref pendingBumpNormal, ref pendingBumpClosing, true, hasContactSamples,
+                        contactSamples, restitution);
+                }
+            }
+        }
+
+        /// <summary>World XZ radius. Uses the cached unscaled hull when the client pair pass stored one.</summary>
+        static float PlanarHullRadius(
+            Entity ship,
+            float scale,
+            ComponentLookup<ShipPlanarHullRadius> hullRadii,
+            ComponentLookup<PhysicsCollider> colliders)
+        {
+            if (hullRadii.HasComponent(ship))
+            {
+                float unscaled = hullRadii[ship].Unscaled;
+                if (unscaled > 0.01f)
+                    return unscaled * scale;
+            }
+
+            if (colliders.HasComponent(ship))
+                return ShipToroidalWorldCollisionLogic.GetShipCollisionRadiusWorld(colliders[ship], scale);
+            return BodyCollisionMath.GetShipHullRadiusWorld(scale);
+        }
+
+        /// <summary>
+        /// Ship↔ship response shared by the server and the predicting client.
+        /// Both worlds rewrite velocity with the same impulse. Neither writes a
+        /// positional shove. The server queues one <see cref="ShipShipContactSampleRpc"/>
+        /// per overlap so resim can use the other hull's velocity and ramming mass.
+        /// </summary>
+        static void ApplyShipVsShip(
+            ShipPhysicsContactElement pair,
+            ref NativeHashMap<Entity, float3> working,
+            ref NativeList<ShipShipContactOutbound> outbound,
+            ComponentLookup<ShipPreCollisionVelocity> snapshots,
+            ComponentLookup<PhysicsVelocity> velocities,
+            ComponentLookup<ShipKinematics> kinematics,
+            ComponentLookup<ShipMotorConfig> motors,
+            ComponentLookup<ShipState> shipStates,
+            ComponentLookup<MegaShipState> megas,
+            ComponentLookup<ShipShipSlideLatch> latches,
+            ComponentLookup<GhostOwner> owners,
+            ComponentLookup<GhostOwnerIsLocal> localOwners,
+            ComponentLookup<LocalPlayerShipTag> localPlayers,
+            ref float3 pendingBumpNormal,
+            ref float pendingBumpClosing,
             bool isClient,
-            float restitution,
-            float fixedDt)
+            bool hasContactSamples,
+            DynamicBuffer<ShipShipContactSampleElement> contactSamples,
+            float restitution)
         {
             bool shipHasVel = velocities.HasComponent(pair.Ship);
             bool otherHasVel = velocities.HasComponent(pair.Other);
-            if (shipHasVel != otherHasVel)
-            {
-                if (isClient)
-                {
-                    ApplyLocalVsInterpolatedRemote(
-                        pair, ref working, snapshots, velocities, kinematics, motors, shipStates,
-                        megas, transforms, ref pusherPoseCorrected, restitution, fixedDt);
-                }
-
+            if (!shipHasVel && !otherHasVel)
                 return;
+
+            // Client MEGA vs a static interpolated hull: leave the solver pose (plow).
+            if (isClient && shipHasVel != otherHasVel)
+            {
+                Entity local = shipHasVel ? pair.Ship : pair.Other;
+                if (megas.HasComponent(local) && megas[local].IsMega)
+                    return;
             }
 
-            if (!shipHasVel)
-                return;
             if (shipStates.HasComponent(pair.Ship) && shipStates[pair.Ship].IsDead)
                 return;
             if (shipStates.HasComponent(pair.Other) && shipStates[pair.Other].IsDead)
                 return;
 
-            float3 vA = GetWorkingOrSnapshot(pair.Ship, ref working, snapshots);
-            float3 vB = GetWorkingOrSnapshot(pair.Other, ref working, snapshots);
-            float mA = GetShipCollisionMass(pair.Ship, motors, shipStates, megas);
-            float mB = GetShipCollisionMass(pair.Other, motors, shipStates, megas);
-            if (!ShipCollisionImpulseLogic.ApplyTwoBodyImpulse(
-                    ref vA, ref vB, pair.NormalShipFromOther, mA, mB, restitution))
+            bool remoteContact = shipHasVel != otherHasVel;
+            Entity dynamicHull = shipHasVel ? pair.Ship : pair.Other;
+
+            float ramShip = GetShipCollisionMass(pair.Ship, motors, shipStates, megas);
+            float ramOther = GetShipCollisionMass(pair.Other, motors, shipStates, megas);
+            float moveShip = GetShipMovementMass(pair.Ship, motors, shipStates, megas);
+            float moveOther = GetShipMovementMass(pair.Other, motors, shipStates, megas);
+
+            float3 velShip = shipHasVel
+                ? GetWorkingOrSnapshot(pair.Ship, ref working, snapshots)
+                : GhostVelocity(pair.Ship, kinematics);
+            float3 velOther = otherHasVel
+                ? GetWorkingOrSnapshot(pair.Other, ref working, snapshots)
+                : GhostVelocity(pair.Other, kinematics);
+
+            // Server sample replaces the lagged ghost for the impulse only.
+            if (isClient && hasContactSamples && remoteContact)
+            {
+                Entity remote = shipHasVel ? pair.Other : pair.Ship;
+                if (owners.HasComponent(remote)
+                    && TryContactSample(contactSamples, owners[remote].NetworkId, out var sample))
+                {
+                    if (shipHasVel)
+                    {
+                        velOther = sample.OtherVelocity;
+                        ramOther = sample.OtherRammingMass;
+                    }
+                    else
+                    {
+                        velShip = sample.OtherVelocity;
+                        ramShip = sample.OtherRammingMass;
+                    }
+                }
+            }
+
+            var resolved = ShipCollisionImpulseLogic.ResolveShipShipContact(
+                velShip,
+                velOther,
+                pair.NormalShipFromOther,
+                ramShip,
+                ramOther,
+                restitution);
+            if (!resolved.IsValid)
                 return;
 
-            working[pair.Ship] = vA;
-            working[pair.Other] = vB;
+            if (shipHasVel)
+                working[pair.Ship] = resolved.VelocityA;
+            if (otherHasVel)
+                working[pair.Other] = resolved.VelocityB;
+
+            bool sampleSent = SampleAlreadySent(pair.Ship, pair.Other, latches)
+                              || SampleAlreadySent(pair.Other, pair.Ship, latches);
+            if (!sampleSent)
+            {
+                MarkSampleSent(pair.Ship, pair.Other, latches);
+                MarkSampleSent(pair.Other, pair.Ship, latches);
+                if (!isClient)
+                {
+                    QueueContactSamples(
+                        pair, owners, velShip, velOther, ramShip, ramOther, moveShip, moveOther, ref outbound);
+                }
+            }
+
+            if (!isClient || !remoteContact || !resolved.IsImpact)
+                return;
+            if (!IsLocalPredicted(dynamicHull, localOwners, localPlayers))
+                return;
+            if (DisplayAlreadyNoted(dynamicHull, shipHasVel ? pair.Other : pair.Ship, latches))
+                return;
+
+            MarkDisplayNoted(dynamicHull, shipHasVel ? pair.Other : pair.Ship, latches);
+            if (resolved.ClosingSpeed > pendingBumpClosing)
+            {
+                float3 n = shipHasVel ? pair.NormalShipFromOther : -pair.NormalShipFromOther;
+                n.y = 0f;
+                pendingBumpNormal = n;
+                pendingBumpClosing = resolved.ClosingSpeed;
+            }
         }
 
-        /// <summary>
-        /// Client only: local predicted hull vs interpolated remote (no <see cref="PhysicsVelocity"/>).
-        /// The remote is a static body, so PhysX depenetrates only the owner and a moving-wall
-        /// reflect treats them as infinite mass. That matches the server when they are ramming
-        /// us (we stay glued to their interpolated hull). When we are the ones closing, the
-        /// server instead splits a two-body impulse and a mass-weighted shove — replaying the
-        /// wall here bounces the owner backward, then reconciliation snaps forward, and drones
-        /// plus escorts inherit that yo-yo. No-ops when both hulls have velocity (listen-server
-        /// / two predicted) or the local ship is a MEGA plow.
-        /// </summary>
-        static void ApplyLocalVsInterpolatedRemote(
-            ShipPhysicsContactElement pair,
-            ref NativeHashMap<Entity, float3> working,
-            ComponentLookup<ShipPreCollisionVelocity> snapshots,
-            ComponentLookup<PhysicsVelocity> velocities,
-            ComponentLookup<ShipKinematics> kinematics,
-            ComponentLookup<ShipMotorConfig> motors,
-            ComponentLookup<ShipState> shipStates,
-            ComponentLookup<MegaShipState> megas,
-            ComponentLookup<LocalTransform> transforms,
-            ref NativeHashSet<Entity> pusherPoseCorrected,
-            float restitution,
-            float fixedDt)
+        /// <summary>True when this ghost is the connection-owned predicted ship.</summary>
+        static bool IsLocalPredicted(
+            Entity ship,
+            ComponentLookup<GhostOwnerIsLocal> localOwners,
+            ComponentLookup<LocalPlayerShipTag> localPlayers)
         {
-            Entity local = pair.Ship;
-            Entity remote = pair.Other;
-            float3 n = pair.NormalShipFromOther;
+            if (localOwners.HasComponent(ship) && localOwners.IsComponentEnabled(ship))
+                return true;
+            return localPlayers.HasComponent(ship);
+        }
 
-            bool shipHasVel = velocities.HasComponent(local);
-            bool otherHasVel = velocities.HasComponent(remote);
-            if (shipHasVel == otherHasVel)
+        static bool SampleAlreadySent(Entity ship, Entity other, ComponentLookup<ShipShipSlideLatch> latches)
+        {
+            if (!latches.HasComponent(ship))
+                return false;
+            var latch = latches[ship];
+            return latch.SampleSent != 0 && latch.Other == other;
+        }
+
+        static void MarkSampleSent(Entity ship, Entity other, ComponentLookup<ShipShipSlideLatch> latches)
+        {
+            if (!latches.HasComponent(ship))
                 return;
+            var latch = latches[ship];
+            if (latch.Other != other)
+                latch.DisplayNoted = 0;
+            latch.Other = other;
+            latch.SampleSent = 1;
+            latches[ship] = latch;
+        }
 
-            if (!shipHasVel)
+        static bool DisplayAlreadyNoted(Entity ship, Entity other, ComponentLookup<ShipShipSlideLatch> latches)
+        {
+            if (!latches.HasComponent(ship))
+                return false;
+            var latch = latches[ship];
+            return latch.DisplayNoted != 0 && latch.Other == other;
+        }
+
+        static void MarkDisplayNoted(Entity ship, Entity other, ComponentLookup<ShipShipSlideLatch> latches)
+        {
+            if (!latches.HasComponent(ship))
+                return;
+            var latch = latches[ship];
+            latch.Other = other;
+            latch.DisplayNoted = 1;
+            latches[ship] = latch;
+        }
+
+        static bool TryContactSample(
+            DynamicBuffer<ShipShipContactSampleElement> samples,
+            int otherNetworkId,
+            out ShipShipContactSampleElement sample)
+        {
+            for (int i = samples.Length - 1; i >= 0; i--)
             {
-                local = pair.Other;
-                remote = pair.Ship;
-                n = -n;
+                if (samples[i].OtherNetworkId != otherNetworkId)
+                    continue;
+                sample = samples[i];
+                return sample.OtherMovementMass > 0f;
             }
 
-            if (megas.HasComponent(local) && megas[local].IsMega)
-                return;
-            if (shipStates.HasComponent(local) && shipStates[local].IsDead)
-                return;
-            if (shipStates.HasComponent(remote) && shipStates[remote].IsDead)
-                return;
+            sample = default;
+            return false;
+        }
 
-            float3 remoteVel = kinematics.HasComponent(remote)
-                ? kinematics[remote].Velocity
-                : float3.zero;
-            float3 localVel = GetWorkingOrSnapshot(local, ref working, snapshots);
+        static void QueueContactSamples(
+            ShipPhysicsContactElement pair,
+            ComponentLookup<GhostOwner> owners,
+            float3 velShip,
+            float3 velOther,
+            float ramShip,
+            float ramOther,
+            float moveShip,
+            float moveOther,
+            ref NativeList<ShipShipContactOutbound> outbound)
+        {
+            QueueOneSample(pair.Ship, pair.Other, velOther, ramOther, moveOther, owners, ref outbound);
+            QueueOneSample(pair.Other, pair.Ship, velShip, ramShip, moveShip, owners, ref outbound);
+        }
 
-            float3 localPlanar = localVel;
-            float3 remotePlanar = remoteVel;
-            localPlanar.y = 0f;
-            remotePlanar.y = 0f;
-            n.y = 0f;
-            if (math.lengthsq(n) < 1e-8f)
+        static void QueueOneSample(
+            Entity owner,
+            Entity other,
+            float3 otherVelocity,
+            float otherRammingMass,
+            float otherMovementMass,
+            ComponentLookup<GhostOwner> owners,
+            ref NativeList<ShipShipContactOutbound> outbound)
+        {
+            if (!owners.HasComponent(owner) || !owners.HasComponent(other))
                 return;
-            n = math.normalize(n);
-
-            // Into-speed along the separation normal. Remote-closing keeps the smooth wall
-            // path; local-closing must match the server's finite-mass result.
-            float localInto = math.max(0f, -math.dot(localPlanar, n));
-            float remoteInto = math.max(0f, math.dot(remotePlanar, n));
-            float vnRel = math.dot(localPlanar - remotePlanar, n);
-            bool localIsPusher = vnRel < -0.05f && localInto >= remoteInto;
-
-            if (!localIsPusher)
+            int ownerId = owners[owner].NetworkId;
+            int otherId = owners[other].NetworkId;
+            if (ownerId <= 0 || otherId == 0)
+                return;
+            otherVelocity.y = 0f;
+            outbound.Add(new ShipShipContactOutbound
             {
-                float3 v = localVel;
-                ShipCollisionImpulseLogic.ApplyMovingWallImpulse(ref v, remoteVel, n, restitution);
-                working[local] = v;
+                OwnerNetworkId = ownerId,
+                OtherNetworkId = otherId,
+                OtherVelocity = otherVelocity,
+                OtherMovementMass = otherMovementMass,
+                OtherRammingMass = otherRammingMass,
+            });
+        }
+
+        void ReleaseStaleSlideLatches(ComponentLookup<ShipShipSlideLatch> latches)
+        {
+            if (_slideLatchQuery.IsEmpty)
                 return;
+            using var entities = _slideLatchQuery.ToEntityArray(Allocator.Temp);
+            for (int i = 0; i < entities.Length; i++)
+            {
+                Entity entity = entities[i];
+                if (_shipShipTouched.Contains(entity) || !latches.HasComponent(entity))
+                    continue;
+                var latch = latches[entity];
+                if (latch.SampleSent == 0 && latch.DisplayNoted == 0 && latch.Other == Entity.Null)
+                    continue;
+                latches[entity] = default;
+            }
+        }
+
+        void FlushContactSamples(ref SystemState state)
+        {
+            if (_contactOutbound.Length == 0)
+                return;
+
+            var em = state.EntityManager;
+            for (int i = 0; i < _contactOutbound.Length; i++)
+            {
+                ShipShipContactOutbound row = _contactOutbound[i];
+                Entity connection = FindOwnerConnection(ref state, row.OwnerNetworkId);
+                if (connection == Entity.Null)
+                    continue;
+
+                Entity rpc = em.CreateEntity();
+                em.AddComponentData(rpc, new ShipShipContactSampleRpc
+                {
+                    OtherNetworkId = row.OtherNetworkId,
+                    OtherVelocity = row.OtherVelocity,
+                    OtherMovementMass = row.OtherMovementMass,
+                    OtherRammingMass = row.OtherRammingMass,
+                });
+                em.AddComponentData(rpc, new SendRpcCommandRequest { TargetConnection = connection });
+            }
+        }
+
+        Entity FindOwnerConnection(ref SystemState state, int networkId)
+        {
+            if (networkId <= 0)
+                return Entity.Null;
+            foreach (var (id, entity) in SystemAPI.Query<RefRO<NetworkId>>()
+                         .WithAll<NetworkStreamInGame>()
+                         .WithEntityAccess())
+            {
+                if (id.ValueRO.Value == networkId)
+                    return entity;
             }
 
-            float mLocalRam = GetShipCollisionMass(local, motors, shipStates, megas);
-            float mRemoteRam = GetShipCollisionMass(remote, motors, shipStates, megas);
-            float3 localAfter = localPlanar;
-            float3 remoteAfter = remotePlanar;
-            ShipCollisionImpulseLogic.ApplyTwoBodyImpulse(
-                ref localAfter, ref remoteAfter, n, mLocalRam, mRemoteRam, restitution);
-            // Always keep the snapshot-based result so PhysX's inelastic stop cannot stick.
-            // Remote velocity is discarded — interpolation owns that ghost.
-            working[local] = localAfter;
+            return Entity.Null;
+        }
 
-            if (!pusherPoseCorrected.Add(local))
-                return;
-            if (!snapshots.HasComponent(local) || !transforms.HasComponent(local))
-                return;
-
-            var snap = snapshots[local];
-            var lt = transforms[local];
-            float3 integrated = snap.Position + snap.Linear * fixedDt;
-            float mLocalMove = GetShipMovementMass(local, motors, shipStates, megas);
-            float mRemoteMove = GetShipMovementMass(remote, motors, shipStates, megas);
-            lt.Position = ShipCollisionImpulseLogic.KeepLocalShareOfStaticDepenetration(
-                integrated, lt.Position, n, mLocalMove, mRemoteMove);
-            transforms[local] = lt;
+        /// <summary>Quantized ghost velocity for an interpolated remote. Zero when the field is absent.</summary>
+        static float3 GhostVelocity(Entity ship, ComponentLookup<ShipKinematics> kinematics)
+        {
+            if (!kinematics.HasComponent(ship))
+                return float3.zero;
+            float3 velocity = kinematics[ship].Velocity;
+            velocity.y = 0f;
+            return velocity;
         }
 
         /// <summary>Reads snapshot (or current working) velocity for a ship entity.</summary>
@@ -1082,6 +1367,79 @@ namespace TitanOrbit.ECS
             ShipCollisionImpulseLogic.ApplyInfiniteMassWallImpulse(
                 ref vShip, pair.NormalShipFromOther, restitution);
             working[ship] = vShip;
+        }
+    }
+
+    struct ShipShipContactOutbound
+    {
+        public int OwnerNetworkId;
+        public int OtherNetworkId;
+        public float3 OtherVelocity;
+        public float OtherMovementMass;
+        public float OtherRammingMass;
+    }
+
+    /// <summary>
+    /// Copies <see cref="ShipShipContactSampleRpc"/> into a client buffer before prediction
+    /// so resim can apply the same velocity impulse. The sample does not move the hull.
+    /// One message per new contact, not per tick.
+    /// </summary>
+    [UpdateInGroup(typeof(SimulationSystemGroup))]
+    [UpdateBefore(typeof(PredictedSimulationSystemGroup))]
+    [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation)]
+    public partial struct ShipShipContactSampleClientSystem : ISystem
+    {
+        const int MaxSamples = 8;
+
+        public void OnCreate(ref SystemState state)
+        {
+            var entity = state.EntityManager.CreateEntity();
+            state.EntityManager.AddComponentData(entity, new ShipShipContactSampleQueueTag());
+            state.EntityManager.AddBuffer<ShipShipContactSampleElement>(entity);
+        }
+
+        public void OnUpdate(ref SystemState state)
+        {
+            if (!SystemAPI.TryGetSingletonBuffer<ShipShipContactSampleElement>(out var samples))
+                return;
+
+            var ecb = new EntityCommandBuffer(Allocator.Temp);
+            foreach (var (rpc, entity) in SystemAPI
+                         .Query<RefRO<ShipShipContactSampleRpc>>()
+                         .WithAll<ReceiveRpcCommandRequest>()
+                         .WithEntityAccess())
+            {
+                var row = rpc.ValueRO;
+                int slot = -1;
+                for (int i = 0; i < samples.Length; i++)
+                {
+                    if (samples[i].OtherNetworkId != row.OtherNetworkId)
+                        continue;
+                    slot = i;
+                    break;
+                }
+
+                var stored = new ShipShipContactSampleElement
+                {
+                    OtherNetworkId = row.OtherNetworkId,
+                    OtherVelocity = row.OtherVelocity,
+                    OtherMovementMass = row.OtherMovementMass,
+                    OtherRammingMass = row.OtherRammingMass,
+                };
+                if (slot >= 0)
+                    samples[slot] = stored;
+                else
+                {
+                    if (samples.Length >= MaxSamples)
+                        samples.RemoveAt(0);
+                    samples.Add(stored);
+                }
+
+                ecb.DestroyEntity(entity);
+            }
+
+            ecb.Playback(state.EntityManager);
+            ecb.Dispose();
         }
     }
 }

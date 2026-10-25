@@ -104,6 +104,8 @@ namespace TitanOrbit.ECS.Authoring
                 // [TITAN-ORBIT] Pre-physics velocity snapshot for mass-aware bounce (not ghosted —
                 // local predicted / server sim only; rewritten every fixed step).
                 AddComponent(entity, new ShipPreCollisionVelocity());
+                // [TITAN-ORBIT] One positional trim per ship↔ship overlap (not ghosted).
+                AddComponent(entity, new ShipShipSlideLatch());
                 // [TITAN-ORBIT] Previous-tick asteroid contact normal for motor inward-reject (not ghosted).
                 AddComponent(entity, new ShipAsteroidContactState());
                 AddComponent(entity, new ShipWeaponConfig
@@ -200,7 +202,13 @@ namespace TitanOrbit.ECS.Authoring
                 var physicsMass = PhysicsMass.CreateDynamic(collider.Value.MassProperties, math.max(0.5f, mass));
                 AddComponent(shipEntity, physicsMass);
                 AddComponent(shipEntity, new PhysicsGravityFactor { Value = 0f });
-                AddComponent(shipEntity, new PhysicsDamping { Linear = 0.15f, Angular = 2f });
+                AddComponent(shipEntity, new PhysicsDamping { Linear = 0f, Angular = 0f });
+                // Solver must not integrate or depenetrate the hull. Flight is the shared tick.
+                AddComponent(shipEntity, new PhysicsMassOverride
+                {
+                    IsKinematic = 1,
+                    SetVelocityToZero = 1,
+                });
             }
 
             /// <summary>

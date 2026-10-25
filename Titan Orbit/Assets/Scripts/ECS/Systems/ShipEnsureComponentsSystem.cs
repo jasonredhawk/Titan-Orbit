@@ -223,11 +223,25 @@ namespace TitanOrbit.ECS
                          .WithEntityAccess())
                 ecb.AddComponent(entity, new ShipPreCollisionVelocity());
 
+            foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
+                         .WithNone<ShipShipSlideLatch>()
+                         .WithEntityAccess())
+                ecb.AddComponent(entity, new ShipShipSlideLatch());
+
             // --- Asteroid contact cache for motor inward-reject while grinding ---
             foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
                          .WithNone<ShipAsteroidContactState>()
                          .WithEntityAccess())
                 ecb.AddComponent(entity, new ShipAsteroidContactState());
+
+            foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
+                         .WithNone<PhysicsMassOverride>()
+                         .WithEntityAccess())
+                ecb.AddComponent(entity, new PhysicsMassOverride
+                {
+                    IsKinematic = 1,
+                    SetVelocityToZero = 1,
+                });
 
             // --- Match stats (ghosted) + combat attribution (server-only) ---
             // [NETCODE] Prefer baking ShipMatchStats on the ghost prefab. This ensure path covers

@@ -11,8 +11,9 @@ namespace TitanOrbit.ECS
 {
     /// <summary>
     /// Server-authoritative ship motor. Schedules shared <see cref="ShipPhysicsDriveJob"/> before
-    /// <see cref="PhysicsSystemGroup"/> so thrust/turn/orbit write <see cref="Unity.Physics.PhysicsVelocity"/>,
-    /// then Unity Physics integrates position and resolves hull collisions.
+    /// the deterministic tick so thrust and turn write <see cref="Unity.Physics.PhysicsVelocity"/>.
+    /// <see cref="ShipDeterministicTickSystem"/> integrates that velocity and resolves ship-vs-ship.
+    /// Unity Physics does not integrate the hull a second time.
     /// Collects planet snapshots + territory triangles + map size once per tick for toroidal orbit
     /// and friendly territory speed.
     /// Paired with <see cref="ShipClientPredictedPhysicsDriveSystem"/> (same job, client owner).

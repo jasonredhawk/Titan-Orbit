@@ -1811,4 +1811,25 @@ namespace TitanOrbit.ECS
         /// <summary>New id after a save, or the id the delete named.</summary>
         public int Id;
     }
+
+    /// <summary>
+    /// [NETCODE] Server → the owning client, once when a ship↔ship contact starts.
+    /// Carries the other hull's pre-collision velocity and masses so resim can run
+    /// the same velocity impulse. It does not correct position. Not sent again on
+    /// later ticks of that overlap.
+    /// </summary>
+    public struct ShipShipContactSampleRpc : IRpcCommand
+    {
+        /// <summary><see cref="GhostOwner.NetworkId"/> of the other hull.</summary>
+        public int OtherNetworkId;
+
+        /// <summary>Other hull's planar velocity at contact, before the bounce impulse.</summary>
+        public float3 OtherVelocity;
+
+        /// <summary>Movement mass of the other hull at contact. The impulse uses ramming mass.</summary>
+        public float OtherMovementMass;
+
+        /// <summary>Ramming mass used for the other hull's half of the bounce impulse.</summary>
+        public float OtherRammingMass;
+    }
 }

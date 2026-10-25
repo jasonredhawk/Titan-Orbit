@@ -14,7 +14,9 @@ namespace TitanOrbit.Game
 {
     /// <summary>
     /// Publishes NetCode presentation-phase ship poses once per frame for camera, hybrid leftovers,
-    /// and parallax. Remotes use NetCode interpolation as-is.
+    /// and parallax. Remote ships are OwnerPredicted ghosts in interpolated mode: NetCode already
+    /// keeps the snapshot buffer and blends LocalTransform on the interpolation tick (two ticks,
+    /// about 33 ms at 60 Hz). This system publishes that pose. It does not keep a second buffer.
     /// <para>
     /// [TITAN-ORBIT] Local ship wraps onto the canonical chart; camera follows that pose.
     /// A ±map-size jump hard-snaps display (no long lerp / H73 coast across the rectangle).
@@ -24,9 +26,10 @@ namespace TitanOrbit.Game
     /// must not drag the camera there and back. Asteroid grind and hull contacts do not spring
     /// the hull pose (that coast chased every PhysX bounce and looked jittery). The hull stays
     /// on H73 cruise; <see cref="CameraFollowEcs"/> trails the published pose while
-    /// <see cref="ShipDisplayPose.LocalHullContact"/> is set. Wrap / respawn / 50u abandon still
-    /// hard-snap. GhostPredictionSmoothing is left off so this system alone owns local
-    /// presentation (avoids double-smooth jitter).
+    /// <see cref="ShipDisplayPose.LocalHullContact"/> is set. Ship-vs-ship separation is the
+    /// simulated pose from the shared tick, not a display offset. Wrap / respawn / 50u
+    /// abandon still hard-snap. GhostPredictionSmoothing is left off so this system alone
+    /// owns local presentation (avoids double-smooth jitter).
     /// </para>
     /// <para>
     /// Evidence: H71 absorbed pops (maxDelta max 0.25). H72 deadzone rejected — correctFrames
@@ -130,9 +133,9 @@ namespace TitanOrbit.Game
         bool _localShipWasDead;
 
         /// <summary>
-        /// Each presentation frame: publish remotes raw (when safe), then soft-track or raw-follow
-        /// local owner. Local pose keeps updating during gem Instantiates backlog so the camera
-        /// does not freeze then jump.
+        /// Each presentation frame: publish the interpolated remote pose, then soft-track
+        /// or raw-follow the local owner. Local pose keeps updating during gem Instantiates
+        /// backlog so the camera does not freeze then jump.
         /// </summary>
         protected override void OnUpdate()
         {
@@ -192,6 +195,9 @@ namespace TitanOrbit.Game
             // missed deferred Confirm / TeamChoice hold folds. Use the helper API.
             if (!skipShipGathers)
             {
+                // Remote pose is already the interpolated snapshot. Publishing it again through
+                // a wall-clock buffer collapsed bursts (several ticks, one arrival time) back
+                // to the newest pose, which is the chop the buffer was meant to hide.
                 foreach (var (lt, entity) in SystemAPI
                              .Query<RefRO<LocalTransform>>()
                              .WithAll<ShipTag>()
@@ -199,8 +205,18 @@ namespace TitanOrbit.Game
                 {
                     if (entity == localShip)
                         continue;
+                    if (SystemAPI.HasComponent<GhostOwnerIsLocal>(entity) &&
+                        SystemAPI.IsComponentEnabled<GhostOwnerIsLocal>(entity))
+                        continue;
 
                     PublishShip(entity, lt.ValueRO);
+                    if (EntityManager.HasComponent<LocalToWorld>(entity))
+                    {
+                        EntityManager.SetComponentData(entity, new LocalToWorld
+                        {
+                            Value = lt.ValueRO.ToMatrix(),
+                        });
+                    }
                 }
             }
             else if (TitanOrbitDebugFlags.LogAsteroidDestroyPerf)
@@ -333,11 +349,13 @@ namespace TitanOrbit.Game
             }
 
             // --- Publish pose for camera / hybrid / EG LocalToWorld ---
+            // The published pose is the sim pose. No display offset on top of the tick.
+            float3 published = _smoothPos;
             var displayLt = lt;
-            displayLt.Position = _smoothPos;
+            displayLt.Position = published;
             displayLt.Rotation = _smoothRot;
             PublishShip(localShip, displayLt);
-            ShipDisplayPose.SetLocalPose((Vector3)_smoothPos, (Quaternion)_smoothRot);
+            ShipDisplayPose.SetLocalPose((Vector3)published, (Quaternion)_smoothRot);
 
             // [ECS/DOTS] Entities Graphics reads LocalToWorld — override after transform systems this frame.
             if (!EntityManager.HasComponent<LocalToWorld>(localShip))
