@@ -328,6 +328,20 @@ namespace TitanOrbit.UI
             GameManager.IsDebugFreeShipUpgradeTreeActive;
 
         /// <summary>
+        /// Price pill for one Titan card: gems from that hull's parts, written as <c>1840g</c>.
+        /// A missing chassis id uses the catalog fallback so the pill never stays on "MOON FULL".
+        /// </summary>
+        /// <param name="chassisId"><c>MEGA_###</c> for this tree slot, or empty when the slot has no hull.</param>
+        static string FormatTitanCardGemCost(string chassisId)
+        {
+            MegaShipCatalog mega = MegaShipCatalog.Load();
+            int gems = mega != null
+                ? mega.GetPurchaseGemCostForChassisId(chassisId)
+                : Mathf.RoundToInt(MegaShipCatalog.DefaultPurchaseGemCost);
+            return $"{gems}g";
+        }
+
+        /// <summary>
         /// Colors, prices, interactable state, and power bars for every tree node (and current-ship display).
         /// Called from <see cref="ShipUpgradeTreeUI.RefreshVisualState"/>.
         /// </summary>
@@ -461,7 +475,11 @@ namespace TitanOrbit.UI
             else if (megaUnarmed)
                 view.SetPrice("NO WEAPONS");
             else if (megaUnlockBlocked)
-                view.SetPrice("MOON FULL");
+            {
+                // The moon gate still blocks the buy. The pill shows what this
+                // Titan's parts cost, not the old "MOON FULL" status word.
+                view.SetPrice(FormatTitanCardGemCost(viewChassisId));
+            }
             else if (canSwapHull)
                 view.SetPrice("Free");
             else if (isCurrent && storePlanetLevelBlocksSwap)

@@ -753,6 +753,21 @@ namespace TitanOrbit.ECS
                 }
             }
 
+            // --- Arsenal: a different hull starts with every barrel armed ---
+            // [TITAN-ORBIT] The mute mask is ghosted on this same entity. Level, branch,
+            // chassis id, or family changes are a new ship (upgrade tree or moon purchase).
+            // Attribute buys and extra parts keep the hull, so those mutes stay.
+            // [NETCODE] Server owns the ghost field. The client copy arrives in the snapshot.
+            bool resetArsenalArms = chassisIdentityChanged;
+            if (!resetArsenalArms && em.HasComponent<ShipChassisState>(shipEntity))
+            {
+                resetArsenalArms = em.GetComponentData<ShipChassisState>(shipEntity)
+                    .AppliedShipFamilyConfigIndex != (byte)familyIndex;
+            }
+
+            if (writeGhostedShipState && resetArsenalArms)
+                ShipWeaponArmState.ResetToAllOn(em, shipEntity);
+
             // --- Bookkeeping so ShipStatApplySystem skips unchanged ships ---
             var chassisState = new ShipChassisState
             {

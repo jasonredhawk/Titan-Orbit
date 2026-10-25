@@ -303,9 +303,9 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
-    /// [NETCODE] Replicated gem-moon shield reservoir. Shield absorbs bullet damage; when depleted,
-    /// moon gems drain and spawn loose gems. Updated by <see cref="PlanetGemMoonShieldSystem"/> and
-    /// combat logic.
+    /// [NETCODE] Replicated gem-moon shield reservoir. Shield absorbs bullet damage; leftover
+    /// hits knock <see cref="CurrentMoonGems"/> out as pickups. While the shield stays down,
+    /// the combat drain can also siphon the planet bank into loose gems.
     /// </summary>
     public struct PlanetGemMoonState : IComponentData
     {
@@ -334,6 +334,12 @@ namespace TitanOrbit.ECS
 
         /// <summary>[TITAN-ORBIT] Timer until next gem spawn from moon drain.</summary>
         public float GemSpawnTimer;
+
+        /// <summary>
+        /// Moon-gem value already removed by body hits but still below a spawnable pickup.
+        /// The next hit adds to this and spawns one gem. Server-only — not ghosted.
+        /// </summary>
+        public float GemExpelCarry;
     }
 
     /// <summary>

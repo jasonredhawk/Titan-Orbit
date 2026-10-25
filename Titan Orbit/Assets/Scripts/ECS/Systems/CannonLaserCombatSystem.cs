@@ -351,11 +351,13 @@ namespace TitanOrbit.ECS
                     EntityManager.GetComponentData<ShipLoadoutState>(mega));
             int laserBank = BulletBankFireResolve.ResolveMegaMountFireBank(in mount, hullBank);
 
+            // One moon gem per authored shot (fire power), not one gem per sim tick.
+            float shotDamage = TeamCommandRoleRules.ScaleFirePower(mount.FirePower * rampMul, topKiller);
             var hit = CannonLaserHitApply.Apply(
                 EntityManager, ecb, target, ship.Team, attackerNet,
                 muzzle, TeamCommandRoleRules.ScaleFirePower(slice * rampMul, topKiller),
                 heal, acquireRange, mapW, mapH, moonElapsed, serverElapsed,
-                gemPrefab, gemSpawnServerTime, ref carry, mega, laserBank, 0);
+                gemPrefab, gemSpawnServerTime, ref carry, mega, laserBank, 0, shotDamage);
             _gemCarry[target] = carry;
 
             // Apply can AddComponent (first ship hit stamps attribution, a pad

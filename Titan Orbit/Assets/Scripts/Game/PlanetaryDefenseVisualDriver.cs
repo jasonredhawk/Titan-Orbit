@@ -284,6 +284,19 @@ namespace TitanOrbit.Game
         const float DepositProgressHoldSeconds = 0.75f;
 
         /// <summary>
+        /// Frames a planet can vanish from the proxy list before its pads are destroyed.
+        /// One-frame entity / proxy blips must not wipe the group — the next good snapshot
+        /// used to find a matching fingerprint and skip rebuild, so pads stayed gone.
+        /// </summary>
+        const int MissingPlanetGraceFrames = 45;
+
+        /// <summary>
+        /// True after the map proxy ratio has been ready once this session.
+        /// Later dips (AI ships popping asteroids) must not freeze pad placement.
+        /// </summary>
+        bool _defenseMapReadyLatched;
+
+        /// <summary>
         /// Cached <see cref="MapStateSingleton"/> query — created once, disposed in OnDestroy.
         /// Avoids <c>CreateEntityQuery</c> every LateUpdate (GC tax on the PD path).
         /// </summary>
@@ -315,6 +328,12 @@ namespace TitanOrbit.Game
             public Transform Hub;
             public readonly List<SlotVisual> Slots = new List<SlotVisual>(6);
             public int LayoutFingerprint = int.MinValue;
+
+            /// <summary>Frames this planet was missing from the proxy list. Reaped after the grace.</summary>
+            public int MissFrames;
+
+            /// <summary>Ownership cleared or planet id dropped — destroy this group this frame.</summary>
+            public bool DropImmediately;
         }
 
         /// <summary>
@@ -458,17 +477,22 @@ namespace TitanOrbit.Game
             if (ClientJoinSettleCache.Settling)
             {
                 ClearAllGroups();
+                // Join again must not mass-Instantiate pads before the map ratio is ready.
+                _defenseMapReadyLatched = false;
                 return;
             }
 
-            // --- Wait for map GO load before creating pads/turrets ---
+            // --- Wait for map GO load before the first pad create ---
             // [TITAN-ORBIT] Settling can latch OFF while MapLoadingProxyCount is still below the
             // Join Team gate. RebuildSlots then Instantiates ~80 turret prefabs + TMP plates in a
-            // burst and the hybrid map drain stalls. Do not create new pads until the map is ready.
-            // A later dip below that ratio (asteroids despawning) must not ClearAllGroups — the
-            // guns are still live on the server, and wiping the slot objects is what made pads
-            // and turrets vanish together.
-            if (!EcsGameBridge.IsMapProxyCountReady(out _, out _, out _))
+            // burst and the hybrid map drain stalls. Do not create the first pads until the map
+            // is ready. Once it has been ready, a later dip (AI ships destroying asteroids, which
+            // drops the live proxy count under 92%) must keep updating — otherwise a planet
+            // level-up's new slot count is never applied, and the new pads stay unspawned until
+            // asteroids respawn (about a minute, or never if the ratio stays down).
+            if (EcsGameBridge.IsMapProxyCountReady(out _, out _, out _))
+                _defenseMapReadyLatched = true;
+            else if (!_defenseMapReadyLatched)
                 return;
 
             var visualizer = EcsWorldVisualizer.Active;
@@ -481,11 +505,8 @@ namespace TitanOrbit.Game
 
             var em = world.EntityManager;
             visualizer.CopyPlanetProxyEntities(_planetEntitiesScratch);
-            if (_planetEntitiesScratch.Count == 0)
-            {
-                ClearAllGroups();
-                return;
-            }
+            // A one-frame empty proxy dictionary used to ClearAllGroups. Keep the last pads
+            // and let the grace counter below reap them only if the map stays gone.
 
             float mapW = 0f, mapH = 0f;
             bool hasMap = TryResolveMapSize(em, out mapW, out mapH);
@@ -512,6 +533,12 @@ namespace TitanOrbit.Game
             if (canAimShips && hasMap)
                 CollectDepositingPadTeams(em, mapW, mapH);
 
+            // Cosmetic aim reads the presentation cache (plus last poses). ShipVisualSync
+            // skips remote gathers while GhostSpawn is busy, but still publishes the local
+            // ship — and last snapshots cover everyone else. Do this after deposit tint,
+            // which reuses the same scratch list.
+            GhostPresentationTransformCache.CopyShipEntitiesIncludingLast(_shipEntitiesScratch);
+
             for (int p = 0; p < _planetEntitiesScratch.Count; p++)
             {
                 Entity planetEntity = _planetEntitiesScratch[p];
@@ -526,17 +553,47 @@ namespace TitanOrbit.Game
 
                 var planet = em.GetComponentData<PlanetState>(planetEntity);
                 if (planet.Ownership == TeamId.None || planet.PlanetId == 0)
+                {
+                    // True wipe (neutral / id cleared) — do not grace-keep the old owner's pads.
+                    if (planet.PlanetId != 0 &&
+                        _groupsByPlanetId.TryGetValue(planet.PlanetId, out var dropGroup))
+                        dropGroup.DropImmediately = true;
                     continue;
+                }
 
                 var buffer = em.GetBuffer<PlanetaryDefenseSlotElement>(planetEntity);
                 // Owned planets always have slots on the server. Length 0 on the client is a
-                // snapshot blip (planet chunk lost the send budget). Keep the last drawn pad
-                // and turret until a real buffer arrives. A true wipe sets Ownership to None
-                // above, which still drops the group.
+                // snapshot blip (planet chunk lost the send budget, or a buffer resize between
+                // snapshots). Keep the last drawn pads and still slide them with the current
+                // planet level / scale so a level-up cannot leave them inside the mesh.
                 if (buffer.Length == 0)
                 {
-                    if (_groupsByPlanetId.ContainsKey(planet.PlanetId))
+                    if (_groupsByPlanetId.TryGetValue(planet.PlanetId, out var held))
+                    {
                         _alivePlanetIds.Add(planet.PlanetId);
+                        held.MissFrames = 0;
+                        held.DropImmediately = false;
+                        float heldSize = math.max(
+                            0.25f, PlanetVisualBody.ResolvePresentationSize(planetProxy.transform));
+                        if (em.HasComponent<LocalTransform>(planetEntity))
+                        {
+                            heldSize = math.max(
+                                0.25f, em.GetComponentData<LocalTransform>(planetEntity).Scale);
+                        }
+
+                        var heldConfig = PlanetaryDefenseConfig.ResolveForFamily(
+                            _familyConfig, planet.ShipFamilyConfigIndex);
+                        ShipFamilyDefinition heldFamily =
+                            PlanetaryDefenseConfig.ResolveFamilyDefinition(
+                                _familyConfig, planet.ShipFamilyConfigIndex);
+                        int heldBank = heldConfig != null
+                            ? heldConfig.ResolveBulletBankIndex(heldFamily, planet.BulletBankIndex)
+                            : 0;
+                        ApplyHeldSlotPosesAndAim(
+                            held, heldConfig, heldBank, planet, planetProxy, em,
+                            heldSize, hasMap, mapW, mapH);
+                    }
+
                     continue;
                 }
 
@@ -553,9 +610,34 @@ namespace TitanOrbit.Game
                     _groupsByPlanetId[planet.PlanetId] = group;
                 }
 
+                group.MissFrames = 0;
+                group.DropImmediately = false;
+
                 int fingerprint = ComputeFingerprint(buffer);
-                if (group.LayoutFingerprint != fingerprint)
+                // Level-up changes length. If the hub/slots were destroyed with a planet proxy
+                // swap, the fingerprint can already match and the old code skipped rebuild —
+                // pads then stayed missing until some later turret-level change (or forever).
+                bool slotsMissing = group.Hub == null || group.Slots.Count != buffer.Length;
+                if (!slotsMissing)
                 {
+                    for (int s = 0; s < group.Slots.Count; s++)
+                    {
+                        if (group.Slots[s].SlotRoot == null)
+                        {
+                            slotsMissing = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (slotsMissing || group.LayoutFingerprint != fingerprint)
+                {
+                    if (group.Hub == null)
+                    {
+                        var hubGo = new GameObject($"PlanetaryDefense_{planet.PlanetId}");
+                        group.Hub = hubGo.transform;
+                    }
+
                     RebuildSlots(group, buffer, config);
                     group.LayoutFingerprint = fingerprint;
                 }
@@ -684,44 +766,14 @@ namespace TitanOrbit.Game
                             // Absolute fire distance from the pad (same world units as server combat).
                             float engageFromTurret = math.max(0.5f, levelStats.engageRange);
 
-                            // Rest pose = radially outward from planet center. When a hostile is
-                            // in this pad’s engage range, ease toward the lead aim point instead
-                            // (same PlanetaryDefenseAimMath as server fire direction).
-                            // Player-occupied pads aim from the occupant ship's ShipInput instead.
-                            Vector3 outwardFlat = new Vector3(
-                                slotWorld.x - planetDisplay.x,
-                                0f,
-                                slotWorld.z - planetDisplay.z);
-                            Vector3 aimFlat = outwardFlat;
+                            // Rest pose = radially outward. Hostile tracking uses the presentation
+                            // cache, not a ship archetype gather, so it stays on while GhostSpawn
+                            // is busy (AI gems / map Instantiates). Server fire does not read this.
                             float bulletSpeed = math.max(1f, levelStats.bulletSpeed);
-                            if (slot.OccupiedByNetworkId != 0)
-                            {
-                                // [HYBRID] Manual control — ghosted AimPlanarDir from the piloting ship.
-                                if (TryGetOccupantAimFlat(em, slot.OccupiedByNetworkId, out Vector3 occupiedAim))
-                                    aimFlat = occupiedAim;
-                            }
-                            else if (canAimShips &&
-                                hasMap &&
-                                TryFindNearestHostileDisplay(
-                                    em, planet.Ownership, slotWorld, engageFromTurret,
-                                    mapW, mapH, out float3 targetPos, out float3 targetVel))
-                            {
-                                float3 muzzle = (float3)vis.TurretInstance.transform.position;
-                                muzzle.y = PlanetaryDefenseMath.FixedY;
-                                // [HYBRID] Presentation lead — does not drive sim; matches server
-                                // combat (same per-level bulletSpeed + engageRange + lead scale).
-                                if (PlanetaryDefenseAimMath.TryComputeFireDirection(
-                                        muzzle, targetPos, targetVel, bulletSpeed, mapW, mapH,
-                                        engageFromTurret,
-                                        PlanetaryDefenseAimMath.ShipVelocityLeadScale,
-                                        out float3 fireDir))
-                                {
-                                    aimFlat = new Vector3(fireDir.x, 0f, fireDir.z);
-                                }
-                            }
-
-                            // [TITAN-ORBIT] Yaw + ship-style bank roll (cosmetic only).
-                            ApplyTurretAimAndBank(ref vis, aimFlat, Time.deltaTime);
+                            AimActiveTurret(
+                                ref vis, em, planet.Ownership, slot.OccupiedByNetworkId,
+                                slotWorld, planetDisplay, engageFromTurret, bulletSpeed,
+                                hasMap, mapW, mapH);
                         }
                         else
                         {
@@ -752,7 +804,11 @@ namespace TitanOrbit.Game
             _removePlanetIds.Clear();
             foreach (var kv in _groupsByPlanetId)
             {
-                if (!_alivePlanetIds.Contains(kv.Key))
+                if (_alivePlanetIds.Contains(kv.Key))
+                    continue;
+
+                PlanetDefenseGroup missing = kv.Value;
+                if (missing.DropImmediately || ++missing.MissFrames > MissingPlanetGraceFrames)
                     _removePlanetIds.Add(kv.Key);
             }
 
@@ -979,6 +1035,128 @@ namespace TitanOrbit.Game
             // Keep room for "…" so the glyph budget stays MaxOccupantNameChars.
             int keep = Mathf.Max(1, MaxOccupantNameChars - 1);
             return trimmed.Substring(0, keep) + "…";
+        }
+
+        /// <summary>
+        /// Keeps already-drawn pads on the planet while the client slot buffer is empty.
+        /// Moves them with the current level and scale, and still yaws active turrets.
+        /// Does not read buffer elements and does not hide meshes.
+        /// </summary>
+        void ApplyHeldSlotPosesAndAim(
+            PlanetDefenseGroup group,
+            PlanetaryDefenseConfig config,
+            int bankIndex,
+            in PlanetState planet,
+            GameObject planetProxy,
+            EntityManager em,
+            float planetSize,
+            bool hasMap,
+            float mapW,
+            float mapH)
+        {
+            if (group == null || planetProxy == null)
+                return;
+
+            if (group.Hub != null && group.Hub.parent != planetProxy.transform)
+                group.Hub.SetParent(planetProxy.transform, worldPositionStays: false);
+            if (group.Hub != null)
+            {
+                if (group.Hub.localPosition.sqrMagnitude > 1e-8f)
+                    group.Hub.localPosition = Vector3.zero;
+                if (group.Hub.localRotation != Quaternion.identity)
+                    group.Hub.localRotation = Quaternion.identity;
+                if ((group.Hub.localScale - Vector3.one).sqrMagnitude > 1e-6f)
+                    group.Hub.localScale = Vector3.one;
+            }
+
+            float3 planetDisplay = (float3)planetProxy.transform.position;
+            int slotCount = math.max(1, group.Slots.Count);
+            for (int i = 0; i < group.Slots.Count; i++)
+            {
+                SlotVisual vis = group.Slots[i];
+                if (vis.SlotRoot == null)
+                    continue;
+
+                float3 slotWorld = PlanetaryDefenseMath.GetSlotWorldPosition(
+                    planetDisplay, planetSize, planet.PlanetLevel, i, slotCount);
+                slotWorld.y = planetDisplay.y + PresentationLiftY;
+                vis.SlotRoot.localPosition = planetProxy.transform.InverseTransformPoint(
+                    new Vector3(slotWorld.x, slotWorld.y, slotWorld.z));
+                vis.SlotRoot.localRotation = Quaternion.identity;
+                vis.SlotRoot.localScale = Vector3.one;
+
+                if (vis.TurretInstance != null && vis.TurretInstance.activeSelf && vis.TurretLevel > 0)
+                {
+                    float engage = 1f;
+                    float bulletSpeed = 1f;
+                    if (config != null)
+                    {
+                        var levelStats = config.GetCombatLevelStats(vis.TurretLevel, bankIndex);
+                        engage = math.max(0.5f, levelStats.engageRange);
+                        bulletSpeed = math.max(1f, levelStats.bulletSpeed);
+                    }
+
+                    AimActiveTurret(
+                        ref vis, em, planet.Ownership, occupiedByNetworkId: 0,
+                        slotWorld, planetDisplay, engage, bulletSpeed,
+                        hasMap, mapW, mapH);
+                }
+
+                group.Slots[i] = vis;
+            }
+        }
+
+        /// <summary>
+        /// Cosmetic yaw toward the occupant stick, else the nearest hostile in engage range,
+        /// else the radial outward rest pose. Presentation only — server fire ignores this.
+        /// Hostile search uses <see cref="_shipEntitiesScratch"/> filled once per LateUpdate.
+        /// </summary>
+        void AimActiveTurret(
+            ref SlotVisual vis,
+            EntityManager em,
+            TeamId ownerTeam,
+            int occupiedByNetworkId,
+            float3 slotWorld,
+            float3 planetDisplay,
+            float engageRange,
+            float bulletSpeed,
+            bool hasMap,
+            float mapW,
+            float mapH)
+        {
+            if (vis.TurretInstance == null)
+                return;
+
+            Vector3 outwardFlat = new Vector3(
+                slotWorld.x - planetDisplay.x,
+                0f,
+                slotWorld.z - planetDisplay.z);
+            Vector3 aimFlat = outwardFlat;
+            if (occupiedByNetworkId != 0)
+            {
+                // Manual control still uses a cached ship query — skip that gather while
+                // GhostSpawn is busy. Auto-aim below does not.
+                if (TryGetOccupantAimFlat(em, occupiedByNetworkId, out Vector3 occupiedAim))
+                    aimFlat = occupiedAim;
+            }
+            else if (hasMap &&
+                     TryFindNearestHostileDisplay(
+                         em, ownerTeam, slotWorld, engageRange, mapW, mapH,
+                         out float3 targetPos, out float3 targetVel))
+            {
+                float3 muzzle = (float3)vis.TurretInstance.transform.position;
+                muzzle.y = PlanetaryDefenseMath.FixedY;
+                if (PlanetaryDefenseAimMath.TryComputeFireDirection(
+                        muzzle, targetPos, targetVel, bulletSpeed, mapW, mapH,
+                        engageRange,
+                        PlanetaryDefenseAimMath.ShipVelocityLeadScale,
+                        out float3 fireDir))
+                {
+                    aimFlat = new Vector3(fireDir.x, 0f, fireDir.z);
+                }
+            }
+
+            ApplyTurretAimAndBank(ref vis, aimFlat, Time.deltaTime);
         }
 
         /// <summary>
@@ -2072,7 +2250,8 @@ namespace TitanOrbit.Game
             bool found = false;
 
             // --- Enemy ships (presentation pose + kinematics velocity) ---
-            GhostPresentationTransformCache.CopyShipEntities(_shipEntitiesScratch);
+            // List is filled once per LateUpdate (this frame + last pose). Do not copy here —
+            // that used to drop remotes whenever the local ship was the only this-frame publish.
             for (int i = 0; i < _shipEntitiesScratch.Count; i++)
             {
                 Entity shipEntity = _shipEntitiesScratch[i];

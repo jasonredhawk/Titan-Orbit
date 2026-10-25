@@ -85,7 +85,10 @@ namespace TitanOrbit.ECS
         }
     }
 
-    /// <summary>When the moon shield is down, drain planet gems and expel them as collectibles.</summary>
+    /// <summary>
+    /// Idle. Moon gems used to drip out on a timer after the shield fell. They now leave
+    /// only with the hit that dealt the damage, one gem sized to that damage.
+    /// </summary>
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     [UpdateAfter(typeof(PlanetGemMoonShieldSystem))]
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
@@ -93,97 +96,11 @@ namespace TitanOrbit.ECS
     {
         public void OnCreate(ref SystemState state)
         {
-            state.RequireForUpdate<GamePrefabs>();
+            state.Enabled = false;
         }
 
         public void OnUpdate(ref SystemState state)
         {
-            // --- System OnUpdate ---
-            if (!SystemAPI.TryGetSingleton<GamePrefabs>(out var prefabs) || prefabs.Gem == Entity.Null)
-                return;
-
-            float dt = SystemAPI.Time.DeltaTime;
-
-            // --- Shared orbit clock for gem spawn at moon position ---
-            // [TITAN-ORBIT] Spawn at the same analytic pose clients see (ServerTick, not World.ElapsedTime).
-            int hz = 0;
-            if (SystemAPI.TryGetSingleton<ClientServerTickRate>(out var tickRate))
-                hz = tickRate.SimulationTickRate;
-            double moonElapsed = SystemAPI.TryGetSingleton<NetworkTime>(out var networkTime)
-                ? PlanetGemMoonOrbitClock.GetElapsedSeconds(networkTime, hz, includeTickFraction: false)
-                : SystemAPI.Time.ElapsedTime;
-
-            // Missing map period → skip moon shield regen geometry (never invent 1000).
-            float preferredW = 0f;
-            float preferredH = 0f;
-            if (SystemAPI.TryGetSingleton<MapStateSingleton>(out var mapState) &&
-                ToroidalMapEcs.IsValidMapSize(mapState.MapWidth, mapState.MapHeight))
-            {
-                preferredW = mapState.MapWidth;
-                preferredH = mapState.MapHeight;
-            }
-
-            if (!ToroidalMapEcs.ResolveMapSize(preferredW, preferredH, out float mapW, out float mapH))
-                return;
-
-            var ecb = new EntityCommandBuffer(Allocator.Temp);
-
-            foreach (var (planet, moon, transform) in SystemAPI
-                         .Query<RefRW<PlanetState>, RefRW<PlanetGemMoonState>, RefRO<LocalTransform>>()
-                         .WithAll<PlanetTag>())
-            {
-                ref PlanetGemMoonState moonState = ref moon.ValueRW;
-                if (moonState.CurrentShield > 0f)
-                    continue;
-                if (moonState.CurrentMoonGems <= 0.0001f)
-                    continue;
-
-                ref PlanetState planetState = ref planet.ValueRW;
-                if (planetState.CurrentGems <= 0.0001f)
-                    continue;
-
-                float drain = PlanetGemMoonMath.GemDrainPerSecondWhenShieldDown * dt;
-                drain = math.min(drain, math.min(moonState.CurrentMoonGems, planetState.CurrentGems));
-                if (drain <= 0.0001f)
-                    continue;
-
-                moonState.CurrentMoonGems -= drain;
-                planetState.CurrentGems -= drain;
-                moonState.GemDrainAccumulator += drain;
-                moonState.GemSpawnTimer += dt;
-
-                if (moonState.GemSpawnTimer < PlanetGemMoonMath.GemSpawnInterval)
-                    continue;
-                if (moonState.GemDrainAccumulator < PlanetGemMoonMath.GemSpawnMinValue)
-                    continue;
-
-                float spawnValue = moonState.GemDrainAccumulator;
-                moonState.GemDrainAccumulator = 0f;
-                moonState.GemSpawnTimer = 0f;
-
-                float planetSize = math.max(0.25f, transform.ValueRO.Scale);
-                float3 moonPos = PlanetOrbitMath.GetMoonWorldPositionNear(
-                    transform.ValueRO.Position,
-                    transform.ValueRO.Position,
-                    planetSize,
-                    planetState.PlanetLevel,
-                    planetState.PlanetId,
-                    moonElapsed,
-                    mapW,
-                    mapH);
-
-                GemSpawning.Spawn(
-                    ecb,
-                    prefabs.Gem,
-                    moonPos,
-                    spawnValue,
-                    (uint)planetState.PlanetId,
-                    burst: false,
-                    (float)moonElapsed);
-            }
-
-            ecb.Playback(state.EntityManager);
-            ecb.Dispose();
         }
     }
 }

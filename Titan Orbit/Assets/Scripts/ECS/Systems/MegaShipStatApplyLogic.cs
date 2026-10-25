@@ -391,6 +391,25 @@ namespace TitanOrbit.ECS
                 }
             }
 
+            // --- Arsenal: a different Titan starts with every barrel armed ---
+            // [TITAN-ORBIT] Same ghost as the regular hull. Switching catalog row, slot,
+            // or family must not keep missiles or cannons the player muted on the last ship.
+            // Extra parts on this same Titan leave the mask alone.
+            // [NETCODE] Server writes the ghost; clients paint the replicated mask.
+            bool resetArsenalArms = true;
+            if (em.HasComponent<ShipChassisState>(shipEntity))
+            {
+                var prevHull = em.GetComponentData<ShipChassisState>(shipEntity);
+                var chassisKey = new FixedString64Bytes(chassisId);
+                bool sameHull = prevHull.ChassisId.Equals(chassisKey)
+                    && prevHull.AppliedBranchIndex == mega.MegaSlotIndex
+                    && prevHull.AppliedShipFamilyConfigIndex == (byte)familyIndex;
+                resetArsenalArms = !sameHull;
+            }
+
+            if (writeGhostedShipState && resetArsenalArms)
+                ShipWeaponArmState.ResetToAllOn(em, shipEntity);
+
             var chassisState = new ShipChassisState
             {
                 ChassisId = chassisId,

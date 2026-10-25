@@ -105,6 +105,30 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// Ship keys for cosmetic queries that must keep working while GhostSpawn is busy.
+        /// This-frame publishes win; ships skipped this frame (remote gather gated) still
+        /// contribute their last presentation pose. Dictionary walk only — no archetype gather.
+        /// </summary>
+        internal static void CopyShipEntitiesIncludingLast(List<Entity> dst)
+        {
+            if (dst == null)
+                return;
+            dst.Clear();
+            foreach (var kv in LastShipSnapshots)
+            {
+                if (kv.Key != Entity.Null)
+                    dst.Add(kv.Key);
+            }
+
+            foreach (var kv in Ships)
+            {
+                if (kv.Key == Entity.Null || LastShipSnapshots.ContainsKey(kv.Key))
+                    continue;
+                dst.Add(kv.Key);
+            }
+        }
+
+        /// <summary>
         /// Lookup people-transport presentation pose by entity (this frame, else last published).
         /// </summary>
         internal static bool TryGetPeopleTransport(Entity entity, out Snapshot snapshot)

@@ -435,11 +435,15 @@ namespace TitanOrbit.ECS
             return arm;
         }
 
-        /// <summary>Drops a stale request (no local ship, HUD hidden).</summary>
+        /// <summary>
+        /// Drops a stale request (no local ship, HUD hidden, or the hull just changed).
+        /// Also clears the one-shot latch so that click is not copied onto the next ship.
+        /// </summary>
         public static void Clear()
         {
             RequestedIndex = -1;
             s_requestUnscaledTime = -999f;
+            ShipPendingInput.ConsumeSetWeaponArmLatch();
         }
     }
 }

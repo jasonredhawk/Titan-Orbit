@@ -1632,6 +1632,61 @@ namespace TitanOrbit.ECS
     public struct OrbitUnlockedGiftedRpc : IRpcCommand { }
 
     /// <summary>
+    /// [NETCODE] Client → server: gift the beta-tester item to this connection.
+    /// Same rules as <see cref="GiftOrbitUnlockedCommand"/>: an allowlisted admin,
+    /// and the server resolves the Unity player id. Clients never send that id.
+    /// </summary>
+    public struct GiftBetaTesterCommand : IRpcCommand
+    {
+        /// <summary>Network id from <see cref="GiftRosterEntryRpc"/>.</summary>
+        public int TargetNetworkId;
+    }
+
+    /// <summary>
+    /// [NETCODE] Server → the admin who clicked BETA.
+    /// Status bytes match <see cref="OrbitUnlockedGiftServerSystem"/>:
+    /// 0 failed, 1 granted, 2 already owned, 3 another gift is still sending.
+    /// </summary>
+    public struct GiftBetaTesterResultRpc : IRpcCommand
+    {
+        /// <summary>Network id that was gifted, or the one the click named.</summary>
+        public int TargetNetworkId;
+
+        /// <summary>0 failed, 1 granted, 2 already owned, 3 still sending.</summary>
+        public byte Status;
+    }
+
+    /// <summary>
+    /// [NETCODE] Server → the gifted player only. Their client reads Cloud Save
+    /// and shows the Escape BETA button.
+    /// </summary>
+    public struct BetaTesterGiftedRpc : IRpcCommand { }
+
+    /// <summary>
+    /// [NETCODE] Client → server: the beta menu's toggle bits.
+    /// Ignored unless this connection has been verified as a beta tester.
+    /// <see cref="BetaTesterClientFlags"/> is the bit layout.
+    /// </summary>
+    public struct SetBetaTesterTogglesCommand : IRpcCommand
+    {
+        /// <summary>Requested bits. The server masks to the known flags.</summary>
+        public byte Flags;
+    }
+
+    /// <summary>
+    /// [NETCODE] Server → one client: whether this connection owns beta tester,
+    /// and which toggle bits purchases will honor. Prices stay normal until this arrives.
+    /// </summary>
+    public struct BetaTesterSessionRpc : IRpcCommand
+    {
+        /// <summary>1 when this connection may use beta features. 0 otherwise.</summary>
+        public byte Owned;
+
+        /// <summary>Confirmed toggle bits. Zero when <see cref="Owned"/> is 0.</summary>
+        public byte Flags;
+    }
+
+    /// <summary>
     /// [NETCODE] Client → server: the NOTES screen opened and wants the saved log.
     /// <see cref="RequestId"/> is echoed on each reply so a second open does not
     /// mix rows with the first. Handled by <see cref="BetaFeedbackServerSystem"/>.
@@ -1646,7 +1701,7 @@ namespace TitanOrbit.ECS
     /// [NETCODE] Client → server: one field note. The hull snapshot was taken on the
     /// client when the NOTES screen opened (ship, gun, level, added ability levels).
     /// There is no clock field — that snapshot is the stamp. The server appends a line
-    /// to BetaFeedback.log when <see cref="TitanOrbitDebugFlags.BetaFeedbackEnabled"/> is on.
+    /// to BetaFeedback.log only when this connection owns the beta-tester item.
     /// </summary>
     public struct SubmitBetaFeedbackCommand : IRpcCommand
     {

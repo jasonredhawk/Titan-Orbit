@@ -1,3 +1,4 @@
+using TitanOrbit;
 using UnityEngine;
 
 namespace TitanOrbit.ECS
@@ -18,8 +19,11 @@ namespace TitanOrbit.ECS
             public string Name;
             public bool SignedIn;
 
-            /// <summary>255 means no gift result yet. Otherwise a server status byte.</summary>
+            /// <summary>255 means no Orbit Unlocked result yet. Otherwise a server status byte.</summary>
             public byte Status;
+
+            /// <summary>255 means no beta-tester result yet. Otherwise a server status byte.</summary>
+            public byte BetaStatus;
         }
 
         const int MaxRows = 32;
@@ -45,6 +49,7 @@ namespace TitanOrbit.ECS
 
         static float _toastUntil;
         static bool _needsCloudRefresh;
+        static bool _betaGifted;
 
         /// <summary>[UNITY] Domain Reload off: the last match's admin flag must not survive.</summary>
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
@@ -64,6 +69,8 @@ namespace TitanOrbit.ECS
             LastNote = null;
             _toastUntil = 0f;
             _needsCloudRefresh = false;
+            _betaGifted = false;
+            BetaTesterClientFlags.ClearVerified();
         }
 
         /// <summary>The server accepted this connection as an admin.</summary>
@@ -108,6 +115,7 @@ namespace TitanOrbit.ECS
                 Name = rpc.DisplayName.Length > 0 ? rpc.DisplayName.ToString() : "PLAYER " + rpc.NetworkId,
                 SignedIn = rpc.SignedIn != 0,
                 Status = StatusNone,
+                BetaStatus = StatusNone,
             };
             if (RowCount < rpc.Index + 1)
                 RowCount = rpc.Index + 1;
@@ -130,6 +138,39 @@ namespace TitanOrbit.ECS
             }
 
             Version++;
+        }
+
+        /// <summary>Paints a beta-tester gift result onto the matching row.</summary>
+        public static void ApplyBetaResult(int networkId, byte status)
+        {
+            LastNote = BetaNoteForStatus(status);
+            for (int i = 0; i < RowCount; i++)
+            {
+                if (Rows[i].NetworkId != networkId)
+                    continue;
+                Row row = Rows[i];
+                row.BetaStatus = status;
+                Rows[i] = row;
+                Version++;
+                return;
+            }
+
+            Version++;
+        }
+
+        static string BetaNoteForStatus(byte status)
+        {
+            switch (status)
+            {
+                case OrbitUnlockedGiftServerSystem.StatusGranted:
+                    return "BETA SENT";
+                case OrbitUnlockedGiftServerSystem.StatusAlready:
+                    return "ALREADY BETA";
+                case OrbitUnlockedGiftServerSystem.StatusBusy:
+                    return "BETA STILL SENDING";
+                default:
+                    return "BETA FAILED";
+            }
         }
 
         static string NoteForStatus(byte status)
@@ -165,6 +206,31 @@ namespace TitanOrbit.ECS
             Toast = "ORBIT UNLOCKED IS YOURS";
             _toastUntil = Time.unscaledTime + 6f;
             Version++;
+        }
+
+        /// <summary>
+        /// Shows the beta-tester line and asks the panel to read Cloud Save.
+        /// Same refresh path as Orbit Unlocked. The read pulls both keys.
+        /// </summary>
+        public static void NoteBetaTesterGifted()
+        {
+            _needsCloudRefresh = true;
+            _betaGifted = true;
+            Toast = "BETA TESTER IS YOURS";
+            _toastUntil = Time.unscaledTime + 6f;
+            Version++;
+        }
+
+        /// <summary>
+        /// True once after a beta gift. The panel turns on the local entitlement.
+        /// Separate from the Orbit Unlocked refresh so a full-version gift cannot grant beta.
+        /// </summary>
+        public static bool ConsumeBetaGift()
+        {
+            if (!_betaGifted)
+                return false;
+            _betaGifted = false;
+            return true;
         }
 
         /// <summary>True once. The panel calls this and then reads Cloud Save.</summary>

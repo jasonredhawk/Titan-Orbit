@@ -19,18 +19,21 @@ namespace TitanOrbit.ECS
     /// there is no remote Take Control path. Cannon barrels stay parked and lock anyone
     /// Cannon lasers use the same in-range auto-aim, then the turret slews onto
     /// that lock; <see cref="CannonLaserCombatSystem"/> burns once the barrel faces it.
-    /// Damage mode treats enemy ships, enemy planetary defense turrets, and enemy
-    /// moon shields as one priority — closest in range wins. Unowned worlds are skipped. Asteroids are second
-    /// (only when no combat target is in that gun's range). Heal mode aims at the
-    /// nearest friendly ship. Cannon lasers also acquire asteroids (lowest
-    /// priority) so a destroyed rock does not leave the beam stuck. Projectile
-    /// guns auto-aim rocks when
-    /// <see cref="TitanOrbitDebugFlags.MegaShipsAutoFireAsteroids"/> is on.
+    /// Damage mode: enemy ships, turrets, and other hostile targets (moon shields)
+    /// are one class — the closest in range wins. Unowned worlds are skipped.
+    /// Asteroids are strictly second, and only when that muzzle has no enemy in
+    /// range. A closer rock never wins, and a rock the barrel already locked is
+    /// dropped as soon as any enemy enters range. Heal mode aims at the nearest
+    /// friendly ship. Cannon lasers also acquire asteroids (lowest priority) so a
+    /// destroyed rock does not leave the beam stuck. Projectile guns auto-aim
+    /// rocks when <see cref="TitanOrbitDebugFlags.MegaShipsAutoFireAsteroids"/> is on.
     /// That flag is published on the dedicated server (WebGL does not aim locally).
+    /// Gun, cannon, missile, and sniper mounts on every Titan hull share this order.
     /// <para>
-    /// Each gun searches from its own muzzle when Fire is pressed. A live lock
-    /// sticks — a closer ship will not steal it. If that target dies or leaves
-    /// range, the barrel grabs the next closest. Releasing Fire clears locks so
+    /// Each gun searches from its own muzzle when Fire is pressed. A live enemy
+    /// lock sticks — a closer ship will not steal it. An asteroid lock does not
+    /// stick against an enemy. If the target dies or leaves range, the barrel
+    /// grabs the next closest enemy, then a rock. Releasing Fire clears locks so
     /// the next press re-acquires (to switch off a still-valid target).
     /// If a gun finds nothing, it fires along hull forward until someone enters range.
     /// Aim points are lead intercepts from <see cref="MegaShipLeadAim"/> — target velocity
@@ -301,6 +304,26 @@ namespace TitanOrbit.ECS
                         float acquireRange = ResolveMountRange(mount, in weapon);
                         float keepRange = CannonLaserMath.KeepRange(acquireRange);
                         bool hadLock = slot.Target != Entity.Null && slot.Target != mega;
+                        // Rock locks are not sticky against hostiles. Any enemy in
+                        // this cone (ship, turret, moon shield) takes the barrel.
+                        if (hadLock && IsAsteroidLock(slot.Target)
+                            && TryAcquireClosestTarget(
+                                mega, ship.Team, heal, muzzle, shooterVel, 0f, acquireRange,
+                                mapW, mapH, moonElapsed, MegaShipAutoAimClass.Asteroid,
+                                ships, shipStates, shipXfs, planets,
+                                false, asteroidEntities, asteroidStates, asteroidXfs,
+                                out Entity coneEnemy, out float3 coneEnemyAim, out float coneEnemyDist,
+                                coneLock: true, barrelFwd))
+                        {
+                            aims[m] = new MegaShipAutoAimSlotElement
+                            {
+                                Target = coneEnemy,
+                                AimPoint = coneEnemyAim,
+                                InterceptDistance = coneEnemyDist,
+                            };
+                            continue;
+                        }
+
                         if (hadLock && TryKeepStickyTarget(
                             mega, ship.Team, heal, muzzle, shooterVel, 0f, keepRange,
                             mapW, mapH, moonElapsed, ref slot,
@@ -374,9 +397,29 @@ namespace TitanOrbit.ECS
                         : ResolveLeadBulletSpeed(
                             in weapon, in mount, mountBank, shipLevel,
                             cycledGun ? familyBulletSpeed : 0f);
-                    // Live lock sticks (no closer-target steal). Dead / out of
-                    // keep-range falls through to a fresh closest-target search.
+                    // Enemy locks stick (a closer ship does not steal). Asteroid
+                    // locks do not: any hostile in range replaces the rock, even
+                    // when the rock is closer. Dead / out of keep-range falls
+                    // through to a fresh closest-target search.
                     bool hadLock = slot.Target != Entity.Null && slot.Target != mega;
+                    if (hadLock && IsAsteroidLock(slot.Target)
+                        && TryAcquireClosestTarget(
+                            mega, ship.Team, heal, muzzle, shooterVel, leadBulletSpeed, acquireRange,
+                            mapW, mapH, moonElapsed, MegaShipAutoAimClass.Asteroid,
+                            ships, shipStates, shipXfs, planets,
+                            false, asteroidEntities, asteroidStates, asteroidXfs,
+                            out Entity enemyTarget, out float3 enemyAim, out float enemyDist,
+                            coneLock: false, barrelFwd))
+                    {
+                        aims[m] = new MegaShipAutoAimSlotElement
+                        {
+                            Target = enemyTarget,
+                            AimPoint = enemyAim,
+                            InterceptDistance = enemyDist,
+                        };
+                        continue;
+                    }
+
                     bool kept = hadLock && TryKeepStickyTarget(
                         mega, ship.Team, heal, muzzle, shooterVel, leadBulletSpeed, keepRange,
                         mapW, mapH, moonElapsed, ref slot,
@@ -707,6 +750,14 @@ namespace TitanOrbit.ECS
             MegaShipWeaponAim.ClearUnoccupiedTracking(gunners, mounts);
         }
 
+        /// <summary>True when the sticky slot is a rock, not a ship, turret, or moon.</summary>
+        bool IsAsteroidLock(Entity target)
+        {
+            return target != Entity.Null
+                && EntityManager.Exists(target)
+                && EntityManager.HasComponent<AsteroidTag>(target);
+        }
+
         /// <summary>
         /// Keep the last lock if it still exists, is a valid team, and is inside range
         /// from this gun's muzzle. mapW/mapH from <see cref="MapStateSingleton"/>.
@@ -819,8 +870,9 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Auto-aim class order. Combat (ships, pads, moon shields) beats asteroids
-        /// even when the rock is closer.
+        /// Auto-aim class order. Combat (ships, turrets, moon shields, other
+        /// hostile targets) always beats asteroids, even when the rock is closer
+        /// and even when the barrel is already locked on that rock.
         /// </summary>
         enum MegaShipAutoAimClass : byte
         {
@@ -833,9 +885,13 @@ namespace TitanOrbit.ECS
         /// Closest in-range target from this muzzle. Enemy ships, enemy pads, and enemy
         /// moon shields compete by toroidal distance; asteroids are only used when
         /// none of those are in range and <paramref name="debugAsteroids"/> is set
-        /// (projectile guns) or this caller is a cannon laser. Two guns may lock the same entity.
-        /// Used when a barrel has no live lock (first press, or the last target died / left range).
-        /// <paramref name="betterThan"/> is kept so a first search can skip a lower class.
+        /// (projectile guns) or this caller is a cannon laser. A closer asteroid is
+        /// never chosen while any enemy is inside <paramref name="range"/>. Two guns
+        /// may lock the same entity.
+        /// Used when a barrel has no live enemy lock (first press, rock lock that must
+        /// yield, or the last target died / left range).
+        /// Pass <see cref="MegaShipAutoAimClass.Asteroid"/> as <paramref name="betterThan"/>
+        /// to search enemies only and leave the rock lock in place when none are in range.
         /// mapW/mapH from <see cref="MapStateSingleton"/>.
         /// </summary>
         bool TryAcquireClosestTarget(

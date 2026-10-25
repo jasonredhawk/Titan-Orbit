@@ -817,11 +817,11 @@ namespace TitanOrbit.UI
 
             UpgradeTree.GetNextLevelBranchTargets(currentLevel, currentBranch, _nextTargets);
             bool isNextChoice = view.Level == nextLevel && _nextTargets.Contains(view.BranchIndex);
+            // Level-7 cost is this card's parts. The old catalog field priced every Titan the same.
+            int titanGemCost = view.Level == 7 ? ResolveTitanCardGemCost(view.BranchIndex) : 0;
             float nodeCost = isNextChoice
                 ? (nextLevel == 7
-                    ? (MegaShipCatalog.Load() != null
-                        ? MegaShipCatalog.Load().GetPurchaseGemCost()
-                        : MoonOrbitStorePricing.GetShipUpgradeCost(7))
+                    ? titanGemCost
                     : MoonOrbitStorePricing.GetShipUpgradeCost(nextLevel))
                 : 0f;
             bool canPurchase = isNextChoice && _contributedGems >= nodeCost && !tierBlocked && !megaOccupied && !megaUnarmed;
@@ -874,7 +874,11 @@ namespace TitanOrbit.UI
             else if (megaUnarmed)
                 view.SetPrice("NO WEAPONS");
             else if (megaUnlockBlocked)
-                view.SetPrice("MOON FULL");
+            {
+                // Moon must still be full before the buy goes through. The pill
+                // shows this Titan's part total instead of "MOON FULL".
+                view.SetPrice($"{titanGemCost}g");
+            }
             else if (isCurrent)
                 view.SetPrice("You");
             else if (tierBlocked)
@@ -1050,6 +1054,23 @@ namespace TitanOrbit.UI
 
             occupiedByNetworkId = localId;
             return true;
+        }
+
+        /// <summary>
+        /// Gems this planet's Titan in <paramref name="branchIndex"/> costs.
+        /// Walks that slot's catalog hull and sums its parts. No slot yet uses the fallback field.
+        /// </summary>
+        /// <param name="branchIndex">L7 tree branch 0, 1, or 2.</param>
+        int ResolveTitanCardGemCost(int branchIndex)
+        {
+            MegaShipCatalog mega = MegaShipCatalog.Load();
+            if (mega == null)
+                return Mathf.RoundToInt(MegaShipCatalog.DefaultPurchaseGemCost);
+
+            if (EcsGameBridge.TryGetPlanetMegaSlot(_storePlanetId, branchIndex, out ushort catalogIndex, out _))
+                return mega.GetPurchaseGemCost(catalogIndex);
+
+            return Mathf.RoundToInt(mega.GetPurchaseGemCost());
         }
 
         /// <summary>

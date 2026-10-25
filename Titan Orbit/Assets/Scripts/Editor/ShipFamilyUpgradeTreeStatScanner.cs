@@ -92,7 +92,7 @@ namespace TitanOrbit.Editor
         /// Sums scale-adjusted stats for all transforms named <c>FamilyId_ComponentId</c> with a matching component entry.
         /// Non-weapons scale by average localScale (x+y+z)/3, including move, acceleration,
         /// turn, and ramming. Weapons scale fire power by average |X|+|Y| and fire rate by
-        /// 1/|Z| (2 is half rate, 0.9 is faster than 1); bullet speed and range use the average.
+        /// 1/|Z| (2 is half rate, 0.9 is faster than 1); bullet speed stays catalog; bullet range uses the average.
         /// </summary>
         public static ShipComponentAbilityStats SumStatsUnderRoot(GameObject root, ShipFamilyDefinition def, string familyId)
         {

@@ -20,7 +20,7 @@ namespace TitanOrbit.ECS
         /// <summary>The line was removed.</summary>
         public const byte Deleted = 2;
 
-        /// <summary>Game Manager field notes are off on this server.</summary>
+        /// <summary>This connection does not own the beta-tester item.</summary>
         public const byte Disabled = 3;
 
         /// <summary>Delete named an id that is not in the file.</summary>
@@ -35,9 +35,9 @@ namespace TitanOrbit.ECS
     /// delete requests. Runs only when a client actually sends an RPC — it does not read
     /// the file every tick. World: ServerSimulation.
     /// <para>
-    /// Writes are refused unless <see cref="TitanOrbitDebugFlags.BetaFeedbackEnabled"/> is
-    /// set, which GameManager copies from the Beta — Field Notes checkbox. A public server
-    /// (checkbox off) still has these RPC types so the protocol matches, but it stores nothing.
+    /// Writes are refused unless the sending connection owns the beta-tester item
+    /// (<see cref="BetaTesterMatch"/>). A public player still has these RPC types so
+    /// the protocol matches, but the server stores nothing for them.
     /// </para>
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
@@ -82,7 +82,7 @@ namespace TitanOrbit.ECS
             if (_submit.IsEmptyIgnoreFilter && _delete.IsEmptyIgnoreFilter && _list.IsEmptyIgnoreFilter)
                 return;
             var ecb = new EntityCommandBuffer(Allocator.Temp);
-            bool enabled = TitanOrbitDebugFlags.BetaFeedbackEnabled;
+            var em = state.EntityManager;
 
             // --- Submit ---
             // [NETCODE] SourceConnection is who asked. We store the snapshot they sent;
@@ -93,7 +93,7 @@ namespace TitanOrbit.ECS
             {
                 ecb.DestroyEntity(entity);
                 Entity connection = req.ValueRO.SourceConnection;
-                if (!enabled)
+                if (!BetaTesterMatch.IsOwned(em, connection))
                 {
                     Reply(ecb, connection, BetaFeedbackStatus.Disabled, 0);
                     continue;
@@ -134,7 +134,7 @@ namespace TitanOrbit.ECS
             {
                 ecb.DestroyEntity(entity);
                 Entity connection = req.ValueRO.SourceConnection;
-                if (!enabled)
+                if (!BetaTesterMatch.IsOwned(em, connection))
                 {
                     Reply(ecb, connection, BetaFeedbackStatus.Disabled, cmd.ValueRO.Id);
                     continue;
@@ -154,7 +154,7 @@ namespace TitanOrbit.ECS
                 ecb.DestroyEntity(entity);
                 Entity connection = req.ValueRO.SourceConnection;
                 byte requestId = cmd.ValueRO.RequestId;
-                if (!enabled)
+                if (!BetaTesterMatch.IsOwned(em, connection))
                 {
                     ReplyListDone(ecb, connection, requestId, shown: 0, total: -1);
                     continue;

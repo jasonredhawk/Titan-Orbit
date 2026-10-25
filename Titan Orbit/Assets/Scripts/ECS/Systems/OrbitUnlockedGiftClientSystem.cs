@@ -1,3 +1,4 @@
+using TitanOrbit;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.NetCode;
@@ -41,6 +42,24 @@ namespace TitanOrbit.ECS
             foreach (var (_, entity) in SystemAPI.Query<RefRO<OrbitUnlockedGiftedRpc>>().WithEntityAccess())
             {
                 ApplyGifted();
+                ecb.DestroyEntity(entity);
+            }
+
+            foreach (var (result, entity) in SystemAPI.Query<RefRO<GiftBetaTesterResultRpc>>().WithEntityAccess())
+            {
+                OrbitUnlockedGiftClientState.ApplyBetaResult(result.ValueRO.TargetNetworkId, result.ValueRO.Status);
+                ecb.DestroyEntity(entity);
+            }
+
+            foreach (var (_, entity) in SystemAPI.Query<RefRO<BetaTesterGiftedRpc>>().WithEntityAccess())
+            {
+                OrbitUnlockedGiftClientState.NoteBetaTesterGifted();
+                ecb.DestroyEntity(entity);
+            }
+
+            foreach (var (session, entity) in SystemAPI.Query<RefRO<BetaTesterSessionRpc>>().WithEntityAccess())
+            {
+                BetaTesterClientFlags.ApplyServer(session.ValueRO.Owned != 0, session.ValueRO.Flags);
                 ecb.DestroyEntity(entity);
             }
 

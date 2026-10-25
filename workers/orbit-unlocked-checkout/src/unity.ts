@@ -2,6 +2,8 @@ const CLOUD_SAVE_HOST = "https://cloud-save.services.api.unity.com";
 const TOKEN_EXCHANGE = "https://services.api.unity.com/auth/v1/token-exchange";
 const ENTITLEMENT_KEY = "orbit_unlocked";
 const SOURCE_KEY = "orbit_unlocked_source";
+const BETA_KEY = "beta_tester";
+const BETA_SOURCE_KEY = "beta_tester_source";
 
 export function isPlausiblePlayerId(playerId: string): boolean {
   return /^[A-Za-z0-9_-]{1,128}$/.test(playerId);
@@ -59,9 +61,43 @@ export async function grantOrbitUnlockedFromAdmin(
 }
 
 async function readOrbitUnlockedOwned(env: Env, token: string, playerId: string): Promise<boolean> {
+  return readFlag(env, token, playerId, ENTITLEMENT_KEY);
+}
+
+/**
+ * Admin gift for the beta-tester item. Same Cloud Save write as a flag the game
+ * already uses for Orbit Unlocked, on the key `beta_tester`.
+ * Already-owned accounts are not relabeled.
+ */
+export async function grantBetaTesterFromAdmin(
+  env: Env,
+  playerId: string,
+  grantedBy: string,
+): Promise<{ alreadyOwned: boolean }> {
+  const token = await exchangeServiceAccount(env);
+  if (await readFlag(env, token, playerId, BETA_KEY))
+    return { alreadyOwned: true };
+
+  await writeItem(env, token, playerId, BETA_KEY, true);
+  try {
+    await writeItem(env, token, playerId, BETA_SOURCE_KEY, `admin:${grantedBy}`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "source write failed";
+    console.error(JSON.stringify({ level: "error", message: "beta_source_write_failed", detail: message }));
+  }
+  return { alreadyOwned: false };
+}
+
+/** Server lookup. True only when Cloud Save has beta_tester set. Missing key is false. */
+export async function readBetaTesterOwned(env: Env, playerId: string): Promise<boolean> {
+  const token = await exchangeServiceAccount(env);
+  return readFlag(env, token, playerId, BETA_KEY);
+}
+
+async function readFlag(env: Env, token: string, playerId: string, key: string): Promise<boolean> {
   const url =
     `${CLOUD_SAVE_HOST}/v1/data/projects/${env.UNITY_PROJECT_ID}/players/` +
-    `${encodeURIComponent(playerId)}/items?keys=${ENTITLEMENT_KEY}`;
+    `${encodeURIComponent(playerId)}/items?keys=${encodeURIComponent(key)}`;
   const response = await fetch(url, {
     headers: {
       Authorization: `Bearer ${token}`,
@@ -75,7 +111,25 @@ async function readOrbitUnlockedOwned(env: Env, token: string, playerId: string)
     throw new Error(`Cloud Save read failed: ${response.status} ${detail}`);
   }
   const json = await response.text();
-  return json.indexOf("\"value\":true") >= 0 || json.indexOf("\"value\": true") >= 0;
+  return cloudSaveKeyIsTrue(json, key);
+}
+
+/**
+ * True only when this key's own value is true.
+ * A player who owns Orbit Unlocked must not look like they already own beta tester
+ * just because some other key in the body is true.
+ */
+export function cloudSaveKeyIsTrue(json: string, key: string): boolean {
+  const markers = [`"key":"${key}"`, `"key": "${key}"`];
+  for (let i = 0; i < markers.length; i++) {
+    const at = json.indexOf(markers[i]);
+    if (at < 0)
+      continue;
+    const window = json.slice(at, at + 160);
+    if (window.indexOf('"value":true') >= 0 || window.indexOf('"value": true') >= 0)
+      return true;
+  }
+  return false;
 }
 
 async function writeItem(

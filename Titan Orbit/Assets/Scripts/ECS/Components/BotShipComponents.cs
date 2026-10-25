@@ -84,6 +84,10 @@ namespace TitanOrbit.ECS
         /// <summary>Wreck position while <see cref="BotTaskKind.Collect"/> is gathering that burst.</summary>
         public float3 CollectOrigin;
         public int GoalPlanetId;
+        /// <summary>
+        /// Ship to follow or attack. While mining or scooping, the enemy guns are
+        /// on. Cleared when that hull leaves secondary range. 0 when unused.
+        /// </summary>
         public int GoalNetworkId;
         /// <summary>1 after this landing already bought one attribute. Cleared on takeoff.</summary>
         public byte AttributeBoughtWhileLanded;

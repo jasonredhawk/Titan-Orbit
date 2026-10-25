@@ -183,6 +183,18 @@ namespace TitanOrbit.UI
         string _lastGunCaption = string.Empty;
         bool _hasPainted;
 
+        /// <summary>Last painted <see cref="ShipState.ShipLevel"/>. MinValue until the first hull.</summary>
+        int _trackedHullLevel = int.MinValue;
+
+        /// <summary>Last painted <see cref="ShipState.BranchIndex"/>.</summary>
+        int _trackedHullBranch = int.MinValue;
+
+        /// <summary>Last painted <see cref="ShipState.ShipFamilyConfigIndex"/>.</summary>
+        int _trackedHullFamily = int.MinValue;
+
+        /// <summary>Last painted Titan catalog index, or -1 on a regular hull.</summary>
+        int _trackedMegaCatalog = int.MinValue;
+
         /// <summary>[UNITY] Creates the HUD once after the first scene load.</summary>
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         static void EnsureExists()
@@ -338,9 +350,6 @@ namespace TitanOrbit.UI
                 : default;
             ShipWeaponKind.RestoreMountKindsFromGhostedSlots(mounts, gunners);
 
-            var ghostArm = ShipWeaponArmState.Resolve(em, ship);
-            var arm = WeaponArmSelection.Overlay(in ghostArm, mounts);
-
             bool isMega = em.HasComponent<MegaShipState>(ship)
                           && em.GetComponentData<MegaShipState>(ship).IsMega;
 
@@ -355,6 +364,26 @@ namespace TitanOrbit.UI
             var megaState = isMega && em.HasComponent<MegaShipState>(ship)
                 ? em.GetComponentData<MegaShipState>(ship)
                 : default;
+
+            // --- New hull drops a click that belonged to the previous ship ---
+            // [TITAN-ORBIT] The server clears ShipWeaponArmState when the chassis changes.
+            // Clear before the overlay is read, or this frame still paints the old mute.
+            int megaCatalog = isMega ? megaState.CatalogIndex : -1;
+            int familyIndex = shipState.ShipFamilyConfigIndex;
+            if (_trackedHullLevel != int.MinValue &&
+                (shipState.ShipLevel != _trackedHullLevel ||
+                 shipState.BranchIndex != _trackedHullBranch ||
+                 familyIndex != _trackedHullFamily ||
+                 megaCatalog != _trackedMegaCatalog))
+                WeaponArmSelection.Clear();
+            _trackedHullLevel = shipState.ShipLevel;
+            _trackedHullBranch = shipState.BranchIndex;
+            _trackedHullFamily = familyIndex;
+            _trackedMegaCatalog = megaCatalog;
+
+            var ghostArm = ShipWeaponArmState.Resolve(em, ship);
+            var arm = WeaponArmSelection.Overlay(in ghostArm, mounts);
+
             bool laserLockout = isMega
                                 && megaState.CannonLaserLockout
                                 && !megaState.CannonLaserPulseOn;

@@ -13,7 +13,9 @@ namespace TitanOrbit.ECS
     /// <summary>
     /// Server brain for AI ships. Decides a task about twice a second, then writes
     /// <see cref="ShipInput"/> every tick so the existing motor, guns, moon dock,
-    /// deposit, and troop systems do the work.
+    /// deposit, and troop systems do the work. Asteroids, deposits, and level-ups
+    /// stay the goal. An enemy inside <see cref="SecondaryShotRange"/> is only a
+    /// gun target while mining or scooping; the hull does not chase.
     /// <para>
     /// Runs inside the predicted fixed step, after NetCode copies the command buffer
     /// into <see cref="ShipInput"/> and before <see cref="ShipPhysicsDriveSystem"/>.
@@ -36,10 +38,16 @@ namespace TitanOrbit.ECS
     {
         const float DecisionInterval = 0.5f;
         /// <summary>
-        /// Only peel off to fight, chase, or shoot inside this distance.
+        /// Chase and the idle attack task stay inside this distance.
         /// Farther enemies are ignored so a miner does not cross the map.
         /// </summary>
         const float EngageRange = 14f;
+        /// <summary>
+        /// While the goal is still a rock or a loose gem, guns answer an enemy
+        /// inside this reach and the hull does not follow them. Bullet range is ~30.
+        /// Past this, the asteroid stays the only target.
+        /// </summary>
+        const float SecondaryShotRange = 22f;
         /// <summary>
         /// Extra reach past the farthest a jam blast can still carry a gem.
         /// Coast of <see cref="BulletBankHitEffects.MaxGemBlastImpulse"/> (8) at drag 0.5
@@ -50,6 +58,8 @@ namespace TitanOrbit.ECS
         const float FollowDistance = 8f;
         const float HoldDistance = 6f;
         const int MaxShipLevel = 6;
+        /// <summary>Server-only coin flip for the next hull. Not ghosted.</summary>
+        static uint _upgradeRoll = 0xC001D00Du;
         const float DockShipRadius = 0.8f;
         const float DockZoneMultiplier = 1.05f;
         /// <summary>Gap past the drawn rock so the hull sits close without touching it.</summary>
@@ -312,8 +322,9 @@ namespace TitanOrbit.ECS
                     speed = math.length(new float2(planar.x, planar.z));
                 }
 
+                quaternion rotation = em.GetComponentData<LocalTransform>(shipEntity).Rotation;
                 var input = BuildInput(
-                    ref brain, ship, networkId, pos, speed, landed, docking, inOrbit,
+                    ref brain, ship, networkId, pos, rotation, speed, landed, docking, inOrbit,
                     planets.AsArray(), ships.AsArray(),
                     mapW, mapH, orbitElapsed);
                 BotShipPresentation.ApplyCommanderSkin(
@@ -459,7 +470,9 @@ namespace TitanOrbit.ECS
                 return;
             }
 
-            // Combat is last. A nearby enemy does not pull a ship off mining, hauling, or deposit.
+            // No rock or gem left. A close enemy is the fallback task. A miner who still
+            // has a rock keeps that goal; BuildInput only turns to fire inside
+            // SecondaryShotRange and does not chase.
             if (TryNearestEnemy(ships, pos, ship.Team, networkId, EngageRange, mapW, mapH, out ShipSnap enemy))
             {
                 SetAttack(ref brain, enemy);
@@ -605,9 +618,9 @@ namespace TitanOrbit.ECS
                 return;
 
             int nextLevel = ship.ShipLevel + 1;
-            int branch = ship.BranchIndex;
             if (nextLevel <= MaxShipLevel &&
-                UpgradeTree.IsValidUpgradeStep(ship.ShipLevel, branch, nextLevel, branch))
+                TryRollUpgradeBranch(ship.ShipLevel, ship.BranchIndex, out int branch) &&
+                UpgradeTree.IsValidUpgradeStep(ship.ShipLevel, ship.BranchIndex, nextLevel, branch))
             {
                 if (MoonOrbitStoreSystem.TryPurchaseShipUpgradeForNetworkId(
                         em,
@@ -642,6 +655,50 @@ namespace TitanOrbit.ECS
             ship = em.GetComponentData<ShipState>(shipEntity);
         }
 
+        /// <summary>
+        /// Picks a legal next hull. Levels 1–5 can step to the current branch or the
+        /// next one; both are a fair coin flip. A single legal hull is taken as-is.
+        /// </summary>
+        static bool TryRollUpgradeBranch(int fromLevel, int fromBranch, out int branch)
+        {
+            branch = fromBranch;
+            if (fromLevel < 1 || fromLevel > 5)
+                return false;
+            if (fromBranch < 0 || fromBranch >= UpgradeTree.GetShipCountForLevel(fromLevel))
+                return false;
+
+            int nextCount = UpgradeTree.GetShipCountForLevel(fromLevel + 1);
+            int first = -1;
+            int second = -1;
+            int count = 0;
+            for (int j = fromBranch; j <= fromBranch + 1; j++)
+            {
+                if (j < 0 || j >= nextCount)
+                    continue;
+                if (count == 0)
+                    first = j;
+                else
+                    second = j;
+                count++;
+            }
+
+            if (count <= 0)
+                return false;
+            if (count == 1)
+            {
+                branch = first;
+                return true;
+            }
+
+            uint x = _upgradeRoll;
+            x ^= x << 13;
+            x ^= x >> 17;
+            x ^= x << 5;
+            _upgradeRoll = x == 0u ? 0xC001D00Du : x;
+            branch = (_upgradeRoll >> 31) == 0u ? first : second;
+            return true;
+        }
+
         static bool TryPickAttribute(in ShipAttributeUpgradeState attrs, int shipLevel, float gems, out int index)
         {
             index = -1;
@@ -667,6 +724,7 @@ namespace TitanOrbit.ECS
             in ShipState ship,
             int networkId,
             float3 pos,
+            quaternion rotation,
             float speed,
             bool landed,
             bool docking,
@@ -829,6 +887,22 @@ namespace TitanOrbit.ECS
             else if (landed && brain.Task != BotTaskKind.Deposit && brain.Task != BotTaskKind.Upgrade)
                 thrust = true;
 
+            // Secondary target. The mine or collect goal stays put. Guns turn onto a
+            // close enemy and thrust stays off so the hull brakes instead of chasing.
+            // Deposit, docking, and orbit are left alone so a level-up is not cut short.
+            bool shootShip = false;
+            if (!landed && !docking && !inOrbit && !unloadCargo &&
+                (brain.Task == BotTaskKind.Mine || brain.Task == BotTaskKind.Collect) &&
+                TrySecondaryShip(
+                    ref brain, ships, pos, ship.Team, networkId, mapW, mapH, out ShipSnap threat))
+            {
+                aim = threat.Position;
+                shootShip = true;
+                thrust = false;
+                releaseThrust = true;
+                brain.ThrustHeld = 0;
+            }
+
             float3 offset = ToroidalMapEcs.ShortestOffsetXZ(pos, aim, mapW, mapH);
             float len = math.length(new float2(offset.x, offset.z));
             if (len > 0.05f)
@@ -838,7 +912,13 @@ namespace TitanOrbit.ECS
             }
 
             input.Thrust = thrust;
-            if (brain.Task == BotTaskKind.Mine && !inOrbit)
+            if (shootShip)
+            {
+                // Barrels fire along hull forward. Wait until the turn finishes so
+                // the burst does not dump into the rock the ship was mining.
+                fire = HullFaces(rotation, pos, aim, mapW, mapH);
+            }
+            else if (brain.Task == BotTaskKind.Mine && !inOrbit)
             {
                 float3 toRock = ToroidalMapEcs.ShortestOffsetXZ(pos, brain.Goal, mapW, mapH);
                 toRock.y = 0f;
@@ -884,6 +964,76 @@ namespace TitanOrbit.ECS
 
             held = (byte)(thrusting ? 1 : 0);
             return thrusting;
+        }
+
+        /// <summary>
+        /// Enemy hull to shoot while a rock or gem stays the goal. Keeps the current
+        /// ship until they leave <see cref="SecondaryShotRange"/> plus a small pad, so
+        /// two crossing hulls do not swap the nose every tick. Clears
+        /// <see cref="BotShipBrain.GoalNetworkId"/> when nobody is close.
+        /// </summary>
+        static bool TrySecondaryShip(
+            ref BotShipBrain brain,
+            NativeArray<ShipSnap> ships,
+            float3 from,
+            TeamId team,
+            int selfId,
+            float mapW,
+            float mapH,
+            out ShipSnap best)
+        {
+            const float stickPad = 4f;
+            float stickRange = SecondaryShotRange + stickPad;
+            if (brain.GoalNetworkId != 0 &&
+                TryShip(ships, brain.GoalNetworkId, out ShipSnap current) &&
+                current.Dead == 0 &&
+                current.Landed == 0 &&
+                current.Team != TeamId.None &&
+                current.Team != team &&
+                ToroidalMapEcs.ToroidalDistance(from, current.Position, mapW, mapH) <= stickRange)
+            {
+                best = current;
+                if (TryNearestEnemy(ships, from, team, selfId, SecondaryShotRange, mapW, mapH, out ShipSnap nearer) &&
+                    nearer.NetworkId != current.NetworkId)
+                {
+                    float currentDist = ToroidalMapEcs.ToroidalDistance(from, current.Position, mapW, mapH);
+                    float nearerDist = ToroidalMapEcs.ToroidalDistance(from, nearer.Position, mapW, mapH);
+                    if (nearerDist + stickPad < currentDist)
+                        best = nearer;
+                }
+
+                brain.GoalNetworkId = best.NetworkId;
+                return true;
+            }
+
+            if (!TryNearestEnemy(ships, from, team, selfId, SecondaryShotRange, mapW, mapH, out best))
+            {
+                brain.GoalNetworkId = 0;
+                return false;
+            }
+
+            brain.GoalNetworkId = best.NetworkId;
+            return true;
+        }
+
+        /// <summary>
+        /// True when hull forward (+Z) is within about 37 degrees of <paramref name="target"/>.
+        /// </summary>
+        static bool HullFaces(quaternion rotation, float3 from, float3 target, float mapW, float mapH)
+        {
+            float3 toTarget = ToroidalMapEcs.ShortestOffsetXZ(from, target, mapW, mapH);
+            toTarget.y = 0f;
+            float targetLen = math.length(toTarget);
+            if (targetLen < 0.05f)
+                return true;
+
+            float3 forward = math.mul(rotation, new float3(0f, 0f, 1f));
+            forward.y = 0f;
+            float forwardLen = math.length(forward);
+            if (forwardLen < 0.01f)
+                return false;
+
+            return math.dot(forward / forwardLen, toTarget / targetLen) > 0.8f;
         }
 
         /// <summary>
@@ -988,7 +1138,7 @@ namespace TitanOrbit.ECS
             brain.Goal = rock.Position;
             brain.GoalRadius = rock.Radius;
             brain.GoalPlanetId = 0;
-            brain.GoalNetworkId = 0;
+            // GoalNetworkId stays. It is the secondary ship, not the rock.
         }
 
         static void SetCollect(ref BotShipBrain brain, float3 gemPos, float3 origin)
@@ -998,7 +1148,7 @@ namespace TitanOrbit.ECS
             brain.CollectOrigin = origin;
             brain.GoalRadius = 0f;
             brain.GoalPlanetId = 0;
-            brain.GoalNetworkId = 0;
+            // GoalNetworkId stays. It is the secondary ship, not the gem.
         }
 
         static void SetAttack(ref BotShipBrain brain, in ShipSnap enemy)
