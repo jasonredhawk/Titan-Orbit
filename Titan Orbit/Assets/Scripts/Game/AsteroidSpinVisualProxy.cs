@@ -262,6 +262,11 @@ namespace TitanOrbit.Game
             if (_rotationSpeed <= 0.0001f)
                 return;
 
+            // Root is the rock. Off-screen rocks also get deactivated by the visualizer;
+            // this return covers the frame before that, and any rock left active.
+            if (CameraGroundView.IsOutside(transform.position, CameraGroundView.BodyMargin))
+                return;
+
             _spinPivot.Rotate(_rotationAxis, _rotationSpeed * Time.deltaTime, Space.World);
         }
     }

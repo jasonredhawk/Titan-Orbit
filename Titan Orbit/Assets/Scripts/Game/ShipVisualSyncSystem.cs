@@ -297,6 +297,11 @@ namespace TitanOrbit.Game
 
             ShipDisplayPose.SetLocalHullContact(liveContact);
 
+            bool dampShipShipCorrection = false;
+            if (SystemAPI.TryGetSingleton<LocalShipShipOverlapLatch>(out var shipOverlap)
+                && shipOverlap.Active != 0)
+                dampShipShipCorrection = true;
+
             // --- Death / respawn edge ---
             // [TITAN-ORBIT] Respawn teleports LocalTransform to the home orbit ring. Display
             // stays on the wreck for the countdown. A one-frame hop to that spawn (asteroid
@@ -342,6 +347,10 @@ namespace TitanOrbit.Game
             else if (!holdWreck && (catchingUp || displayErr > 2f))
             {
                 StepDisplayToward(targetPos, targetRot, dt, CatchUpDisplayMaxSpeed);
+            }
+            else if (!holdWreck && dampShipShipCorrection)
+            {
+                StepShipContactDamped(targetPos, targetRot, dt);
             }
             else if (!holdWreck)
             {
@@ -423,6 +432,29 @@ namespace TitanOrbit.Game
             _smoothPos = coasted + pull;
             _smoothPos.y = simPos.y;
             _smoothRot = math.slerp(_smoothRot, simRot, 1f - math.exp(-DisplayRotationSharpness * dt));
+        }
+
+        /// <summary>
+        /// While the local hull is against an interpolated enemy, raw-follow turns each
+        /// snapshot step into a visible reverse. Ease onto the sim pose instead.
+        /// Wrap, death, and respawn still hard-snap before this runs.
+        /// </summary>
+        void StepShipContactDamped(float3 simPos, quaternion simRot, float dt)
+        {
+            float3 err = simPos - _smoothPos;
+            err.y = 0f;
+            float dist = math.length(err);
+            float t = 1f - math.exp(-18f * math.max(0f, dt));
+            if (dist < 0.02f)
+            {
+                _smoothPos = simPos;
+                _smoothRot = simRot;
+                return;
+            }
+
+            _smoothPos += err * t;
+            _smoothPos.y = simPos.y;
+            _smoothRot = math.slerp(_smoothRot, simRot, t);
         }
 
         /// <summary>

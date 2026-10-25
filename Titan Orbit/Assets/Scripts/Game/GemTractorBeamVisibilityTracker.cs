@@ -19,6 +19,8 @@ namespace TitanOrbit.Game
         static readonly List<GemTractorBeamClientLogic.GemProxySnapshot> GemScratch =
             new List<GemTractorBeamClientLogic.GemProxySnapshot>(64);
         static int _lastUpdateFrame = -1;
+        static readonly HashSet<long> Touched = new HashSet<long>(64);
+        static readonly List<long> Stale = new List<long>(8);
 
         const float FadeInPerSecond = 5f;
         const float FadeOutPerSecond = 1.8f;
@@ -52,7 +54,7 @@ namespace TitanOrbit.Game
 
             var em = world.EntityManager;
             float dt = Time.deltaTime;
-            var touched = new HashSet<long>(VisibilityByPair.Count);
+            Touched.Clear();
             // --- Rolled map period for eligibility / fade ---
             if (!ToroidalDisplay.ResolveMapSize(em, out float mapW, out float mapH))
                 return;
@@ -80,7 +82,20 @@ namespace TitanOrbit.Game
                 {
                     var gem = GemScratch[gi];
                     long key = PairKey(ships[si].Index, gem.GhostId);
-                    touched.Add(key);
+                    if (CameraGroundView.IsOutside(gem.Transform.Position, CameraGroundView.BodyMargin))
+                    {
+                        if (!VisibilityByPair.TryGetValue(key, out float offscreen))
+                            continue;
+                        Touched.Add(key);
+                        offscreen = Mathf.MoveTowards(offscreen, 0f, FadeOutPerSecond * dt);
+                        if (offscreen > 0.001f)
+                            VisibilityByPair[key] = offscreen;
+                        else
+                            VisibilityByPair.Remove(key);
+                        continue;
+                    }
+
+                    Touched.Add(key);
 
                     bool wantsVisible = GemTractorBeamClientLogic.IsEligibleForBeamVisual(
                         em, ships[si], shipStates[si], shipTransforms[si], wings,
@@ -103,18 +118,18 @@ namespace TitanOrbit.Game
                 }
             }
 
-            if (VisibilityByPair.Count > touched.Count)
+            if (VisibilityByPair.Count > Touched.Count)
             {
-                var stale = new List<long>(8);
+                Stale.Clear();
                 foreach (var kv in VisibilityByPair)
                 {
-                    if (!touched.Contains(kv.Key))
-                        stale.Add(kv.Key);
+                    if (!Touched.Contains(kv.Key))
+                        Stale.Add(kv.Key);
                 }
 
-                for (int i = 0; i < stale.Count; i++)
+                for (int i = 0; i < Stale.Count; i++)
                 {
-                    long key = stale[i];
+                    long key = Stale[i];
                     float visibility = VisibilityByPair[key];
                     visibility = Mathf.MoveTowards(visibility, 0f, FadeOutPerSecond * dt);
                     if (visibility > 0.001f)
@@ -134,6 +149,8 @@ namespace TitanOrbit.Game
             // --- Clear state ---
             VisibilityByPair.Clear();
             GemScratch.Clear();
+            Touched.Clear();
+            Stale.Clear();
             _lastUpdateFrame = -1;
             GemTractorBeamDeployTracker.Clear();
             GemTractorBeamClientLogic.Clear();

@@ -10,10 +10,8 @@ namespace TitanOrbit.NetCode
     /// steps per frame. World: ServerSimulation. Group: InitializationSystemGroup (first).
     /// <para>
     /// basics17: MaxSteps=4 looked like ~2× sim speed while ServerWorld.Update ran twice per
-    /// frame. That second update is gone (player loop owns the server; TickServerWorld is
-    /// frame-gated and not used in steady play). A cap of 2 now does the opposite: a 50 ms
-    /// editor frame only simulates 33 ms, so remote snapshots crawl while the local ship
-    /// predicts the full frame. The cap is a ceiling, not a second tick.
+    /// frame. That second update is gone. A later cap of 4, with one update, still filled
+    /// the editor frame: 4 ticks, 71 ms, 14 FPS. Editor host stays at 2.
     /// basics34 dedicated GCE: clients were stuck at <c>cmdAge≈18–21</c> with <c>simBatchMax≈13</c>
     /// — headless needs MaxSteps≥4 so the server can hold 60 Hz under hitch without starving.
     /// </para>
@@ -38,11 +36,11 @@ namespace TitanOrbit.NetCode
 
         /// <summary>
         /// Editor Local Host (ClientWorld present): max discrete 60 Hz steps per frame.
-        /// One world update per frame. 4 covers a 66 ms frame (about 15 FPS) so a 20 FPS
-        /// editor host still emits a full 50 ms of ship snapshots. A 16 ms frame still
-        /// runs a single step.
+        /// A cap of 4 measured 4.0 ticks per Unity frame, a 71 ms frame, and 14 FPS —
+        /// three of those ticks were catch-up, so the shove and the rest of the sim
+        /// ran four times. Two is the ceiling again. A 16 ms frame still runs one step.
         /// </summary>
-        public const int EditorLocalHostMaxStepsPerFrame = 4;
+        public const int EditorLocalHostMaxStepsPerFrame = 2;
 
         /// <summary>
         /// Headless catch-up budget. Docker + NullGfx can present at ~2 Hz; Unity then

@@ -562,7 +562,9 @@ namespace TitanOrbit.Game
             // Theatrical: face the orbiting camera and sit above the hull. Gameplay: flat −90.
             // Always rewritten here so leaving theatrical restores the top-down pose.
             float scale = _studioPreview ? StudioLabelWorldScale : LabelWorldScale;
-            _labelRoot.localScale = new Vector3(scale, -scale, scale);
+            Vector3 labelScale = new Vector3(scale, -scale, scale);
+            if (_labelRoot.localScale != labelScale)
+                _labelRoot.localScale = labelScale;
 
             if (!_studioPreview
                 && TitanOrbit.UI.TheatricalWorldSpaceLabelRotation.IsTheatricalEngaged()

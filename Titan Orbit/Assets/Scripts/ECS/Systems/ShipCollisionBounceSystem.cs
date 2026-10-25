@@ -211,27 +211,10 @@ namespace TitanOrbit.ECS
                 }
                 else if (pair.Kind == ShipPhysicsContactKind.Asteroid)
                 {
-                    AsteroidContactResult result = ApplyShipVsAsteroid(
-                        pair, ref _working, snapshotLookup, shipStateLookup,
-                        megaLookup, asteroidStateLookup, culledLookup, restitution,
-                        motorLookup, loadoutLookup, territoryLookup, contactLookup,
-                        ref _impactRearmUntil, ref _seenAsteroidPairs, ref _overkillPairs,
-                        now, fixedDt);
-                    if (result == AsteroidContactResult.MegaPlow
-                        || result == AsteroidContactResult.Overkill)
-                        _megaUnconstrained.Add(pair.Ship);
-                    else if (result == AsteroidContactResult.Wall)
-                        _asteroidEase.Add(pair.Ship);
-                    if (result == AsteroidContactResult.Overkill)
-                    {
-                        _overkillRocks.Add(pair.Other);
-                        if (contactLookup.HasComponent(pair.Ship))
-                        {
-                            var contact = contactLookup[pair.Ship];
-                            contact.PunchThrough = 1;
-                            contactLookup[pair.Ship] = contact;
-                        }
-                    }
+                    // ShipDeterministicTickSystem already reflected and separated this pair.
+                    // Easing the PhysX pose here rewrote the ghost snapshot and snapped the
+                    // predicting client back onto a pose the kinematic tick never wrote.
+                    continue;
                 }
                 else if (pair.Kind == ShipPhysicsContactKind.Planet)
                 {

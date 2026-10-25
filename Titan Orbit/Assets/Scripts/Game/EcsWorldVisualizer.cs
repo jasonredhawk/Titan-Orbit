@@ -221,6 +221,12 @@ namespace TitanOrbit.Game
         readonly HashSet<Entity> _asteroidBurstFired = new HashSet<Entity>();
 
         /// <summary>
+        /// World-body proxies posed at least once. The camera-rect cull uses the GameObject
+        /// position, so a brand-new proxy is synced once before it can hide.
+        /// </summary>
+        readonly HashSet<Entity> _proxyViewPlaced = new HashSet<Entity>();
+
+        /// <summary>
         /// Last known asteroid pose/value so we can burst even if the ghost despawns before
         /// the client observes <see cref="AsteroidState.IsDestroyed"/>.
         /// </summary>
@@ -1307,8 +1313,35 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// Camera ground rectangle, not a circle around the ship. Static planets and rocks
+        /// outside it turn off. Gems and transports are not hidden from a stale GameObject.
+        /// </summary>
+        bool TrySkipWorldBodyOutsideCamera(Entity entity, GameObject go, ProxyVisualKind kind)
+        {
+            if (!_proxyViewPlaced.Contains(entity))
+                return false;
+
+            float margin = kind == ProxyVisualKind.Planet
+                ? CameraGroundView.PlanetMargin
+                : CameraGroundView.BodyMargin;
+            if (!CameraGroundView.IsOutside(go.transform.position, margin))
+                return false;
+
+            // Gems and transports move. A stale GameObject position would hide one
+            // that drifted into a still camera. Only planets and rocks use this path.
+            if (kind != ProxyVisualKind.Planet && kind != ProxyVisualKind.Asteroid)
+                return false;
+
+            if (go.activeSelf)
+                go.SetActive(false);
+            return true;
+        }
+
+        /// <summary>
         /// Updates poses for world-body proxies already in <see cref="_proxies"/> without scanning
-        /// every asteroid entity (safe during GhostSpawn Instantiates).
+        /// every asteroid entity (safe during GhostSpawn Instantiates). Planets and rocks
+        /// outside the camera ground rectangle skip the component read and turn off.
+        /// Gems still read their live position and skip tint. Transports skip the pose write.
         /// Gems use ghosted <see cref="GemKinematics"/> for a short presentation extrapolate + lerp
         /// so glide looks continuous between NetCode snapshot samples.
         /// <para>
@@ -1357,7 +1390,7 @@ namespace TitanOrbit.Game
             {
                 Entity entity = kv.Key;
                 GameObject go = kv.Value;
-                if (go == null || !em.Exists(entity) || !em.HasComponent<LocalTransform>(entity))
+                if (go == null)
                     continue;
 
                 // Ships/bullets have their own sync paths after settle.
@@ -1369,8 +1402,20 @@ namespace TitanOrbit.Game
                                    kind == ProxyVisualKind.Asteroid ||
                                    isGem ||
                                    kind == ProxyVisualKind.PeopleTransport;
+                if (isWorldBody && TrySkipWorldBodyOutsideCamera(entity, go, kind))
+                {
+                    alive.Add(entity);
+                    continue;
+                }
+
+                if (!em.Exists(entity) || !em.HasComponent<LocalTransform>(entity))
+                    continue;
+
                 if (!isWorldBody)
                     continue;
+
+                if (!go.activeSelf)
+                    go.SetActive(true);
 
                 var lt = em.GetComponentData<LocalTransform>(entity);
                 float scale = kind == ProxyVisualKind.Asteroid
@@ -1387,6 +1432,14 @@ namespace TitanOrbit.Game
                             go.SetActive(false);
                         continue;
                     }
+
+                    // Live position, not the GameObject. Off-screen gems skip tint and scale.
+                    if (CameraGroundView.IsOutside(lt.Position, CameraGroundView.BodyMargin))
+                    {
+                        alive.Add(entity);
+                        continue;
+                    }
+
                     gemValue = gemState.Value;
                     // [TITAN-ORBIT] Tint can arrive one snapshot after Instantiates — retint
                     // so a yellow / blue extra does not stay on the pooled red material.
@@ -1439,6 +1492,11 @@ namespace TitanOrbit.Game
 
                 alive.Add(entity);
 
+                // Live position. A still camera still sees a transport that flies into the rect.
+                if (kind == ProxyVisualKind.PeopleTransport &&
+                    CameraGroundView.IsOutside(lt.Position, CameraGroundView.BodyMargin))
+                    continue;
+
                 // --- World-body / gem pose ---
                 // Gems: GemClientMotionApplier copies interpolated LocalTransform (no second sim).
                 // Other bodies: snap to toroidal display of LocalTransform.
@@ -1460,6 +1518,7 @@ namespace TitanOrbit.Game
                 Transform t = go.transform;
                 if ((t.position - displayPos).sqrMagnitude > 0.0001f)
                     t.position = displayPos;
+                _proxyViewPlaced.Add(entity);
 
                 // --- Rotation: asteroids must NOT be overwritten ---
                 // [TITAN-ORBIT] AsteroidSpinVisualProxy tumbles a child pivot (SgtPlanet migrated
@@ -3431,6 +3490,7 @@ namespace TitanOrbit.Game
             AsteroidClientEntityRegistry.NotifyDestroyed(entity);
             _asteroidBurstFired.Remove(entity);
             _asteroidLastKnown.Remove(entity);
+            _proxyViewPlaced.Remove(entity);
 
             if (_proxies.TryGetValue(entity, out var go))
             {

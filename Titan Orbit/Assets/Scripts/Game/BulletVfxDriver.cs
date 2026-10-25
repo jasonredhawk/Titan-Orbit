@@ -97,6 +97,11 @@ namespace TitanOrbit.Game
             public byte DamageFilter;
             /// <summary>1 = store rocket — cosmetic tracer steers toward the closest enemy.</summary>
             public byte Homing;
+            /// <summary>
+            /// 1 when this straight shot was stepped off-screen this frame and must not be
+            /// swept or placed again until it enters the camera rectangle.
+            /// </summary>
+            public byte SweptOffscreen;
             /// <summary>Max yaw rate in degrees per second while Homing is set.</summary>
             public float TurnSpeedDeg;
             /// <summary>Toroidal acquire radius. 0 uses the catalog default.</summary>
@@ -354,6 +359,10 @@ namespace TitanOrbit.Game
                 _hasLastObserverHull = true;
             }
 
+            // Straight shots outside the camera rectangle step lifetime only — no hit sweep,
+            // no transform write. A shot that will enter the rect this frame still sweeps.
+            AdvanceOffscreenStraightTracers(dt);
+
             // --- Cosmetic hit prediction (hybrid-proxy spheres; no map ToEntityArray) ---
             // Skip while join Instantiates are incomplete — HitRpc still destroys tracers.
             bool canPredictHits = !blockInstantiates && BulletCosmeticHitQuery.TryRefresh();
@@ -368,6 +377,9 @@ namespace TitanOrbit.Game
                     RemoveAtSwap(i);
                     continue;
                 }
+
+                if (t.SweptOffscreen != 0)
+                    continue;
 
                 float3 displayLogical;
                 float3 displayVel;
@@ -461,6 +473,16 @@ namespace TitanOrbit.Game
                 if (BulletCosmeticHitQuery.TryGetMegaFlightLiftY(
                         displayLogical, t.OwnerNetworkId, out float megaY, out float lift))
                     displayPos.y = math.lerp(t.VisualMuzzleY, megaY, lift);
+                if (CameraGroundView.IsOutside(displayPos, CameraGroundView.BulletMargin))
+                {
+                    if (t.Go.activeSelf)
+                        t.Go.SetActive(false);
+                    _tracers[i] = t;
+                    continue;
+                }
+
+                if (!t.Go.activeSelf)
+                    t.Go.SetActive(true);
                 bool snapped = (displayPos - prevDisplay).sqrMagnitude > 40f * 40f;
                 if (snapped)
                     ResetTrail(in t);
@@ -1597,7 +1619,9 @@ namespace TitanOrbit.Game
         {
             if (shell == null)
                 return;
-            shell.transform.localScale = Vector3.one * math.max(0.05f, visual * meshScale);
+            Vector3 target = Vector3.one * math.max(0.05f, visual * meshScale);
+            if ((shell.transform.localScale - target).sqrMagnitude > 0.0001f)
+                shell.transform.localScale = target;
         }
 
         /// <summary>
@@ -1696,6 +1720,58 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// Straight shots whose current point and this frame's step both sit outside the
+        /// camera ground rectangle only age and move. They are not swept and their
+        /// transforms are not written. A shot that will cross into the rect is left for the sweep.
+        /// </summary>
+        void AdvanceOffscreenStraightTracers(float dt)
+        {
+            for (int i = _tracers.Count - 1; i >= 0; i--)
+            {
+                var t = _tracers[i];
+                if (t.Go == null || t.Homing != 0)
+                    continue;
+
+                float3 stepEnd = t.LogicalPos + t.Velocity * dt;
+                bool outside = CameraGroundView.IsOutside(t.LogicalPos, CameraGroundView.BulletMargin)
+                    && CameraGroundView.IsOutside(stepEnd, CameraGroundView.BulletMargin);
+                if (!outside)
+                {
+                    if (t.SweptOffscreen != 0)
+                    {
+                        t.SweptOffscreen = 0;
+                        if (!t.Go.activeSelf)
+                            t.Go.SetActive(true);
+                        _tracers[i] = t;
+                    }
+
+                    continue;
+                }
+
+                t.RemainingLifetime -= dt;
+                float remainingRange = math.max(0f, t.MaxDistance - t.Traveled);
+                BulletFlight.GetStep(
+                    t.LogicalPos, t.Velocity, dt, remainingRange, out float3 nextPos, out _);
+                t.Traveled += math.distance(t.LogicalPos, nextPos);
+                t.LogicalPos = nextPos;
+                if (ToroidalMapEcs.HasValidMapSize)
+                    t.LogicalPos = ToroidalMapEcs.Wrap(t.LogicalPos);
+
+                if (t.RemainingLifetime <= 0f || BulletFlight.IsRangeExpired(t.Traveled, t.MaxDistance))
+                {
+                    DestroyTracerGo(t);
+                    RemoveAtSwap(i);
+                    continue;
+                }
+
+                t.SweptOffscreen = 1;
+                if (t.Go.activeSelf)
+                    t.Go.SetActive(false);
+                _tracers[i] = t;
+            }
+        }
+
+        /// <summary>
         /// Burst-advances every straight tracer (mega volleys). Homing stays in LateUpdate.
         /// High-to-low apply so <see cref="RemoveAtSwap"/> keeps remaining indices stable.
         /// </summary>
@@ -1710,7 +1786,7 @@ namespace TitanOrbit.Game
             for (int i = 0; i < _tracers.Count; i++)
             {
                 var t = _tracers[i];
-                if (t.Go != null && t.Homing == 0)
+                if (t.Go != null && t.Homing == 0 && t.SweptOffscreen == 0)
                     gunN++;
             }
 
@@ -1727,7 +1803,7 @@ namespace TitanOrbit.Game
                 for (int i = 0; i < _tracers.Count; i++)
                 {
                     var t = _tracers[i];
-                    if (t.Go == null || t.Homing != 0)
+                    if (t.Go == null || t.Homing != 0 || t.SweptOffscreen != 0)
                         continue;
                     tracerIndex[w] = i;
                     requests[w] = new CosmeticSweepRequest

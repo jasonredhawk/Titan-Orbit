@@ -105,69 +105,21 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Projects the camera onto the y=0 plane. Four corner rays first; if a cinematic tilt
-        /// misses the ground, falls back to a circle from camera height and field of view.
+        /// Projects the camera onto the y=0 plane and publishes that rectangle on
+        /// <see cref="CameraGroundView"/> for the same frame.
         /// </summary>
         bool TryMeasureView(out float3 center, out float halfW, out float halfH)
         {
-            center = float3.zero;
-            halfW = 0f;
-            halfH = 0f;
-
             if (_camera == null)
             {
                 var follow = FindAnyObjectByType<CameraFollowEcs>();
                 _camera = follow != null ? follow.GetComponent<Camera>() : Camera.main;
             }
 
-            if (_camera == null)
-                return false;
+            if (_camera != null)
+                CameraGroundView.UseCamera(_camera);
 
-            var ground = new Plane(Vector3.up, Vector3.zero);
-            bool hitAll = true;
-            float minX = float.MaxValue;
-            float maxX = float.MinValue;
-            float minZ = float.MaxValue;
-            float maxZ = float.MinValue;
-            Vector2[] corners =
-            {
-                new Vector2(0f, 0f),
-                new Vector2(1f, 0f),
-                new Vector2(0f, 1f),
-                new Vector2(1f, 1f),
-            };
-
-            for (int i = 0; i < corners.Length; i++)
-            {
-                Ray ray = _camera.ViewportPointToRay(new Vector3(corners[i].x, corners[i].y, 0f));
-                if (!ground.Raycast(ray, out float dist) || dist <= 0f || dist > 8000f)
-                {
-                    hitAll = false;
-                    break;
-                }
-
-                Vector3 p = ray.GetPoint(dist);
-                minX = Mathf.Min(minX, p.x);
-                maxX = Mathf.Max(maxX, p.x);
-                minZ = Mathf.Min(minZ, p.z);
-                maxZ = Mathf.Max(maxZ, p.z);
-            }
-
-            if (!hitAll)
-            {
-                float height = Mathf.Max(1f, _camera.transform.position.y);
-                float halfFovRad = _camera.fieldOfView * 0.5f * Mathf.Deg2Rad;
-                halfH = Mathf.Max(8f, height * Mathf.Tan(halfFovRad));
-                halfW = Mathf.Max(8f, halfH * Mathf.Max(0.5f, _camera.aspect));
-                Vector3 pos = _camera.transform.position;
-                center = new float3(pos.x, 0f, pos.z);
-                return true;
-            }
-
-            center = new float3((minX + maxX) * 0.5f, 0f, (minZ + maxZ) * 0.5f);
-            halfW = Mathf.Max(8f, (maxX - minX) * 0.5f);
-            halfH = Mathf.Max(8f, (maxZ - minZ) * 0.5f);
-            return true;
+            return CameraGroundView.TryGet(out center, out halfW, out halfH);
         }
 
         /// <summary>
@@ -249,6 +201,162 @@ namespace TitanOrbit.Game
                 halfH + ViewInterestTuning.GemKeepMargin,
                 mapW,
                 mapH);
+        }
+    }
+
+    /// <summary>
+    /// Ground rectangle the gameplay camera covers this frame. Measured once, then shared
+    /// by the world visualizer, rock spin, bullets, and defense pads. A missing camera or
+    /// an unset map does not cull — everything stays visible.
+    /// <para>
+    /// A top-down lens hits the ground with all four corner rays, and that quad is the rect.
+    /// Theatrical orbit tilts and pulls back until the upper frame looks at the sky, or the
+    /// camera drops beside the hull. Those rays never close on y=0. The old fallback then
+    /// built a small top-down box around the camera, which does not contain the hull the
+    /// lens is looking at, so planets and rocks in view were turned off. An open horizon
+    /// covers the whole map instead.
+    /// </para>
+    /// </summary>
+    public static class CameraGroundView
+    {
+        /// <summary>Pad so a rock or gem whose edge is on screen is not dropped.</summary>
+        public const float BodyMargin = 16f;
+
+        /// <summary>Pad so a large planet disk does not pop when its center leaves the rect.</summary>
+        public const float PlanetMargin = 48f;
+
+        /// <summary>Pad so a shot entering the rect this frame is still swept.</summary>
+        public const float BulletMargin = 24f;
+
+        static readonly Vector2[] Corners =
+        {
+            new Vector2(0f, 0f),
+            new Vector2(1f, 0f),
+            new Vector2(0f, 1f),
+            new Vector2(1f, 1f),
+        };
+
+        static int _frame = -1;
+        static bool _valid;
+        static float3 _center;
+        static float _halfW;
+        static float _halfH;
+        static Camera _camera;
+
+        public static void UseCamera(Camera camera)
+        {
+            if (camera != null)
+                _camera = camera;
+        }
+
+        public static bool TryGet(out float3 center, out float halfW, out float halfH)
+        {
+            Ensure();
+            center = _center;
+            halfW = _halfW;
+            halfH = _halfH;
+            return _valid;
+        }
+
+        /// <summary>
+        /// Toroidal test against the camera ground rectangle. False when the rect or the
+        /// map size is not ready, so callers keep drawing instead of hiding the map.
+        /// </summary>
+        public static bool IsOutside(float3 point, float margin)
+        {
+            if (!TryGet(out float3 center, out float halfW, out float halfH))
+                return false;
+            if (!ToroidalMapEcs.TryGetMapSize(out float mapW, out float mapH))
+                return false;
+            return !ViewInterestMath.PointInView(
+                center.x, center.z, halfW, halfH, point, mapW, mapH, margin);
+        }
+
+        public static bool IsOutside(Vector3 point, float margin) =>
+            IsOutside(new float3(point.x, 0f, point.z), margin);
+
+        static void Ensure()
+        {
+            if (_frame == Time.frameCount)
+                return;
+
+            _frame = Time.frameCount;
+            _valid = Measure(out _center, out _halfW, out _halfH);
+        }
+
+        /// <summary>
+        /// A corner ray this close to horizontal is the sky or the horizon. The visible
+        /// ground then runs out of the frame, and a finite tight rect would hide it.
+        /// </summary>
+        const float HorizonRayY = -0.02f;
+
+        static bool Measure(out float3 center, out float halfW, out float halfH)
+        {
+            center = float3.zero;
+            halfW = 0f;
+            halfH = 0f;
+
+            if (_camera == null)
+            {
+                var follow = UnityEngine.Object.FindAnyObjectByType<CameraFollowEcs>();
+                _camera = follow != null ? follow.GetComponent<Camera>() : Camera.main;
+            }
+
+            if (_camera == null)
+                return false;
+
+            var ground = new Plane(Vector3.up, Vector3.zero);
+            // Beside or under the hull, the ground hits sit between the camera and the
+            // bodies on screen, so those bodies fall outside the quad.
+            bool openHorizon = _camera.transform.position.y <= 0.5f;
+            int hits = 0;
+            float minX = float.MaxValue;
+            float maxX = float.MinValue;
+            float minZ = float.MaxValue;
+            float maxZ = float.MinValue;
+
+            for (int i = 0; i < Corners.Length; i++)
+            {
+                Ray ray = _camera.ViewportPointToRay(new Vector3(Corners[i].x, Corners[i].y, 0f));
+                if (ray.direction.y >= HorizonRayY ||
+                    !ground.Raycast(ray, out float dist) ||
+                    dist <= 0.05f ||
+                    dist >= 1000000f)
+                {
+                    openHorizon = true;
+                    continue;
+                }
+
+                Vector3 p = ray.GetPoint(dist);
+                minX = Mathf.Min(minX, p.x);
+                maxX = Mathf.Max(maxX, p.x);
+                minZ = Mathf.Min(minZ, p.z);
+                maxZ = Mathf.Max(maxZ, p.z);
+                hits++;
+            }
+
+            if (openHorizon || hits < Corners.Length)
+            {
+                if (!ToroidalMapEcs.TryGetMapSize(out float mapW, out float mapH))
+                    return false;
+
+                if (hits > 0)
+                    center = new float3((minX + maxX) * 0.5f, 0f, (minZ + maxZ) * 0.5f);
+                else
+                {
+                    Vector3 pos = _camera.transform.position;
+                    center = new float3(pos.x, 0f, pos.z);
+                }
+
+                halfW = mapW * 0.5f;
+                halfH = mapH * 0.5f;
+                return true;
+            }
+
+            center = new float3((minX + maxX) * 0.5f, 0f, (minZ + maxZ) * 0.5f);
+            halfW = Mathf.Max(8f, (maxX - minX) * 0.5f);
+            halfH = Mathf.Max(8f, (maxZ - minZ) * 0.5f);
+            return true;
         }
     }
 }
