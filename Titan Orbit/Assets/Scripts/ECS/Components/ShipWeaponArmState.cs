@@ -18,6 +18,9 @@ namespace TitanOrbit.ECS
     /// New ships start <see cref="AllOn"/> so existing loadouts keep firing until the
     /// player clicks the HUD. A player who mutes every barrel writes all zeros — that
     /// is a legal “hold fire” loadout, not an uninitialized default.
+    /// Upgrades reuse this same ghost entity, so the mask would otherwise silence
+    /// the next hull. <see cref="ShipStatApplyLogic"/> and <see cref="MegaShipStatApplyLogic"/>
+    /// call <see cref="ResetToAllOn"/> when the chassis, level, branch, or family changes.
     /// </para>
     /// Paired with <see cref="ShipWeaponArmSystem"/> (predicted apply) and
     /// <see cref="ShipWeaponFireLogic"/> (skip muted barrels).
@@ -86,6 +89,32 @@ namespace TitanOrbit.ECS
             int bit = mountIndex & 31;
             uint mask = ReadWord(in arm, word);
             return (mask & (1u << bit)) != 0;
+        }
+
+        /// <summary>
+        /// Writes <see cref="AllOn"/> onto <paramref name="ship"/> when a mute mask is present.
+        /// Ship-tree and Titan purchases keep the same ghost, so the previous hull's
+        /// muted barrels would otherwise stay muted after the gun layout changes.
+        /// Already-armed masks are left untouched so a stat re-apply does not dirty the ghost.
+        /// </summary>
+        /// <param name="em">World that owns <paramref name="ship"/> (server authority).</param>
+        /// <param name="ship">Ship ghost whose arsenal mask should fire every barrel.</param>
+        public static void ResetToAllOn(EntityManager em, Entity ship)
+        {
+            if (ship == Entity.Null || !em.Exists(ship) || !em.HasComponent<ShipWeaponArmState>(ship))
+                return;
+
+            // --- Skip a clean mask ---
+            // [NETCODE] SetComponentData marks the ghost dirty. Spawn and attribute
+            // re-applies already sit on AllOn; writing it again would replicate a no-op.
+            ShipWeaponArmState current = em.GetComponentData<ShipWeaponArmState>(ship);
+            if (current.Mask0 == uint.MaxValue
+                && current.Mask1 == uint.MaxValue
+                && current.Mask2 == uint.MaxValue
+                && current.Mask3 == uint.MaxValue)
+                return;
+
+            em.SetComponentData(ship, AllOn);
         }
 
         /// <summary>Turns one barrel on or off. No-op when the index is out of the 128-bit window.</summary>

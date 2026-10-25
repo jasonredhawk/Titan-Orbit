@@ -113,7 +113,11 @@ namespace TitanOrbit.Data
         /// <summary>Short pool tag when a visual family is missing (RANK 1 fallback).</summary>
         public const string DisplayClassShort = "TITAN";
 
-        /// <summary>Contributed-gem cost to buy any MEGA (gem cap is 0 so 2×cap cannot price them).</summary>
+        /// <summary>
+        /// Fallback contributed-gem price when a Titan hull lists no component rows.
+        /// A real buy uses <see cref="GetPurchaseGemCost(MegaShipCatalogEntry)"/>, which
+        /// sums each part. Gem cap on Titans is 0, so the regular 2× gem-cap formula cannot price them.
+        /// </summary>
         public const float DefaultPurchaseGemCost = 1200f;
 
         /// <summary>
@@ -301,7 +305,7 @@ namespace TitanOrbit.Data
         public List<MegaShipCatalogEntry> entries = new List<MegaShipCatalogEntry>();
 
         [Header("Economy")]
-        [Tooltip("Contributed gems to purchase a level-7 MEGA. Server and UI must agree.")]
+        [Tooltip("Fallback gems when a Titan hull has no component rows. Live buys sum that hull's parts. Server and UI must agree.")]
         public float purchaseGemCost = DefaultPurchaseGemCost;
 
         [Header("Asteroid plow")]
@@ -952,10 +956,77 @@ namespace TitanOrbit.Data
             return dps;
         }
 
-        /// <summary>Purchase cost (catalog field, fallback 1200).</summary>
+        /// <summary>
+        /// Fallback purchase cost when a hull has no parts to sum.
+        /// Live Titan cards and the server charge <see cref="GetPurchaseGemCost(int)"/> instead.
+        /// </summary>
         public float GetPurchaseGemCost()
         {
             return purchaseGemCost > 0.01f ? purchaseGemCost : DefaultPurchaseGemCost;
+        }
+
+        /// <summary>
+        /// Contributed gems to buy the Titan in slot <paramref name="catalogIndex"/>.
+        /// Each unique part is priced from its own stats, then multiplied by how many
+        /// copies sit on that prefab. Missing hulls use the fallback field.
+        /// </summary>
+        /// <param name="catalogIndex">Index into <see cref="entries"/> (the planet's L7 slot).</param>
+        /// <returns>Whole gems. Never zero — empty hulls fall back to <see cref="GetPurchaseGemCost()"/>.</returns>
+        public int GetPurchaseGemCost(int catalogIndex)
+        {
+            if (TryGetEntry(catalogIndex, out MegaShipCatalogEntry entry))
+                return GetPurchaseGemCost(entry);
+
+            return Mathf.RoundToInt(GetPurchaseGemCost());
+        }
+
+        /// <summary>
+        /// Same as <see cref="GetPurchaseGemCost(int)"/> for a <c>MEGA_###</c> chassis id.
+        /// An id that is not a Titan uses the fallback field.
+        /// </summary>
+        /// <param name="chassisId">Orbit-tree chassis id, for example <c>MEGA_007</c>.</param>
+        public int GetPurchaseGemCostForChassisId(string chassisId)
+        {
+            if (TryParseCatalogIndex(chassisId, out ushort catalogIndex))
+                return GetPurchaseGemCost(catalogIndex);
+
+            return Mathf.RoundToInt(GetPurchaseGemCost());
+        }
+
+        /// <summary>
+        /// Sums this hull's parts into a gem price. One armor plate priced at 100 gems,
+        /// copied 15 times, adds 1500. Stats are the unique-component bases (not the
+        /// hull-wide runtime floors — those would bill every plate as a full ship).
+        /// </summary>
+        /// <param name="entry">Catalog hull row. Null or an empty part list uses the fallback field.</param>
+        /// <returns>Whole gems for this Titan.</returns>
+        public int GetPurchaseGemCost(MegaShipCatalogEntry entry)
+        {
+            if (entry?.componentCounts == null || entry.componentCounts.Count == 0)
+                return Mathf.RoundToInt(GetPurchaseGemCost());
+
+            // --- Each named part × how many times it is bolted on ---
+            // [TITAN-ORBIT] Two Titans that share a visual family can still differ:
+            // Kilnstar mounts fewer armor plates than the first Craizan hull, so it costs less.
+            int total = 0;
+            bool pricedAnyPart = false;
+            for (int i = 0; i < entry.componentCounts.Count; i++)
+            {
+                MegaShipComponentCount count = entry.componentCounts[i];
+                if (count == null || count.count <= 0 || string.IsNullOrEmpty(count.displayName))
+                    continue;
+                if (!TryGetUniqueComponent(count.displayName, out MegaShipComponentEntry row) || row == null)
+                    continue;
+
+                int oneCopy = ShipComponentStoreData.GetFrozenPartGemPrice(row.stats.ToAbilityStats());
+                total += oneCopy * count.count;
+                pricedAnyPart = true;
+            }
+
+            if (!pricedAnyPart)
+                return Mathf.RoundToInt(GetPurchaseGemCost());
+
+            return Mathf.Max(1, total);
         }
 
         /// <summary>

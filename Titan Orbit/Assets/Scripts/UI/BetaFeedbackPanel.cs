@@ -1,4 +1,3 @@
-using TitanOrbit.Core;
 using TitanOrbit.Diagnostics;
 using TitanOrbit.ECS;
 using TitanOrbit.Game;
@@ -9,12 +8,10 @@ using UnityEngine.UI;
 namespace TitanOrbit.UI
 {
     /// <summary>
-    /// Hidden beta field-notes card. Game Manager → Beta — Field Notes (default off) is the
-    /// only switch. While that checkbox is off this object does nothing visible, so a public
-    /// build never shows NOTES. While it is on, a NOTES chip on the top edge — just to the
-    /// right of the speedometer — opens a right-side card that stamps the local ship, takes
-    /// a typed note, and SENDs both to the server log.
-    /// Saved rows list underneath, each with DELETE.
+    /// Field-notes card for a beta tester. The Escape BETA menu opens it. There is
+    /// no always-on NOTES chip. Opening stamps the local ship, takes a typed note,
+    /// and SENDs both to the server log. Saved rows list underneath, each with DELETE.
+    /// The server stores a note only when that connection owns the beta-tester item.
     /// <para>
     /// The stamp is taken when the card opens, not on a clock. Closing and opening again
     /// takes a fresh stamp. Client presentation only — storage is
@@ -55,6 +52,9 @@ namespace TitanOrbit.UI
         /// </summary>
         const float LauncherTopInset = 6f;
 
+        /// <summary>The live panel, so the beta menu can open the card.</summary>
+        public static BetaFeedbackPanel Instance { get; private set; }
+
         RectTransform _launcher;
         GameObject _card;
         TextMeshProUGUI _snapshot;
@@ -70,8 +70,19 @@ namespace TitanOrbit.UI
         BetaFeedbackStamp _stamp;
 
         /// <summary>
-        /// [UNITY] Creates the hidden driver after the first scene load. The chip and card
-        /// are built later, only if the Game Manager checkbox is on.
+        /// Opens the field-notes card from the beta-tester menu.
+        /// No-op on a headless server, where this panel is not created.
+        /// </summary>
+        public static void OpenFromBetaMenu()
+        {
+            if (Instance == null)
+                return;
+            Instance.OpenCard();
+        }
+
+        /// <summary>
+        /// [UNITY] Creates the hidden driver after the first scene load. The card
+        /// is built the first time a beta tester opens NOTES.
         /// </summary>
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         static void EnsureExists()
@@ -91,26 +102,24 @@ namespace TitanOrbit.UI
         /// <summary>Clears the Escape gate so a leftover open flag cannot swallow pause next Play.</summary>
         void OnDestroy()
         {
+            if (Instance == this)
+                Instance = null;
             BetaFeedbackHotkeyGate.NotesCardOpen = false;
             BetaFeedbackHotkeyGate.CloseRequested = false;
         }
 
+        /// <summary>Remembers this panel so the beta menu can open the card.</summary>
+        void Awake()
+        {
+            Instance = this;
+        }
+
         /// <summary>
-        /// Shows the chip only while field notes are enabled. One flag check when they are
-        /// off, so a public match does not build UI or read the ship.
+        /// Keeps an open card in sync with the server log. The top-edge chip stays
+        /// hidden — NOTES is a row on the beta-tester menu.
         /// </summary>
         void LateUpdate()
         {
-            if (!GameManager.IsBetaFeedbackEnabled)
-            {
-                HideBecauseDisabled();
-                return;
-            }
-
-            if (!_visualsBuilt)
-                Build();
-
-            // Escape was claimed by the pause menu so it would not also open pause.
             if (BetaFeedbackHotkeyGate.CloseRequested)
             {
                 BetaFeedbackHotkeyGate.CloseRequested = false;
@@ -118,21 +127,14 @@ namespace TitanOrbit.UI
                     CloseCard();
             }
 
+            if (!_visualsBuilt)
+                return;
+
             if (_cardOpen)
                 PollInbox();
 
             if (_launcher != null)
-                _launcher.gameObject.SetActive(!_cardOpen);
-        }
-
-        /// <summary>Drops the card and the chip when the checkbox is off, including mid-session.</summary>
-        void HideBecauseDisabled()
-        {
-            if (_cardOpen)
-                CloseCard();
-            if (_launcher != null)
                 _launcher.gameObject.SetActive(false);
-            BetaFeedbackHotkeyGate.NotesCardOpen = false;
         }
 
         /// <summary>Overlay canvas, the NOTES chip, and the right-side card (card starts hidden).</summary>

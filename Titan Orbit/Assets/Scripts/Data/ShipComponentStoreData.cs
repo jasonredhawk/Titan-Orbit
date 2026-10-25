@@ -171,6 +171,30 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
+        /// Gem price of one frozen part, such as a single Titan component.
+        /// Uses the same gems-per-power rate as <see cref="GetComponentGemPrice"/>
+        /// and the same category total (offense + defense + energy + mobility + capacity).
+        /// Skips Extra Level growth and the ship-level price scale: Titan parts do not
+        /// gain stats as the hull levels, so the price is only what that part contributes.
+        /// A near-zero part still costs <see cref="MinimumComponentGemPrice"/>.
+        /// </summary>
+        /// <param name="stats">Base stats of one copy. Per-extra fields are ignored.</param>
+        /// <returns>Contributed gems for one copy of this part.</returns>
+        public static int GetFrozenPartGemPrice(in ShipComponentAbilityStats stats)
+        {
+            // --- Power of this part alone ---
+            // [TITAN-ORBIT] Same Total the moon store uses for a gear card, but the
+            // numbers stay at the catalog bases. No ship-level ×1.12 and no Extra Level.
+            float power = ShipFamilyPowerScoreBreakdown.FromSummedShipStats(stats).Total;
+            if (power < 0.01f)
+                return MinimumComponentGemPrice;
+
+            return Mathf.Max(
+                MinimumComponentGemPrice,
+                Mathf.RoundToInt(power * GemCostPerPowerPoint));
+        }
+
+        /// <summary>
         /// Player-facing title from Component ID (<c>SpaceExcalibur_Tiny_Thrusters</c> → Tiny Thrusters).
         /// </summary>
         public static string GetDisplayName(ShipFamilyComponentEntry entry)

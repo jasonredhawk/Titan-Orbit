@@ -8729,9 +8729,9 @@ MonoBehaviour:
   portraitAutoRotate: 1
   showJoinGameClosesIn: 0
   enableBetaFeedback: 1
-  debugFreeShipUpgradeTree: 1
-  debugFreeGear: 1
-  debugFreeCards: 1
+  debugFreeShipUpgradeTree: 0
+  debugFreeGear: 0
+  debugFreeCards: 0
   debugCycleAllBulletBanks: 0
   debugCycleAllThrusterVfx: 0
   debugInfiniteRockets: 0
@@ -8740,7 +8740,7 @@ MonoBehaviour:
   debugMegaShipsAutoFireAsteroids: 1
   debugDisableMegaShipAutoFire: 0
   debugAiShips: 1
-  debugAiShipsPerTeam: 2
+  debugAiShipsPerTeam: 4
   debugLogAsteroidDestroyPerf: 0
   debugEnableInstructionImageCapture: 0
   debugEnableStutterIsolator: 0
@@ -12870,8 +12870,6 @@ MonoBehaviour:
   displaySize: 150
   minimapContent: {fileID: 0}
   sizeScaleFactor: 1.2
-  megaShipBlipSize: 16
-  megaPlayerBlipSize: 14
   asteroidBlipScaleFactor: 1
   moonBlipScaleFactor: 0.85
   moonBlipMinSize: 5

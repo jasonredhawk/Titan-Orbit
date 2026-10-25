@@ -369,7 +369,9 @@ namespace TitanOrbit.ECS
 
             // [TITAN-ORBIT] Local Editor / development convenience — GameManager Inspector toggle
             // "Debug Free Ship Upgrade Tree" publishes into TitanOrbitDebugFlags (Shared).
-            bool debugFree = TitanOrbitDebugFlags.FreeShipUpgradeTree;
+            // Global editor cheat, or this player's confirmed beta toggle.
+            bool debugFree = TitanOrbitDebugFlags.FreeShipUpgradeTree
+                || BetaTesterMatch.Allows(em, networkId, BetaTesterClientFlags.FreeShipTree);
 
             if (!debugFree)
             {
@@ -494,9 +496,11 @@ namespace TitanOrbit.ECS
 
             if (!debugFree)
             {
+                // Titan price is this hull's parts, not the shared fallback field.
+                // The orbit-tree button uses the same GetPurchaseGemCost(catalogIndex).
                 float cost = buyingMega
                     ? (MegaShipCatalog.Load() != null
-                        ? MegaShipCatalog.Load().GetPurchaseGemCost()
+                        ? MegaShipCatalog.Load().GetPurchaseGemCost(megaCatalogIndex)
                         : MoonOrbitStorePricing.GetShipUpgradeCost(7))
                     : MoonOrbitStorePricing.GetShipUpgradeCost(targetLevel);
                 if (!ContributedGemsLogic.TrySpend(em, homeEntity, networkId, cost))
@@ -663,9 +667,9 @@ namespace TitanOrbit.ECS
             int purchaseLevel = ResolveStorePurchaseLevel(em, shipEntity, ship, storePlanetIdHint: 0);
             float cost = StoreItemData.GetPrice(itemType, purchaseLevel);
 
-            // [TITAN-ORBIT] GameManager "Debug — Gear" publishes TitanOrbitDebugFlags.FreeGear
-            // so local Editor / MPPM hosts can fill a loadout without a gem bank.
-            bool debugFree = TitanOrbitDebugFlags.FreeGear;
+            // [TITAN-ORBIT] Editor cheat, or this player's confirmed free-gear toggle.
+            bool debugFree = TitanOrbitDebugFlags.FreeGear
+                || BetaTesterMatch.Allows(em, networkId, BetaTesterClientFlags.FreeGear);
             if (!debugFree && !ContributedGemsLogic.TrySpend(em, homeEntity, networkId, cost))
             {
                 message = "Not enough contributed gems.";
@@ -771,9 +775,10 @@ namespace TitanOrbit.ECS
             int purchaseLevel = ResolveStorePurchaseLevel(em, shipEntity, ship, storePlanetIdHint: 0);
             float cost = ShipComponentStoreData.GetComponentGemPrice(entry, purchaseLevel);
 
-            // [TITAN-ORBIT] Same GameManager Gear toggle as drones — skip the gem debit only.
-            // Already-equipped and empty-slot checks still run so debug cannot stack duplicates.
-            bool debugFree = TitanOrbitDebugFlags.FreeGear;
+            // [TITAN-ORBIT] Same free-gear rule as drones — skip the gem debit only.
+            // Already-equipped and empty-slot checks still run so a toggle cannot stack duplicates.
+            bool debugFree = TitanOrbitDebugFlags.FreeGear
+                || BetaTesterMatch.Allows(em, networkId, BetaTesterClientFlags.FreeGear);
             if (!debugFree && !ContributedGemsLogic.TrySpend(em, homeEntity, networkId, cost))
             {
                 message = "Not enough contributed gems.";

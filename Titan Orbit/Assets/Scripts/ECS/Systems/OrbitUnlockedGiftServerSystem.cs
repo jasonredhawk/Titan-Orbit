@@ -409,7 +409,7 @@ namespace TitanOrbit.ECS
         /// lives in this process, so write its panel state directly too.
         /// Dedicated servers have no client world and skip this.
         /// </summary>
-        static bool IsLocalHostNetwork(int networkId)
+        public static bool IsLocalHostNetwork(int networkId)
         {
             var client = ClientServerBootstrap.ClientWorld;
             var server = ClientServerBootstrap.ServerWorld;

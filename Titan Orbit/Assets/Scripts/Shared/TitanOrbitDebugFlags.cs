@@ -170,11 +170,10 @@ namespace TitanOrbit
         public const int AiShipsPerTeamCap = 12;
 
         /// <summary>
-        /// When true, beta testers get the field-notes screen and the server accepts
-        /// those notes into <c>BetaFeedback.log</c>. Written by GameManager from
-        /// <c>Enable Beta Feedback</c>. Default false — public builds hide the screen
-        /// and the server refuses writes. Honored on the dedicated server (this is
-        /// the feature switch, not a local cheat).
+        /// When true, the local host connection is treated as a beta tester so
+        /// field notes work without Cloud Save. Written by GameManager from
+        /// <c>Enable Beta Feedback</c>. A dedicated server forces this off.
+        /// Live players use the beta-tester item instead.
         /// </summary>
         public static bool BetaFeedbackEnabled;
     }

@@ -1,10 +1,10 @@
-import { asId, decideAdminGrant, readAdminGrantBody } from "./adminGrant.ts";
+import { asId, decideAdminGrant, decideAdminLookup, readAdminGrantBody } from "./adminGrant.ts";
 import { CheckoutInputError, CheckoutNotConfiguredError, createCheckout, type CheckoutBody } from "./checkout.ts";
 import { allowedOrigin, corsHeaders, json } from "./http.ts";
 import { logError, logInfo } from "./log.ts";
 import { activePriceId, checkoutMode } from "./mode.ts";
 import { readDisplayPrice } from "./price.ts";
-import { grantOrbitUnlockedFromAdmin, UnityAuthError } from "./unity.ts";
+import { grantBetaTesterFromAdmin, grantOrbitUnlockedFromAdmin, readBetaTesterOwned, UnityAuthError } from "./unity.ts";
 import { handleWebhook } from "./webhook.ts";
 
 const MAX_CHECKOUT_BODY = 16_384;
@@ -39,6 +39,12 @@ export default {
 
       if (request.method === "POST" && url.pathname === "/admin/grant")
         return await postAdminGrant(request, env);
+
+      if (request.method === "POST" && url.pathname === "/admin/grant-beta")
+        return await postAdminGrantBeta(request, env);
+
+      if (request.method === "POST" && url.pathname === "/admin/lookup")
+        return await postAdminLookup(request, env);
 
       if (request.method === "POST" && url.pathname === "/webhook") {
         const payload = await request.text();
@@ -81,6 +87,49 @@ async function postAdminGrant(request: Request, env: Env): Promise<Response> {
     grantedBy: decision.grantedBy,
   });
   return json({ ok: true, alreadyOwned: granted.alreadyOwned }, 200);
+}
+
+async function postAdminGrantBeta(request: Request, env: Env): Promise<Response> {
+  const body = await readAdminGrantBody(request);
+  if (!body)
+    return json({ error: "bad_request" }, 400);
+
+  const decision = decideAdminGrant({
+    origin: request.headers.get("Origin"),
+    authorization: request.headers.get("Authorization"),
+    secret: env.ADMIN_GRANT_SECRET,
+    playerId: asId(body.playerId),
+    grantedBy: asId(body.grantedBy),
+  });
+  if (!decision.ok)
+    return json({ error: decision.error }, decision.status);
+
+  const granted = await grantBetaTesterFromAdmin(env, decision.playerId, decision.grantedBy);
+  logInfo({
+    message: granted.alreadyOwned ? "beta_tester_already_owned" : "beta_tester_admin_granted",
+    playerId: decision.playerId,
+    grantedBy: decision.grantedBy,
+  });
+  return json({ ok: true, alreadyOwned: granted.alreadyOwned }, 200);
+}
+
+/** Dedicated server asks once per join. Owned is false when the key was never written. */
+async function postAdminLookup(request: Request, env: Env): Promise<Response> {
+  const body = await readAdminGrantBody(request);
+  if (!body)
+    return json({ error: "bad_request" }, 400);
+
+  const decision = decideAdminLookup({
+    origin: request.headers.get("Origin"),
+    authorization: request.headers.get("Authorization"),
+    secret: env.ADMIN_GRANT_SECRET,
+    playerId: asId(body.playerId),
+  });
+  if (!decision.ok)
+    return json({ error: decision.error }, decision.status);
+
+  const owned = await readBetaTesterOwned(env, decision.playerId);
+  return json({ ok: true, owned }, 200);
 }
 
 async function postCheckout(request: Request, env: Env, origin: string | null): Promise<Response> {

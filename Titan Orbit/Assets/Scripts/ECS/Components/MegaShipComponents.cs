@@ -75,8 +75,10 @@ namespace TitanOrbit.ECS
 
     /// <summary>
     /// Server-only sticky auto-aim, one slot per weapon mount. Each muzzle searches
-    /// when Fire is pressed (ships / pads / moon shields first, asteroids second)
-    /// and keeps that lock until the target dies, leaves range, or Fire is released.
+    /// when Fire is pressed (ships / turrets / moon shields first, asteroids only
+    /// when no enemy is in range) and keeps an enemy lock until it dies, leaves
+    /// range, or Fire is released. An asteroid lock yields as soon as any enemy
+    /// enters that muzzle's range, even if the rock is closer.
     /// Target == this hull means no current lock (hull-forward fire).
     /// <para>
     /// [TITAN-ORBIT] <see cref="AimPoint"/> is the lead intercept (target motion +

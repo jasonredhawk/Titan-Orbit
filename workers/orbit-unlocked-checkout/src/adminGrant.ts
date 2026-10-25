@@ -56,6 +56,36 @@ export async function readAdminGrantBody(request: Request): Promise<AdminGrantBo
   }
 }
 
+export type AdminLookupDecision =
+  | { ok: true; playerId: string }
+  | { ok: false; status: number; error: string };
+
+/**
+ * Same bearer check as a gift, but the body only names the player to read.
+ * The dedicated server calls this on join. Browsers are refused.
+ */
+export function decideAdminLookup(input: {
+  origin: string | null;
+  authorization: string | null;
+  secret: string | undefined;
+  playerId: string;
+}): AdminLookupDecision {
+  if (input.origin)
+    return { ok: false, status: 403, error: "browser_not_allowed" };
+
+  const secret = input.secret ?? "";
+  if (!secret)
+    return { ok: false, status: 503, error: "grant_not_configured" };
+  if (!bearerMatches(input.authorization, secret))
+    return { ok: false, status: 401, error: "unauthorized" };
+
+  const playerId = input.playerId.trim();
+  if (!isPlausiblePlayerId(playerId))
+    return { ok: false, status: 400, error: "bad_request" };
+
+  return { ok: true, playerId };
+}
+
 export function asId(value: unknown): string {
   return typeof value === "string" ? value : "";
 }

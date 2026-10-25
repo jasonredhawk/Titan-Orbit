@@ -17,14 +17,26 @@ namespace TitanOrbit.Services
     public static class TitanOrbitAccountEntitlementSync
     {
         const string CloudKey = "orbit_unlocked";
+        const string BetaCloudKey = "beta_tester";
         const string CloudSaveHost = "https://cloud-save.services.api.unity.com";
 
         static string _pushedPlayerId;
         static bool _pushedValue;
+        static string _pushedBetaPlayerId;
+        static bool _pushedBetaValue;
         static bool _refreshInFlight;
 #if UNITY_WEBGL && !UNITY_EDITOR
         static bool _returnRefreshStarted;
 #endif
+
+        /// <summary>Saves the beta-tester flag for <paramref name="playerId"/>. Failures stay local.</summary>
+        public static void PushBetaAsync(string playerId, bool owned)
+        {
+            // --- Push beta tester ---
+            _pushedBetaPlayerId = playerId;
+            _pushedBetaValue = owned;
+            _ = PushKeyAsync(playerId, BetaCloudKey, owned);
+        }
 
         /// <summary>Saves <paramref name="owned"/> for <paramref name="playerId"/>. Failures stay local.</summary>
         public static void PushAsync(string playerId, bool owned)
@@ -70,8 +82,13 @@ namespace TitanOrbit.Services
 
         static async Task PushAsyncInternal(string playerId, bool owned)
         {
-            // --- PushAsyncInternal ---
-            string body = "{\"key\":\"" + CloudKey + "\",\"value\":" + (owned ? "true" : "false") + "}";
+            await PushKeyAsync(playerId, CloudKey, owned);
+        }
+
+        static async Task PushKeyAsync(string playerId, string key, bool owned)
+        {
+            // --- Push one Cloud Save key ---
+            string body = "{\"key\":\"" + key + "\",\"value\":" + (owned ? "true" : "false") + "}";
             string url = ItemUrl(playerId);
             if (url == null)
                 return;
@@ -136,27 +153,64 @@ namespace TitanOrbit.Services
                         Debug.LogWarning(
                             "[TitanOrbitAccountEntitlementSync] Cloud Save read failed: " +
                             request.responseCode + " " + request.error);
-                        return;
                     }
-
-                    // A write that just happened wins over a stale false from Cloud Save.
-                    if (string.Equals(_pushedPlayerId, playerId, StringComparison.Ordinal) && _pushedValue)
+                    else if (string.Equals(_pushedPlayerId, playerId, StringComparison.Ordinal) && _pushedValue)
                     {
+                        // A write that just happened wins over a stale false from Cloud Save.
                         TitanOrbitEntitlements.ApplyCloudOwned(playerId, true);
-                        return;
                     }
-
-                    string json = request.downloadHandler.text ?? "";
-                    if (json.IndexOf("\"value\":true", StringComparison.Ordinal) >= 0 ||
-                        json.IndexOf("\"value\": true", StringComparison.Ordinal) >= 0)
+                    else
                     {
-                        TitanOrbitEntitlements.ApplyCloudOwned(playerId, true);
+                        string json = request.downloadHandler.text ?? "";
+                        if (json.IndexOf("\"value\":true", StringComparison.Ordinal) >= 0 ||
+                            json.IndexOf("\"value\": true", StringComparison.Ordinal) >= 0)
+                        {
+                            TitanOrbitEntitlements.ApplyCloudOwned(playerId, true);
+                        }
                     }
                 }
+
+                // Second key, its own response, so a true on Orbit Unlocked cannot
+                // be mistaken for the beta-tester item.
+                await RefreshBetaAsync(playerId);
             }
             finally
             {
                 _refreshInFlight = false;
+            }
+        }
+
+        static async Task RefreshBetaAsync(string playerId)
+        {
+            string url = ItemUrl(playerId);
+            if (url == null)
+                return;
+            url += "?keys=" + BetaCloudKey;
+
+            using (var request = UnityWebRequest.Get(url))
+            {
+                ApplyAuthHeaders(request);
+                await SendAsync(request);
+                if (!IsSuccess(request))
+                {
+                    Debug.LogWarning(
+                        "[TitanOrbitAccountEntitlementSync] Beta Cloud Save read failed: " +
+                        request.responseCode + " " + request.error);
+                    return;
+                }
+
+                if (string.Equals(_pushedBetaPlayerId, playerId, StringComparison.Ordinal) && _pushedBetaValue)
+                {
+                    TitanOrbitEntitlements.ApplyCloudBetaOwned(playerId, true);
+                    return;
+                }
+
+                string json = request.downloadHandler.text ?? "";
+                if (json.IndexOf("\"value\":true", StringComparison.Ordinal) >= 0 ||
+                    json.IndexOf("\"value\": true", StringComparison.Ordinal) >= 0)
+                {
+                    TitanOrbitEntitlements.ApplyCloudBetaOwned(playerId, true);
+                }
             }
         }
 

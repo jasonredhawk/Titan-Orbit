@@ -225,9 +225,22 @@ namespace TitanOrbit.Systems
             return Config != null ? Config.GetPowerScoreBreakdownForChassisId(chassisId) : default;
         }
 
+        /// <summary>
+        /// Gems to buy this chassis. A Titan (<c>MEGA_###</c>) sums the parts on that hull.
+        /// Any other level-7 id still uses the catalog fallback, because planets never sell
+        /// a regular family hull at tier 7. Levels 1–6 use the family's 2× gem-cap formula.
+        /// </summary>
         public int GetPurchaseGemCostForChassisId(string chassisId, int shipLevel)
         {
-            if (MegaShipCatalog.IsMegaChassisId(chassisId) || shipLevel >= 7)
+            if (MegaShipCatalog.IsMegaChassisId(chassisId))
+            {
+                var mega = MegaShipCatalog.Load();
+                return mega != null
+                    ? mega.GetPurchaseGemCostForChassisId(chassisId)
+                    : Mathf.RoundToInt(MegaShipCatalog.DefaultPurchaseGemCost);
+            }
+
+            if (shipLevel >= 7)
             {
                 var mega = MegaShipCatalog.Load();
                 return mega != null

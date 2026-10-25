@@ -134,7 +134,8 @@ namespace TitanOrbit.ECS
             ref float gemCarry,
             Entity attackerEntity = default,
             int bankIndex = 0,
-            int firePowerExtraLevels = 0)
+            int firePowerExtraLevels = 0,
+            float moonGemBatchDamage = 0f)
         {
             var result = new Result { HitPoint = muzzle };
             if (damage <= 0.0001f || target == Entity.Null || !em.Exists(target))
@@ -155,8 +156,9 @@ namespace TitanOrbit.ECS
             if (em.HasComponent<PlanetState>(target) && em.HasComponent<LocalTransform>(target))
             {
                 ApplyPlanet(
-                    em, target, attackerTeam, muzzle, damage, range, mapW, mapH,
-                    moonElapsed, serverElapsed, ref result, bankIndex, firePowerExtraLevels);
+                    em, ecb, target, attackerTeam, attackerNetworkId, muzzle, damage, range, mapW, mapH,
+                    moonElapsed, serverElapsed, gemPrefab, gemSpawnServerTime, ref result,
+                    bankIndex, firePowerExtraLevels, moonGemBatchDamage);
                 return result;
             }
 
@@ -293,8 +295,10 @@ namespace TitanOrbit.ECS
 
         static void ApplyPlanet(
             EntityManager em,
+            EntityCommandBuffer ecb,
             Entity planet,
             TeamId attackerTeam,
+            int attackerNetworkId,
             float3 muzzle,
             float damage,
             float range,
@@ -302,9 +306,12 @@ namespace TitanOrbit.ECS
             float mapH,
             double moonElapsed,
             double serverElapsed,
+            Entity gemPrefab,
+            float gemSpawnServerTime,
             ref Result result,
             int bankIndex,
-            int firePowerExtraLevels)
+            int firePowerExtraLevels,
+            float moonGemBatchDamage)
         {
             var planetState = em.GetComponentData<PlanetState>(planet);
             var planetXf = em.GetComponentData<LocalTransform>(planet);
@@ -382,8 +389,21 @@ namespace TitanOrbit.ECS
                 var moon = em.GetComponentData<PlanetGemMoonState>(planet);
                 float moonDamage = ScaleFor(
                     bankIndex, BulletBankDamageTarget.GemMoon, damage, firePowerExtraLevels);
+                // One gem per authored shot (fire power), not one tiny gem per tick.
+                float gemPacket = ScaleFor(
+                    bankIndex, BulletBankDamageTarget.GemMoon, moonGemBatchDamage, firePowerExtraLevels);
                 PlanetGemMoonCombatLogic.ApplyBulletDamage(
-                    ref moon, moonDamage, attackerTeam, planetState.Ownership, serverElapsed);
+                    ref moon,
+                    moonDamage,
+                    attackerTeam,
+                    planetState.Ownership,
+                    serverElapsed,
+                    ecb,
+                    gemPrefab,
+                    bestPos,
+                    (uint)planet.Index ^ (uint)attackerNetworkId ^ (uint)(serverElapsed * 1000.0),
+                    gemSpawnServerTime,
+                    gemPacket);
                 em.SetComponentData(planet, moon);
                 return;
             }

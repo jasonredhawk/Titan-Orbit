@@ -1,5 +1,8 @@
+using TitanOrbit;
+using TitanOrbit.Core;
 using TitanOrbit.ECS;
 using TitanOrbit.NetCode;
+using TitanOrbit.Services;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -37,6 +40,12 @@ namespace TitanOrbit.Game
         public static event System.Action GiftChosen;
 
         /// <summary>
+        /// Fired when a beta tester presses BETA. The feature card lives in the
+        /// UI assembly, which this script cannot reference.
+        /// </summary>
+        public static event System.Action BetaTesterChosen;
+
+        /// <summary>
         /// True after Awake succeeded on a client-presentation process.
         /// OrbitStationUI uses this to yield Escape instead of toggling the dock.
         /// </summary>
@@ -65,6 +74,12 @@ namespace TitanOrbit.Game
 
         /// <summary>Last admin visibility applied to <see cref="_giftButton"/>.</summary>
         bool _giftButtonVisible;
+
+        /// <summary>Shown when this account owns the beta-tester item.</summary>
+        GameObject _betaButton;
+
+        /// <summary>Last beta visibility applied to <see cref="_betaButton"/>.</summary>
+        bool _betaButtonVisible;
 
         // --- Palette: same void glass as DeathScreen / ShipStatTooltipChrome ---
         static readonly Color DimColor = new Color(0.01f, 0.015f, 0.03f, 0.55f);
@@ -142,7 +157,7 @@ namespace TitanOrbit.Game
             }
 
             if (IsOpen)
-                RefreshAdminGiftButton();
+                RefreshExtraButtons();
 
             if (!WasEscapePressedThisFrame())
                 return;
@@ -190,7 +205,7 @@ namespace TitanOrbit.Game
             if (overlayRoot != null)
                 overlayRoot.SetActive(true);
             IsOpen = true;
-            RefreshAdminGiftButton();
+            RefreshExtraButtons();
         }
 
         /// <summary>Hides the overlay and publishes <see cref="IsOpen"/> false.</summary>
@@ -254,20 +269,69 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Shows GIFT under Main Menu only for an allowlisted account, and lengthens
-        /// the card so the third button stays inside the frame.
+        /// Shows GIFT for an admin and BETA for a beta tester. Each extra button
+        /// lengthens the card by one row. A player who is both sees both.
         /// </summary>
-        void RefreshAdminGiftButton()
+        void RefreshExtraButtons()
         {
             bool admin = OrbitUnlockedGiftClientState.IsAdmin;
-            if (_giftButtonVisible == admin)
+            bool beta = ShowsBetaButton();
+            if (_giftButtonVisible == admin && _betaButtonVisible == beta)
                 return;
 
             _giftButtonVisible = admin;
+            _betaButtonVisible = beta;
+
+            float y = -240f;
             if (_giftButton != null)
+            {
                 _giftButton.SetActive(admin);
+                if (admin)
+                {
+                    PlaceExtraButton(_giftButton, y);
+                    y -= 56f;
+                }
+            }
+
+            if (_betaButton != null)
+            {
+                _betaButton.SetActive(beta);
+                if (beta)
+                    PlaceExtraButton(_betaButton, y);
+            }
+
+            int extras = (admin ? 1 : 0) + (beta ? 1 : 0);
             if (_commandCard != null)
-                _commandCard.sizeDelta = new Vector2(360f, admin ? 292f : 236f);
+                _commandCard.sizeDelta = new Vector2(360f, 236f + extras * 56f);
+        }
+
+        /// <summary>
+        /// True when this account owns the beta-tester item, or when the local
+        /// host still has the Editor field-notes checkbox on.
+        /// </summary>
+        static bool ShowsBetaButton()
+        {
+            // Cloud Save cache, or the server just confirmed this connection
+            // (a self-gift lands here before the cloud read comes back).
+            if (TitanOrbitEntitlements.IsBetaTesterOwned || BetaTesterClientFlags.VerifiedOwned)
+                return true;
+            return EcsGameBridge.IsLocalHost()
+                && GameManager.Instance != null
+                && GameManager.Instance.EnableBetaFeedback;
+        }
+
+        /// <summary>Moves an extra command button to the next free row under Main Menu.</summary>
+        static void PlaceExtraButton(GameObject button, float y)
+        {
+            var rt = button.GetComponent<RectTransform>();
+            if (rt != null)
+                rt.anchoredPosition = new Vector2(0f, y);
+        }
+
+        /// <summary>Opens the beta-tester card. The button exists only for owners.</summary>
+        void OnBetaClicked()
+        {
+            BetaTesterChosen?.Invoke();
         }
 
         /// <summary>
@@ -406,6 +470,9 @@ namespace TitanOrbit.Game
             _giftButton = CreateMenuButton(cardGo.transform, "GiftButton", "GIFT", new Vector2(0f, -240f), OnGiftClicked);
             _giftButton.SetActive(false);
             _giftButtonVisible = false;
+            _betaButton = CreateMenuButton(cardGo.transform, "BetaButton", "BETA", new Vector2(0f, -240f), OnBetaClicked);
+            _betaButton.SetActive(false);
+            _betaButtonVisible = false;
 
             const float bracket = 10f;
             const float thick = 1.4f;

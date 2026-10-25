@@ -85,6 +85,7 @@ namespace TitanOrbit.ECS
                 // The gift list uses this same id. If it is an admin who already
                 // said they are signed in, the gift button can appear now.
                 OrbitUnlockedGiftServerSystem.NotifyPlayerBound(em, networkIds[i]);
+                BetaTesterServerSystem.NotifyPlayerBound(em, networkIds[i]);
             }
 
             networkIds.Dispose();

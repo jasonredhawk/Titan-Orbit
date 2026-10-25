@@ -11,7 +11,9 @@ namespace TitanOrbit.Game
     /// <summary>
     /// World-space label above the orbiting gem moon. Matches the planet cockpit stack:
     /// Rajdhani place name, <c>FLEET</c> / <c>GUN</c> rails, then labeled GEMS and SHIELD
-    /// counts (current over BANK / MAX). World / family / gun strings match
+    /// counts (current over BANK / MAX). GEMS is the moon reservoir
+    /// (<see cref="PlanetGemMoonState.CurrentMoonGems"/>), the same stock shots knock
+    /// loose. World / family / gun strings match
     /// <see cref="PlanetWorldStatsLabel"/> (same planet <see cref="PlanetState"/> + config).
     /// Client presentation only. During idle theatrical camera,
     /// <see cref="TitanOrbit.UI.TheatricalWorldSpaceLabelRotation"/> billboards this stack
@@ -657,13 +659,22 @@ namespace TitanOrbit.Game
             if (!EcsGameBridge.TryGetPlanetStateByPlanetId(planetId, out PlanetState state))
                 return false;
 
-            int currentGems = Mathf.RoundToInt(state.CurrentGems);
-            int maxGems = Mathf.RoundToInt(PlanetEconomyMath.GetMaxGemsForLevel(state.PlanetLevel));
-
+            // --- Moon reservoir, not the planet bank ---
+            // Shots subtract PlanetGemMoonState.CurrentMoonGems. The planet's CurrentGems
+            // is a separate bank, so the label used to sit on leftover planet gems
+            // (often the mid-20s) after the moon reservoir was already empty.
+            int currentGems = 0;
+            int maxGems = Mathf.RoundToInt(PlanetGemMoonMath.BaseMaxMoonGemPoints);
             int currentShield;
             int maxShield;
             if (EcsGameBridge.TryGetPlanetGemMoonStateByPlanetId(planetId, out PlanetGemMoonState moonState))
             {
+                float reservoir = moonState.CurrentMoonGems;
+                currentGems = reservoir <= 0.0001f ? 0 : Mathf.RoundToInt(reservoir);
+                float cap = moonState.MaxMoonGems > 0.001f
+                    ? moonState.MaxMoonGems
+                    : PlanetGemMoonMath.BaseMaxMoonGemPoints;
+                maxGems = Mathf.RoundToInt(cap);
                 currentShield = Mathf.RoundToInt(moonState.CurrentShield);
                 maxShield = Mathf.RoundToInt(moonState.MaxShield);
             }

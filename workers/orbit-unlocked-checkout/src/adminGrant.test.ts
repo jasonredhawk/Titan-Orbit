@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { decideAdminGrant } from "./adminGrant.ts";
+import { decideAdminGrant, decideAdminLookup } from "./adminGrant.ts";
+import { cloudSaveKeyIsTrue } from "./unity.ts";
 
 const secret = "grant-secret";
 
@@ -61,6 +62,33 @@ test("rejects a browser origin and a bad player id", () => {
   assert.equal(badId.ok, false);
   if (!badId.ok)
     assert.equal(badId.status, 400);
+});
+
+test("lookup accepts a player id and refuses a browser", () => {
+  const browser = decideAdminLookup({
+    origin: "https://titanorbit.io",
+    authorization: "Bearer " + secret,
+    secret,
+    playerId: "player-1",
+  });
+  assert.equal(browser.ok, false);
+  if (!browser.ok)
+    assert.equal(browser.status, 403);
+
+  const lookup = decideAdminLookup({
+    origin: null,
+    authorization: "Bearer " + secret,
+    secret,
+    playerId: " player_1 ",
+  });
+  assert.deepEqual(lookup, { ok: true, playerId: "player_1" });
+});
+
+test("orbit unlocked true does not count as beta tester", () => {
+  const body = '{"results":[{"key":"orbit_unlocked","value":true},{"key":"beta_tester","value":false}]}';
+  assert.equal(cloudSaveKeyIsTrue(body, "orbit_unlocked"), true);
+  assert.equal(cloudSaveKeyIsTrue(body, "beta_tester"), false);
+  assert.equal(cloudSaveKeyIsTrue('{"results":[{"key":"beta_tester","value":true}]}', "beta_tester"), true);
 });
 
 test("accepts a valid grant shape", () => {

@@ -33,6 +33,17 @@ namespace TitanOrbit.Game
             SendDedicated(command);
         }
 
+        /// <summary>Asks the server to gift the beta-tester item to <paramref name="targetNetworkId"/>.</summary>
+        public static void GiftBeta(int targetNetworkId)
+        {
+            if (targetNetworkId <= 0)
+                return;
+            var command = new GiftBetaTesterCommand { TargetNetworkId = targetNetworkId };
+            if (TryEnqueueLocalHost(command, EcsGameBridge.GetLocalNetworkId()))
+                return;
+            SendDedicated(command);
+        }
+
         static bool TryEnqueueLocalHost(RequestGiftRosterCommand command, int networkId)
         {
             if (!TryServerConnection(networkId, out EntityManager em, out Entity connection))
@@ -53,6 +64,16 @@ namespace TitanOrbit.Game
             return true;
         }
 
+        static bool TryEnqueueLocalHost(GiftBetaTesterCommand command, int networkId)
+        {
+            if (!TryServerConnection(networkId, out EntityManager em, out Entity connection))
+                return false;
+            Entity rpc = em.CreateEntity();
+            em.AddComponentData(rpc, command);
+            em.AddComponentData(rpc, new ReceiveRpcCommandRequest { SourceConnection = connection });
+            return true;
+        }
+
         static void SendDedicated(RequestGiftRosterCommand command)
         {
             if (!TryClientEntityManager(out EntityManager em))
@@ -63,6 +84,15 @@ namespace TitanOrbit.Game
         }
 
         static void SendDedicated(GiftOrbitUnlockedCommand command)
+        {
+            if (!TryClientEntityManager(out EntityManager em))
+                return;
+            Entity rpc = em.CreateEntity();
+            em.AddComponentData(rpc, command);
+            em.AddComponentData(rpc, new SendRpcCommandRequest { TargetConnection = Entity.Null });
+        }
+
+        static void SendDedicated(GiftBetaTesterCommand command)
         {
             if (!TryClientEntityManager(out EntityManager em))
                 return;

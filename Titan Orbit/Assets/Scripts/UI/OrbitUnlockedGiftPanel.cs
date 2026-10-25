@@ -19,7 +19,7 @@ namespace TitanOrbit.UI
     [DefaultExecutionOrder(66310)]
     public class OrbitUnlockedGiftPanel : MonoBehaviour
     {
-        const float CardWidth = 280f;
+        const float CardWidth = 400f;
         const float RowHeight = 36f;
         const float HeaderHeight = 44f;
 
@@ -116,6 +116,8 @@ namespace TitanOrbit.UI
             _leftMatchAt = -1f;
             // The simulation system only sets a flag. This panel owns the
             // Cloud Save read, because the account code lives outside that assembly.
+            if (OrbitUnlockedGiftClientState.ConsumeBetaGift())
+                TitanOrbitEntitlements.SetBetaTesterOwned(true);
             if (OrbitUnlockedGiftClientState.ConsumeCloudRefresh())
                 TitanOrbitAccountEntitlementSync.RefreshForCurrentPlayerAsync();
             bool menu = IsMainMenuShowing();
@@ -209,13 +211,11 @@ namespace TitanOrbit.UI
             nameRt.anchorMin = new Vector2(0f, 0f);
             nameRt.anchorMax = new Vector2(1f, 1f);
             nameRt.offsetMin = new Vector2(8f, 0f);
-            nameRt.offsetMax = new Vector2(-96f, 0f);
+            nameRt.offsetMax = new Vector2(-156f, 0f);
 
-            string action = ActionLabel(row);
-            bool canGift = row.SignedIn && row.Status == 255;
-            if (!canGift)
+            if (!row.SignedIn)
             {
-                var state = CreateLabel(rt, "State", action, 11f, row.SignedIn ? ReadyColor : MutedColor, TextAlignmentOptions.Right);
+                var state = CreateLabel(rt, "State", "SIGN IN", 11f, MutedColor, TextAlignmentOptions.Right);
                 var stateRt = state.rectTransform;
                 stateRt.anchorMin = new Vector2(1f, 0f);
                 stateRt.anchorMax = new Vector2(1f, 1f);
@@ -226,31 +226,54 @@ namespace TitanOrbit.UI
             }
 
             int networkId = row.NetworkId;
-            var button = CreateButton(rt, "Gift", "GIFT", () => OrbitUnlockedGiftRpcClient.Gift(networkId));
-            button.anchorMin = new Vector2(1f, 0.5f);
-            button.anchorMax = new Vector2(1f, 0.5f);
-            button.pivot = new Vector2(1f, 0.5f);
-            button.sizeDelta = new Vector2(72f, 24f);
-            button.anchoredPosition = new Vector2(-6f, 0f);
+            var gift = CreateButton(rt, "Gift", GiftLabel(row.Status), () => OrbitUnlockedGiftRpcClient.Gift(networkId));
+            gift.anchorMin = new Vector2(1f, 0.5f);
+            gift.anchorMax = new Vector2(1f, 0.5f);
+            gift.pivot = new Vector2(1f, 0.5f);
+            gift.sizeDelta = new Vector2(68f, 24f);
+            gift.anchoredPosition = new Vector2(-78f, 0f);
+
+            var beta = CreateButton(rt, "Beta", BetaLabel(row.BetaStatus), () => OrbitUnlockedGiftRpcClient.GiftBeta(networkId));
+            beta.anchorMin = new Vector2(1f, 0.5f);
+            beta.anchorMax = new Vector2(1f, 0.5f);
+            beta.pivot = new Vector2(1f, 0.5f);
+            beta.sizeDelta = new Vector2(68f, 24f);
+            beta.anchoredPosition = new Vector2(-6f, 0f);
         }
 
-        /// <summary>Short status the admin reads after the Worker answers.</summary>
-        static string ActionLabel(OrbitUnlockedGiftClientState.Row row)
+        /// <summary>Short caption on the Orbit Unlocked button after the Worker answers.</summary>
+        static string GiftLabel(byte status)
         {
-            if (!row.SignedIn)
-                return "SIGN IN";
-            switch (row.Status)
+            switch (status)
             {
                 case OrbitUnlockedGiftServerSystem.StatusGranted:
                     return "SENT";
                 case OrbitUnlockedGiftServerSystem.StatusAlready:
-                    return "UNLOCKED";
+                    return "OWNED";
                 case OrbitUnlockedGiftServerSystem.StatusBusy:
                     return "WAIT";
                 case OrbitUnlockedGiftServerSystem.StatusFailed:
                     return "FAILED";
                 default:
                     return "GIFT";
+            }
+        }
+
+        /// <summary>Short caption on the beta-tester button after the Worker answers.</summary>
+        static string BetaLabel(byte status)
+        {
+            switch (status)
+            {
+                case OrbitUnlockedGiftServerSystem.StatusGranted:
+                    return "SENT";
+                case OrbitUnlockedGiftServerSystem.StatusAlready:
+                    return "OWNED";
+                case OrbitUnlockedGiftServerSystem.StatusBusy:
+                    return "WAIT";
+                case OrbitUnlockedGiftServerSystem.StatusFailed:
+                    return "FAILED";
+                default:
+                    return "BETA";
             }
         }
 

@@ -64,6 +64,15 @@ namespace TitanOrbit.Services
         public static event Action OrbitUnlockedOwnershipChanged;
 
         /// <summary>
+        /// Fired when <see cref="IsBetaTesterOwned"/> flips. The Escape BETA button listens.
+        /// [STANDARD] C# event — subscribers must unsubscribe.
+        /// </summary>
+        public static event Action BetaTesterOwnershipChanged;
+
+        /// <summary>PlayerPrefs prefix for the beta-tester item. Suffix is the Unity player id.</summary>
+        const string BetaTesterPlayerKeyPrefix = "TitanOrbit_BetaTesterOwned_v1_";
+
+        /// <summary>
         /// [LEGACY] Same event as <see cref="OrbitUnlockedOwnershipChanged"/>.
         /// Ads code that already subscribed under the old name keeps compiling.
         /// </summary>
@@ -99,6 +108,13 @@ namespace TitanOrbit.Services
         public static bool IsRemoveAdsOwned => IsOrbitUnlockedOwned;
 
         /// <summary>
+        /// True when the signed-in Unity player owns the beta-tester item.
+        /// Guests stay false. This is the client cache. The server confirms it
+        /// with its own Cloud Save lookup before it skips a gem charge.
+        /// </summary>
+        public static bool IsBetaTesterOwned { get; private set; }
+
+        /// <summary>
         /// [UNITY] Static ctor runs before first property access. We migrate the old
         /// remove-ads PlayerPrefs bit so a returning tester is not shown ads again.
         /// </summary>
@@ -119,6 +135,9 @@ namespace TitanOrbit.Services
         /// </summary>
         public static void LoadSessionForCurrentPlayer()
         {
+            // Beta tester is a second account flag. Load it on the same sign-in path.
+            LoadBetaSession();
+
             // --- Load account entitlement ---
             if (!UnityGameServicesBootstrap.HasDurablePlayerAccount())
             {
@@ -146,6 +165,9 @@ namespace TitanOrbit.Services
         /// <summary>Hides Orbit Unlocked for this session without deleting the account record.</summary>
         public static void ClearSessionView()
         {
+            // Sign-out hides the beta item for this session. The account prefs stay.
+            ApplyBetaOwned(false);
+
             // --- Clear session view ---
 #if UNITY_EDITOR
             if (PlayerPrefs.GetInt(EditorOverridePrefsKey, 0) != 0)
@@ -286,6 +308,57 @@ namespace TitanOrbit.Services
             ApplySessionOwned(owned);
         }
 
+        /// <summary>
+        /// Saves the beta-tester item on the signed-in Unity player.
+        /// A player build ignores a grant when nobody is signed in.
+        /// </summary>
+        /// <param name="owned">True after an admin gift or a Cloud Save read.</param>
+        public static void SetBetaTesterOwned(bool owned)
+        {
+            // --- Persist beta tester ---
+            string playerId = null;
+            if (UnityGameServicesBootstrap.HasDurablePlayerAccount())
+                playerId = UnityGameServicesBootstrap.PlayerId;
+
+            if (owned && string.IsNullOrEmpty(playerId))
+            {
+                Debug.LogWarning("[TitanOrbitEntitlements] Beta tester requires a signed-in account.");
+                return;
+            }
+
+            if (!string.IsNullOrEmpty(playerId))
+            {
+                PlayerPrefs.SetInt(BetaPlayerKey(playerId), owned ? 1 : 0);
+                PlayerPrefs.Save();
+                TitanOrbitAccountEntitlementSync.PushBetaAsync(playerId, owned);
+            }
+
+            ApplyBetaOwned(owned);
+        }
+
+        /// <summary>
+        /// Applies a Cloud Save <c>beta_tester</c> result when it grants the item.
+        /// A missing or false cloud value does not revoke a local grant.
+        /// </summary>
+        public static void ApplyCloudBetaOwned(string playerId, bool owned)
+        {
+            // --- Apply cloud beta entitlement ---
+            if (string.IsNullOrEmpty(playerId) || !owned)
+                return;
+            if (!string.Equals(playerId, UnityGameServicesBootstrap.PlayerId, StringComparison.Ordinal))
+                return;
+            if (!UnityGameServicesBootstrap.HasDurablePlayerAccount())
+                return;
+
+            if (PlayerPrefs.GetInt(BetaPlayerKey(playerId), 0) == 0)
+            {
+                PlayerPrefs.SetInt(BetaPlayerKey(playerId), 1);
+                PlayerPrefs.Save();
+            }
+
+            ApplyBetaOwned(true);
+        }
+
         /// <summary>Applies a Cloud Save result for <paramref name="playerId"/> when it grants ownership.</summary>
         public static void ApplyCloudOwned(string playerId, bool owned)
         {
@@ -313,6 +386,38 @@ namespace TitanOrbit.Services
                 return;
             IsOrbitUnlockedOwned = owned;
             OrbitUnlockedOwnershipChanged?.Invoke();
+        }
+
+        /// <summary>Reads the beta-tester PlayerPrefs bit for the signed-in account. Guests stay off.</summary>
+        static void LoadBetaSession()
+        {
+            if (!UnityGameServicesBootstrap.HasDurablePlayerAccount())
+            {
+                ApplyBetaOwned(false);
+                return;
+            }
+
+            string playerId = UnityGameServicesBootstrap.PlayerId;
+            if (string.IsNullOrEmpty(playerId))
+            {
+                ApplyBetaOwned(false);
+                return;
+            }
+
+            ApplyBetaOwned(PlayerPrefs.GetInt(BetaPlayerKey(playerId), 0) != 0);
+        }
+
+        static void ApplyBetaOwned(bool owned)
+        {
+            if (IsBetaTesterOwned == owned)
+                return;
+            IsBetaTesterOwned = owned;
+            BetaTesterOwnershipChanged?.Invoke();
+        }
+
+        static string BetaPlayerKey(string playerId)
+        {
+            return BetaTesterPlayerKeyPrefix + playerId;
         }
 
         static string PlayerKey(string playerId)
