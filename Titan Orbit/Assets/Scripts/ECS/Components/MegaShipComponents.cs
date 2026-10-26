@@ -103,6 +103,14 @@ namespace TitanOrbit.ECS
         /// are not culled before they arrive.
         /// </summary>
         public float InterceptDistance;
+
+        /// <summary>
+        /// Cannon burn subject on a planet lock.
+        /// <see cref="CannonLaserHitApply.FocusMoon"/> or <c>pad slot + 1</c>.
+        /// Ships and asteroids stay <see cref="CannonLaserHitApply.FocusWholeEntity"/>.
+        /// Server only — this buffer is not ghosted.
+        /// </summary>
+        public int Focus;
     }
 
     /// <summary>

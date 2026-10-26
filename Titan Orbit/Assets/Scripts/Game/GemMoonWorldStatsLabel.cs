@@ -10,11 +10,11 @@ namespace TitanOrbit.Game
 {
     /// <summary>
     /// World-space label above the orbiting gem moon. Matches the planet cockpit stack:
-    /// Rajdhani place name, <c>FLEET</c> / <c>GUN</c> rails, then labeled GEMS and SHIELD
-    /// counts (current over BANK / MAX). GEMS is the moon reservoir
-    /// (<see cref="PlanetGemMoonState.CurrentMoonGems"/>), the same stock shots knock
-    /// loose. World / family / gun strings match
-    /// <see cref="PlanetWorldStatsLabel"/> (same planet <see cref="PlanetState"/> + config).
+    /// Rajdhani place name, <c>FLEET</c> / <c>GUN</c> rails, then labeled GEMS and SHIELD.
+    /// Gems show stored amount over the cost to reach the next planet level
+    /// (<see cref="PlanetEconomyMath.GetMaxGemsForLevel"/> — 1600 at level 5).
+    /// Shield stays current over MAX.
+    /// World / family / gun strings match <see cref="PlanetWorldStatsLabel"/>.
     /// Client presentation only. During idle theatrical camera,
     /// <see cref="TitanOrbit.UI.TheatricalWorldSpaceLabelRotation"/> billboards this stack
     /// toward the lens so gem/shield counts stay readable.
@@ -31,7 +31,7 @@ namespace TitanOrbit.Game
         const float LabelWorldScaleFallback = 0.24f;
         /// <summary>Live GEMS / SHIELD digits — the number to read from orbit.</summary>
         const float CurrentFontSize = 22f;
-        /// <summary>BANK / MAX line under current — clearly smaller than the live count.</summary>
+        /// <summary>NEXT rail under the gem cost — clearly smaller than the live count. Shield still uses MAX.</summary>
         const float MaxFontSize = 10.5f;
         /// <summary>Tiny tracked rail above each moon stat (GEMS / SHIELD).</summary>
         const float StatCaptionFontSize = 7.5f;
@@ -67,8 +67,10 @@ namespace TitanOrbit.Game
         StatRow _gemRow;
         StatRow _shieldRow;
 
+        /// <summary>Planet level last painted into the gem line. MinValue forces the first paint.</summary>
+        int _cachedGemPlanetLevel = int.MinValue;
+        /// <summary>Planet stored gems last painted as the live gem count.</summary>
         int _cachedCurrentGems = int.MinValue;
-        int _cachedMaxGems = int.MinValue;
         int _cachedCurrentShield = int.MinValue;
         int _cachedMaxShield = int.MinValue;
         int _cachedFamilyConfigIndex = int.MinValue;
@@ -105,11 +107,26 @@ namespace TitanOrbit.Game
         public void Configure(int id, float moonLocalRadius)
         {
             // --- Configure ---
+            // Spawn and planet level-up both land here (PlanetGemMoonVisualProxy.Configure).
+            // Paint the planet gem count before measuring layout so the gem line has its width.
             planetId = id;
             _moonLocalRadius = Mathf.Max(0.02f, moonLocalRadius);
             EnsureLabel();
-            ApplyLayout();
             Refresh();
+            ApplyLayout();
+        }
+
+        /// <summary>
+        /// Drops the cached planet gem count and repaints from
+        /// <c>PlanetState</c>. Level-up calls this after the ghost level changes
+        /// so the moon does not keep the previous next-level cost.
+        /// </summary>
+        public void RefreshGemRequirement()
+        {
+            _cachedGemPlanetLevel = int.MinValue;
+            _cachedCurrentGems = int.MinValue;
+            if (Refresh())
+                ApplyLayout();
         }
 
         void EnsureLabel()
@@ -352,7 +369,7 @@ namespace TitanOrbit.Game
         static void LayoutStatRow(ref StatRow row)
         {
             // --- LayoutStatRow ---
-            // Caption / count / BANK stay on X = 0 so they line up with the moon name.
+            // Caption / count / NEXT stay on X = 0 so they line up with the moon name.
             // The gem / shield icon tucks left of the live digits and does not shift the stack.
             if (row.CurrentText == null || row.MaxText == null)
                 return;
@@ -375,13 +392,17 @@ namespace TitanOrbit.Game
             }
 
             row.CurrentText.ForceMeshUpdate();
-            row.MaxText.ForceMeshUpdate();
+            // Gem row hides this line at max planet level (the digits already say MAX).
+            bool showMax = row.MaxText.gameObject.activeSelf;
+            if (showMax)
+                row.MaxText.ForceMeshUpdate();
 
             float captionHeight = showCaption ? row.CaptionText.preferredHeight : 0f;
             float captionGap = showCaption ? CaptionToValueGapLocal : 0f;
             float currentHeight = row.CurrentText.preferredHeight;
-            float maxHeight = row.MaxText.preferredHeight;
-            float textHeight = captionHeight + captionGap + currentHeight + ValueLineGapLocal + maxHeight;
+            float maxHeight = showMax ? row.MaxText.preferredHeight : 0f;
+            float maxGap = showMax ? ValueLineGapLocal : 0f;
+            float textHeight = captionHeight + captionGap + currentHeight + maxGap + maxHeight;
 
             float stackTop = textHeight * 0.5f;
             float cursor = stackTop;
@@ -393,8 +414,9 @@ namespace TitanOrbit.Game
 
             float currentY = cursor - currentHeight * 0.5f;
             row.CurrentText.transform.localPosition = new Vector3(0f, currentY, 0f);
-            cursor -= currentHeight + ValueLineGapLocal;
-            row.MaxText.transform.localPosition = new Vector3(0f, cursor - maxHeight * 0.5f, 0f);
+            cursor -= currentHeight + maxGap;
+            if (showMax)
+                row.MaxText.transform.localPosition = new Vector3(0f, cursor - maxHeight * 0.5f, 0f);
 
             if (row.Icon != null && row.Icon.enabled && row.Icon.sprite != null)
             {
@@ -415,7 +437,9 @@ namespace TitanOrbit.Game
 
             bool showCaption = row.CaptionText != null && row.CaptionText.gameObject.activeSelf;
             float caption = showCaption ? row.CaptionText.preferredHeight + CaptionToValueGapLocal : 0f;
-            return caption + row.CurrentText.preferredHeight + ValueLineGapLocal + row.MaxText.preferredHeight;
+            bool showMax = row.MaxText.gameObject.activeSelf;
+            float max = showMax ? ValueLineGapLocal + row.MaxText.preferredHeight : 0f;
+            return caption + row.CurrentText.preferredHeight + max;
         }
 
         /// <summary>
@@ -508,7 +532,37 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// Gem column: big digits are gems stored on this planet
+        /// (<see cref="PlanetState.CurrentGems"/>). The small line is the cost
+        /// to reach the next level. The moon's 500-point combat reservoir stays off this label.
+        /// </summary>
+        static void PaintGemRequirement(ref StatRow row, int currentGems, int planetLevel)
+        {
+            if (row.CaptionText != null)
+            {
+                row.CaptionText.gameObject.SetActive(true);
+                row.CaptionText.text = WorldBodyLabelTheme.GemsCaption;
+                row.CaptionText.color = WorldBodyLabelTheme.CaptionIce;
+            }
+
+            if (row.CurrentText != null)
+            {
+                row.CurrentText.text = Mathf.Max(0, currentGems).ToString();
+                row.CurrentText.color = GemsColor;
+            }
+
+            if (row.MaxText != null)
+            {
+                row.MaxText.gameObject.SetActive(true);
+                row.MaxText.richText = true;
+                row.MaxText.text = WorldBodyLabelTheme.FormatNextLevelGemLine(planetLevel);
+                row.MaxText.color = GemsMaxColor;
+            }
+        }
+
+        /// <summary>
         /// Writes one moon telemetry column: tracked caption, live count, labeled capacity.
+        /// Shield still uses this. Gems use <see cref="PaintGemRequirement"/>.
         /// </summary>
         static void PaintStatRow(
             ref StatRow row,
@@ -638,6 +692,7 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Updates family / gun / gem / shield TMP only when values change.
+        /// Gem digits are this planet's stored gems. They repaint when the count or level changes.
         /// [TITAN-ORBIT] Per-frame ParseHexColor + .text on every moon was ~1.4ms (Profiler 41220).
         /// World name is resolved only when id / config / home / team is dirty (same as planet).
         /// </summary>
@@ -659,36 +714,28 @@ namespace TitanOrbit.Game
             if (!EcsGameBridge.TryGetPlanetStateByPlanetId(planetId, out PlanetState state))
                 return false;
 
-            // --- Moon reservoir, not the planet bank ---
-            // Shots subtract PlanetGemMoonState.CurrentMoonGems. The planet's CurrentGems
-            // is a separate bank, so the label used to sit on leftover planet gems
-            // (often the mid-20s) after the moon reservoir was already empty.
-            int currentGems = 0;
-            int maxGems = Mathf.RoundToInt(PlanetGemMoonMath.BaseMaxMoonGemPoints);
+            // Big digits are this planet's stored gems. The 500-point moon reservoir
+            // is a combat pool and stays off the label.
+            int planetLevel = Mathf.Max(1, state.PlanetLevel);
+            int currentGems = Mathf.Max(0, Mathf.RoundToInt(state.CurrentGems));
             int currentShield;
             int maxShield;
             if (EcsGameBridge.TryGetPlanetGemMoonStateByPlanetId(planetId, out PlanetGemMoonState moonState))
             {
-                float reservoir = moonState.CurrentMoonGems;
-                currentGems = reservoir <= 0.0001f ? 0 : Mathf.RoundToInt(reservoir);
-                float cap = moonState.MaxMoonGems > 0.001f
-                    ? moonState.MaxMoonGems
-                    : PlanetGemMoonMath.BaseMaxMoonGemPoints;
-                maxGems = Mathf.RoundToInt(cap);
                 currentShield = Mathf.RoundToInt(moonState.CurrentShield);
                 maxShield = Mathf.RoundToInt(moonState.MaxShield);
             }
             else
             {
-                maxShield = Mathf.RoundToInt(PlanetGemMoonMath.GetMaxShieldForLevel(state.PlanetLevel));
+                maxShield = Mathf.RoundToInt(PlanetGemMoonMath.GetMaxShieldForLevel(planetLevel));
                 currentShield = maxShield;
             }
 
             // --- Dirty check BEFORE ResolvePlanetTitle ---
             // [TITAN-ORBIT] World name is stable for the match (PlanetId + optional family override).
             if (_hasCachedPaint &&
+                _cachedGemPlanetLevel == planetLevel &&
                 _cachedCurrentGems == currentGems &&
-                _cachedMaxGems == maxGems &&
                 _cachedCurrentShield == currentShield &&
                 _cachedMaxShield == maxShield &&
                 _cachedFamilyConfigIndex == state.ShipFamilyConfigIndex &&
@@ -724,8 +771,8 @@ namespace TitanOrbit.Game
             bool hasBulletType = hasTitle && !string.IsNullOrEmpty(bulletType);
 
             _hasCachedPaint = true;
+            _cachedGemPlanetLevel = planetLevel;
             _cachedCurrentGems = currentGems;
-            _cachedMaxGems = maxGems;
             _cachedCurrentShield = currentShield;
             _cachedMaxShield = maxShield;
             _cachedFamilyConfigIndex = state.ShipFamilyConfigIndex;
@@ -752,13 +799,7 @@ namespace TitanOrbit.Game
             _bulletTypeText.text = hasBulletType ? WorldBodyLabelTheme.FormatGunLine(bulletType) : string.Empty;
             _bulletTypeText.color = WithAlpha(teamColor, BulletTypeAlpha);
 
-            PaintStatRow(
-                ref _gemRow,
-                WorldBodyLabelTheme.GemsCaption,
-                currentGems,
-                WorldBodyLabelTheme.FormatBankLine(WorldBodyLabelTheme.GemBankCaption, maxGems),
-                GemsColor,
-                GemsMaxColor);
+            PaintGemRequirement(ref _gemRow, currentGems, planetLevel);
             PaintStatRow(
                 ref _shieldRow,
                 WorldBodyLabelTheme.ShieldCaption,

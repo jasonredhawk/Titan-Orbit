@@ -415,18 +415,19 @@ namespace TitanOrbit.Game
                     continue;
 
                 RememberStickyLock(em, slot, gunners[m], beamHit, end);
-                // Server burn ticks, including a slice that lands the same snapshot
-                // the beam is too short to draw. Local Time.deltaTime used to reach
-                // 0 HP a round-trip before AsteroidDestroyedRpc froze the streak.
-                ReportReplicatedBurn(
-                    em, binding.ShipEntity, team, mounts[m], gunners[m], key, beamHit, end, mapW, mapH);
                 slot.LastUsed = now;
                 slot.LastSeenLive = now;
                 if (SilenceVendorAudio(slot.Root))
                     slot.NeedsSilence = false;
+                // Local owner: the float uses this ramp, so a ship retarget prints
+                // the thin number in the same frame the beam thins. Remotes use the
+                // ghost seconds (Clamp, so a server reset to 0 snaps).
                 float rampSeconds = ResolveBeamRampSeconds(
                     em, slot, localOwner, gunners[m], beamHit, localFiring && !energyLockout,
                     team, mapW, mapH);
+                ReportReplicatedBurn(
+                    em, binding.ShipEntity, team, mounts[m], gunners[m], key, beamHit, end, mapW, mapH,
+                    localOwner ? rampSeconds : -1f);
                 ApplyRampWidth(slot, rampSeconds);
                 drawnHumRamp = math.max(drawnHumRamp, rampSeconds);
                 hadDrawnRamp = true;
@@ -459,7 +460,8 @@ namespace TitanOrbit.Game
             Entity clippedHit,
             Vector3 impactDisplayPos,
             float mapW,
-            float mapH)
+            float mapH,
+            float rampOverride = -1f)
         {
             if (!_live.TryGetValue(key, out BeamSlot slot) || slot == null)
                 return;
@@ -475,7 +477,7 @@ namespace TitanOrbit.Game
 
             TryNotifyBeamDamageFloat(
                 em, shooter, ownerTeam, in mount, in gunner, impactDisplayPos, clippedHit, burnTicks,
-                mapW, mapH);
+                mapW, mapH, rampOverride);
         }
 
         /// <summary>
@@ -493,7 +495,8 @@ namespace TitanOrbit.Game
             Entity clippedHit,
             uint burnTicks,
             float mapW,
-            float mapH)
+            float mapH,
+            float rampOverride)
         {
             Entity target = clippedHit;
             if (target == Entity.Null && slot.TargetGhostId != 0)
@@ -506,7 +509,8 @@ namespace TitanOrbit.Game
             // One server tick of ramped DPS per new sequence step. Top-killer +5%
             // matches CannonLaserCombatSystem so the total is not short of the pop.
             float tickDt = 1f / TitanOrbitServerTickRateSystem.SimulationHz;
-            float slice = ResolveLaserSlice(in mount, slot.CannonLaserRampSeconds) * tickDt * burnTicks;
+            float rampSeconds = rampOverride >= 0f ? rampOverride : slot.CannonLaserRampSeconds;
+            float slice = ResolveLaserSlice(in mount, rampSeconds) * tickDt * burnTicks;
             if (em.Exists(shooter) && em.HasComponent<GhostOwner>(shooter))
             {
                 int net = em.GetComponentData<GhostOwner>(shooter).NetworkId;
@@ -676,12 +680,20 @@ namespace TitanOrbit.Game
                 ClearStickyMount(binding, mountIndex);
             }
 
+            bool committedPlanet = false;
+            Entity committedPlanetEntity = Entity.Null;
             if (!TryGetLocalMouseBeamEnd(em, binding, in hull, in mount, muzzle, mapW, mapH, out rawEnd))
             {
                 double beamMoonElapsed = 0d;
                 PlanetGemMoonOrbitClock.TryGetElapsedSeconds(
                     out beamMoonElapsed, includeTickFraction: true);
-                if (ghostId != 0
+                if (TryCommittedPlanetEnd(
+                        em, binding, mountIndex, team, muzzle, ghostId, aimX, aimZ, mapW, mapH,
+                        out rawEnd, out committedPlanetEntity))
+                {
+                    committedPlanet = true;
+                }
+                else if (ghostId != 0
                     && MegaShipWeaponVisualTargets.TryGetEntity(ghostId, out Entity target)
                     && MegaShipWeaponVisualTargets.IsLiveVisualTarget(em, target)
                     && CannonLaserSurface.TryGetHitPoint(
@@ -725,11 +737,22 @@ namespace TitanOrbit.Game
             // Mouse aim used to keep the cursor length even when the ray already
             // punched a hull / rock / pad. Clip to the first contact on this segment.
             Vector3 intendedEnd = rawEnd;
-            TryClipBeamToFirstCollider(em, binding, team, muzzle, ref rawEnd, out clippedHit);
+            TryClipBeamToFirstCollider(
+                em, binding, team, muzzle, ref rawEnd, out clippedHit, out var clipKind);
+            // A pad lock must not end on the moon, and a moon lock must not end on a pad.
+            if (committedPlanet
+                && clippedHit == committedPlanetEntity
+                && (clipKind == BulletCosmeticHitQuery.ObstacleKind.Moon
+                    || clipKind == BulletCosmeticHitQuery.ObstacleKind.PlanetaryDefense
+                    || clipKind == BulletCosmeticHitQuery.ObstacleKind.Planet))
+            {
+                rawEnd = intendedEnd;
+                clippedHit = committedPlanetEntity;
+            }
             // Parked Titans clip the new lock through the last rock's leftover
             // collider (DestroyRpc / optimistic-0 lag). Keep the intended end so
             // the beam can leave the corpse without the hull moving.
-            if (clippedHit != Entity.Null
+            else if (clippedHit != Entity.Null
                 && !MegaShipWeaponVisualTargets.IsLiveVisualTarget(em, clippedHit))
             {
                 rawEnd = intendedEnd;
@@ -751,9 +774,11 @@ namespace TitanOrbit.Game
             TeamId team,
             Vector3 muzzle,
             ref Vector3 end,
-            out Entity hitEntity)
+            out Entity hitEntity,
+            out BulletCosmeticHitQuery.ObstacleKind hitKind)
         {
             hitEntity = Entity.Null;
+            hitKind = BulletCosmeticHitQuery.ObstacleKind.Asteroid;
             if (binding == null || !em.Exists(binding.ShipEntity))
                 return false;
 
@@ -775,7 +800,7 @@ namespace TitanOrbit.Game
                     ownerNet,
                     isDisplaySpace: true,
                     out float3 hit,
-                    out _,
+                    out hitKind,
                     out hitEntity,
                     out _,
                     out _,
@@ -977,12 +1002,20 @@ namespace TitanOrbit.Game
                 haveFocus = TryResolveRampFocus(
                     em, subject, team, gunner.AimWorldX, gunner.AimWorldZ, mapW, mapH, out focus);
 
-            bool reset = gunner.TargetGhostId != 0
-                         && slot.RampGhostId != 0
-                         && gunner.TargetGhostId != slot.RampGhostId;
+            int previousGhost = slot.RampGhostId;
+            Entity previousTarget = slot.RampTarget;
+            bool switchedShip = previousGhost != 0
+                                && gunner.TargetGhostId != 0
+                                && gunner.TargetGhostId != previousGhost;
+            // Moon and pad locks often ghost id 0. Clearing the stored ship id
+            // here is what lets the next ship start thin instead of staying fat.
+            bool leftNumberedLock = previousGhost != 0
+                                    && gunner.TargetGhostId == 0
+                                    && (subject == Entity.Null || subject != previousTarget);
+            bool reset = switchedShip || leftNumberedLock;
             if (subject != Entity.Null)
             {
-                bool newEntity = slot.RampTarget != Entity.Null && slot.RampTarget != subject;
+                bool newEntity = previousTarget != Entity.Null && previousTarget != subject;
                 bool newFocus = haveFocus
                     && slot.RampTarget == subject
                     && slot.RampFocus != int.MinValue
@@ -990,19 +1023,23 @@ namespace TitanOrbit.Game
                 // Lookup never named a body for the whole climb. The first body
                 // we can name at the cap is a new target, not a late aim on the
                 // one we already charged (that resolve lands before the cap).
-                bool cappedWithoutSubject = slot.RampTarget == Entity.Null
+                bool cappedWithoutSubject = previousTarget == Entity.Null
                     && slot.LocalRampSeconds >= CannonLaserMath.RampDurationSeconds - 0.001f;
                 if (newEntity || newFocus || cappedWithoutSubject)
                     reset = true;
                 slot.RampTarget = subject;
                 if (haveFocus)
                     slot.RampFocus = focus;
-                else if (newEntity || cappedWithoutSubject)
+                else if (newEntity || cappedWithoutSubject || reset)
                     slot.RampFocus = int.MinValue;
             }
+            else if (reset)
+            {
+                slot.RampTarget = Entity.Null;
+                slot.RampFocus = int.MinValue;
+            }
 
-            if (gunner.TargetGhostId != 0)
-                slot.RampGhostId = gunner.TargetGhostId;
+            slot.RampGhostId = gunner.TargetGhostId;
 
             bool haveLock = subject != Entity.Null
                             || (gunnerLive && lockEnt != Entity.Null)
@@ -1013,8 +1050,85 @@ namespace TitanOrbit.Game
                 shown,
                 Time.deltaTime,
                 reset: reset,
-                charging: charging && haveLock && !reset);
+                charging: charging && subject != Entity.Null && !reset);
             return shown;
+        }
+
+        /// <summary>
+        /// Beam end for a planet lock. Moon stops on the shield along the barrel
+        /// ray. A pad stops on that pad. A closer neighbor does not steal the end.
+        /// </summary>
+        static bool TryCommittedPlanetEnd(
+            EntityManager em,
+            MegaShipWeaponVisualBinding binding,
+            int mountIndex,
+            TeamId team,
+            Vector3 muzzle,
+            int ghostId,
+            float aimX,
+            float aimZ,
+            float mapW,
+            float mapH,
+            out Vector3 end,
+            out Entity planet)
+        {
+            end = muzzle;
+            planet = Entity.Null;
+            if (!MegaShipWeaponVisualTargets.TryGetLockEntity(em, ghostId, aimX, aimZ, out Entity lockEnt)
+                || lockEnt == Entity.Null
+                || !em.Exists(lockEnt)
+                || !em.HasComponent<PlanetState>(lockEnt))
+                return false;
+
+            planet = lockEnt;
+            double moonElapsed = 0d;
+            PlanetGemMoonOrbitClock.TryGetElapsedSeconds(out moonElapsed, includeTickFraction: true);
+            float3 from = (float3)muzzle;
+            float3 hint = new float3(aimX, 0f, aimZ);
+            int focus = CannonLaserHitApply.ResolvePlanetFocus(
+                em, planet, team, hint, mapW, mapH, moonElapsed);
+            CannonLaserHitApply.PlanetSubjectAim subject;
+            if (focus == CannonLaserHitApply.FocusWholeEntity)
+            {
+                if (!CannonLaserHitApply.TryPickClosestSubject(
+                        em, planet, team, from, float.MaxValue, mapW, mapH, moonElapsed, out subject))
+                    return false;
+                focus = subject.Focus;
+            }
+            else if (!CannonLaserHitApply.TryGetSubjectAim(
+                         em, planet, team, from, focus, mapW, mapH, moonElapsed, out subject))
+            {
+                return false;
+            }
+
+            float3 point = subject.Aim;
+            if (focus == CannonLaserHitApply.FocusMoon
+                && subject.Radius > 0.05f
+                && binding != null
+                && binding.Barrels != null
+                && mountIndex >= 0
+                && mountIndex < binding.Barrels.Length
+                && binding.Barrels[mountIndex] != null)
+            {
+                float3 barrelFwd = (float3)binding.Barrels[mountIndex].forward;
+                if (CannonLaserMath.TryRaySphereSurface(
+                        from, barrelFwd, subject.Center, subject.Radius, mapW, mapH, out float3 rayHit))
+                {
+                    point = rayHit;
+                }
+                else
+                {
+                    barrelFwd.y = 0f;
+                    if (math.lengthsq(barrelFwd) > 0.0001f)
+                    {
+                        barrelFwd = math.normalize(barrelFwd);
+                        point = from + barrelFwd * math.max(0.25f, subject.Distance);
+                    }
+                }
+            }
+
+            end = (Vector3)point;
+            return true;
         }
 
         /// <summary>

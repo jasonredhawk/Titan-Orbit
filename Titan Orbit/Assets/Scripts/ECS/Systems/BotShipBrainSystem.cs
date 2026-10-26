@@ -14,8 +14,10 @@ namespace TitanOrbit.ECS
     /// Server brain for AI ships. Decides a task about twice a second, then writes
     /// <see cref="ShipInput"/> every tick so the existing motor, guns, moon dock,
     /// deposit, and troop systems do the work. Asteroids, deposits, and level-ups
-    /// stay the goal. An enemy inside <see cref="SecondaryShotRange"/> is only a
-    /// gun target while mining or scooping; the hull does not chase.
+    /// stay the goal. Loot from a rock that just broke is followed every tick so the
+    /// hull does not sit out the scan while the gems coast away. An enemy inside
+    /// <see cref="SecondaryShotRange"/> is only a gun target while mining; during a
+    /// scoop the hull keeps flying until it is on the crystal.
     /// <para>
     /// Runs inside the predicted fixed step, after NetCode copies the command buffer
     /// into <see cref="ShipInput"/> and before <see cref="ShipPhysicsDriveSystem"/>.
@@ -26,9 +28,9 @@ namespace TitanOrbit.ECS
     /// </para>
     /// Map width and height come from <see cref="MapStateSingleton"/> via
     /// <see cref="ToroidalMapEcs.TryGetMapSize"/>. Missing size skips the tick.
-    /// Asteroids are indexed on decision ticks into the same 16-unit grid bullets use
-    /// (<see cref="BulletObstacleSpatialHash"/>). Steering each tick only reads the
-    /// cells around that hull. Ship and planet lists are small and refreshed every tick.
+    /// A live mine target is kept until the half-second scan. Once that rock is gone,
+    /// gems from the wreck are followed every tick. Ship and planet lists stay small
+    /// and refresh every tick.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(PredictedFixedStepSimulationSystemGroup), OrderFirst = true)]
@@ -49,11 +51,17 @@ namespace TitanOrbit.ECS
         /// </summary>
         const float SecondaryShotRange = 22f;
         /// <summary>
-        /// Extra reach past the farthest a jam blast can still carry a gem.
-        /// Coast of <see cref="BulletBankHitEffects.MaxGemBlastImpulse"/> (8) at drag 0.5
-        /// is 15.9. Padding keeps that crystal inside the search.
+        /// Crystals counted as this kill's drop. Destroy bursts coast about 8u and a
+        /// jam can shove one farther; past this the gem belongs to some other wreck.
+        /// Measured from the rock, so a hull that fired from <see cref="MineShotReach"/>
+        /// still acquires the drop and flies in.
         /// </summary>
-        const float GemSearchPadding = 2f;
+        const float WreckGemRadius = 24f;
+        /// <summary>
+        /// Keep the same crystal while it drifts. Two gems in one burst must not swap
+        /// the nose every tick.
+        /// </summary>
+        const float GemStickRadius = 6f;
         const float DepositFill = 0.75f;
         const float FollowDistance = 8f;
         const float HoldDistance = 6f;
@@ -66,18 +74,22 @@ namespace TitanOrbit.ECS
         const float MineSurfaceGap = 1.75f;
         /// <summary>Open fire once the rock surface is within this distance. Bullet range is ~30.</summary>
         const float MineShotReach = 20f;
-        /// <summary>Hull pickup is about 2.5. Coast onto the crystal inside this distance.</summary>
-        const float CollectArrive = 1.6f;
+        /// <summary>
+        /// Stop inside the hull scoop. The live tractor settings use a hull range of 1,
+        /// and a burst has more crystals than beams, so parking at 1.6 never absorbed
+        /// the ones the tractor was not already pulling.
+        /// </summary>
+        const float CollectArrive = 0.45f;
+        /// <summary>
+        /// Collect has to finish the last units. <see cref="CruiseResumeGap"/> (7) parks
+        /// the hull outside pickup and leaves thrust latched off while the gem sits there.
+        /// </summary>
+        const float CollectResumeGap = 0.45f;
 
         /// <summary>
-        /// Loose-gem search. Reaches past the jam shove so a crystal pushed to the
-        /// end of that coast is still found, and the hull keeps flying to it.
-        /// </summary>
-        static float GemSearchRange =>
-            GemExplosionMath.DefaultCoastDistance(BulletBankHitEffects.MaxGemBlastImpulse) + GemSearchPadding;
-        /// <summary>
         /// After thrust latches off, the hull must drift this far past the hold before
-        /// thrust comes back. Stops the arrive-and-reverse twitch.
+        /// thrust comes back. Stops the arrive-and-reverse twitch at a mine or escort hold.
+        /// Scooping uses <see cref="CollectResumeGap"/> instead.
         /// </summary>
         const float CruiseResumeGap = 7f;
 
@@ -120,8 +132,6 @@ namespace TitanOrbit.ECS
         NativeList<int> _nearbyRocks;
         NativeHashSet<int> _nearbySeen;
         BulletObstacleSpatialHash _asteroidHash;
-        /// <summary>Loose gems, rebuilt on decision ticks only. Steering does not read it.</summary>
-        GemSpatialHash _gemHash;
 
         public void OnCreate(ref SystemState state)
         {
@@ -157,8 +167,6 @@ namespace TitanOrbit.ECS
         {
             if (_asteroidHash.IsCreated)
                 _asteroidHash.Dispose();
-            if (_gemHash.IsCreated)
-                _gemHash.Dispose();
             if (_mineRocks.IsCreated)
                 _mineRocks.Dispose();
             if (_nearbyRocks.IsCreated)
@@ -198,6 +206,7 @@ namespace TitanOrbit.ECS
             }
 
             bool anyDecide = false;
+            bool anyLoot = false;
             for (int i = 0; i < bots.Length; i++)
             {
                 if (!em.HasComponent<BotShipBrain>(bots[i]) || !em.HasComponent<ShipState>(bots[i]))
@@ -205,10 +214,12 @@ namespace TitanOrbit.ECS
                 if (em.GetComponentData<ShipState>(bots[i]).IsDead)
                     continue;
                 var earlyBrain = em.GetComponentData<BotShipBrain>(bots[i]);
+                if (earlyBrain.Task == BotTaskKind.Mine || earlyBrain.Task == BotTaskKind.Collect)
+                    anyLoot = true;
                 if (earlyBrain.NextDecisionTime <= now)
                 {
                     anyDecide = true;
-                    break;
+                    continue;
                 }
 
                 if (!haveOrders || !em.HasComponent<GhostOwner>(bots[i]))
@@ -218,20 +229,23 @@ namespace TitanOrbit.ECS
                 BotTeamOrder earlyOrder = orders.Get(earlyShip.Team);
                 if (earlyOrder.IsActive(now) && earlyOrder.Includes(earlyId) &&
                     OrderNeedsRetask(earlyOrder, earlyBrain))
-                {
                     anyDecide = true;
-                    break;
-                }
             }
 
             using var planets = GatherPlanets(em);
             using var ships = GatherShips(em);
+            // Rocks every loot tick so a kill is noticed on the next tick, not half a
+            // second later. The bullet hash stays on the decision scan. Gems are built
+            // only once a wreck actually needs a scoop (one shared hash, not per ship).
             if (anyDecide)
-            {
                 RefreshAsteroidHash(mapW, mapH);
-                RefreshGemHash(mapW, mapH);
-            }
+            else if (anyLoot)
+                RefreshMineRocks();
             NativeArray<RockSnap> rocks = _mineRocks.AsArray();
+            GemSpatialHash lootGems = default;
+            if (anyDecide)
+                lootGems = BuildGemHash(mapW, mapH);
+            float claimNow = (float)orbitElapsed;
             using var commanderShips = _ships.ToEntityArray(Allocator.Temp);
             using var commanderOwners = _ships.ToComponentDataArray<GhostOwner>(Allocator.Temp);
 
@@ -302,8 +316,8 @@ namespace TitanOrbit.ECS
                         ref brain, ship, networkId, pos, landed, dockedPlanetId, order,
                         planets.AsArray(), ships.AsArray(),
                         rocks,
-                        in _gemHash, _nearbyRocks, _nearbySeen,
-                        mapW, mapH, em, now);
+                        in lootGems, _nearbyRocks, _nearbySeen,
+                        mapW, mapH, em, now, claimNow);
                     if (landed && (brain.Task == BotTaskKind.Deposit || brain.Task == BotTaskKind.Upgrade))
                         TryBuy(em, shipEntity, ref ship, ref brain);
                     if (!orderNow)
@@ -313,6 +327,23 @@ namespace TitanOrbit.ECS
                     if ((int)brain.Task != taskBefore ||
                         math.distancesq(goalBefore, brain.Goal) > 16f)
                         brain.ThrustHeld = 1;
+                }
+                else if (!landed &&
+                         (brain.Task == BotTaskKind.Mine || brain.Task == BotTaskKind.Collect))
+                {
+                    // The half-second scan is what left miners parked on a dead rock.
+                    // Follow the burst as soon as the rock is gone, then the next rock.
+                    bool rockHeld = brain.Task == BotTaskKind.Mine &&
+                                    TryKeepMineRock(ref brain, rocks, mapW, mapH);
+                    if (!rockHeld)
+                    {
+                        if (!lootGems.IsCreated)
+                            lootGems = BuildGemHash(mapW, mapH);
+                        TickLoot(
+                            ref brain, ship, networkId, pos, rocks,
+                            in lootGems, _nearbyRocks, _nearbySeen,
+                            mapW, mapH, em, claimNow);
+                    }
                 }
 
                 float speed = 0f;
@@ -338,6 +369,9 @@ namespace TitanOrbit.ECS
                 else if (wantDeposit)
                     em.AddComponentData(shipEntity, new ShipDepositIntent { WantDepositGems = true });
             }
+
+            if (lootGems.IsCreated)
+                lootGems.Dispose();
         }
 
         static void ClearDeposit(EntityManager em, Entity ship)
@@ -408,7 +442,8 @@ namespace TitanOrbit.ECS
             float mapW,
             float mapH,
             EntityManager em,
-            float now)
+            float now,
+            float claimNow)
         {
             // Cargo leaves only through GemDepositSystem: one shipLevel × planetLevel
             // chunk per beat, same as a player holding deposit. Stay on this moon until
@@ -427,7 +462,7 @@ namespace TitanOrbit.ECS
             {
                 ApplyOrder(
                     ref brain, ship, networkId, pos, order, planets, ships, rocks,
-                    gems, nearby, seen, mapW, mapH);
+                    gems, nearby, seen, mapW, mapH, em, claimNow);
                 NoteTask(ref brain, ship.CurrentPeople, now);
                 return;
             }
@@ -457,7 +492,7 @@ namespace TitanOrbit.ECS
                 return;
             }
 
-            if (TryCollectBurst(ref brain, ship, networkId, pos, gems, nearby, seen, mapW, mapH))
+            if (TryCollectBurst(ref brain, ship, networkId, pos, gems, nearby, seen, mapW, mapH, em, claimNow))
             {
                 NoteTask(ref brain, ship.CurrentPeople, now);
                 return;
@@ -507,7 +542,9 @@ namespace TitanOrbit.ECS
             NativeList<int> nearby,
             NativeHashSet<int> seen,
             float mapW,
-            float mapH)
+            float mapH,
+            EntityManager em,
+            float claimNow)
         {
             float3 ping = order.HasWaypoint != 0 ? order.Waypoint : pos;
             switch (order.Task)
@@ -515,7 +552,7 @@ namespace TitanOrbit.ECS
                 case BotTaskKind.Mine:
                     if (TryKeepMineRock(ref brain, rocks, mapW, mapH))
                         return;
-                    if (TryCollectBurst(ref brain, ship, networkId, pos, gems, nearby, seen, mapW, mapH))
+                    if (TryCollectBurst(ref brain, ship, networkId, pos, gems, nearby, seen, mapW, mapH, em, claimNow))
                         return;
                     if (TryNearestRock(rocks, pos, networkId, mapW, mapH, out RockSnap rock))
                     {
@@ -794,18 +831,12 @@ namespace TitanOrbit.ECS
                 }
                 case BotTaskKind.Collect:
                     aim = brain.Goal;
-                    {
-                        float dist = ToroidalMapEcs.ToroidalDistance(pos, aim, mapW, mapH);
-                        // Past the jam coast the crystal is not one this search can own.
-                        // Inside it, keep flying — stopping here waits out the gem lifetime.
-                        if (dist > GemSearchRange)
-                        {
-                            thrust = false;
-                            brain.ThrustHeld = 0;
-                        }
-                        else
-                            thrust = CruiseToward(dist, CollectArrive, speed, ref brain.ThrustHeld);
-                    }
+                    // Keep closing. The mine-hold gap (7u) latches thrust off outside
+                    // pickup range, and the old range check did the same once a crystal
+                    // coasted past ~18u. Hull scoop is about 1u.
+                    thrust = CruiseToward(
+                        ToroidalMapEcs.ToroidalDistance(pos, aim, mapW, mapH),
+                        CollectArrive, speed, ref brain.ThrustHeld, CollectResumeGap);
                     break;
                 case BotTaskKind.Attack:
                     aim = brain.Goal;
@@ -887,11 +918,20 @@ namespace TitanOrbit.ECS
             else if (landed && brain.Task != BotTaskKind.Deposit && brain.Task != BotTaskKind.Upgrade)
                 thrust = true;
 
-            // Secondary target. The mine or collect goal stays put. Guns turn onto a
-            // close enemy and thrust stays off so the hull brakes instead of chasing.
-            // Deposit, docking, and orbit are left alone so a level-up is not cut short.
+            // Secondary target. The mine goal stays put. Guns turn onto a close enemy
+            // and thrust stays off so the hull brakes instead of chasing.
+            // A scoop is the exception: braking here left the drop on the ground while
+            // the hull waited out the next scan. Deposit, docking, and orbit are left
+            // alone so a level-up is not cut short.
+            bool chasingLoot = false;
+            if (brain.Task == BotTaskKind.Collect)
+            {
+                float lootDist = ToroidalMapEcs.ToroidalDistance(pos, brain.Goal, mapW, mapH);
+                chasingLoot = lootDist > CollectArrive + CollectResumeGap;
+            }
+
             bool shootShip = false;
-            if (!landed && !docking && !inOrbit && !unloadCargo &&
+            if (!chasingLoot && !landed && !docking && !inOrbit && !unloadCargo &&
                 (brain.Task == BotTaskKind.Mine || brain.Task == BotTaskKind.Collect) &&
                 TrySecondaryShip(
                     ref brain, ships, pos, ship.Team, networkId, mapW, mapH, out ShipSnap threat))
@@ -949,7 +989,7 @@ namespace TitanOrbit.ECS
         /// then stays off until the hull is <see cref="CruiseResumeGap"/> past the hold.
         /// A raw <c>dist &gt; hold</c> test flips every tick as the hull crosses the line.
         /// </summary>
-        static bool CruiseToward(float dist, float hold, float speed, ref byte held)
+        static bool CruiseToward(float dist, float hold, float speed, ref byte held, float resumeGap = CruiseResumeGap)
         {
             bool thrusting = held != 0;
             if (thrusting)
@@ -959,7 +999,7 @@ namespace TitanOrbit.ECS
                 if (dist <= hold + brakeDist)
                     thrusting = false;
             }
-            else if (dist > hold + CruiseResumeGap)
+            else if (dist > hold + resumeGap)
                 thrusting = true;
 
             held = (byte)(thrusting ? 1 : 0);
@@ -1239,24 +1279,53 @@ namespace TitanOrbit.ECS
                     Kind = BulletObstacleKind.Asteroid,
                 });
 
-                if (states[i].RemainingGems <= 0.01f)
-                    continue;
-                // Drawn mesh puffs past the physics sphere. Stop outside that puff.
-                float visual = scale * (BodyCollisionMath.AsteroidMeshBaseRadius +
-                                        BodyCollisionMath.AsteroidVisualDisplacementLocal);
-                _mineRocks.Add(new RockSnap
-                {
-                    Position = transforms[i].Position,
-                    Radius = visual + MineSurfaceGap,
-                });
+                if (TryMineSnap(states[i], transforms[i], out RockSnap rock))
+                    _mineRocks.Add(rock);
             }
         }
 
-        void RefreshGemHash(float mapW, float mapH)
+        /// <summary>
+        /// Gem-bearing rocks only. Used between decision scans so a destroyed mine
+        /// target is noticed on the next tick. Does not rebuild the bullet hash.
+        /// </summary>
+        void RefreshMineRocks()
         {
-            if (_gemHash.IsCreated)
-                _gemHash.Dispose();
+            using var states = _rocks.ToComponentDataArray<AsteroidState>(Allocator.Temp);
+            using var transforms = _rocks.ToComponentDataArray<LocalTransform>(Allocator.Temp);
+            _mineRocks.Clear();
+            for (int i = 0; i < states.Length; i++)
+            {
+                if (TryMineSnap(states[i], transforms[i], out RockSnap rock))
+                    _mineRocks.Add(rock);
+            }
+        }
 
+        /// <summary>
+        /// Drawn mesh puffs past the physics sphere. The stop radius sits outside that puff.
+        /// </summary>
+        static bool TryMineSnap(in AsteroidState state, in LocalTransform transform, out RockSnap rock)
+        {
+            rock = default;
+            if (!state.IsAliveForCombat || state.RemainingGems <= 0.01f)
+                return false;
+
+            float scale = math.max(0.1f, transform.Scale);
+            float visual = scale * (BodyCollisionMath.AsteroidMeshBaseRadius +
+                                    BodyCollisionMath.AsteroidVisualDisplacementLocal);
+            rock = new RockSnap
+            {
+                Position = transform.Position,
+                Radius = visual + MineSurfaceGap,
+            };
+            return true;
+        }
+
+        /// <summary>
+        /// One shared gem hash for this tick. TempJob so it can outlive the scratch
+        /// lists (Temp is a stack). Caller disposes before <c>OnUpdate</c> returns.
+        /// </summary>
+        GemSpatialHash BuildGemHash(float mapW, float mapH)
+        {
             using var states = _gems.ToComponentDataArray<GemState>(Allocator.Temp);
             using var transforms = _gems.ToComponentDataArray<LocalTransform>(Allocator.Temp);
             using var motions = _gems.ToComponentDataArray<GemMotionState>(Allocator.Temp);
@@ -1274,12 +1343,13 @@ namespace TitanOrbit.ECS
             }
 
             source.Dispose();
-            _gemHash = GemSpatialHash.Build(
+            GemSpatialHash hash = GemSpatialHash.Build(
                 entities.AsArray(), poses.AsArray(), default, liveMotions.AsArray(),
-                mapW, mapH, Allocator.Persistent);
-            entities.Dispose();
-            poses.Dispose();
+                mapW, mapH, Allocator.TempJob);
             liveMotions.Dispose();
+            poses.Dispose();
+            entities.Dispose();
+            return hash;
         }
 
         /// <summary>
@@ -1301,10 +1371,51 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// After the mine target is gone, scoop loose gems already within <see cref="GemSearchRange"/>.
-        /// That reach sits past the farthest a jam can shove a gem. Crystals farther out are
-        /// left behind. A gem locked by another ship is left alone.
-        /// The same nearby gem is kept until it is scooped or leaves that range.
+        /// Rock is already gone. Chase this wreck's gems, then the next rock.
+        /// Runs every tick so the hull does not wait out <see cref="DecisionInterval"/>
+        /// parked on the old stop radius.
+        /// </summary>
+        static void TickLoot(
+            ref BotShipBrain brain,
+            in ShipState ship,
+            int networkId,
+            float3 pos,
+            NativeArray<RockSnap> rocks,
+            in GemSpatialHash gems,
+            NativeList<int> nearby,
+            NativeHashSet<int> seen,
+            float mapW,
+            float mapH,
+            EntityManager em,
+            float claimNow)
+        {
+            BotTaskKind before = brain.Task;
+            if (TryCollectBurst(
+                    ref brain, ship, networkId, pos, gems, nearby, seen, mapW, mapH, em, claimNow))
+            {
+                if (brain.Task != before)
+                    brain.ThrustHeld = 1;
+                return;
+            }
+
+            // Hold is full enough that the next scan will deposit. Don't peel off to a new rock.
+            if (ship.GemCapacity > 1f && ship.CurrentGems >= ship.GemCapacity * DepositFill)
+                return;
+
+            if (!TryNearestRock(rocks, pos, networkId, mapW, mapH, out RockSnap rock))
+                return;
+
+            SetMine(ref brain, rock);
+            if (brain.Task != before)
+                brain.ThrustHeld = 1;
+        }
+
+        /// <summary>
+        /// After the mine target is gone, scoop loose gems within <see cref="WreckGemRadius"/>
+        /// of that rock. The search is around the wreck, not the hull, so a kill from
+        /// <see cref="MineShotReach"/> still counts. A gem reserved for another ship, or
+        /// already tractored by one, is left alone. The same crystal is kept until it
+        /// is scooped or leaves the wreck.
         /// </summary>
         static bool TryCollectBurst(
             ref BotShipBrain brain,
@@ -1315,7 +1426,9 @@ namespace TitanOrbit.ECS
             NativeList<int> nearby,
             NativeHashSet<int> seen,
             float mapW,
-            float mapH)
+            float mapH,
+            EntityManager em,
+            float claimNow)
         {
             bool gathering = brain.Task == BotTaskKind.Collect;
             bool wreck = brain.Task == BotTaskKind.Mine;
@@ -1328,14 +1441,17 @@ namespace TitanOrbit.ECS
 
             float3 origin = gathering ? brain.CollectOrigin : brain.Goal;
             if (gathering &&
-                TryGemNear(gems, brain.Goal, GemSearchRange, networkId, nearby, seen, mapW, mapH, out float3 kept) &&
-                ToroidalMapEcs.ToroidalDistance(pos, kept, mapW, mapH) <= GemSearchRange)
+                TryGemNear(
+                    gems, brain.Goal, GemStickRadius, networkId, nearby, seen, mapW, mapH,
+                    em, claimNow, out float3 kept) &&
+                ToroidalMapEcs.ToroidalDistance(origin, kept, mapW, mapH) <= WreckGemRadius)
             {
                 SetCollect(ref brain, kept, origin);
                 return true;
             }
 
-            if (!TryNearestGem(gems, pos, networkId, nearby, seen, mapW, mapH, out float3 gem))
+            if (!TryNearestGem(
+                    gems, origin, pos, networkId, nearby, seen, mapW, mapH, em, claimNow, out float3 gem))
                 return false;
 
             SetCollect(ref brain, gem, origin);
@@ -1351,6 +1467,8 @@ namespace TitanOrbit.ECS
             NativeHashSet<int> seen,
             float mapW,
             float mapH,
+            EntityManager em,
+            float claimNow,
             out float3 match)
         {
             match = default;
@@ -1360,7 +1478,7 @@ namespace TitanOrbit.ECS
             for (int n = 0; n < nearby.Length; n++)
             {
                 GemSpatialEntry gem = gems.Entries[nearby[n]];
-                if (gem.TractorShipId != 0 && gem.TractorShipId != networkId)
+                if (SkipLootGem(em, gem, networkId, claimNow))
                     continue;
                 float dist = ToroidalMapEcs.ToroidalDistance(goal, gem.Position, mapW, mapH);
                 if (dist > best)
@@ -1375,25 +1493,30 @@ namespace TitanOrbit.ECS
 
         static bool TryNearestGem(
             in GemSpatialHash gems,
+            float3 origin,
             float3 pos,
             int networkId,
             NativeList<int> nearby,
             NativeHashSet<int> seen,
             float mapW,
             float mapH,
+            EntityManager em,
+            float claimNow,
             out float3 match)
         {
             match = default;
-            gems.GatherNearby(pos, GemSearchRange, nearby, seen);
-            float best = GemSearchRange;
+            gems.GatherNearby(origin, WreckGemRadius, nearby, seen);
+            float best = float.MaxValue;
             bool found = false;
             for (int n = 0; n < nearby.Length; n++)
             {
                 GemSpatialEntry gem = gems.Entries[nearby[n]];
-                if (gem.TractorShipId != 0 && gem.TractorShipId != networkId)
+                if (SkipLootGem(em, gem, networkId, claimNow))
+                    continue;
+                if (ToroidalMapEcs.ToroidalDistance(origin, gem.Position, mapW, mapH) > WreckGemRadius)
                     continue;
                 float fromShip = ToroidalMapEcs.ToroidalDistance(pos, gem.Position, mapW, mapH);
-                if (fromShip > best)
+                if (fromShip >= best)
                     continue;
                 best = fromShip;
                 match = gem.Position;
@@ -1401,6 +1524,21 @@ namespace TitanOrbit.ECS
             }
 
             return found;
+        }
+
+        /// <summary>
+        /// True when this hull should not fly to the crystal: another ship already has
+        /// the tractor, or first-dibs / a self-spill block would reject the pickup.
+        /// Chasing those is what left the bot sitting on a gem it could not take.
+        /// </summary>
+        static bool SkipLootGem(EntityManager em, in GemSpatialEntry gem, int networkId, float claimNow)
+        {
+            if (gem.TractorShipId != 0 && gem.TractorShipId != networkId)
+                return true;
+            if (networkId <= 0 || !em.Exists(gem.Entity) || !em.HasComponent<GemState>(gem.Entity))
+                return true;
+            return GemSelfPickupBlock.IsPickupBlockedForShip(
+                em.GetComponentData<GemState>(gem.Entity), networkId, claimNow);
         }
 
         static bool TryRockAt(

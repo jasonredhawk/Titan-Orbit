@@ -141,6 +141,7 @@ namespace TitanOrbit.Game
 
             // --- Moon (orbit radius uses level; shield/tint uses team) ---
             // [HYBRID] Pass null material on level-only refresh so Configure keeps the existing mat.
+            // moon.Configure also repaints the moon gem requirement from this planetLevel.
             var moon = instance.GetComponent<PlanetGemMoonVisualProxy>();
             if (moon != null)
             {
@@ -149,6 +150,13 @@ namespace TitanOrbit.Game
                     : null;
                 moon.Configure(worldScale, planetLevel, isHome, planetId, moonMaterial, team);
             }
+
+            // --- Gem requirement on the planet label ---
+            // Same level-up pass as the moon. LateUpdate would catch it a frame later;
+            // this call paints NEXT / 1600 in the frame the ghost level changes.
+            var planetStats = instance.GetComponent<PlanetWorldStatsLabel>();
+            if (planetStats != null)
+                planetStats.RefreshGemRequirement();
 
             // --- Decorative level bands + people-transfer orbit ring (under scaled body) ---
             EnsureOrbitRingVisual(instance, visualBody, worldScale, planetLevel, team, isHome, planetId);

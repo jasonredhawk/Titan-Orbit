@@ -21,6 +21,17 @@ namespace TitanOrbit.ECS
     [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation)]
     public partial struct ShipClientPredictedEnergyRegenSystem : ISystem
     {
+        /// <summary>
+        /// True while this hull's cannon laser is burning. Server regen is paused
+        /// for that pulse; predicting a refill here pinned the energy bar at full.
+        /// </summary>
+        static bool LaserBurnPausesRegen(ref SystemState state, Entity ship)
+        {
+            return state.EntityManager.HasComponent<MegaShipState>(ship)
+                && state.EntityManager.GetComponentData<MegaShipState>(ship).IsMega
+                && state.EntityManager.GetComponentData<MegaShipState>(ship).CannonLaserPulseOn;
+        }
+
         /// <summary>Need vitals config before regenerating energy.</summary>
         public void OnCreate(ref SystemState state)
         {
@@ -41,11 +52,14 @@ namespace TitanOrbit.ECS
                 return;
 
             // --- Local predicted owner only (GhostOwnerIsLocal + Simulate) ---
-            foreach (var (ship, vitals) in SystemAPI
+            foreach (var (ship, vitals, entity) in SystemAPI
                          .Query<RefRW<ShipState>, RefRO<ShipVitalsConfig>>()
-                         .WithAll<ShipTag, GhostOwnerIsLocal, Simulate>())
+                         .WithAll<ShipTag, GhostOwnerIsLocal, Simulate>()
+                         .WithEntityAccess())
             {
                 if (ship.ValueRO.IsDead || ship.ValueRO.AwaitingTeamSelection)
+                    continue;
+                if (LaserBurnPausesRegen(ref state, entity))
                     continue;
 
                 float regen = vitals.ValueRO.EnergyRegenPerSecond;
@@ -61,12 +75,15 @@ namespace TitanOrbit.ECS
             }
 
             // --- Hybrid host fallback when GhostOwnerIsLocal lags ---
-            foreach (var (ship, vitals) in SystemAPI
+            foreach (var (ship, vitals, entity) in SystemAPI
                          .Query<RefRW<ShipState>, RefRO<ShipVitalsConfig>>()
                          .WithAll<ShipTag, LocalPlayerShipTag, Simulate>()
-                         .WithNone<GhostOwnerIsLocal>())
+                         .WithNone<GhostOwnerIsLocal>()
+                         .WithEntityAccess())
             {
                 if (ship.ValueRO.IsDead || ship.ValueRO.AwaitingTeamSelection)
+                    continue;
+                if (LaserBurnPausesRegen(ref state, entity))
                     continue;
 
                 float regen = vitals.ValueRO.EnergyRegenPerSecond;

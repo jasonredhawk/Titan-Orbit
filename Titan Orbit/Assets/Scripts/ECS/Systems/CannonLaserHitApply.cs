@@ -32,6 +32,67 @@ namespace TitanOrbit.ECS
         public const int FocusMoon = -1;
 
         /// <summary>
+        /// One hostile pad or the moon on a planet. <see cref="Focus"/> is
+        /// <c>slotIndex + 1</c> or <see cref="FocusMoon"/>. <see cref="Aim"/> is the
+        /// pad, or the near side of the moon along <c>from</c> → moon center.
+        /// </summary>
+        public struct PlanetSubjectAim
+        {
+            public int Focus;
+            public float3 Aim;
+            public float3 Velocity;
+            public float Distance;
+            public float3 Center;
+            public float Radius;
+        }
+
+        /// <summary>
+        /// Closest living hostile pad or moon within <paramref name="maxDistance"/>.
+        /// Friendly worlds return false. Unowned moons compete. Map size from the caller.
+        /// Pass <paramref name="coneLock"/> to keep only subjects inside the barrel cone.
+        /// </summary>
+        public static bool TryPickClosestSubject(
+            EntityManager em,
+            Entity planet,
+            TeamId attackerTeam,
+            float3 from,
+            float maxDistance,
+            float mapW,
+            float mapH,
+            double moonElapsed,
+            out PlanetSubjectAim aim,
+            bool coneLock = false,
+            float3 coneFwd = default)
+        {
+            return TrySelectSubject(
+                em, planet, attackerTeam, from, maxDistance, mapW, mapH, moonElapsed,
+                requiredFocus: int.MinValue, coneLock, coneFwd, out aim);
+        }
+
+        /// <summary>
+        /// Aim for one committed pad or moon. Does not switch to a closer neighbor.
+        /// Moon aim is the near-side shield (body when the shield is down).
+        /// </summary>
+        public static bool TryGetSubjectAim(
+            EntityManager em,
+            Entity planet,
+            TeamId attackerTeam,
+            float3 from,
+            int focus,
+            float mapW,
+            float mapH,
+            double moonElapsed,
+            out PlanetSubjectAim aim)
+        {
+            aim = default;
+            if (focus == FocusWholeEntity)
+                return false;
+            return TrySelectSubject(
+                em, planet, attackerTeam, from, float.MaxValue, mapW, mapH, moonElapsed,
+                focus, coneLock: false, default, out aim);
+        }
+
+        /// <summary>
         /// Which hostile pad or moon a planet lock is burning.
         /// <see cref="FocusWholeEntity"/> when this is not a planet sub-target.
         /// Pad slots are <c>slotIndex + 1</c>. <see cref="FocusMoon"/> is the shield.
@@ -47,24 +108,59 @@ namespace TitanOrbit.ECS
             float mapH,
             double moonElapsed)
         {
+            if (!TryPickClosestSubject(
+                    em, planet, attackerTeam, aim, float.MaxValue, mapW, mapH, moonElapsed, out PlanetSubjectAim subject))
+                return FocusWholeEntity;
+            return subject.Focus;
+        }
+
+        /// <summary>
+        /// Shared pad / moon pick. <paramref name="requiredFocus"/> <see cref="int.MinValue"/>
+        /// means the closest subject inside <paramref name="maxDistance"/>. Any other
+        /// value returns that pad or the moon only.
+        /// </summary>
+        static bool TrySelectSubject(
+            EntityManager em,
+            Entity planet,
+            TeamId attackerTeam,
+            float3 from,
+            float maxDistance,
+            float mapW,
+            float mapH,
+            double moonElapsed,
+            int requiredFocus,
+            bool coneLock,
+            float3 coneFwd,
+            out PlanetSubjectAim aim)
+        {
+            aim = default;
             if (planet == Entity.Null || !em.Exists(planet)
                 || !em.HasComponent<PlanetState>(planet)
                 || !em.HasComponent<LocalTransform>(planet))
-                return FocusWholeEntity;
+                return false;
 
             var planetState = em.GetComponentData<PlanetState>(planet);
             var planetXf = em.GetComponentData<LocalTransform>(planet);
-            if (planetState.Ownership == attackerTeam || planetState.Ownership == TeamId.None)
-                return FocusWholeEntity;
+            // TeamId.None means "no friendly gate" (surface fallback). A real team
+            // cannot lock its own world.
+            if (attackerTeam != TeamId.None && planetState.Ownership == attackerTeam)
+                return false;
 
-            float best = float.MaxValue;
-            int focus = FocusWholeEntity;
-            if (em.HasBuffer<PlanetaryDefenseSlotElement>(planet))
+            bool any = requiredFocus == int.MinValue;
+            float best = maxDistance;
+            bool found = false;
+            if ((any || requiredFocus > 0)
+                && planetState.Ownership != TeamId.None
+                && em.HasBuffer<PlanetaryDefenseSlotElement>(planet))
             {
                 var slots = em.GetBuffer<PlanetaryDefenseSlotElement>(planet);
                 int slotCount = slots.Length;
                 for (int s = 0; s < slotCount; s++)
                 {
+                    int focus = s + 1;
+                    if (!any && focus != requiredFocus)
+                        continue;
+
                     var slot = slots[s];
                     if (slot.TurretLevel == 0 || slot.Health <= 0f)
                         continue;
@@ -75,17 +171,21 @@ namespace TitanOrbit.ECS
                         planetState.PlanetLevel,
                         s,
                         slotCount);
-                    float d = ToroidalMapEcs.ToroidalDistance(aim, pad, mapW, mapH);
-                    if (d >= best)
+                    if (!Consider(
+                            from, pad, pad, 0f, float3.zero, focus, best, any,
+                            coneLock, coneFwd, mapW, mapH, ref aim, ref found))
                         continue;
-                    best = d;
-                    focus = s + 1;
+                    if (!any)
+                        return true;
+                    best = aim.Distance;
                 }
             }
 
-            if (em.HasComponent<PlanetGemMoonState>(planet))
+            if ((any || requiredFocus == FocusMoon)
+                && em.HasComponent<PlanetGemMoonState>(planet))
             {
                 var moon = em.GetComponentData<PlanetGemMoonState>(planet);
+                float scale = math.max(0.25f, planetXf.Scale);
                 if (PlanetGemMoonCombatLogic.TryGetNonFriendlyMoonAim(
                         planetState.Ownership,
                         attackerTeam,
@@ -95,20 +195,74 @@ namespace TitanOrbit.ECS
                         planetState.PlanetId,
                         planetState.IsHomePlanet,
                         moon.CurrentShield,
-                        aim,
+                        from,
                         mapW,
                         mapH,
                         moonElapsed,
                         out float3 moonAim,
-                        out _))
+                        out float3 moonVel))
                 {
-                    float moonDist = ToroidalMapEcs.ToroidalDistance(aim, moonAim, mapW, mapH);
-                    if (moonDist < best)
-                        focus = FocusMoon;
+                    float3 moonCenter = PlanetOrbitMath.GetMoonWorldPosition(
+                        planetXf.Position,
+                        scale,
+                        planetState.PlanetLevel,
+                        planetState.PlanetId,
+                        moonElapsed,
+                        planetState.IsHomePlanet);
+                    float radius = PlanetGemMoonMath.GetMoonBulletHitRadiusWorld(
+                        scale, planetState.IsHomePlanet, moon.CurrentShield);
+                    if (Consider(
+                            from, moonAim, moonCenter, radius, moonVel, FocusMoon, best, any,
+                            coneLock, coneFwd, mapW, mapH, ref aim, ref found)
+                        && !any)
+                        return true;
                 }
             }
 
-            return focus;
+            return found;
+        }
+
+        /// <summary>
+        /// Keeps <paramref name="aim"/> when <paramref name="point"/> is nearer than
+        /// <paramref name="best"/> (or is the one requested subject). Cone rejects
+        /// sit outside the barrel's forward arc.
+        /// </summary>
+        static bool Consider(
+            float3 from,
+            float3 point,
+            float3 center,
+            float radius,
+            float3 velocity,
+            int focus,
+            float best,
+            bool any,
+            bool coneLock,
+            float3 coneFwd,
+            float mapW,
+            float mapH,
+            ref PlanetSubjectAim aim,
+            ref bool found)
+        {
+            if (coneLock
+                && !CannonLaserMath.IsInRangeAndCone(
+                    from, coneFwd, point, float.MaxValue, mapW, mapH, out _))
+                return false;
+
+            float d = ToroidalMapEcs.ToroidalDistance(from, point, mapW, mapH);
+            if (any && d >= best)
+                return false;
+
+            aim = new PlanetSubjectAim
+            {
+                Focus = focus,
+                Aim = point,
+                Velocity = velocity,
+                Distance = d,
+                Center = center,
+                Radius = radius,
+            };
+            found = true;
+            return true;
         }
 
         /// <summary>
@@ -135,7 +289,7 @@ namespace TitanOrbit.ECS
             Entity attackerEntity = default,
             int bankIndex = 0,
             int firePowerExtraLevels = 0,
-            float moonGemBatchDamage = 0f)
+            int planetFocus = FocusWholeEntity)
         {
             var result = new Result { HitPoint = muzzle };
             if (damage <= 0.0001f || target == Entity.Null || !em.Exists(target))
@@ -158,7 +312,7 @@ namespace TitanOrbit.ECS
                 ApplyPlanet(
                     em, ecb, target, attackerTeam, attackerNetworkId, muzzle, damage, range, mapW, mapH,
                     moonElapsed, serverElapsed, gemPrefab, gemSpawnServerTime, ref result,
-                    bankIndex, firePowerExtraLevels, moonGemBatchDamage);
+                    bankIndex, firePowerExtraLevels, planetFocus);
                 return result;
             }
 
@@ -311,115 +465,55 @@ namespace TitanOrbit.ECS
             ref Result result,
             int bankIndex,
             int firePowerExtraLevels,
-            float moonGemBatchDamage)
+            int focus)
         {
             var planetState = em.GetComponentData<PlanetState>(planet);
-            var planetXf = em.GetComponentData<LocalTransform>(planet);
-            if (planetState.Ownership == attackerTeam || planetState.Ownership == TeamId.None)
+            if (planetState.Ownership == attackerTeam)
                 return;
 
-            float best = range;
-            int bestPad = -1;
-            bool moonWins = false;
-            float3 bestPos = planetXf.Position;
-
-            if (planetState.Ownership != TeamId.None
-                && em.HasBuffer<PlanetaryDefenseSlotElement>(planet))
-            {
-                var slots = em.GetBuffer<PlanetaryDefenseSlotElement>(planet);
-                int slotCount = slots.Length;
-                for (int s = 0; s < slotCount; s++)
-                {
-                    var slot = slots[s];
-                    if (slot.TurretLevel == 0 || slot.Health <= 0f)
-                        continue;
-
-                    float3 pad = PlanetaryDefenseMath.GetSlotWorldPosition(
-                        planetXf.Position,
-                        math.max(0.25f, planetXf.Scale),
-                        planetState.PlanetLevel,
-                        s,
-                        slotCount);
-                    float d = ToroidalMapEcs.ToroidalDistance(muzzle, pad, mapW, mapH);
-                    if (d >= best)
-                        continue;
-                    best = d;
-                    bestPad = s;
-                    bestPos = pad;
-                    moonWins = false;
-                }
-            }
-
-            if (em.HasComponent<PlanetGemMoonState>(planet))
-            {
-                var moon = em.GetComponentData<PlanetGemMoonState>(planet);
-                if (PlanetGemMoonCombatLogic.TryGetNonFriendlyMoonAim(
-                        planetState.Ownership,
-                        attackerTeam,
-                        planetXf.Position,
-                        planetXf.Scale,
-                        planetState.PlanetLevel,
-                        planetState.PlanetId,
-                        planetState.IsHomePlanet,
-                        moon.CurrentShield,
-                        muzzle,
-                        mapW,
-                        mapH,
-                        moonElapsed,
-                        out float3 moonAim,
-                        out _))
-                {
-                    float moonDist = ToroidalMapEcs.ToroidalDistance(muzzle, moonAim, mapW, mapH);
-                    if (moonDist < best)
-                    {
-                        best = moonDist;
-                        bestPos = moonAim;
-                        moonWins = true;
-                        bestPad = -1;
-                    }
-                }
-            }
-
-            if (!moonWins && bestPad < 0)
+            PlanetSubjectAim subject = default;
+            bool committed = focus != FocusWholeEntity
+                && TryGetSubjectAim(
+                    em, planet, attackerTeam, muzzle, focus, mapW, mapH, moonElapsed, out subject);
+            if (!committed
+                && !TryPickClosestSubject(
+                    em, planet, attackerTeam, muzzle, range, mapW, mapH, moonElapsed, out subject))
                 return;
 
-            if (moonWins)
+            if (subject.Focus == FocusMoon)
             {
-                result.HitPoint = bestPos;
+                result.HitPoint = subject.Aim;
                 var moon = em.GetComponentData<PlanetGemMoonState>(planet);
                 float moonDamage = ScaleFor(
                     bankIndex, BulletBankDamageTarget.GemMoon, damage, firePowerExtraLevels);
-                // One gem per authored shot (fire power), not one tiny gem per tick.
-                float gemPacket = ScaleFor(
-                    bankIndex, BulletBankDamageTarget.GemMoon, moonGemBatchDamage, firePowerExtraLevels);
+                float planetGems = planetState.CurrentGems;
                 PlanetGemMoonCombatLogic.ApplyBulletDamage(
                     ref moon,
+                    ref planetGems,
                     moonDamage,
                     attackerTeam,
                     planetState.Ownership,
                     serverElapsed,
                     ecb,
                     gemPrefab,
-                    bestPos,
+                    subject.Aim,
                     (uint)planet.Index ^ (uint)attackerNetworkId ^ (uint)(serverElapsed * 1000.0),
-                    gemSpawnServerTime,
-                    gemPacket);
+                    gemSpawnServerTime);
+                planetState.CurrentGems = planetGems;
+                em.SetComponentData(planet, planetState);
                 em.SetComponentData(planet, moon);
                 return;
             }
 
-            result.HitPoint = CannonLaserSurface.TryGetHitPoint(
-                    em, planet, muzzle, mapW, mapH, moonElapsed, out float3 planetSurface)
-                ? planetSurface
-                : bestPos;
+            int pad = subject.Focus - 1;
+            if (pad < 0)
+                return;
 
-            if (bestPad >= 0)
-            {
-                // Pads share the ship row (same bucket as a bullet's planetary-defense hit).
-                float padDamage = ScaleFor(
-                    bankIndex, BulletBankDamageTarget.ShipOrDrone, damage, firePowerExtraLevels);
-                PlanetaryDefenseHitScan.ApplyDamage(em, planet, bestPad, padDamage, serverElapsed);
-            }
+            result.HitPoint = subject.Aim;
+            // Pads share the ship row (same bucket as a bullet's planetary-defense hit).
+            float padDamage = ScaleFor(
+                bankIndex, BulletBankDamageTarget.ShipOrDrone, damage, firePowerExtraLevels);
+            PlanetaryDefenseHitScan.ApplyDamage(em, planet, pad, padDamage, serverElapsed);
         }
 
         static void ApplyAsteroid(

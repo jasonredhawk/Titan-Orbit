@@ -1,7 +1,9 @@
 using System.Collections.Generic;
+using TitanOrbit.Core;
 using TitanOrbit.Data;
 using TitanOrbit.ECS;
 using TitanOrbit.Generation;
+using TitanOrbit.Simulation;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.Transforms;
@@ -157,7 +159,10 @@ namespace TitanOrbit.Game
                 return false;
 
             float3 aim = new float3(aimX, 0f, aimZ);
+            double moonElapsed = 0d;
+            PlanetGemMoonOrbitClock.TryGetElapsedSeconds(out moonElapsed, includeTickFraction: true);
             float bestDist = float.MaxValue;
+            float bestFit = 0f;
             int best = -1;
             for (int i = 0; i < obstacles.Count; i++)
             {
@@ -168,10 +173,12 @@ namespace TitanOrbit.Game
                     && o.Kind != BulletCosmeticHitQuery.ObstacleKind.Moon)
                     continue;
 
-                float d = ToroidalMapEcs.ToroidalDistance(aim, o.LogicalCenter, mapW, mapH);
+                LockFit(in o, moonElapsed, out float3 center, out float fitRadius);
+                float d = ToroidalMapEcs.ToroidalDistance(aim, center, mapW, mapH);
                 if (d >= bestDist)
                     continue;
                 bestDist = d;
+                bestFit = fitRadius;
                 best = i;
             }
 
@@ -185,11 +192,40 @@ namespace TitanOrbit.Game
             // Tight body fit — leftover AimWorld after a kill sits on the corpse
             // center, not on a neighbor. A wide radius+1.5 swallow kept the beam
             // on empty space while Fire was held and the ship was parked.
-            if (bestDist > closest.Radius + 0.75f)
+            // Moons must use the orbiting shield/body, not the planet center with
+            // the small body radius — that rejected every normal-range moon aim.
+            if (bestDist > bestFit + 0.75f)
                 return false;
 
             entity = closest.SourceEntity;
             return entity != Entity.Null;
+        }
+
+        /// <summary>
+        /// Point and radius the live-lock test fits an aim against.
+        /// A moon obstacle stores the planet center and the body radius; the
+        /// shield sits on the orbit, so the fit uses that shell instead.
+        /// </summary>
+        static void LockFit(
+            in BulletCosmeticHitQuery.Obstacle o,
+            double moonElapsed,
+            out float3 center,
+            out float fitRadius)
+        {
+            center = o.LogicalCenter;
+            fitRadius = math.max(0.05f, o.Radius);
+            if (o.Kind != BulletCosmeticHitQuery.ObstacleKind.Moon)
+                return;
+
+            center = PlanetOrbitMath.GetMoonWorldPosition(
+                o.LogicalCenter,
+                math.max(0.25f, o.Scale),
+                o.PlanetLevel,
+                o.PlanetId,
+                moonElapsed,
+                o.IsHomePlanet);
+            fitRadius = PlanetGemMoonMath.GetMoonBulletHitRadiusWorld(
+                o.Scale, o.IsHomePlanet, o.CurrentShield);
         }
 
         /// <summary>
@@ -304,6 +340,12 @@ namespace TitanOrbit.Game
                     desiredBarrelWorld = Quaternion.LookRotation(ownerMouseDir, Vector3.up);
                     binding.RememberWorldYaw(i, PlanarYaw(ownerMouseDir));
                 }
+                else if (isCannon
+                    && TryGetCannonPlanetDir(
+                        em, shipEntity, hasGunners, gunners, i, yawRoot.position, out Vector3 planetDir))
+                {
+                    desiredBarrelWorld = Quaternion.LookRotation(planetDir, Vector3.up);
+                }
                 else if (TryGetLiveTargetDir(
                     em, hasGunners, gunners, i, yawRoot.position, out Vector3 toTarget))
                 {
@@ -347,6 +389,9 @@ namespace TitanOrbit.Game
                     }
                 }
 
+                if (isCannon)
+                    desiredBarrelWorld = SlewCannonBarrel(yawRoot, desiredBarrelWorld);
+
                 Vector3 restLocalFwd = binding.RestBarrelLocalFwd != null && i < binding.RestBarrelLocalFwd.Length
                     ? binding.RestBarrelLocalFwd[i]
                     : Vector3.forward;
@@ -355,6 +400,70 @@ namespace TitanOrbit.Game
                 Quaternion restLook = Quaternion.LookRotation(restLocalFwd.normalized, Vector3.up);
                 yawRoot.rotation = desiredBarrelWorld * Quaternion.Inverse(restLook);
             }
+        }
+
+        /// <summary>
+        /// Cannon planet lock: look at the committed pad or the moon's near-side
+        /// surface, not the planet ghost center. That center left moon beams
+        /// hitting the shield while the barrel pointed at the world.
+        /// </summary>
+        static bool TryGetCannonPlanetDir(
+            EntityManager em,
+            Entity shipEntity,
+            bool hasGunners,
+            DynamicBuffer<MegaShipGunnerSlotElement> gunners,
+            int mountIndex,
+            Vector3 muzzleDisplay,
+            out Vector3 worldDir)
+        {
+            worldDir = Vector3.forward;
+            if (!hasGunners || mountIndex < 0 || mountIndex >= gunners.Length)
+                return false;
+            if (!ToroidalMapEcs.TryGetMapSize(out float mapW, out float mapH))
+                return false;
+
+            var slot = gunners[mountIndex];
+            if (!MegaShipWeaponVisualTargets.TryGetLockEntity(
+                    em, slot.TargetGhostId, slot.AimWorldX, slot.AimWorldZ, out Entity planet)
+                || planet == Entity.Null
+                || !em.Exists(planet)
+                || !em.HasComponent<PlanetState>(planet))
+                return false;
+
+            TeamId team = em.HasComponent<ShipState>(shipEntity)
+                ? em.GetComponentData<ShipState>(shipEntity).Team
+                : TeamId.None;
+            double moonElapsed = 0d;
+            PlanetGemMoonOrbitClock.TryGetElapsedSeconds(out moonElapsed, includeTickFraction: true);
+            float3 from = (float3)muzzleDisplay;
+            float3 hint = new float3(slot.AimWorldX, 0f, slot.AimWorldZ);
+            int focus = CannonLaserHitApply.ResolvePlanetFocus(
+                em, planet, team, hint, mapW, mapH, moonElapsed);
+            if (focus == CannonLaserHitApply.FocusWholeEntity
+                || !CannonLaserHitApply.TryGetSubjectAim(
+                    em, planet, team, from, focus, mapW, mapH, moonElapsed,
+                    out CannonLaserHitApply.PlanetSubjectAim subject))
+                return false;
+
+            float3 tiled = ToroidalMapEcs.GetDisplayPosition(subject.Aim, from, mapW, mapH);
+            Vector3 toAim = Flatten((Vector3)tiled - muzzleDisplay);
+            if (toAim.sqrMagnitude < 1e-6f)
+                return false;
+            worldDir = toAim.normalized;
+            return true;
+        }
+
+        /// <summary>
+        /// Cannon barrels sweep toward the aim. Projectile guns keep the snap LookAt.
+        /// </summary>
+        static Quaternion SlewCannonBarrel(Transform yawRoot, Quaternion desired)
+        {
+            float desiredYaw = PlanarYaw(desired * Vector3.forward);
+            float currentYaw = yawRoot != null ? PlanarYaw(yawRoot.forward) : desiredYaw;
+            float delta = Mathf.DeltaAngle(currentYaw, desiredYaw);
+            float step = CannonLaserMath.SlewDegPerSec * Time.deltaTime;
+            float yaw = currentYaw + Mathf.Clamp(delta, -step, step);
+            return Quaternion.AngleAxis(yaw, Vector3.up);
         }
 
         /// <summary>

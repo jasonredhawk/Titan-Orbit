@@ -1,5 +1,6 @@
 using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
+using TitanOrbit.Simulation;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.NetCode;
@@ -76,14 +77,18 @@ namespace TitanOrbit.ECS
         /// <param name="hull">MEGA hull transform (yaw-only sim, unbounded).</param>
         /// <param name="mount">Mount to rotate (written back by the caller).</param>
         /// <param name="desiredWorldDir">World XZ aim (already toroidal-shortest if from a target).</param>
-        /// <param name="dt">Unused; kept so existing callers do not change.</param>
+        /// <param name="dt">Tick step. Used only when <paramref name="maxDegPerSec"/> is set.</param>
+        /// <param name="maxDegPerSec">
+        /// Turn cap. 0 snaps (projectile guns). Cannon lasers pass
+        /// <see cref="CannonLaserMath.SlewDegPerSec"/>.
+        /// </param>
         public static void RotateMountTowardWorldDir(
             in LocalTransform hull,
             ref ShipWeaponMountElement mount,
             float3 desiredWorldDir,
-            float dt)
+            float dt,
+            float maxDegPerSec = 0f)
         {
-            _ = dt;
             desiredWorldDir.y = 0f;
             if (!math.isfinite(desiredWorldDir.x) || !math.isfinite(desiredWorldDir.z)
                 || math.lengthsq(desiredWorldDir) < MinDirectionSq)
@@ -102,7 +107,18 @@ namespace TitanOrbit.ECS
             hullFwd = math.normalize(hullFwd);
 
             float desiredLocalYaw = SignedPlanarYawDeg(hullFwd, desiredWorldDir);
-            mount.LocalRotation = quaternion.AxisAngle(math.up(), math.radians(desiredLocalYaw));
+            float yaw = desiredLocalYaw;
+            if (maxDegPerSec > 0f)
+            {
+                float current = GetLocalYawDeg(mount.LocalRotation);
+                float delta = DeltaAngleDeg(current, desiredLocalYaw);
+                float step = maxDegPerSec * math.max(0f, dt);
+                if (math.abs(delta) > step)
+                    delta = math.sign(delta) * step;
+                yaw = current + delta;
+            }
+
+            mount.LocalRotation = quaternion.AxisAngle(math.up(), math.radians(yaw));
         }
 
         /// <summary>Signed yaw degrees from planar <paramref name="fromFwd"/> to <paramref name="toFwd"/> (Unity +Y, +Z forward).</summary>

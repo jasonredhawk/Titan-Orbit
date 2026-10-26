@@ -14,8 +14,8 @@ namespace TitanOrbit.ECS
     /// <summary>
     /// Server: MEGA cannon barrels burn a continuous hitscan at
     /// firePower × fireRate DPS, ramped 50%→300% on the same burn subject.
-    /// Energy drains every tick while the beam is on. After the pool
-    /// drops to 10% of max or below, lasers stay off until it rises
+    /// Energy drains with that ramp (half at the start, 3× at full power).
+    /// After the pool is empty, lasers stay off until it rises
     /// strictly above 10%. <see cref="BulletSimulationSystem"/> calls
     /// <see cref="TryContinuousBurn"/> in strip order after the guns.
     /// World: ServerSimulation. Map size from <see cref="MapStateSingleton"/>.
@@ -278,32 +278,58 @@ namespace TitanOrbit.ECS
             float3 muzzle = ResolveMuzzle(xf, mount);
             float3 barrelFwd = MegaShipWeaponAim.GetBarrelForward(in xf, in mount);
             float acquireRange = ResolveRange(in mount, in weapon);
-            float keepRange = CannonLaserMath.KeepRange(acquireRange);
             var aims = EntityManager.HasBuffer<MegaShipAutoAimSlotElement>(mega)
                 ? EntityManager.GetBuffer<MegaShipAutoAimSlotElement>(mega)
                 : default;
             Entity target = Entity.Null;
             float3 aimPoint = muzzle;
+            int focusHint = CannonLaserHitApply.FocusWholeEntity;
             if (aims.IsCreated && mountIndex < aims.Length && aims[mountIndex].Target != Entity.Null
                 && aims[mountIndex].Target != mega)
             {
                 target = aims[mountIndex].Target;
                 aimPoint = aims[mountIndex].AimPoint;
+                focusHint = aims[mountIndex].Focus;
             }
 
+            // Burning past this barrel's max range used to keep a moon under fire
+            // after it left acquire range. Out of range turns the beam off. The
+            // charge does not survive that gap: coming back starts thin again.
+            float3 preferredAim = aimPoint;
             bool haveLock = target != Entity.Null
                             && TryValidateLock(
-                                mega, target, ship.Team, heal, muzzle, barrelFwd, keepRange,
-                                mapW, mapH, moonElapsed, out aimPoint);
+                                mega, target, ship.Team, heal, muzzle, acquireRange,
+                                mapW, mapH, moonElapsed, focusHint, preferredAim, out aimPoint);
             bool canBurn = haveLock;
             bool mouseStream = ownerShift;
             if (!canBurn && !mouseStream)
             {
                 WriteLaserOff(gunners, mountIndex, in mount);
+                ResetLaserRamp(mega, mountIndex, gunners);
                 return;
             }
 
-            float dps = CannonLaserMath.ComputeDps(mount.FirePower, mount.FireRate);
+            int burnFocus = CannonLaserHitApply.FocusWholeEntity;
+            float rampSeconds = 0f;
+            bool restarted = false;
+            if (canBurn)
+            {
+                burnFocus = focusHint;
+                if (EntityManager.HasComponent<PlanetState>(target) && burnFocus == CannonLaserHitApply.FocusWholeEntity)
+                {
+                    burnFocus = CannonLaserHitApply.ResolvePlanetFocus(
+                        EntityManager, target, ship.Team, aimPoint, mapW, mapH, moonElapsed);
+                }
+
+                rampSeconds = ResolveLockRampSeconds(
+                    mega, mountIndex, target, aimPoint, burnFocus,
+                    canBurn: true, cycleActive: true, gunners, out restarted);
+            }
+
+            // Locked burns spend the same 50%–300% ramp they deal. A retarget
+            // is thin again. Shift mouse-aim with no lock stays at authored DPS.
+            float drainMul = canBurn ? CannonLaserMath.ComputeRampMultiplier(rampSeconds) : 1f;
+            float dps = CannonLaserMath.ComputeDps(mount.FirePower, mount.FireRate) * drainMul;
             float slice = dps * math.max(0f, dt);
             if (energy + 0.001f < slice)
             {
@@ -315,6 +341,8 @@ namespace TitanOrbit.ECS
                 else
                 {
                     WriteLaserOff(gunners, mountIndex, in mount);
+                    if (restarted)
+                        WriteLaserRamp(gunners, mountIndex, 0f);
                     _passLockout = true;
                     return;
                 }
@@ -332,13 +360,15 @@ namespace TitanOrbit.ECS
             if (!canBurn)
             {
                 WriteMouseAim(gunners, mountIndex, in xf, in mount, in input, barrelFwd, acquireRange, mapW, mapH);
+                ResetLaserRamp(mega, mountIndex, gunners);
                 return;
             }
 
-            float rampSeconds = ResolveLockRampSeconds(
-                mega, mountIndex, target, aimPoint, ship.Team, mapW, mapH, moonElapsed,
-                canBurn: true, cycleActive: true, gunners, out bool restarted);
-            float rampMul = CannonLaserMath.ComputeRampMultiplier(rampSeconds);
+            // Land the thin ramp before Apply. A structural change in the hit
+            // used to drop the reset write and leave the next tick at full charge.
+            if (restarted)
+                WriteLaserRamp(gunners, mountIndex, 0f);
+
             if (!_gemCarry.TryGetValue(target, out float carry))
                 carry = 0f;
 
@@ -351,13 +381,11 @@ namespace TitanOrbit.ECS
                     EntityManager.GetComponentData<ShipLoadoutState>(mega));
             int laserBank = BulletBankFireResolve.ResolveMegaMountFireBank(in mount, hullBank);
 
-            // One moon gem per authored shot (fire power), not one gem per sim tick.
-            float shotDamage = TeamCommandRoleRules.ScaleFirePower(mount.FirePower * rampMul, topKiller);
             var hit = CannonLaserHitApply.Apply(
                 EntityManager, ecb, target, ship.Team, attackerNet,
-                muzzle, TeamCommandRoleRules.ScaleFirePower(slice * rampMul, topKiller),
+                muzzle, TeamCommandRoleRules.ScaleFirePower(slice, topKiller),
                 heal, acquireRange, mapW, mapH, moonElapsed, serverElapsed,
-                gemPrefab, gemSpawnServerTime, ref carry, mega, laserBank, 0, shotDamage);
+                gemPrefab, gemSpawnServerTime, ref carry, mega, laserBank, 0, burnFocus);
             _gemCarry[target] = carry;
 
             // Apply can AddComponent (first ship hit stamps attribution, a pad
@@ -433,18 +461,23 @@ namespace TitanOrbit.ECS
             EntityManager.SetComponentData(mega, megaState);
         }
 
-        /// <summary>Sticky lock still exists, is a valid team, and stays in keep-range.</summary>
+        /// <summary>
+        /// Sticky lock still exists and is a valid team. True only while the
+        /// current aim point is inside <paramref name="range"/> (barrel max,
+        /// not sticky keep-range).
+        /// </summary>
         bool TryValidateLock(
             Entity self,
             Entity target,
             TeamId ownerTeam,
             bool heal,
             float3 muzzle,
-            float3 barrelFwd,
             float range,
             float mapW,
             float mapH,
             double moonElapsed,
+            int focusHint,
+            float3 preferredAim,
             out float3 aimPoint)
         {
             aimPoint = muzzle;
@@ -462,9 +495,8 @@ namespace TitanOrbit.ECS
 
                 var xf = EntityManager.GetComponentData<LocalTransform>(target);
                 aimPoint = MegaShipCombatAim.GetAimPoint(EntityManager, target, xf);
-                // Range only — the turret already snapped onto this lock. A 33°
-                // cone vs a moving hull dropped the beam every time the muzzle
-                // swept off the lead intercept.
+                // Range only. The barrel slews onto this lock; a cone test dropped
+                // the beam whenever the muzzle had not finished the turn.
                 return CannonLaserMath.IsInRange(
                     muzzle, aimPoint, range, mapW, mapH, out _);
             }
@@ -473,9 +505,20 @@ namespace TitanOrbit.ECS
                 && EntityManager.HasComponent<PlanetState>(target)
                 && EntityManager.HasComponent<LocalTransform>(target))
             {
-                if (!TryResolvePlanetAim(
-                        target, ownerTeam, muzzle, range, mapW, mapH, moonElapsed, out aimPoint))
+                int focus = focusHint;
+                if (focus == CannonLaserHitApply.FocusWholeEntity)
+                {
+                    focus = CannonLaserHitApply.ResolvePlanetFocus(
+                        EntityManager, target, ownerTeam, preferredAim, mapW, mapH, moonElapsed);
+                }
+
+                if (focus == CannonLaserHitApply.FocusWholeEntity
+                    || !CannonLaserHitApply.TryGetSubjectAim(
+                        EntityManager, target, ownerTeam, muzzle, focus, mapW, mapH, moonElapsed,
+                        out CannonLaserHitApply.PlanetSubjectAim subject))
                     return false;
+
+                aimPoint = subject.Aim;
                 return CannonLaserMath.IsInRange(
                     muzzle, aimPoint, range, mapW, mapH, out _);
             }
@@ -493,89 +536,6 @@ namespace TitanOrbit.ECS
             }
 
             return false;
-        }
-
-        /// <summary>
-        /// Closest enemy pad or enemy moon shield on one planet
-        /// (same rule as AutoFire). Unowned and friendly worlds do not lock.
-        /// </summary>
-        bool TryResolvePlanetAim(
-            Entity planet,
-            TeamId ownerTeam,
-            float3 from,
-            float range,
-            float mapW,
-            float mapH,
-            double moonElapsed,
-            out float3 aim)
-        {
-            aim = default;
-            if (!EntityManager.HasComponent<PlanetState>(planet)
-                || !EntityManager.HasComponent<LocalTransform>(planet))
-                return false;
-
-            var planetState = EntityManager.GetComponentData<PlanetState>(planet);
-            var planetXf = EntityManager.GetComponentData<LocalTransform>(planet);
-            if (planetState.Ownership == ownerTeam || planetState.Ownership == TeamId.None)
-                return false;
-
-            float best = range;
-            bool found = false;
-            if (planetState.Ownership != TeamId.None
-                && EntityManager.HasBuffer<PlanetaryDefenseSlotElement>(planet))
-            {
-                var slots = EntityManager.GetBuffer<PlanetaryDefenseSlotElement>(planet);
-                int slotCount = slots.Length;
-                for (int s = 0; s < slotCount; s++)
-                {
-                    var slot = slots[s];
-                    if (slot.TurretLevel == 0 || slot.Health <= 0f)
-                        continue;
-
-                    float3 pad = PlanetaryDefenseMath.GetSlotWorldPosition(
-                        planetXf.Position,
-                        math.max(0.25f, planetXf.Scale),
-                        planetState.PlanetLevel,
-                        s,
-                        slotCount);
-                    float d = ToroidalMapEcs.ToroidalDistance(from, pad, mapW, mapH);
-                    if (d >= best)
-                        continue;
-                    best = d;
-                    aim = pad;
-                    found = true;
-                }
-            }
-
-            if (EntityManager.HasComponent<PlanetGemMoonState>(planet))
-            {
-                var moon = EntityManager.GetComponentData<PlanetGemMoonState>(planet);
-                if (PlanetGemMoonCombatLogic.TryGetNonFriendlyMoonAim(
-                        planetState.Ownership,
-                        ownerTeam,
-                        planetXf.Position,
-                        planetXf.Scale,
-                        planetState.PlanetLevel,
-                        planetState.PlanetId,
-                        planetState.IsHomePlanet,
-                        moon.CurrentShield,
-                        from,
-                        mapW,
-                        mapH,
-                        moonElapsed,
-                        out float3 moonAim,
-                        out _))
-                {
-                    float moonDist = ToroidalMapEcs.ToroidalDistance(from, moonAim, mapW, mapH);
-                    if (moonDist < best)
-                    {
-                        aim = moonAim;
-                        found = true;
-                    }
-                }
-            }
-
-            return found;
         }
 
         static float3 ResolveMuzzle(in LocalTransform xf, in ShipWeaponMountElement mount)
@@ -684,24 +644,23 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Current barrel ramp. A different burn subject restarts at 0 (50% DPS):
-        /// another entity, or another pad / moon on the same planet. The same
-        /// subject keeps charge through a missed tick, Fire release, or lockout.
+        /// another entity, or another pad / moon on the same planet. Leaving
+        /// acquire range also clears it in <see cref="TryContinuousBurn"/>. The
+        /// same subject keeps charge through Fire release or lockout.
         /// </summary>
         float ResolveLockRampSeconds(
             Entity mega,
             int mountIndex,
             Entity target,
             float3 aimPoint,
-            TeamId team,
-            float mapW,
-            float mapH,
-            double moonElapsed,
+            int focus,
             bool canBurn,
             bool cycleActive,
             DynamicBuffer<MegaShipGunnerSlotElement> gunners,
             out bool restarted)
         {
             restarted = false;
+            _ = aimPoint;
             float current = 0f;
             if (gunners.IsCreated && mountIndex >= 0 && mountIndex < gunners.Length)
                 current = math.max(0f, gunners[mountIndex].CannonLaserRampSeconds);
@@ -716,21 +675,14 @@ namespace TitanOrbit.ECS
             if (!canBurn || target == Entity.Null)
                 return current;
 
-            int focus = CannonLaserHitApply.FocusWholeEntity;
-            if (EntityManager.HasComponent<PlanetState>(target))
+            if (!EntityManager.HasComponent<PlanetState>(target))
+                focus = CannonLaserHitApply.FocusWholeEntity;
+            else if (focus == CannonLaserHitApply.FocusWholeEntity)
             {
-                focus = CannonLaserHitApply.ResolvePlanetFocus(
-                    EntityManager, target, team, aimPoint, mapW, mapH, moonElapsed);
-                // Aim not on a living pad or moon yet. Keep charge only while
-                // this is still the same planet — a maxed ramp from the previous
-                // ship or rock must not carry onto the new world.
-                if (focus == CannonLaserHitApply.FocusWholeEntity)
-                {
-                    var pending = new LaserRampKey { Ship = mega, Mount = mountIndex };
-                    if (_lastLaserLock.TryGetValue(pending, out LaserLockId samePlanet)
-                        && samePlanet.Target == target)
-                        return current;
-                }
+                // No living pad or moon. Do not keep a fat ramp on a vague world lock.
+                ForgetLaserLock(mega, mountIndex);
+                restarted = true;
+                return 0f;
             }
 
             var key = new LaserRampKey { Ship = mega, Mount = mountIndex };
@@ -780,7 +732,7 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// The locked entity died. Next lock is a new target, so charge restarts.
+        /// The lock died or left acquire range. The next burn starts thin.
         /// </summary>
         void ResetLaserRamp(
             Entity mega,

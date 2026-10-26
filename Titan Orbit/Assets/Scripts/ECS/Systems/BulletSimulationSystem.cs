@@ -1568,9 +1568,11 @@ namespace TitanOrbit.ECS
 
                     var moon = state.EntityManager.GetComponentData<PlanetGemMoonState>(bestEntity);
                     var planet = state.EntityManager.GetComponentData<PlanetState>(bestEntity);
-                    // Body hits (shield already spent) knock moon gems out at the impact.
+                    // Body hits (shield already spent) knock the planet's stored gems out.
+                    float planetGems = planet.CurrentGems;
                     PlanetGemMoonCombatLogic.ApplyBulletDamage(
                         ref moon,
+                        ref planetGems,
                         hitDamage,
                         (TeamId)b.OwnerTeam,
                         planet.Ownership,
@@ -1580,6 +1582,8 @@ namespace TitanOrbit.ECS
                         hitPoint,
                         b.Sequence ^ (uint)bestEntity.Index,
                         gemSpawnServerTime);
+                    planet.CurrentGems = planetGems;
+                    state.EntityManager.SetComponentData(bestEntity, planet);
                     state.EntityManager.SetComponentData(bestEntity, moon);
                     TrySpawnWell(ref state, hitPoint, profile, serverElapsed, mapW, mapH, in b, ecb, gemPrefab, hitDamage, bestEntity);
                     return true;

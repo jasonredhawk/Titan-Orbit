@@ -303,9 +303,8 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
-    /// [NETCODE] Replicated gem-moon shield reservoir. Shield absorbs bullet damage; leftover
-    /// hits knock <see cref="CurrentMoonGems"/> out as pickups. While the shield stays down,
-    /// the combat drain can also siphon the planet bank into loose gems.
+    /// [NETCODE] Replicated gem-moon shield. Shield absorbs hits first; leftover
+    /// damage knocks <see cref="PlanetState.CurrentGems"/> out as pickups.
     /// </summary>
     public struct PlanetGemMoonState : IComponentData
     {

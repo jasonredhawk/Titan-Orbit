@@ -1,3 +1,4 @@
+using TitanOrbit.Simulation;
 using TMPro;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -44,8 +45,15 @@ namespace TitanOrbit.Game
         /// <summary>Tiny rail above moon matrix-shield current.</summary>
         public const string ShieldCaption = "SHIELD";
 
-        /// <summary>Prefix on moon gem capacity.</summary>
+        /// <summary>Prefix on a capacity line that still means a stored maximum (shield uses MAX).</summary>
         public const string GemBankCaption = "BANK";
+
+        /// <summary>
+        /// Rail under a world's gem number. The digits are how many gems that planet
+        /// must hold to reach the next level (<see cref="PlanetEconomyMath.GetMaxGemsForLevel"/>),
+        /// not the player's bank and not the moon's 500-point reservoir.
+        /// </summary>
+        public const string NextLevelGemCaption = "NEXT";
 
         /// <summary>Prefix on moon shield capacity.</summary>
         public const string ShieldMaxCaption = "MAX";
@@ -155,6 +163,49 @@ namespace TitanOrbit.Game
         public static string FormatBankLine(string caption, int max)
         {
             return PrefixLine(caption, max.ToString());
+        }
+
+        /// <summary>
+        /// Gems the planet must store to leave <paramref name="planetLevel"/>.
+        /// Level 1 is 100 and each level doubles, so level 5 is 1600.
+        /// Returns 0 at <see cref="PlanetEconomyMath.MaxPlanetLevel"/> — there is no further level.
+        /// </summary>
+        /// <param name="planetLevel">Ghosted <c>PlanetState.PlanetLevel</c> (at least 1).</param>
+        public static int GemsRequiredToLevelUp(int planetLevel)
+        {
+            // --- Cap check ---
+            // [TITAN-ORBIT] Same curve the deposit sim uses to fill the planet bar.
+            planetLevel = Mathf.Max(1, planetLevel);
+            if (planetLevel >= PlanetEconomyMath.MaxPlanetLevel)
+                return 0;
+
+            return Mathf.RoundToInt(PlanetEconomyMath.GetMaxGemsForLevel(planetLevel));
+        }
+
+        /// <summary>
+        /// Max half of the gem line: <c>NEXT  1600</c>, or <c>NEXT  MAX</c> on the last level.
+        /// The live count sits beside this — stored gems over the cost to leave this level.
+        /// </summary>
+        public static string FormatNextLevelGemLine(int planetLevel)
+        {
+            int gems = GemsRequiredToLevelUp(planetLevel);
+            if (gems <= 0)
+                return PrefixLine(NextLevelGemCaption, "MAX");
+
+            return PrefixLine(NextLevelGemCaption, gems.ToString());
+        }
+
+        /// <summary>
+        /// One line with both numbers: <c>NEXT  240 / 1600</c>.
+        /// <paramref name="current"/> is gems stored on the planet right now.
+        /// The right side is the cost to reach the next level.
+        /// </summary>
+        public static string FormatGemProgressLine(int current, int planetLevel)
+        {
+            int stored = Mathf.Max(0, current);
+            int required = GemsRequiredToLevelUp(planetLevel);
+            string max = required <= 0 ? "MAX" : required.ToString();
+            return PrefixLine(NextLevelGemCaption, stored + " / " + max);
         }
 
         /// <summary>

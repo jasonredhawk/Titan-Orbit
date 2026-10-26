@@ -13,7 +13,8 @@ namespace TitanOrbit.Game
     /// World-space label floating above a planet body. Reads as cockpit telemetry, not a
     /// spreadsheet: Rajdhani place name, optional HOME PLANET stamp, <c>FLEET</c> / <c>GUN</c>
     /// rails, then a labeled people stack — <c>CREW</c> (live count), <c>CAP</c> (hold limit),
-    /// and <c>+N LINK</c> when connection triangles add extra beds.
+    /// and <c>+N LINK</c> when connection triangles add extra beds. Under that, a gem line
+    /// shows gems stored now over the cost to reach the next level (240 / 1600 at level 5).
     /// Optional capture-contributor name sits between identity and the people stack.
     /// Client / hybrid presentation only — reads replicated <see cref="PlanetState"/> and the
     /// published connection graph; never drives sim. Paired with <see cref="WorldBodyVisualApplier"/>
@@ -26,6 +27,10 @@ namespace TitanOrbit.Game
         /// <summary>Last painted population — skip TMP writes when unchanged.</summary>
         int _cachedPopulation = int.MinValue;
         int _cachedBaseMax = int.MinValue;
+        /// <summary>Gems-to-next-level last written on the gem line. MinValue forces the first paint. 0 means max level.</summary>
+        int _cachedGemsToLevel = int.MinValue;
+        /// <summary>Stored planet gems last written on the left of the gem line.</summary>
+        int _cachedCurrentGems = int.MinValue;
         int _cachedBonusAmount = int.MinValue;
         TeamId _cachedTeam;
         int _cachedFamilyConfigIndex = int.MinValue;
@@ -129,6 +134,15 @@ namespace TitanOrbit.Game
         /// <summary>Capacity-line alpha vs full team color (current stays opaque).</summary>
         const float MaxLineAlpha = 0.6f;
 
+        /// <summary>NEXT gem line under CREW — same size as CAP so it reads as a requirement, not a second crew count.</summary>
+        const float GemRequirementFontSize = 16f;
+
+        /// <summary>Gap between the people stack and the gem requirement line.</summary>
+        const float GemRequirementGapLocal = 0.4f;
+
+        /// <summary>Gem digits use the same red as the moon gem count.</summary>
+        static readonly Color GemRequirementColor = new Color(1f, 0.2f, 0.2f, 0.95f);
+
         /// <summary>[TITAN-ORBIT] Stable planet id from <see cref="PlanetState.PlanetId"/> — set by Configure.</summary>
         [SerializeField] int planetId;
 
@@ -140,6 +154,7 @@ namespace TitanOrbit.Game
         SpriteRenderer _identityRule;
         CaptureCreditRow _captureCredit;
         StatRow _populationRow;
+        TextMeshPro _gemRequirementText;
 
         static PlanetShipFamilyConfig _shipFamilyConfig;
 
@@ -177,6 +192,21 @@ namespace TitanOrbit.Game
             ApplyLayout();
         }
 
+        /// <summary>
+        /// Drops the cached gem count and level cost, then repaints from live planet state.
+        /// <see cref="WorldBodyVisualApplier.RefreshPlanetVisualAppearance"/> calls this on
+        /// level-up, in the same pass as the moon, so both labels show stored gems over the
+        /// new cost (level 5 → current / 1600). Deposits update the left number from LateUpdate.
+        /// </summary>
+        public void RefreshGemRequirement()
+        {
+            // MinValue fails the dirty check even when crew and cap did not move.
+            _cachedGemsToLevel = int.MinValue;
+            _cachedCurrentGems = int.MinValue;
+            if (Refresh())
+                ApplyLayout();
+        }
+
         /// <summary>Creates the label hierarchy once, or recovers children after domain reload / reparent.</summary>
         void EnsureLabel()
         {
@@ -192,7 +222,8 @@ namespace TitanOrbit.Game
                 _populationRow.CaptionText != null &&
                 _populationRow.CurrentText != null &&
                 _populationRow.MaxText != null &&
-                _populationRow.BonusText != null)
+                _populationRow.BonusText != null &&
+                _gemRequirementText != null)
                 return;
 
             // --- Ensure setup ---
@@ -212,6 +243,7 @@ namespace TitanOrbit.Game
             _identityRule = CreateIdentityRule(_labelRoot);
             _captureCredit = CreateCaptureCreditRow(_labelRoot, "CaptureCredit");
             _populationRow = CreatePopulationRow(_labelRoot, "PopulationRow");
+            _gemRequirementText = CreateGemRequirementText(_labelRoot);
 
             KeepLabelOnPlanetRoot();
             _labelReady = true;
@@ -308,6 +340,11 @@ namespace TitanOrbit.Game
             if (_captureCredit.CaptionText == null || _captureCredit.NameText == null)
                 _captureCredit = CreateCaptureCreditRow(_labelRoot, "CaptureCredit");
 
+            if (_gemRequirementText == null)
+                _gemRequirementText = _labelRoot.Find("GemRequirement")?.GetComponent<TextMeshPro>();
+            if (_gemRequirementText == null)
+                _gemRequirementText = CreateGemRequirementText(_labelRoot);
+
             // Capacity line uses rich text for "base + bonus" coloring.
             _populationRow.MaxText.richText = true;
 
@@ -322,6 +359,12 @@ namespace TitanOrbit.Game
             ApplyReadableTextMaterial(_populationRow.CurrentText);
             ApplyReadableTextMaterial(_populationRow.MaxText);
             ApplyReadableTextMaterial(_populationRow.BonusText);
+            if (_gemRequirementText != null)
+            {
+                _gemRequirementText.font = WorldBodyLabelTheme.TelemetryFont;
+                _gemRequirementText.richText = true;
+                ApplyReadableTextMaterial(_gemRequirementText);
+            }
             KeepLabelOnPlanetRoot();
             return true;
         }
@@ -345,6 +388,7 @@ namespace TitanOrbit.Game
                 _identityRule = null;
                 _captureCredit = default;
                 _populationRow = default;
+                _gemRequirementText = null;
             }
         }
 
@@ -485,6 +529,18 @@ namespace TitanOrbit.Game
                 MaxText = maxText,
                 BonusText = bonusText,
             };
+        }
+
+        /// <summary>
+        /// One line under CREW: <c>NEXT  240 / 1600</c>. Left number is gems stored now.
+        /// Right number is the cost to reach the next level. <see cref="Refresh"/> rewrites it.
+        /// </summary>
+        static TextMeshPro CreateGemRequirementText(Transform parent)
+        {
+            TextMeshPro tmp = CreateTelemetryText(parent, "GemRequirement", GemRequirementFontSize);
+            tmp.alignment = TextAlignmentOptions.Center;
+            tmp.color = GemRequirementColor;
+            return tmp;
         }
 
         /// <summary>Place name / live CREW digits — Rajdhani Bold.</summary>
@@ -710,6 +766,7 @@ namespace TitanOrbit.Game
                 return;
 
             LayoutStatRow(ref _populationRow);
+            float gemHeight = MeasureGemRequirement();
 
             float titleHeight = MeasureTitle(showTitle);
             float homeRoleHeight = MeasureHomeRole(showHomeRole);
@@ -734,6 +791,7 @@ namespace TitanOrbit.Game
             bool showRule = hasNameBlock || showContributor;
             float ruleBlock = showRule ? RuleGapLocal + RuleHeightLocal + RuleGapLocal : 0f;
             float populationHeight = GetStatRowHeight(_populationRow);
+            float gemGap = gemHeight > 0f ? GemRequirementGapLocal : 0f;
             float headerHeight = (showTitle ? titleHeight : 0f)
                 + (showHomeRole ? homeRoleHeight : 0f)
                 + (showFamily ? familyHeight : 0f)
@@ -744,7 +802,7 @@ namespace TitanOrbit.Game
                 + afterFamilyGap
                 + nameToCreditGap
                 + ruleBlock;
-            float totalHeight = populationHeight + headerHeight;
+            float totalHeight = populationHeight + gemGap + gemHeight + headerHeight;
 
             // --- Place from the top of the centered stack ---
             float cursor = totalHeight * 0.5f;
@@ -801,6 +859,23 @@ namespace TitanOrbit.Game
             }
 
             _populationRow.Root.localPosition = new Vector3(0f, cursor - populationHeight * 0.5f, 0f);
+            cursor -= populationHeight + gemGap;
+            if (gemHeight > 0f && _gemRequirementText != null)
+                _gemRequirementText.transform.localPosition = new Vector3(0f, cursor - gemHeight * 0.5f, 0f);
+        }
+
+        /// <summary>
+        /// Measures the NEXT gem line. Inactive until the first refresh writes a cost.
+        /// </summary>
+        float MeasureGemRequirement()
+        {
+            if (_gemRequirementText == null || !_gemRequirementText.gameObject.activeSelf)
+                return 0f;
+
+            _gemRequirementText.fontSize = GemRequirementFontSize;
+            _gemRequirementText.alignment = TextAlignmentOptions.Center;
+            _gemRequirementText.ForceMeshUpdate();
+            return _gemRequirementText.preferredHeight;
         }
 
         /// <summary>Measures the world-name title after forcing the live font size.</summary>
@@ -872,6 +947,8 @@ namespace TitanOrbit.Game
                 _populationRow.MaxText.font = WorldBodyLabelTheme.TelemetryFont;
             if (_populationRow.BonusText != null)
                 _populationRow.BonusText.font = WorldBodyLabelTheme.TelemetryFont;
+            if (_gemRequirementText != null)
+                _gemRequirementText.font = WorldBodyLabelTheme.TelemetryFont;
         }
 
         /// <summary>Overlay SDF material via the shared space-HUD theme.</summary>
@@ -1023,7 +1100,9 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Pulls planet state + triangle bonus, then writes world name, home stamp,
-        /// ship family, gun type, capture credit, and population when dirty.
+        /// ship family, gun type, capture credit, population, and stored gems over the
+        /// next-level cost when any of those values are dirty. The cost follows planet level
+        /// (100 at level 1, doubling each level) and the left number follows CurrentGems.
         /// </summary>
         /// <returns>True when TMP / layout need ApplyLayout.</returns>
         bool Refresh()
@@ -1042,7 +1121,8 @@ namespace TitanOrbit.Game
                 _populationRow.CaptionText == null ||
                 _populationRow.CurrentText == null ||
                 _populationRow.MaxText == null ||
-                _populationRow.BonusText == null)
+                _populationRow.BonusText == null ||
+                _gemRequirementText == null)
                 return false;
 
             if (!_legacyIconRemoved)
@@ -1086,6 +1166,10 @@ namespace TitanOrbit.Game
                 out int baseMax,
                 out int bonusAmount);
 
+            // Stored gems over the cost to leave this level. 0 required means the level cap.
+            int currentGems = Mathf.Max(0, Mathf.RoundToInt(state.CurrentGems));
+            int gemsToLevel = WorldBodyLabelTheme.GemsRequiredToLevelUp(state.PlanetLevel);
+
             // Roster cache first — avoids "Player N" string alloc every LateUpdate before announce.
             int contributorId = state.TopContributorNetworkId;
             string contributorName = string.Empty;
@@ -1109,6 +1193,8 @@ namespace TitanOrbit.Game
                 _cachedPopulation == crew &&
                 _cachedBaseMax == baseMax &&
                 _cachedBonusAmount == bonusAmount &&
+                _cachedGemsToLevel == gemsToLevel &&
+                _cachedCurrentGems == currentGems &&
                 _cachedTeam == state.Ownership &&
                 _cachedFamilyConfigIndex == state.ShipFamilyConfigIndex &&
                 _cachedBulletBankIndex == state.BulletBankIndex &&
@@ -1131,6 +1217,8 @@ namespace TitanOrbit.Game
             _cachedPopulation = crew;
             _cachedBaseMax = baseMax;
             _cachedBonusAmount = bonusAmount;
+            _cachedGemsToLevel = gemsToLevel;
+            _cachedCurrentGems = currentGems;
             _cachedTeam = state.Ownership;
             _cachedFamilyConfigIndex = state.ShipFamilyConfigIndex;
             _cachedBulletBankIndex = state.BulletBankIndex;
@@ -1186,6 +1274,12 @@ namespace TitanOrbit.Game
             _populationRow.BonusText.gameObject.SetActive(showLink);
             _populationRow.BonusText.text = showLink ? WorldBodyLabelTheme.FormatLinkLine(bonusAmount) : string.Empty;
             _populationRow.BonusText.color = WorldBodyLabelTheme.LinkCyan;
+
+            // NEXT 240 / 1600. Rewritten when stored gems or the level cost changes.
+            _gemRequirementText.gameObject.SetActive(true);
+            _gemRequirementText.richText = true;
+            _gemRequirementText.text = WorldBodyLabelTheme.FormatGemProgressLine(currentGems, state.PlanetLevel);
+            _gemRequirementText.color = GemRequirementColor;
 
             if (_identityRule != null)
                 _identityRule.color = WithAlpha(teamColor, 0.55f);

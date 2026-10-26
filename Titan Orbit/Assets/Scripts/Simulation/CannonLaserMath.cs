@@ -43,11 +43,25 @@ namespace TitanOrbit.Simulation
         /// <summary>
         /// Extra keep radius past acquire range. Muzzle motion on a wide Titan
         /// used to drop a lock every tick and re-search (beam / hum on-off).
+        /// Sticky bookkeeping only — the burn stops at acquire range.
         /// </summary>
         public const float KeepRangePad = 8f;
 
-        /// <summary>Hold a live lock this far past acquire range (fraction).</summary>
+        /// <summary>Hold a live lock this far past acquire range (fraction). Not a fire range.</summary>
         public const float KeepRangeFactor = 1.25f;
+
+        /// <summary>
+        /// Another enemy ship, pad, or moon must be this much closer (world units)
+        /// before a cannon leaves its current combat lock. Stops two neighbors
+        /// from trading the barrel and restarting the ramp every tick.
+        /// </summary>
+        public const float CombatRetargetHysteresis = 6f;
+
+        /// <summary>
+        /// Cannon barrels turn this fast while tracking. Projectile guns still snap.
+        /// A full turn takes one second, so a retarget sweeps instead of popping.
+        /// </summary>
+        public const float SlewDegPerSec = 360f;
 
         /// <summary>
         /// Floor written to ghost <c>TargetDistance</c> while burning. A surface
@@ -64,7 +78,10 @@ namespace TitanOrbit.Simulation
         /// <summary>Damage multiplier after <see cref="RampDurationSeconds"/> (300% authored DPS).</summary>
         public const float RampDamageMax = 3f;
 
-        /// <summary>Sticky hold range from an acquire range (hysteresis).</summary>
+        /// <summary>
+        /// Sticky hold range from an acquire range (hysteresis).
+        /// Auto-aim may keep the entity out here. The cannon burn must not.
+        /// </summary>
         public static float KeepRange(float acquireRange)
         {
             return math.max(0.5f, acquireRange) * KeepRangeFactor + KeepRangePad;
@@ -83,7 +100,7 @@ namespace TitanOrbit.Simulation
 
         /// <summary>
         /// Linear 50% → 300% over <see cref="RampDurationSeconds"/>. Caps at the max.
-        /// Energy drain stays at <see cref="ComputeDps"/>; only the hit uses this.
+        /// Damage and energy both use this: a thin beam spends half, a full burn spends 3×.
         /// </summary>
         public static float ComputeRampMultiplier(float rampSeconds)
         {
@@ -192,6 +209,47 @@ namespace TitanOrbit.Simulation
             float3 hit = muzzle + dir * along;
             hit.y = muzzle.y;
             return hit;
+        }
+
+        /// <summary>
+        /// Near-side hit of a planar ray against a sphere, in the muzzle's unwrap.
+        /// Used so a moon beam stays on the barrel ray and stops on the shield
+        /// (or the body once the shield is down). Map size from the caller.
+        /// </summary>
+        public static bool TryRaySphereSurface(
+            in float3 origin,
+            in float3 direction,
+            in float3 center,
+            float radius,
+            float mapW,
+            float mapH,
+            out float3 hit)
+        {
+            hit = origin;
+            float3 dir = direction;
+            dir.y = 0f;
+            if (math.lengthsq(dir) < MinDirectionSq)
+                return false;
+            dir = math.normalize(dir);
+
+            float3 toCenter = ToroidalMapEcs.ShortestOffsetXZ(origin, center, mapW, mapH);
+            toCenter.y = 0f;
+            float r = math.max(0.05f, radius);
+            float along = math.dot(dir, toCenter);
+            float c = math.lengthsq(toCenter) - r * r;
+            float disc = along * along - c;
+            if (disc < 0f)
+                return false;
+
+            float t = along - math.sqrt(disc);
+            if (t < 0.05f)
+                t = along + math.sqrt(disc);
+            if (t < 0.05f || !math.isfinite(t))
+                return false;
+
+            hit = origin + dir * t;
+            hit.y = origin.y;
+            return true;
         }
     }
 }

@@ -1,4 +1,4 @@
-using TitanOrbit.Data;
+using TitanOrbit.Core;
 using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
 using Unity.Entities;
@@ -105,70 +105,12 @@ namespace TitanOrbit.ECS
             out float3 hit)
         {
             hit = muzzle;
-            var planetState = em.GetComponentData<PlanetState>(planet);
-            var planetXf = em.GetComponentData<LocalTransform>(planet);
-            float3 center = planetXf.Position;
-            float radius = 1.1f;
-            bool found = false;
-            float best = float.MaxValue;
-            var padConfig = PlanetaryDefenseConfig.LoadDefault();
-
-            if (em.HasBuffer<PlanetaryDefenseSlotElement>(planet))
-            {
-                var slots = em.GetBuffer<PlanetaryDefenseSlotElement>(planet);
-                int slotCount = slots.Length;
-                for (int s = 0; s < slotCount; s++)
-                {
-                    var slot = slots[s];
-                    if (slot.TurretLevel == 0 || slot.Health <= 0f)
-                        continue;
-
-                    float3 pad = PlanetaryDefenseMath.GetSlotWorldPosition(
-                        planetXf.Position,
-                        math.max(0.25f, planetXf.Scale),
-                        planetState.PlanetLevel,
-                        s,
-                        slotCount);
-                    float d = ToroidalMapEcs.ToroidalDistance(muzzle, pad, mapW, mapH);
-                    if (d >= best)
-                        continue;
-                    best = d;
-                    center = pad;
-                    radius = PlanetaryDefenseHitScan.ComputeTurretHitRadius(padConfig, slot.TurretLevel);
-                    found = true;
-                }
-            }
-
-            if (em.HasComponent<PlanetGemMoonState>(planet))
-            {
-                var moon = em.GetComponentData<PlanetGemMoonState>(planet);
-                float3 moonPos = PlanetOrbitMath.GetMoonWorldPosition(
-                    planetXf.Position,
-                    math.max(0.25f, planetXf.Scale),
-                    planetState.PlanetLevel,
-                    planetState.PlanetId,
-                    moonElapsed,
-                    planetState.IsHomePlanet);
-                float hitRadius = PlanetGemMoonMath.GetMoonBulletHitRadiusWorld(
-                    math.max(0.25f, planetXf.Scale),
-                    planetState.IsHomePlanet,
-                    moon.CurrentShield);
-                float3 surface = CannonLaserMath.PullToSphereSurface(
-                    muzzle, moonPos, hitRadius, mapW, mapH);
-                float moonDist = ToroidalMapEcs.ToroidalDistance(muzzle, surface, mapW, mapH);
-                if (moonDist < best)
-                {
-                    best = moonDist;
-                    center = moonPos;
-                    radius = hitRadius;
-                    found = true;
-                }
-            }
-
-            if (!found)
+            if (!CannonLaserHitApply.TryPickClosestSubject(
+                    em, planet, TeamId.None, muzzle, float.MaxValue, mapW, mapH, moonElapsed,
+                    out CannonLaserHitApply.PlanetSubjectAim subject))
                 return false;
 
-            hit = CannonLaserMath.PullToSphereSurface(muzzle, center, radius, mapW, mapH);
+            hit = subject.Aim;
             hit.y = muzzle.y;
             return true;
         }

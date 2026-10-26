@@ -346,9 +346,11 @@ namespace TitanOrbit.ECS
             {
                 var moon = em.GetComponentData<PlanetGemMoonState>(contactPlanet);
                 var planet = em.GetComponentData<PlanetState>(contactPlanet);
-                // Body contact (shield already spent) knocks moon gems out at the blast.
+                // Body contact (shield already spent) knocks the planet's stored gems out.
+                float planetGems = planet.CurrentGems;
                 PlanetGemMoonCombatLogic.ApplyBulletDamage(
                     ref moon,
+                    ref planetGems,
                     mine.Damage,
                     attackerTeam,
                     planet.Ownership,
@@ -358,6 +360,8 @@ namespace TitanOrbit.ECS
                     hitPoint,
                     mine.Sequence,
                     PlanetGemMoonOrbitClock.GetElapsedSecondsOrFallback(em, serverElapsed));
+                planet.CurrentGems = planetGems;
+                em.SetComponentData(contactPlanet, planet);
                 em.SetComponentData(contactPlanet, moon);
             }
 
