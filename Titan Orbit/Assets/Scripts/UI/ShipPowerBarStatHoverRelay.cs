@@ -229,8 +229,10 @@ namespace TitanOrbit.UI
             Transform walk = t;
             while (walk != null)
             {
-                CanvasGroup group = walk.GetComponent<CanvasGroup>();
-                if (group != null)
+                // [UNITY] GetComponent on a miss builds an error string in the Editor.
+                // This walk runs for every power bar every frame the orbit menu is up,
+                // and that string was ~170KB plus a later GC pause. TryGetComponent does not.
+                if (walk.TryGetComponent(out CanvasGroup group))
                 {
                     if (group.ignoreParentGroups)
                         alpha = group.alpha;

@@ -497,8 +497,9 @@ namespace TitanOrbit.Game
             if (node.name == "PortraitSceneCopy")
                 return;
 
-            Renderer renderer = node.GetComponent<Renderer>();
-            if (renderer != null
+            // [UNITY] Most hull transforms have no Renderer. GetComponent on a miss
+            // allocates an Editor error string; this walk runs every portrait frame.
+            if (node.TryGetComponent(out Renderer renderer)
                 && renderer.enabled
                 && (renderer is MeshRenderer || renderer is SkinnedMeshRenderer)
                 && !WorldBodyLabelLayout.ShouldSkipRenderer(renderer))

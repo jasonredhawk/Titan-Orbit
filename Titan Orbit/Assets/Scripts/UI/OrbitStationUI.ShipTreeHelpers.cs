@@ -119,10 +119,24 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
+        /// Last <see cref="ComputeTreeVisualSignature"/> applied to the visible cards.
+        /// The 0.35s store poll and the Bank RPC both call
+        /// <see cref="RefreshShipTreeVisualStateOnly"/>. Repainting all 24 cards
+        /// (chassis lookup plus a power breakdown each) was about 25ms, and gem
+        /// deposits changed the totals often enough that the hitch never stopped.
+        /// </summary>
+        int _treeVisualSignature;
+
+        /// <summary>False until a paint has stored <see cref="_treeVisualSignature"/>.</summary>
+        bool _hasTreeVisualSignature;
+
+        /// <summary>
         /// Repaints colors, prices, power bars, and screenshots on the existing tree
         /// nodes. Does not Instantiate. Landing-delay prepare already did this for the
         /// docked moon — Show skips this when <see cref="IsLandedMoonTreePreparedForCurrentPlanet"/>
         /// is true so the first visible frame is not a 24-card hitch.
+        /// A later poll skips again while the hull, moon, loadout, and whether the
+        /// next ship is affordable are unchanged. Bank and cargo labels still update.
         /// </summary>
         internal void RefreshShipTreeVisualStateOnly()
         {
@@ -133,10 +147,81 @@ namespace TitanOrbit.UI
             if (!IsTreeDataAvailable())
             {
                 shipUpgradeTree.HideHint();
+                _hasTreeVisualSignature = false;
                 return;
             }
 
+            int signature = ComputeTreeVisualSignature();
+            if (_hasTreeVisualSignature && signature == _treeVisualSignature)
+                return;
+
             shipUpgradeTree.RefreshVisualState();
+            _treeVisualSignature = signature;
+            _hasTreeVisualSignature = true;
+        }
+
+        /// <summary>
+        /// Stores the signature after the hidden landing prepare paints the cards,
+        /// so the first visible poll does not paint them again.
+        /// </summary>
+        void RememberTreeVisualSignature()
+        {
+            if (!IsTreeDataAvailable())
+            {
+                _hasTreeVisualSignature = false;
+                return;
+            }
+
+            _treeVisualSignature = ComputeTreeVisualSignature();
+            _hasTreeVisualSignature = true;
+        }
+
+        /// <summary>
+        /// Identity of what the 24 cards show. Gem totals are not included — only
+        /// whether the next hull is currently affordable — so a deposit beat does
+        /// not redo every power bar.
+        /// </summary>
+        int ComputeTreeVisualSignature()
+        {
+            int level = currentShip != null ? currentShip.ShipLevel : 0;
+            int branch = currentShip != null ? currentShip.BranchIndex : 0;
+            int chassis = currentShip != null && !string.IsNullOrEmpty(currentShip.CurrentChassisId)
+                ? currentShip.CurrentChassisId.GetHashCode()
+                : 0;
+            int loadout = currentShip != null ? currentShip.LoadoutFingerprint : 0;
+
+            Planet store = GetShipUpgradeStorePlanet();
+            int planetId = store != null ? store.PlanetId : 0;
+            int planetLevel = store != null ? Mathf.Max(1, store.PlanetLevel) : 0;
+            int homeLevel = currentHomePlanet != null ? Mathf.Max(1, currentHomePlanet.HomePlanetLevel) : 0;
+
+            bool canAffordNext = false;
+            if (CardShopSystem.Instance != null && currentShip != null && store != null &&
+                CardShopSystem.Instance.CanPurchaseShipLevelUpgrade(
+                    currentShip, store, out _, out float cost, out _))
+                canAffordNext = contributedGems + 0.01f >= cost;
+
+            bool megaOpen = false;
+            if (store != null &&
+                EcsGameBridge.TryGetPlanetGemMoonStateByPlanetId(store.PlanetId, out var moon))
+                megaOpen = MegaShipPlanetLogic.IsMegaPurchaseUnlocked(
+                    store.PlanetLevel, moon.CurrentMoonGems, moon.MaxMoonGems);
+
+            unchecked
+            {
+                int hash = 17;
+                hash = hash * 31 + level;
+                hash = hash * 31 + branch;
+                hash = hash * 31 + chassis;
+                hash = hash * 31 + loadout;
+                hash = hash * 31 + planetId;
+                hash = hash * 31 + planetLevel;
+                hash = hash * 31 + homeLevel;
+                hash = hash * 31 + (canAffordNext ? 1 : 0);
+                hash = hash * 31 + (megaOpen ? 1 : 0);
+                hash = hash * 31 + (int)ShipFamilyMatchBonuses.ActiveMatchSeed;
+                return hash;
+            }
         }
 
         /// <summary>
@@ -176,6 +261,7 @@ namespace TitanOrbit.UI
                     ArmHiddenLandPrepareHierarchy();
                     Canvas.ForceUpdateCanvases();
                 }
+                RememberTreeVisualSignature();
                 return;
             }
 
@@ -213,6 +299,9 @@ namespace TitanOrbit.UI
                 orbitDockSidebar.RefreshCurrentShip(PopulateTreeNode, maxes);
             Canvas.ForceUpdateCanvases();
             _landPrepareComplete = true;
+            // The cards are already this moon's hulls. Remember that so the first
+            // store poll after the menu appears does not paint all 24 again.
+            RememberTreeVisualSignature();
         }
 
         /// <summary>
