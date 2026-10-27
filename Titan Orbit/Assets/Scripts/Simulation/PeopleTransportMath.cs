@@ -199,10 +199,34 @@ namespace TitanOrbit.Simulation
         /// <summary>
         /// True when an unload hop should abort and fly home. Ownership is latched at
         /// launch; a capture (or any other flip) recalls leftover capsules.
+        /// Hops that <see cref="ShouldKeepUnloadingAfterCapture"/> already re-latched
+        /// onto the new owner are not a flip, so they finish the unload.
         /// </summary>
         public static bool ShouldRecallUnloadHop(byte ownerAtSpawn, TeamId liveOwner)
         {
             return ownerAtSpawn != (byte)liveOwner;
+        }
+
+        /// <summary>
+        /// After a capture, keep flying the hop onto the planet while it is still
+        /// under the 49% garrison buffer. <paramref name="alreadyReserved"/> is people
+        /// on earlier hops that will also land and have not been counted in
+        /// <paramref name="population"/> yet.
+        /// </summary>
+        public static bool ShouldKeepUnloadingAfterCapture(
+            byte ownerAtSpawn,
+            TeamId liveOwner,
+            TeamId hopTeam,
+            int population,
+            int maxPopulation,
+            int alreadyReserved)
+        {
+            if (ownerAtSpawn == 255 || ownerAtSpawn == (byte)liveOwner)
+                return false;
+            if (liveOwner != hopTeam || liveOwner == TeamId.None)
+                return false;
+            int projected = population + math.max(0, alreadyReserved);
+            return PlanetPopulationMath.NeedsFriendlyGarrison(projected, maxPopulation);
         }
 
         /// <summary>Toroidal shortest-path lerp on XZ. Y is forced to 0.</summary>

@@ -24,8 +24,8 @@ namespace TitanOrbit.Game
     /// (<c>PeopleTransportEscortLogic.StepTroopDrone</c>). A load that opens a new
     /// escort slot joins that seeded seat. A load that only tops up cargo homes on
     /// the parked capsule it is joining. An unload then advances from its slot to
-    /// the enemy planet. If that planet is captured, the offset returns to zero
-    /// and the sphere rejoins the slot.
+    /// the planet. If that planet is captured while it is still under 49% troops,
+    /// the sphere keeps unloading. Otherwise it rejoins the slot.
     /// </para>
     /// <para>
     /// On <see cref="PeopleTransportPoseStatus.Consumed"/> we play the people transfer one-shot
@@ -133,6 +133,9 @@ namespace TitanOrbit.Game
             new Dictionary<uint, PeopleTransportVfxBridge.PoseUpdate>(16);
 
         readonly Dictionary<int, ShipFrameCache> _shipFrames = new Dictionary<int, ShipFrameCache>(8);
+        /// <summary>Sequences that finish an unload after capture while the planet is under 49%.</summary>
+        readonly HashSet<uint> _garrisonKeep = new HashSet<uint>();
+        readonly Dictionary<int, int> _garrisonReserved = new Dictionary<int, int>(8);
         int _shipFrameSerial = -1;
 
         int _lastTickFrame = -1;
@@ -311,6 +314,8 @@ namespace TitanOrbit.Game
             if (!ToroidalDisplay.TryGetReferencePosition(out Vector3 reference))
                 reference = Vector3.zero;
 
+            ResolveGarrisonKeeps();
+
             for (int i = _flights.Count - 1; i >= 0; i--)
             {
                 var f = _flights[i];
@@ -367,9 +372,66 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// Same 49% garrison rule as the server. Keep-set is rebuilt every frame from
+        /// the live planet so a stale recall can resume once the captured world reads
+        /// as under the buffer.
+        /// </summary>
+        void ResolveGarrisonKeeps()
+        {
+            _garrisonKeep.Clear();
+            _garrisonReserved.Clear();
+            for (int pass = 0; pass < 2; pass++)
+            {
+                for (int i = 0; i < _flights.Count; i++)
+                {
+                    Flight f = _flights[i];
+                    if (f.IsLoad != 0 || f.TargetPlanetId == 0 || f.Go == null || f.TargetOwnerAtSpawn == 255)
+                        continue;
+                    if (!EcsGameBridge.TryGetPlanetPoseByPlanetId(
+                            f.TargetPlanetId, out _, out float scale, out PlanetState planet))
+                        continue;
+
+                    int people = (int)math.round(math.max(0f, f.Amount));
+                    if (people <= 0)
+                        continue;
+
+                    bool ownerMatches = f.TargetOwnerAtSpawn == (byte)planet.Ownership;
+                    if (pass == 0)
+                    {
+                        if (!f.Returning && ownerMatches && (TeamId)f.Team == planet.Ownership)
+                        {
+                            _garrisonReserved.TryGetValue(f.TargetPlanetId, out int sum);
+                            _garrisonReserved[f.TargetPlanetId] = sum + people;
+                        }
+
+                        continue;
+                    }
+
+                    if (ownerMatches)
+                        continue;
+                    // A third team took the planet. Stay on the way home.
+                    if (f.Returning && (TeamId)f.Team != planet.Ownership)
+                        continue;
+
+                    float bonus = PlanetConnectionGraphCache.GetStackedConnectionBonusFraction(f.TargetPlanetId);
+                    int maxPop = PlanetPopulationMath.GetEffectiveMaxPopulation(
+                        math.max(0.5f, scale), planet.PlanetLevel, bonus);
+                    _garrisonReserved.TryGetValue(f.TargetPlanetId, out int already);
+                    if (!PeopleTransportMath.ShouldKeepUnloadingAfterCapture(
+                            f.TargetOwnerAtSpawn, planet.Ownership, (TeamId)f.Team,
+                            planet.Population, maxPop, already))
+                        continue;
+
+                    _garrisonKeep.Add(f.Sequence);
+                    _garrisonReserved[f.TargetPlanetId] = already + people;
+                }
+            }
+        }
+
+        /// <summary>
         /// Match the server: a new escort slot is joined in place. A top-up homes on
         /// the parked capsule that grows, then an unload sorties from its slot to the
-        /// planet. Capture sets desired offset back to zero.
+        /// planet. Capture keeps the hop unloading while the planet is under 49%.
         /// </summary>
         void IntegrateFlightLikeDrone(ref Flight f, float clock, float mapW, float mapH)
         {
@@ -385,14 +447,15 @@ namespace TitanOrbit.Game
                 f.TargetOwnerAtSpawn = (byte)latchPlanet.Ownership;
 
             bool recallUnload = f.IsLoad == 0 &&
-                (f.Returning ||
-                 f.TargetPlanetId == 0 ||
-                 (f.TargetPlanetId != 0 &&
-                  f.TargetOwnerAtSpawn != 255 &&
-                  EcsGameBridge.TryGetPlanetPoseByPlanetId(
-                      f.TargetPlanetId, out _, out _, out var livePlanet) &&
-                  PeopleTransportMath.ShouldRecallUnloadHop(
-                      f.TargetOwnerAtSpawn, livePlanet.Ownership)));
+                (f.TargetPlanetId == 0 ||
+                 ((f.Returning ||
+                   (f.TargetPlanetId != 0 &&
+                    f.TargetOwnerAtSpawn != 255 &&
+                    EcsGameBridge.TryGetPlanetPoseByPlanetId(
+                        f.TargetPlanetId, out _, out _, out var livePlanet) &&
+                    PeopleTransportMath.ShouldRecallUnloadHop(
+                        f.TargetOwnerAtSpawn, livePlanet.Ownership))) &&
+                  !_garrisonKeep.Contains(f.Sequence)));
 
             bool isLoad = f.IsLoad != 0;
             bool loadEligible = false;
@@ -408,7 +471,9 @@ namespace TitanOrbit.Game
                 f.Returning = true;
             else if (isLoad)
                 f.Returning = false;
-            if (!isLoad && recallUnload)
+            if (!isLoad && _garrisonKeep.Contains(f.Sequence))
+                f.Returning = false;
+            else if (!isLoad && recallUnload)
                 f.Returning = true;
 
             bool hasSlot = false;

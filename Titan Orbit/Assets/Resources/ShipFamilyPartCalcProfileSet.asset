@@ -177,8 +177,8 @@ MonoBehaviour:
       healthRegenPerExtraLevel: 0
       energyCap: 18
       energyCapPerExtraLevel: 6
-      energyRegen: 3
-      energyRegenPerExtraLevel: 1
+      energyRegen: 5
+      energyRegenPerExtraLevel: 1.5
       moveSpeed: 6
       moveSpeedPerExtraLevel: 0.1
       accelerationCap: 0
@@ -223,8 +223,8 @@ MonoBehaviour:
       healthRegenPerExtraLevel: 0
       energyCap: 24
       energyCapPerExtraLevel: 7
-      energyRegen: 4
-      energyRegenPerExtraLevel: 1.3333334
+      energyRegen: 6
+      energyRegenPerExtraLevel: 1.8333334
       moveSpeed: 7
       moveSpeedPerExtraLevel: 0.15
       accelerationCap: 0
@@ -821,8 +821,8 @@ MonoBehaviour:
       healthRegenPerExtraLevel: 0
       energyCap: 18
       energyCapPerExtraLevel: 6
-      energyRegen: 3
-      energyRegenPerExtraLevel: 1
+      energyRegen: 5
+      energyRegenPerExtraLevel: 1.5
       moveSpeed: 6
       moveSpeedPerExtraLevel: 0.1
       accelerationCap: 0
@@ -867,8 +867,8 @@ MonoBehaviour:
       healthRegenPerExtraLevel: 0
       energyCap: 24
       energyCapPerExtraLevel: 7
-      energyRegen: 4
-      energyRegenPerExtraLevel: 1.3333334
+      energyRegen: 6
+      energyRegenPerExtraLevel: 1.8333334
       moveSpeed: 7
       moveSpeedPerExtraLevel: 0.15
       accelerationCap: 0
@@ -1235,8 +1235,8 @@ MonoBehaviour:
       healthRegenPerExtraLevel: 0
       energyCap: 18
       energyCapPerExtraLevel: 6
-      energyRegen: 3
-      energyRegenPerExtraLevel: 1
+      energyRegen: 5
+      energyRegenPerExtraLevel: 1.5
       moveSpeed: 6
       moveSpeedPerExtraLevel: 0.1
       accelerationCap: 0
@@ -1833,8 +1833,8 @@ MonoBehaviour:
       healthRegenPerExtraLevel: 0
       energyCap: 18
       energyCapPerExtraLevel: 6
-      energyRegen: 3
-      energyRegenPerExtraLevel: 1
+      energyRegen: 5
+      energyRegenPerExtraLevel: 1.5
       moveSpeed: 6
       moveSpeedPerExtraLevel: 0.1
       accelerationCap: 0
@@ -2369,16 +2369,16 @@ MonoBehaviour:
     notes: 
     includeInPopulate: 1
     baseStats:
-      firePower: 10
-      firePowerPerExtraLevel: 1.75
-      bulletSpeed: 10
-      bulletSpeedPerExtraLevel: 1
-      bulletRange: 25
-      bulletRangePerExtraLevel: 3
-      fireRate: 1
+      firePower: 0
+      firePowerPerExtraLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerExtraLevel: 0
+      bulletRange: 0
+      bulletRangePerExtraLevel: 0
+      fireRate: 0
       fireRatePerExtraLevel: 0
-      rammingPower: 4
-      rammingPowerPerExtraLevel: 0.65
+      rammingPower: 3
+      rammingPowerPerExtraLevel: 0.5
       healthCap: 6.3
       healthCapPerExtraLevel: 6.3
       healthRegen: 0.22500002
@@ -2477,8 +2477,8 @@ MonoBehaviour:
       healthRegenPerExtraLevel: 0
       energyCap: 18
       energyCapPerExtraLevel: 6
-      energyRegen: 3
-      energyRegenPerExtraLevel: 1
+      energyRegen: 5
+      energyRegenPerExtraLevel: 1.5
       moveSpeed: 6
       moveSpeedPerExtraLevel: 0.1
       accelerationCap: 0
@@ -2983,8 +2983,8 @@ MonoBehaviour:
       healthRegenPerExtraLevel: 0
       energyCap: 18
       energyCapPerExtraLevel: 6
-      energyRegen: 3
-      energyRegenPerExtraLevel: 1
+      energyRegen: 5
+      energyRegenPerExtraLevel: 1.5
       moveSpeed: 6
       moveSpeedPerExtraLevel: 0.1
       accelerationCap: 0
@@ -3029,8 +3029,8 @@ MonoBehaviour:
       healthRegenPerExtraLevel: 0
       energyCap: 24
       energyCapPerExtraLevel: 7
-      energyRegen: 4
-      energyRegenPerExtraLevel: 1.3333334
+      energyRegen: 6
+      energyRegenPerExtraLevel: 1.8333334
       moveSpeed: 7
       moveSpeedPerExtraLevel: 0.15
       accelerationCap: 0
@@ -3489,8 +3489,8 @@ MonoBehaviour:
       healthRegenPerExtraLevel: 0
       energyCap: 18
       energyCapPerExtraLevel: 6
-      energyRegen: 3
-      energyRegenPerExtraLevel: 1
+      energyRegen: 5
+      energyRegenPerExtraLevel: 1.5
       moveSpeed: 6
       moveSpeedPerExtraLevel: 0.1
       accelerationCap: 0
@@ -3811,8 +3811,8 @@ MonoBehaviour:
       healthRegenPerExtraLevel: 0
       energyCap: 18
       energyCapPerExtraLevel: 6
-      energyRegen: 3
-      energyRegenPerExtraLevel: 1
+      energyRegen: 5
+      energyRegenPerExtraLevel: 1.5
       moveSpeed: 6
       moveSpeedPerExtraLevel: 0.1
       accelerationCap: 0
@@ -4363,8 +4363,8 @@ MonoBehaviour:
       healthRegenPerExtraLevel: 0
       energyCap: 18
       energyCapPerExtraLevel: 6
-      energyRegen: 3
-      energyRegenPerExtraLevel: 1
+      energyRegen: 5
+      energyRegenPerExtraLevel: 1.5
       moveSpeed: 6
       moveSpeedPerExtraLevel: 0.1
       accelerationCap: 0
@@ -4623,13 +4623,13 @@ MonoBehaviour:
     notes: 
     includeInPopulate: 1
     baseStats:
-      firePower: 0
-      firePowerPerExtraLevel: 0
-      bulletSpeed: 0
-      bulletSpeedPerExtraLevel: 0
-      bulletRange: 0
-      bulletRangePerExtraLevel: 0
-      fireRate: 0
+      firePower: 3
+      firePowerPerExtraLevel: 0.75
+      bulletSpeed: 10
+      bulletSpeedPerExtraLevel: 1
+      bulletRange: 20
+      bulletRangePerExtraLevel: 2
+      fireRate: 3
       fireRatePerExtraLevel: 0
       rammingPower: 0
       rammingPowerPerExtraLevel: 0
@@ -4961,8 +4961,8 @@ MonoBehaviour:
       healthRegenPerExtraLevel: 0
       energyCap: 18
       energyCapPerExtraLevel: 6
-      energyRegen: 3
-      energyRegenPerExtraLevel: 1
+      energyRegen: 5
+      energyRegenPerExtraLevel: 1.5
       moveSpeed: 6
       moveSpeedPerExtraLevel: 0.1
       accelerationCap: 0
@@ -5007,8 +5007,8 @@ MonoBehaviour:
       healthRegenPerExtraLevel: 0
       energyCap: 18
       energyCapPerExtraLevel: 6
-      energyRegen: 3
-      energyRegenPerExtraLevel: 1
+      energyRegen: 5
+      energyRegenPerExtraLevel: 1.5
       moveSpeed: 6
       moveSpeedPerExtraLevel: 0.1
       accelerationCap: 0
@@ -5175,22 +5175,22 @@ MonoBehaviour:
     notes: 
     includeInPopulate: 1
     baseStats:
-      firePower: 3
-      firePowerPerExtraLevel: 0.75
-      bulletSpeed: 10
-      bulletSpeedPerExtraLevel: 1
-      bulletRange: 20
-      bulletRangePerExtraLevel: 2
-      fireRate: 3
+      firePower: 0
+      firePowerPerExtraLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerExtraLevel: 0
+      bulletRange: 0
+      bulletRangePerExtraLevel: 0
+      fireRate: 0
       fireRatePerExtraLevel: 0
       rammingPower: 0
       rammingPowerPerExtraLevel: 0
-      healthCap: 0
-      healthCapPerExtraLevel: 0
-      healthRegen: 0
-      healthRegenPerExtraLevel: 0
-      energyCap: 18
-      energyCapPerExtraLevel: 9
+      healthCap: 3.15
+      healthCapPerExtraLevel: 3.15
+      healthRegen: 0.11250001
+      healthRegenPerExtraLevel: 0.1125
+      energyCap: 0
+      energyCapPerExtraLevel: 0
       energyRegen: 0
       energyRegenPerExtraLevel: 0
       moveSpeed: 0
@@ -5835,8 +5835,8 @@ MonoBehaviour:
       healthRegenPerExtraLevel: 0
       energyCap: 18
       energyCapPerExtraLevel: 6
-      energyRegen: 3
-      energyRegenPerExtraLevel: 1
+      energyRegen: 5
+      energyRegenPerExtraLevel: 1.5
       moveSpeed: 6
       moveSpeedPerExtraLevel: 0.1
       accelerationCap: 0
@@ -5881,8 +5881,8 @@ MonoBehaviour:
       healthRegenPerExtraLevel: 0
       energyCap: 18
       energyCapPerExtraLevel: 6
-      energyRegen: 3
-      energyRegenPerExtraLevel: 1
+      energyRegen: 5
+      energyRegenPerExtraLevel: 1.5
       moveSpeed: 6
       moveSpeedPerExtraLevel: 0.1
       accelerationCap: 0
@@ -5927,8 +5927,8 @@ MonoBehaviour:
       healthRegenPerExtraLevel: 0
       energyCap: 24
       energyCapPerExtraLevel: 7
-      energyRegen: 4
-      energyRegenPerExtraLevel: 1.3333334
+      energyRegen: 6
+      energyRegenPerExtraLevel: 1.8333334
       moveSpeed: 7
       moveSpeedPerExtraLevel: 0.15
       accelerationCap: 0
@@ -6341,8 +6341,8 @@ MonoBehaviour:
       healthRegenPerExtraLevel: 0
       energyCap: 18
       energyCapPerExtraLevel: 6
-      energyRegen: 3
-      energyRegenPerExtraLevel: 1
+      energyRegen: 5
+      energyRegenPerExtraLevel: 1.5
       moveSpeed: 6
       moveSpeedPerExtraLevel: 0.1
       accelerationCap: 0
@@ -6843,8 +6843,8 @@ MonoBehaviour:
       healthRegenPerExtraLevel: 0
       energyCap: 18
       energyCapPerExtraLevel: 6
-      energyRegen: 3
-      energyRegenPerExtraLevel: 1
+      energyRegen: 5
+      energyRegenPerExtraLevel: 1.5
       moveSpeed: 6
       moveSpeedPerExtraLevel: 0.1
       accelerationCap: 0

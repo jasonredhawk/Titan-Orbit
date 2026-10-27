@@ -137,6 +137,23 @@ namespace TitanOrbit.ECS
             }
 
             var ecb = new EntityCommandBuffer(Allocator.Temp);
+            // Friendly unloads already in the air. Hostile drains are not garrison.
+            var garrisonInbound = new NativeHashMap<int, int>(16, Allocator.Temp);
+            foreach (var hopRef in SystemAPI.Query<RefRO<PeopleTransportState>>().WithAll<PeopleTransportTag>())
+            {
+                PeopleTransportState hop = hopRef.ValueRO;
+                if (hop.IsLoad != 0 || hop.Returning != 0 || hop.TargetPlanetId == 0)
+                    continue;
+                if (!planetStateById.TryGetValue(hop.TargetPlanetId, out var dest))
+                    continue;
+                if (dest.Ownership != (TeamId)hop.Team)
+                    continue;
+                int people = (int)math.round(math.max(0f, hop.Amount));
+                if (people <= 0)
+                    continue;
+                garrisonInbound.TryGetValue(hop.TargetPlanetId, out int sum);
+                garrisonInbound[hop.TargetPlanetId] = sum + people;
+            }
 
             foreach (var (shipState, shipInput, orbit, moonDock, transferState, shipTransform, shipEntity) in SystemAPI
                          .Query<RefRW<ShipState>, RefRO<ShipInput>, RefRW<ShipOrbitState>, RefRO<ShipMoonDockState>,
@@ -210,6 +227,9 @@ namespace TitanOrbit.ECS
                 int maxPop = PlanetPopulationMath.GetEffectiveMaxPopulation(
                     planetSize, planetState.PlanetLevel, connectionBonus);
                 int halfCap = math.max(1, maxPop / 2);
+                // Troops already flying home onto this friendly planet. They count toward
+                // the 49% line so another sphere is not launched on top of them.
+                garrisonInbound.TryGetValue(orbitPlanetId, out int inboundGarrison);
 
                 // --- Load vs unload batch sizes (people/sec + people per packed sphere) ---
                 // [TITAN-ORBIT] Load and unload = ship × planet (L6 at L3 → +18).
@@ -234,15 +254,18 @@ namespace TitanOrbit.ECS
                 float3 planetPos = planetTransform.Position;
                 bool friendly = shipState.ValueRO.Team != TeamId.None && planetState.Ownership == shipState.ValueRO.Team;
                 orbit.ValueRW.IsTransferringPeople = ComputeIsTransferringPeople(
-                    dwellReady, friendly, planetState.Population, halfCap,
+                    dwellReady, friendly, planetState.Population, halfCap, maxPop,
                     shipState.ValueRO.CurrentPeople, shipState.ValueRO.PeopleCapacity,
                     transfer.PeopleInTransit);
 
                 // Latch load for this dwell so a friendly pickup cannot flip to unload
-                // mid-orbit. Unload is hostile/neutral only — never dump onto allies.
+                // mid-orbit. A latched unload stays an unload: friendly worlds under 49%
+                // keep receiving troops, and crossing that line does not start a load
+                // until the ship leaves the ring.
                 bool lockedLoad = transfer.TransferDirection == PeopleTransferDirection.Load;
+                bool lockedUnload = transfer.TransferDirection == PeopleTransferDirection.Unload;
                 bool wantUnload = !lockedLoad && ShouldUnloadPeople(
-                    in shipState.ValueRO, in planetState);
+                    in shipState.ValueRO, in planetState, maxPop, inboundGarrison);
                 if (wantUnload)
                 {
                     // Each parked escort flies down intact — same people, same size, same HP.
@@ -263,23 +286,24 @@ namespace TitanOrbit.ECS
                         transfer.UnloadAccumulator = now;
                     }
                 }
-                else
+                else if (!lockedUnload && friendly)
                 {
-                    transfer.TransferDirection = PeopleTransferDirection.Load;
-
-                    if (friendly)
+                    // --- Packed load, capped by cargo space and deployable surplus ---
+                    // [TITAN-ORBIT] Ideal size is loadChunk, but surplus or space may be
+                    // smaller — then we still send a partial sphere (often +1). That keeps
+                    // multi-ship orbits sharing trickle people near the 50% reserve instead
+                    // of one high-level ship blocking until a full +2…+6 surplus exists.
+                    // Direction stays unload when this dwell was already dropping troops,
+                    // including a friendly planet that just crossed 49%.
+                    int space = shipState.ValueRO.PeopleCapacity - shipState.ValueRO.CurrentPeople -
+                                (int)transfer.PeopleInTransit;
+                    int surplus = planetState.Population - halfCap;
+                    if (space > 0 && surplus > 0)
                     {
+                        transfer.TransferDirection = PeopleTransferDirection.Load;
                         transfer.LoadAccumulator += loadStep;
                         if (transfer.LoadAccumulator >= loadChunk)
                         {
-                            // --- Packed load, capped by cargo space and deployable surplus ---
-                            // [TITAN-ORBIT] Ideal size is loadChunk, but surplus or space may be
-                            // smaller — then we still send a partial sphere (often +1). That keeps
-                            // multi-ship orbits sharing trickle people near the 50% reserve instead
-                            // of one high-level ship blocking until a full +2…+6 surplus exists.
-                            int space = shipState.ValueRO.PeopleCapacity - shipState.ValueRO.CurrentPeople -
-                                        (int)transfer.PeopleInTransit;
-                            int surplus = planetState.Population - halfCap;
                             int send = (int)math.min(loadChunk, math.min(space, surplus));
                             if (send > 0 && TryDispatchLoad(
                                     ref ecb, ref state, shipEntity, ref shipState.ValueRW, ref planetState,
@@ -298,9 +322,18 @@ namespace TitanOrbit.ECS
 
             ecb.Playback(state.EntityManager);
             ecb.Dispose();
+            garrisonInbound.Dispose();
             planetById.Dispose();
             planetStateById.Dispose();
             planetTransformById.Dispose();
+        }
+
+        internal static void AddGarrisonReserved(ref NativeHashMap<int, int> reserved, int planetId, int people)
+        {
+            if (people <= 0 || planetId == 0)
+                return;
+            reserved.TryGetValue(planetId, out int sum);
+            reserved[planetId] = sum + people;
         }
 
         static void ResetTransferDwell(ref ShipPeopleTransferState transfer)
@@ -312,14 +345,19 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Hostile or unowned worlds only. Allied planets never accept a dump.
+        /// Hostile or unowned worlds always take a drop. A friendly world keeps
+        /// taking troops while it is under 49% of its cap, counting people already
+        /// in flight, so the drop stops short of the 50% load reserve.
         /// </summary>
-        static bool ShouldUnloadPeople(in ShipState ship, in PlanetState planet)
+        static bool ShouldUnloadPeople(in ShipState ship, in PlanetState planet, int maxPop, int inboundGarrison)
         {
             if (ship.IsDead || ship.AwaitingTeamSelection || ship.CurrentPeople <= 0)
                 return false;
             bool friendly = ship.Team != TeamId.None && planet.Ownership == ship.Team;
-            return !friendly;
+            if (!friendly)
+                return true;
+            int projected = planet.Population + math.max(0, inboundGarrison);
+            return PlanetPopulationMath.NeedsFriendlyGarrison(projected, maxPop);
         }
 
         /// <summary>
@@ -332,6 +370,7 @@ namespace TitanOrbit.ECS
             bool friendly,
             int planetPopulation,
             int halfCap,
+            int maxPop,
             int currentPeople,
             int peopleCapacity,
             float peopleInTransit)
@@ -345,7 +384,10 @@ namespace TitanOrbit.ECS
             {
                 int space = peopleCapacity - currentPeople;
                 int surplus = planetPopulation - halfCap;
-                return space > 0 && surplus > 0;
+                bool loading = space > 0 && surplus > 0;
+                bool garrison = currentPeople > 0 &&
+                                PlanetPopulationMath.NeedsFriendlyGarrison(planetPopulation, maxPop);
+                return loading || garrison;
             }
 
             return currentPeople > 0;
@@ -697,6 +739,22 @@ namespace TitanOrbit.ECS
             var ecb = new EntityCommandBuffer(Allocator.Temp);
             var claimReleases = new NativeList<PeopleInboundClaimRelease>(4, Allocator.Temp);
 
+            // Friendly unloads already in the air count against the 49% line. Capture
+            // leftovers are judged later in this tick, after a hop may have flipped ownership.
+            var garrisonReserved = new NativeHashMap<int, int>(16, Allocator.Temp);
+            foreach (var transport in SystemAPI.Query<RefRO<PeopleTransportState>>().WithAll<PeopleTransportTag>())
+            {
+                PeopleTransportState hop = transport.ValueRO;
+                if (hop.IsLoad != 0 || hop.Returning != 0 || hop.TargetPlanetId == 0 || hop.TargetOwnerAtSpawn == 255)
+                    continue;
+                if (!planetStateById.TryGetValue(hop.TargetPlanetId, out var livePlanet))
+                    continue;
+                if (hop.TargetOwnerAtSpawn != (byte)livePlanet.Ownership || (TeamId)hop.Team != livePlanet.Ownership)
+                    continue;
+                PeopleTransportDispatchSystem.AddGarrisonReserved(
+                    ref garrisonReserved, hop.TargetPlanetId, (int)math.round(math.max(0f, hop.Amount)));
+            }
+
             foreach (var (transport, transform, entity) in SystemAPI
                          .Query<RefRW<PeopleTransportState>, RefRW<LocalTransform>>()
                          .WithAll<PeopleTransportTag>()
@@ -747,6 +805,39 @@ namespace TitanOrbit.ECS
                                 : myPos;
                             PeopleTransportNetNotify.SendSeatRetarget(
                                 ref ecb, t.Sequence, retargeted, shipPos, t.TargetShipNetworkId);
+                        }
+                    }
+                }
+
+                // A capture this tick (earlier hop) leaves this sphere aimed at the old owner.
+                // Keep it unloading while the planet is under 49%; otherwise fly it home.
+                if (!isLoad && t.Returning == 0 && t.TargetPlanetId != 0 && t.TargetOwnerAtSpawn != 255 &&
+                    planetStateById.TryGetValue(t.TargetPlanetId, out var recallPlanet) &&
+                    planetTransformById.TryGetValue(t.TargetPlanetId, out var recallTransform) &&
+                    planetById.TryGetValue(t.TargetPlanetId, out var recallEntity) &&
+                    t.TargetOwnerAtSpawn != (byte)recallPlanet.Ownership)
+                {
+                    int people = (int)math.round(math.max(0f, t.Amount));
+                    float recallSize = math.max(0.5f, recallTransform.Scale);
+                    int recallMax = EffectiveMaxPopulation(
+                        ref state, recallEntity, recallSize, recallPlanet.PlanetLevel);
+                    garrisonReserved.TryGetValue(t.TargetPlanetId, out int already);
+                    if (people > 0 && PeopleTransportMath.ShouldKeepUnloadingAfterCapture(
+                            t.TargetOwnerAtSpawn, recallPlanet.Ownership, team,
+                            recallPlanet.Population, recallMax, already))
+                    {
+                        t.TargetOwnerAtSpawn = (byte)recallPlanet.Ownership;
+                        PeopleTransportDispatchSystem.AddGarrisonReserved(ref garrisonReserved, t.TargetPlanetId, people);
+                    }
+                    else
+                    {
+                        t.Returning = 1;
+                        // This hop was seeded when the planet was still ours. It is going
+                        // home, so it must not keep blocking the 49% line.
+                        if ((TeamId)t.TargetOwnerAtSpawn == team)
+                        {
+                            garrisonReserved.TryGetValue(t.TargetPlanetId, out int held);
+                            garrisonReserved[t.TargetPlanetId] = math.max(0, held - people);
                         }
                     }
                 }
@@ -965,6 +1056,17 @@ namespace TitanOrbit.ECS
 
                         planetStateById[t.TargetPlanetId] = planetState;
                         ecb.SetComponent(planetEntity, planetState);
+                        if (unloadOutcome == PeopleUnloadOutcome.Friendly)
+                        {
+                            // Landed crew is on the planet now. Drop it from the in-flight reserve
+                            // so the next hop in this tick is not counted twice.
+                            garrisonReserved.TryGetValue(t.TargetPlanetId, out int held);
+                            if (held > 0)
+                            {
+                                garrisonReserved[t.TargetPlanetId] = math.max(
+                                    0, held - (int)math.round(math.max(0f, t.Amount)));
+                            }
+                        }
 
                         // --- Match-long transporter score (minimap top transporter badge) ---
                         // [TITAN-ORBIT] Credit the dispatching ship for every successful unload
@@ -1021,6 +1123,7 @@ namespace TitanOrbit.ECS
 
             ApplyInboundClaimReleases(state.EntityManager, claimReleases);
             claimReleases.Dispose();
+            garrisonReserved.Dispose();
             ecb.Playback(state.EntityManager);
             ecb.Dispose();
             planetById.Dispose();

@@ -92,6 +92,12 @@ namespace TitanOrbit.ECS
 
         static string s_LastLog;
 
+        /// <summary>True after <see cref="IsComplete"/> has been true once this session.</summary>
+        static bool s_SeenComplete;
+
+        /// <summary>Last logged <see cref="IsComplete"/> after the gate has completed once.</summary>
+        static bool s_LastComplete;
+
         /// <summary>Stashes occupancy RPC until hydrate can apply it.</summary>
         public static void MarkOccupancyReceived(int slotCount, int deadSlots)
         {
@@ -201,6 +207,8 @@ namespace TitanOrbit.ECS
             InGameRealtime = -1f;
             IsComplete = false;
             s_LastLog = null;
+            s_SeenComplete = false;
+            s_LastComplete = false;
             AsteroidOccupancyPending.Clear();
         }
 
@@ -286,6 +294,11 @@ namespace TitanOrbit.ECS
             float ghostRatio,
             bool ghostTimeout)
         {
+            // After the first complete, ghost instantiated flickers 43–46 and would
+            // rewrite this line every sample. Log only when IsComplete itself changes.
+            if (s_SeenComplete && IsComplete == s_LastComplete)
+                return;
+
             string line =
                 "hydrate=" + ClientMapHydrateCache.IsComplete +
                 " occupancy=" + occupancyReady +
@@ -299,9 +312,12 @@ namespace TitanOrbit.ECS
                 (ghostTimeout ? " ghostTimeout" : string.Empty) +
                 " proxy=" + proxyReady +
                 " complete=" + IsComplete;
-            if (line == s_LastLog)
+            if (!s_SeenComplete && line == s_LastLog)
                 return;
             s_LastLog = line;
+            s_LastComplete = IsComplete;
+            if (IsComplete)
+                s_SeenComplete = true;
             Debug.Log("[JoinWorldReady] " + line);
         }
 

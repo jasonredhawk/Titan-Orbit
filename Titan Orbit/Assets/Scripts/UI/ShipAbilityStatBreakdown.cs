@@ -17,7 +17,8 @@ namespace TitanOrbit.UI
     /// PARTS table: one row per component. BASE and PERX are catalog numbers.
     /// The SCALE column is that part’s prefab size (including ×1) and multiplies the row.
     /// The BONUS column is this match’s family roll for that stat: a green +% adds,
-    /// an amber −% reduces, and ×1 means the roll does not change the ship.
+    /// a red −% reduces, and ×1 means the roll does not change the ship.
+    /// The part name keeps its own column colour.
     /// The same roll is printed on every part — it is per family, not per component.
     /// Extras add no Base. There is no second line under a part for scale.
     /// MASS TAX table (Move / Accel / Turn): gems / troops / hull → drag → chip.
@@ -753,7 +754,7 @@ namespace TitanOrbit.UI
                     shipSteps,
                     abilityLv);
                 AppendGridCell(sb, HexScale, FormatScaleColumn(scale), GridScaleW, right: true);
-                AppendFleetBonusCell(sb, p.FleetMul > 0.0001f ? p.FleetMul : 1f, field);
+                AppendFleetBonusCell(sb, p.FleetMul > 0.0001f ? p.FleetMul : 1f);
                 AppendGridCell(sb, HexResult, FGrid(addDisp), GridNumW, right: true);
                 sb.AppendLine();
             }
@@ -1024,11 +1025,12 @@ namespace TitanOrbit.UI
         /// <summary>
         /// One fleet BONUS cell. <paramref name="mul"/> is the match roll already
         /// resolved for this stat (1 when the family does not change it).
-        /// The percent uses that stat's own colour. Muted <c>×1</c> is stock.
+        /// A plus is mint and a minus is red. Muted <c>×1</c> is stock.
+        /// The part name in the columns to the left is not recoloured here.
         /// </summary>
-        static void AppendFleetBonusCell(StringBuilder sb, float mul, StatField field)
+        static void AppendFleetBonusCell(StringBuilder sb, float mul)
         {
-            FormatFleetBonus(mul, HexForStatField(field), out string text, out string hex);
+            FormatFleetBonus(mul, out string text, out string hex);
             AppendGridCell(sb, hex, text, GridFleetW, right: true);
         }
 
@@ -1038,10 +1040,9 @@ namespace TitanOrbit.UI
         /// idea as the SCALE column always printing ×1.
         /// </summary>
         /// <param name="mul">Resolved multiplier. Zero or negative is treated as 1.</param>
-        /// <param name="typeHex">That stat's own colour. Stock ×1 stays muted.</param>
         /// <param name="text">Cell text (<c>+12.5%</c>, <c>-20%</c>, or <c>×1</c>).</param>
-        /// <param name="hex">TMP colour without the leading <c>#</c>.</param>
-        static void FormatFleetBonus(float mul, string typeHex, out string text, out string hex)
+        /// <param name="hex">TMP colour without the leading <c>#</c>. Mint, red, or muted.</param>
+        static void FormatFleetBonus(float mul, out string text, out string hex)
         {
             float m = mul > 0.0001f ? mul : 1f;
             float signed = (m - 1f) * 100f;
@@ -1050,14 +1051,14 @@ namespace TitanOrbit.UI
             if (signed > 0.05f)
             {
                 text = "+" + signed.ToString("0.#", CultureInfo.InvariantCulture) + "%";
-                hex = string.IsNullOrEmpty(typeHex) ? FamilyStatHudCopy.HexMuted : typeHex;
+                hex = FamilyStatHudCopy.HexBoost;
                 return;
             }
 
             if (signed < -0.05f)
             {
                 text = "-" + Mathf.Abs(signed).ToString("0.#", CultureInfo.InvariantCulture) + "%";
-                hex = string.IsNullOrEmpty(typeHex) ? FamilyStatHudCopy.HexMuted : typeHex;
+                hex = FamilyStatHudCopy.HexPenalty;
                 return;
             }
 
@@ -1121,12 +1122,9 @@ namespace TitanOrbit.UI
                 rateMul = ReadFireRateMul(parts.Family.ResolveSpecialBonuses());
             }
 
-            // Fire Rate uses the darker offense slot, same as Bullet Speed on the hull card.
-            FormatFleetBonus(
-                rateMul,
-                ColorUtility.ToHtmlStringRGB(ShipStatPalette.GetStatColor(1)),
-                out string text,
-                out string hex);
+            // "FLEET BONUS" and "fire rate" stay their caption colours.
+            // The percent is mint or red, same as the BONUS column above.
+            FormatFleetBonus(rateMul, out string text, out string hex);
             AppendTint(sb, HexFleet, "FLEET BONUS");
             AppendTint(sb, HexMute, "  fire rate  ");
             AppendTint(sb, hex, text);
@@ -1516,12 +1514,13 @@ namespace TitanOrbit.UI
         /// number is already the add.
         /// </summary>
         static void AppendMegaFleetProduct(
-            StringBuilder sb, float each, int copies, float fleetMul, StatField field)
+            StringBuilder sb, float each, int copies, float fleetMul)
         {
             float mul = fleetMul > 0.0001f ? fleetMul : 1f;
             int n = copies > 0 ? copies : 1;
             sb.Append(' ');
-            FormatFleetBonus(mul, HexForStatField(field), out string text, out string hex);
+            // Percent only. The stat name on this row is written by the caller.
+            FormatFleetBonus(mul, out string text, out string hex);
             AppendTint(sb, hex, text);
             if (n > 1 || Mathf.Abs(mul - 1f) > 0.0005f)
             {
@@ -2577,7 +2576,7 @@ namespace TitanOrbit.UI
             else
                 AppendGridCell(sb, HexMute, "-", GridLvW, right: true);
             AppendGridCell(sb, HexScale, FormatScaleColumn(scaleMul), GridScaleW, right: true);
-            AppendFleetBonusCell(sb, fleetMul, StatField.FirePower);
+            AppendFleetBonusCell(sb, fleetMul);
             AppendGridCell(sb, HexResult, FGrid(add), GridNumW, right: true);
             sb.AppendLine();
             return add;
@@ -2645,7 +2644,7 @@ namespace TitanOrbit.UI
                 sb.Append(count.displayName).Append("  ");
                 AppendTint(sb, HexResult, FDetail(each));
                 // One shot, then the planet roll. Copies are not a second multiply.
-                AppendMegaFleetProduct(sb, each, 1, fleetMul, StatField.FirePower);
+                AppendMegaFleetProduct(sb, each, 1, fleetMul);
                 sb.Append(" ");
                 AppendTint(sb, HexMute, "Fire");
                 sb.AppendLine();
@@ -2711,7 +2710,7 @@ namespace TitanOrbit.UI
                     AppendTint(sb, HexMute, "fastest");
                 }
 
-                AppendMegaFleetProduct(sb, each, fastestWins ? 1 : count.count, fleetMul, field);
+                AppendMegaFleetProduct(sb, each, fastestWins ? 1 : count.count, fleetMul);
                 sb.AppendLine();
             }
 
@@ -2787,7 +2786,7 @@ namespace TitanOrbit.UI
                     AppendTint(sb, HexMute, unitLabel);
                 }
 
-                AppendMegaFleetProduct(sb, value, 1, fleetMul, field);
+                AppendMegaFleetProduct(sb, value, 1, fleetMul);
                 sb.AppendLine();
             }
         }
@@ -2848,7 +2847,7 @@ namespace TitanOrbit.UI
                 }
 
                 // Arrow is one copy after the roll. Copies stay separate inputs to cruise.
-                AppendMegaFleetProduct(sb, rawMove, 1, moveFleet, StatField.MoveSpeed);
+                AppendMegaFleetProduct(sb, rawMove, 1, moveFleet);
                 sb.AppendLine();
             }
 

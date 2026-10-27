@@ -63,7 +63,7 @@ namespace TitanOrbit.Editor
                 EditorGUILayout.HelpBox(
                     "No stats found yet. Assign a ShipFamilyDefinition and ensure child names follow 'Family_ComponentId' (e.g. AstroEagle_Cockpit). " +
                     "Non-weapons: stats scale by average scale (x+y+z)/3, including engine/thruster move and acceleration, turn, and cockpit ramming. " +
-                    "Weapons: fire power × average |X|+|Y|, fire rate × 1/|Z| (2 is half rate); bullet speed stays catalog; bullet range uses the same average.",
+                    "Weapons: fire power × average |X|+|Y|, fire rate × 1/|Z| (2 is half rate); bullet speed and bullet range stay catalog.",
                     MessageType.Info);
             }
 

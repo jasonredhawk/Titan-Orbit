@@ -495,7 +495,8 @@ namespace TitanOrbit.Data
             }
 
             // [TITAN-ORBIT] Absolute OVERDRIVE energy/sec on engines (not a multiplier of ExtraSpeedPercent).
-            // More drain is worse. The percent stays in this row's energy colour — it is not recolored.
+            // The "OD/s" title stays the energy hue. The BONUS percent follows the sign
+            // printed in the cell: + is mint, - is red.
             if (isEngine)
                 Queue(
                     fullOriginal.extraSpeedEnergyDrain,
@@ -767,8 +768,8 @@ namespace TitanOrbit.Data
         /// <summary>
         /// One grid row. VAL is the part before this moon's fleet roll, BONUS is that
         /// roll's percent (or — when the moon does not change it), FINAL is the part after the roll.
-        /// <paramref name="higherIsBetter"/> stays so drain callers are explicit; the percent
-        /// uses the row colour either way.
+        /// <paramref name="higherIsBetter"/> stays so drain callers are explicit. The stat
+        /// name keeps the row colour. The BONUS percent is painted later: mint for +, red for -.
         /// </summary>
         static void TryQueueFleet(
             List<GearStatRow> lines,
@@ -953,8 +954,9 @@ namespace TitanOrbit.Data
         /// <summary>
         /// <c> → +11.5 +15%</c> when the fleet roll moves the number.
         /// Used by the extra-level hover and the short plain tooltip, not the gear grid.
-        /// The percent keeps the line's stat colour. <paramref name="higherIsBetter"/>
-        /// is retained so drain callers stay source-compatible; it no longer recolors.
+        /// Rich text paints only the percent mint or red. The stat name stays
+        /// the line colour. <paramref name="higherIsBetter"/> is retained so drain
+        /// callers stay source-compatible; the sign on the percent is what picks the hue.
         /// </summary>
         static bool TryBuildFleetArrow(
             float original,
@@ -969,7 +971,7 @@ namespace TitanOrbit.Data
 
             _ = higherIsBetter;
             if (richText)
-                arrow = " → +" + FormatStatValue(adjusted) + " " + percent;
+                arrow = " → +" + FormatStatValue(adjusted) + " " + FamilyStatHudCopy.TintSignedBonus(percent);
             else
                 arrow = " → +" + FormatStatValue(adjusted) + " (" + percent + ")";
 
@@ -1063,7 +1065,22 @@ namespace TitanOrbit.Data
                     if (showOldColumn)
                         sb.Append("<pos=").Append(oldPos).Append('>').Append(row.Old ?? GearStatEmptyCell);
                     sb.Append("<pos=").Append(valuePos).Append('>').Append(row.Value ?? GearStatEmptyCell);
-                    sb.Append("<pos=").Append(bonusPos).Append('>').Append(row.Bonus ?? GearStatEmptyCell);
+                    // Stat name, VAL, and FINAL stay this row's hue. A +% or -%
+                    // closes that hue, paints mint or red, then opens it again
+                    // so FINAL does not inherit the bonus colour. An em dash
+                    // or "hull" has no sign, so it stays in the row colour.
+                    string bonusRaw = row.Bonus ?? GearStatEmptyCell;
+                    string bonusShown = FamilyStatHudCopy.TintSignedBonus(bonusRaw);
+                    if (bonusShown != bonusRaw)
+                        sb.Append("</color>");
+                    sb.Append("<pos=").Append(bonusPos).Append('>').Append(bonusShown);
+                    if (bonusShown != bonusRaw)
+                    {
+                        Color rowColor = ResolveAbilityLineColor(row.ColorIndex);
+                        sb.Append("<color=#").Append(ColorUtility.ToHtmlStringRGB(rowColor)).Append('>');
+                        if (row.Dim)
+                            sb.Append("<alpha=#99>");
+                    }
                     // FINAL is the number the player came to compare — bold, full strength
                     // even on the quieter hull child row.
                     sb.Append("<pos=").Append(finalPos).Append("><alpha=#FF><b>");

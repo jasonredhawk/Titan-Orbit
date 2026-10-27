@@ -26,9 +26,12 @@ namespace TitanOrbit.Game
     /// must not drag the camera there and back. Asteroid grind and hull contacts do not spring
     /// the hull pose (that coast chased every PhysX bounce and looked jittery). The hull stays
     /// on H73 cruise; <see cref="CameraFollowEcs"/> trails the published pose while
-    /// <see cref="ShipDisplayPose.LocalHullContact"/> is set. Ship-vs-ship separation is the
+    /// <see cref="ShipDisplayPose.LocalHullContact"/> is set. A held predicted tick glides
+    /// at kinematics speed for at most one simulation step so formation flight does not
+    /// shuffle against interpolated remote and AI ships. Ship-vs-ship separation is the
     /// simulated pose from the shared tick, not a display offset. Wrap / respawn / 50u
-    /// abandon still hard-snap. GhostPredictionSmoothing is left off so this system alone
+    /// abandon still hard-snap, and that glide is not applied on wrap, death, catch-up,
+    /// or overlap. GhostPredictionSmoothing is left off so this system alone
     /// owns local presentation (avoids double-smooth jitter).
     /// </para>
     /// <para>
@@ -107,6 +110,19 @@ namespace TitanOrbit.Game
         const float CruiseMinRawFollowDistance = 0.45f;
 
         /// <summary>
+        /// Sim pose closer than this to the last cruise sample is a held tick (same predicted
+        /// pose across extra render frames). Partial-tick motion is centimeters, so it still
+        /// counts as a new sample and does not add a second lead.
+        /// </summary>
+        const float CruiseHeldTickPositionEpsilon = 0.001f;
+
+        /// <summary>
+        /// Below this planar speed a held tick stays on the sim pose. Stops and grind noise
+        /// must not walk the camera; cruise speeds still glide between snapshots.
+        /// </summary>
+        const float CruiseHeldTickMinPlanarSpeed = 1f;
+
+        /// <summary>
         /// [TITAN-ORBIT] Frames the local ship must stay unresolved before we treat it as a real
         /// despawn. Editor.log 2026-07-20: calling ResetSession every Null frame wiped ~283 tiles
         /// and blinked the whole map (Join Team suppress / brief lookup misses).
@@ -131,6 +147,15 @@ namespace TitanOrbit.Game
         /// across the map (catch-up storms used to skip the 50u snap entirely).
         /// </summary>
         bool _localShipWasDead;
+
+        /// <summary>Last sim position consumed by cruise. Held ticks glide ahead of this sample.</summary>
+        float3 _cruiseSimPos;
+
+        /// <summary>Unscaled time when <see cref="_cruiseSimPos"/> was sampled.</summary>
+        float _cruiseSimSampleTime;
+
+        /// <summary>False until cruise has sampled a pose, and after snap / overlap / catch-up.</summary>
+        bool _cruiseSimSampleValid;
 
         /// <summary>
         /// Each presentation frame: publish the interpolated remote pose, then soft-track
@@ -340,25 +365,33 @@ namespace TitanOrbit.Game
                     ToroidalDisplay.ResetSession("ShipVisualSync.shipChanged");
                 else if (justRespawned && displayErr > DisplayRespawnSnapDistance)
                     ToroidalDisplay.ResetSession("ShipVisualSync.respawn");
+                InvalidateCruiseSimSample();
                 _smoothPos = targetPos;
                 _smoothRot = targetRot;
                 _smoothInitialized = true;
             }
             else if (!holdWreck && (catchingUp || displayErr > 2f))
             {
+                InvalidateCruiseSimSample();
                 StepDisplayToward(targetPos, targetRot, dt, CatchUpDisplayMaxSpeed);
             }
             else if (!holdWreck && dampShipShipCorrection)
             {
+                InvalidateCruiseSimSample();
                 StepShipContactDamped(targetPos, targetRot, dt);
             }
             else if (!holdWreck)
             {
                 StepCruiseRawOrCoast(targetPos, targetRot, simVel, dt);
             }
+            else
+            {
+                InvalidateCruiseSimSample();
+            }
 
             // --- Publish pose for camera / hybrid / EG LocalToWorld ---
-            // The published pose is the sim pose. No display offset on top of the tick.
+            // Cruise may sit up to one tick ahead of a held sim pose. Remotes stay on the
+            // interpolated snapshot published above.
             float3 published = _smoothPos;
             var displayLt = lt;
             displayLt.Position = published;
@@ -395,9 +428,11 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// H73 cruise: snap to sim when within one tick or the cruise floor; otherwise coast
-        /// + capped soft correct (H71). Grind / hull bounce is not filtered here — the camera
-        /// trails that pose on its own anchor.
+        /// H73 cruise: snap to the render target when within one tick or the cruise floor;
+        /// otherwise coast + capped soft correct (H71). A held predicted pose (same sim
+        /// position across extra render frames) aims one step ahead at kinematics velocity
+        /// so the camera matches interpolated remotes. Grind / hull bounce is not filtered
+        /// here — the camera trails that pose on its own anchor.
         /// </summary>
         /// <param name="simPos">Predicted / reconciled pose this frame.</param>
         /// <param name="simRot">Sim rotation.</param>
@@ -405,22 +440,23 @@ namespace TitanOrbit.Game
         /// <param name="dt">Clamped unscaled frame delta.</param>
         void StepCruiseRawOrCoast(float3 simPos, quaternion simRot, float3 simVel, float dt)
         {
+            float3 renderTarget = ResolveCruiseRenderTarget(simPos, simVel);
             float expected = math.max(math.length(simVel) * math.max(0f, dt), 0.02f);
-            float dist = math.distance(_smoothPos, simPos);
+            float dist = math.distance(_smoothPos, renderTarget);
             float rawFollowSlop = math.max(expected * CruiseRawFollowSlopRatio, CruiseMinRawFollowDistance);
 
             // --- Healthy frame: within one tick (+slop) or the cruise floor — raw follow ---
             // H72 failed because capped pull left a permanent >deadzone lag and corrected forever.
             if (dist <= rawFollowSlop)
             {
-                _smoothPos = simPos;
+                _smoothPos = renderTarget;
                 _smoothRot = simRot;
                 return;
             }
 
             // --- Reconcile pop: coast then capped soft correct ---
             float3 coasted = _smoothPos + simVel * dt;
-            float3 err = simPos - coasted;
+            float3 err = renderTarget - coasted;
             err.y = 0f;
             float t = 1f - math.exp(-CruiseCorrectSharpness * math.max(0f, dt));
             float3 pull = err * t;
@@ -430,8 +466,48 @@ namespace TitanOrbit.Game
                 pull *= pullCap / pullLen;
 
             _smoothPos = coasted + pull;
-            _smoothPos.y = simPos.y;
+            _smoothPos.y = renderTarget.y;
             _smoothRot = math.slerp(_smoothRot, simRot, 1f - math.exp(-DisplayRotationSharpness * dt));
+        }
+
+        /// <summary>
+        /// Sim pose, or that pose plus at most one tick of kinematics lead while the predicted
+        /// position is held. A moving sim sample (Relay partial ticks) resets the clock so
+        /// lead stays zero and prediction is not stepped twice.
+        /// </summary>
+        /// <param name="simPos">Predicted / reconciled pose this frame.</param>
+        /// <param name="simVel">Kinematics velocity (world units/sec).</param>
+        /// <returns>Position H73 should follow this frame.</returns>
+        float3 ResolveCruiseRenderTarget(float3 simPos, float3 simVel)
+        {
+            float now = UnityEngine.Time.unscaledTime;
+            float heldEpsilonSq = CruiseHeldTickPositionEpsilon * CruiseHeldTickPositionEpsilon;
+            bool heldTick = _cruiseSimSampleValid &&
+                            math.distancesq(_cruiseSimPos, simPos) <= heldEpsilonSq;
+            if (!heldTick)
+            {
+                _cruiseSimPos = simPos;
+                _cruiseSimSampleTime = now;
+                _cruiseSimSampleValid = true;
+                return simPos;
+            }
+
+            float planarSpeed = math.length(simVel.xz);
+            if (planarSpeed <= CruiseHeldTickMinPlanarSpeed)
+                return simPos;
+
+            float tickDt = 1f / TitanOrbitServerTickRateSystem.SimulationHz;
+            float lead = math.clamp(now - _cruiseSimSampleTime, 0f, tickDt);
+            return simPos + simVel * lead;
+        }
+
+        /// <summary>
+        /// Drops the held-tick sample so the next cruise frame starts on the sim pose.
+        /// Wrap, death, respawn, catch-up, overlap, and the wreck hold must not inherit a lead.
+        /// </summary>
+        void InvalidateCruiseSimSample()
+        {
+            _cruiseSimSampleValid = false;
         }
 
         /// <summary>
@@ -505,6 +581,7 @@ namespace TitanOrbit.Game
             _smoothPos = float3.zero;
             _smoothRot = quaternion.identity;
             _localShipWasDead = false;
+            InvalidateCruiseSimSample();
         }
 
         /// <summary>

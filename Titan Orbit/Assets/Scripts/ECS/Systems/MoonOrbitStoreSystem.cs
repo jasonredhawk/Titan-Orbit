@@ -330,7 +330,10 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Server-authoritative ship upgrade / debug-free hull select.
+        /// Server-authoritative ship upgrade, same-slot family swap, or debug-free hull select.
+        /// A same-level, same-branch click from another planet's tree is a free hull swap:
+        /// that card has the same level price as the hull the player already owns, so no gems
+        /// are spent. A real upgrade is still the next level along a valid tree edge and still costs gems.
         /// Also called directly from <see cref="UI.MoonOrbitRpcClient"/> on Local Host.
         /// </summary>
         public static bool TryPurchaseShipUpgradeForNetworkId(
@@ -373,22 +376,36 @@ namespace TitanOrbit.ECS
             bool debugFree = TitanOrbitDebugFlags.FreeShipUpgradeTree
                 || BetaTesterMatch.Allows(em, networkId, BetaTesterClientFlags.FreeShipTree);
 
+            // --- Same card, same level, different planet family ---
+            // [TITAN-ORBIT] The orbit menu paints this chip "Free". Each planet sells a
+            // different ship family, but the ladder slot (level + branch) is the same card
+            // and MoonOrbitStorePricing prices that card by level only. Charging again, or
+            // rejecting it as "not the next level", made the Free button do nothing.
+            // A next-level buy is still ShipLevel + 1 along a tree edge and still costs gems.
+            bool sameSlotFamilySwap = !debugFree
+                && targetLevel == ship.ShipLevel
+                && targetBranchIndex == ship.BranchIndex;
+
             if (!debugFree)
             {
-                int nextLevel = ship.ShipLevel + 1;
-                if (targetLevel != nextLevel)
+                if (!sameSlotFamilySwap)
                 {
-                    message = "Invalid upgrade level.";
-                    return false;
-                }
+                    int nextLevel = ship.ShipLevel + 1;
+                    if (targetLevel != nextLevel)
+                    {
+                        message = "Invalid upgrade level.";
+                        return false;
+                    }
 
-                if (!UpgradeTree.IsValidUpgradeStep(ship.ShipLevel, ship.BranchIndex, targetLevel, targetBranchIndex))
-                {
-                    message = "Invalid upgrade path.";
-                    return false;
+                    if (!UpgradeTree.IsValidUpgradeStep(ship.ShipLevel, ship.BranchIndex, targetLevel, targetBranchIndex))
+                    {
+                        message = "Invalid upgrade path.";
+                        return false;
+                    }
                 }
 
                 // Planets cap at 6; L7 MEGAs use the moon-full gate below, not planet level 7.
+                // Same-slot swaps still cannot jump onto a hull this moon is too small to sell.
                 if (targetLevel < 7 && targetLevel > storePlanet.PlanetLevel)
                 {
                     message = "Planet level too low.";
@@ -494,7 +511,35 @@ namespace TitanOrbit.ECS
                 return false;
             }
 
-            if (!debugFree)
+            // --- Already flying this exact card ---
+            // [TITAN-ORBIT] Same family + same slot is not a swap (it would reset attributes
+            // for nothing). A different family's slot at this level is the free swap.
+            // Titans compare catalog rows: another planet's L7 branch can be a different hull
+            // even when the previous family index still matches.
+            if (sameSlotFamilySwap)
+            {
+                if (buyingMega)
+                {
+                    if (em.HasComponent<MegaShipState>(shipEntity))
+                    {
+                        var already = em.GetComponentData<MegaShipState>(shipEntity);
+                        if (already.IsMega && already.CatalogIndex == megaCatalogIndex)
+                        {
+                            message = "Already flying that hull.";
+                            return false;
+                        }
+                    }
+                }
+                else if (ship.ShipFamilyConfigIndex == storeFamilyIndex)
+                {
+                    message = "Already flying that hull.";
+                    return false;
+                }
+            }
+
+            // Same-slot family swaps are free: the player already owns a card of this value.
+            // Debug-free also skips the debit. A normal next-level buy still spends gems.
+            if (!debugFree && !sameSlotFamilySwap)
             {
                 // Titan price is this hull's parts, not the shared fallback field.
                 // The orbit-tree button uses the same GetPurchaseGemCost(catalogIndex).
@@ -612,7 +657,9 @@ namespace TitanOrbit.ECS
                     em, shipEntity, mapW, mapH, moonElapsed);
             }
 
-            message = debugFree ? "Debug ship selected." : "Ship upgraded.";
+            message = debugFree
+                ? "Debug ship selected."
+                : sameSlotFamilySwap ? "Hull swapped." : "Ship upgraded.";
             return true;
         }
 

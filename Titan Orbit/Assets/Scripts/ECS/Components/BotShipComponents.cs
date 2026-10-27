@@ -67,6 +67,23 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
+    /// Attack intercept. Server-only, advanced with distance and clock compares.
+    /// <see cref="None"/> when this hull is not fighting a ship.
+    /// </summary>
+    public enum BotEngagePhase : byte
+    {
+        None = 0,
+        /// <summary>No live target yet. The next scan names one and starts an approach.</summary>
+        Acquire = 1,
+        /// <summary>Thrust along a side offset until the range closes or the window expires.</summary>
+        Approach = 2,
+        /// <summary>In range. Leave any orbit ring, then shoot.</summary>
+        Commit = 3,
+        /// <summary>Missed the window. Thrust off the ring, then a new side or a new target.</summary>
+        Reevaluate = 4,
+    }
+
+    /// <summary>
     /// Server-only task memory for one AI ship. Re-decided about twice a second.
     /// Steering reads <see cref="Goal"/> every tick.
     /// </summary>
@@ -91,8 +108,12 @@ namespace TitanOrbit.ECS
         public int GoalNetworkId;
         /// <summary>1 after this landing already bought one attribute. Cleared on takeoff.</summary>
         public byte AttributeBoughtWhileLanded;
-        /// <summary>1 after a deposit, so the next empty hold loads troops before mining again.</summary>
+        /// <summary>1 while this hull is gathering or delivering troops to capture a planet.</summary>
         public byte SeekTroops;
+        /// <summary>Planet <see cref="SeekTroops"/> is trying to take. 0 when capture is not the task.</summary>
+        public int CapturePlanetId;
+        /// <summary>People required to zero <see cref="CapturePlanetId"/> on the last refresh.</summary>
+        public int CapturePeopleNeeded;
         /// <summary>World time when <see cref="Task"/> or the people count last changed.</summary>
         public float TaskClock;
         /// <summary>People aboard when <see cref="TaskClock"/> was stamped.</summary>
@@ -102,6 +123,18 @@ namespace TitanOrbit.ECS
         /// drifts out again, so thrust does not flip every tick at the stop radius.
         /// </summary>
         public byte ThrustHeld;
+        /// <summary>Attack intercept phase. <see cref="BotEngagePhase.None"/> when not fighting a ship.</summary>
+        public BotEngagePhase EngagePhase;
+        /// <summary>World time when <see cref="EngagePhase"/> must advance. 0 when unused.</summary>
+        public float EngageDeadline;
+        /// <summary>+1 or -1 lateral side of the approach aim. 0 until the first approach.</summary>
+        public sbyte ApproachSide;
+        /// <summary>Failed approaches on the current target. Two drops that hull.</summary>
+        public byte EngageTries;
+        /// <summary>Ship the next acquire skips. 0 when unused.</summary>
+        public int AvoidNetworkId;
+        /// <summary>World time when <see cref="AvoidNetworkId"/> expires.</summary>
+        public float AvoidUntil;
     }
 
     /// <summary>

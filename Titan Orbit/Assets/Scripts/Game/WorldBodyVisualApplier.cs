@@ -354,9 +354,14 @@ namespace TitanOrbit.Game
             public override int GetHashCode() => (SourceId * 397) ^ Team;
         }
 
-        /// <summary>[UNITY] Domain reload drops runtime team-material instances.</summary>
+        /// <summary>[UNITY] Domain reload drops runtime team-material instances and shared asteroid meshes.</summary>
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-        static void ResetAsteroidTeamMaterials() => s_AsteroidTeamMaterials.Clear();
+        static void ResetAsteroidTeamMaterials()
+        {
+            s_AsteroidTeamMaterials.Clear();
+            s_WebGlAsteroidMeshes = null;
+            RegisterWebGlSharedMeshHooks();
+        }
 
         public static bool TryCreateAsteroidVisual(
             GameObject asteroidPrefab,
@@ -587,14 +592,74 @@ namespace TitanOrbit.Game
         static Mesh[] s_WebGlAsteroidMeshes;
 
         /// <summary>
+        /// SgtPlanet asks here when a WebGL asteroid loses its share. One mesh per bucket.
+        /// A private Geosphere per rock is the abort("OOM") path.
+        /// </summary>
+        static void RegisterWebGlSharedMeshHooks()
+        {
+            SgtPlanet.ResolveWebGlSharedBucket = ResolveWebGlSharedBucket;
+            SgtPlanet.NotifySharedMeshDestroyed = ClearWebGlBucketForMesh;
+            TitanOrbit.NetCode.TitanOrbitClientNetDiagnostics.CountPrivateMeshes =
+                SgtPlanet.CountPrivateGeneratedMeshes;
+        }
+
+        static void EnsureWebGlAsteroidMeshSlots()
+        {
+            RegisterWebGlSharedMeshHooks();
+            if (s_WebGlAsteroidMeshes == null)
+                s_WebGlAsteroidMeshes = new Mesh[WebGlAsteroidMeshBuckets];
+        }
+
+        /// <summary>
+        /// Returns the bucket mesh, building it once when the slot was cleared or never filled.
+        /// </summary>
+        static Mesh ResolveWebGlSharedBucket(SgtPlanet body, int bucket)
+        {
+            if (body == null)
+                return null;
+
+            EnsureWebGlAsteroidMeshSlots();
+            if ((uint)bucket >= (uint)s_WebGlAsteroidMeshes.Length)
+                return null;
+
+            Mesh shared = s_WebGlAsteroidMeshes[bucket];
+            if (shared != null)
+                return shared;
+
+            float t = WebGlAsteroidMeshBuckets <= 1
+                ? 0f
+                : bucket / (float)(WebGlAsteroidMeshBuckets - 1);
+            body.Displacement = Mathf.Lerp(
+                DisplacementMin, BodyCollisionMath.AsteroidVisualDisplacementLocal, t);
+            shared = body.RebuildAsSharedMesh();
+            s_WebGlAsteroidMeshes[bucket] = shared;
+            return shared;
+        }
+
+        /// <summary>
+        /// Drops a destroyed shared mesh from its slot. Called before Destroy so the
+        /// reference still matches the live mesh.
+        /// </summary>
+        static void ClearWebGlBucketForMesh(Mesh mesh)
+        {
+            if (s_WebGlAsteroidMeshes == null || mesh == null)
+                return;
+
+            for (int i = 0; i < s_WebGlAsteroidMeshes.Length; i++)
+            {
+                if (ReferenceEquals(s_WebGlAsteroidMeshes[i], mesh))
+                    s_WebGlAsteroidMeshes[i] = null;
+            }
+        }
+
+        /// <summary>
         /// Reuses one displaced mesh per bucket. The prefab material stays Barren5.
         /// <see cref="SgtPlanet.Displacement"/> marks the mesh dirty, so the write happens
         /// only while building a bucket, and never after the share is locked.
         /// </summary>
         static void AssignSharedAsteroidMesh(SgtPlanet sgt, System.Random rng)
         {
-            if (s_WebGlAsteroidMeshes == null)
-                s_WebGlAsteroidMeshes = new Mesh[WebGlAsteroidMeshBuckets];
+            EnsureWebGlAsteroidMeshSlots();
 
             int bucket = rng.Next(WebGlAsteroidMeshBuckets);
             sgt.BindSharedMeshBucket(bucket);

@@ -15,8 +15,8 @@ namespace TitanOrbit.UI
     /// Ice ring = stock 1.00×. Spokes past the ring are boosts, spokes short of
     /// the ring are penalties. Stock spokes stay a washed stat colour. A live
     /// spoke keeps that same colour (Fire Power stays orange). Spoke titles stay
-    /// horizontal: name only at 1×, name plus signed percent when the family
-    /// actually changes the stat.
+    /// horizontal and keep that stat colour. The signed percent beside the name
+    /// is mint for a gain and red for a loss. At 1× the name stands alone.
     /// Titles sit on a fixed outer orbit; only the spoke length follows the value.
     /// </para>
     /// Both plates ignore the tree VerticalLayoutGroup
@@ -392,21 +392,27 @@ namespace TitanOrbit.UI
             // [TITAN-ORBIT] One point size for every spoke. A tight width box and
             // auto-size were letting longer bonuses render smaller than short ones.
             LockSpokeLabelMetrics(label);
-            if (row.IsIdentity)
-                label.text = row.FullLabel;
-            else
-                label.text = row.FullLabel + "  " + FamilyStatHudCopy.FormatSignedPercent(row);
-
             Color cat = ShipFamilyBonusWheelGraphic.ColorForCategory(row.Category);
             if (row.IsIdentity)
+            {
+                // No trade on this spoke — the name alone, washed toward the void.
                 label.color = ShipFamilyBonusWheelGraphic.MuteCategory(cat);
+                label.text = row.FullLabel;
+            }
             else if (row.IsNeutral)
+            {
+                // Camera height is zoom, not a buff. Name and percent stay ice.
                 label.color = NeutralValue;
+                label.text = row.FullLabel + "  " + FamilyStatHudCopy.FormatSignedPercent(row);
+            }
             else
             {
-                // Same hue as the spoke. Bright, not a green/amber/teal recolor.
+                // Title matches the spoke (Fire Power stays orange). The percent
+                // is the only glyphs that turn mint or red.
                 cat.a = 1f;
                 label.color = cat;
+                label.text = row.FullLabel + "  " +
+                    FamilyStatHudCopy.TintSignedBonus(FamilyStatHudCopy.FormatSignedPercent(row));
             }
 
             LockSpokeLabelMetrics(label);
@@ -493,7 +499,9 @@ namespace TitanOrbit.UI
             label.fontStyle = FontStyles.Bold;
             label.characterSpacing = 0f;
             label.lineSpacing = 0f;
-            label.richText = false;
+            // Rich text so the percent can be mint or red while label.color
+            // stays the stat title. Tags are not drawn, so they do not widen the orbit.
+            label.richText = true;
             label.textWrappingMode = TextWrappingModes.NoWrap;
             label.overflowMode = TextOverflowModes.Overflow;
             label.maxVisibleLines = 1;

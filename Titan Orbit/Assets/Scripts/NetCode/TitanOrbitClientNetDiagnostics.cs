@@ -1,7 +1,9 @@
+using System;
 using TitanOrbit.Diagnostics;
 using Unity.Entities;
 using Unity.NetCode;
 using UnityEngine;
+using UnityEngine.Profiling;
 
 namespace TitanOrbit.NetCode
 {
@@ -14,6 +16,14 @@ namespace TitanOrbit.NetCode
     public sealed class TitanOrbitClientNetDiagnostics : MonoBehaviour
     {
         const float LogIntervalSeconds = 10f;
+
+        const long BytesPerMegabyte = 1024L * 1024L;
+
+        /// <summary>
+        /// Game code sets this to <c>SgtPlanet.CountPrivateGeneratedMeshes</c>.
+        /// NetCode does not reference SpaceGraphicsToolkit. Zero when unset.
+        /// </summary>
+        public static Func<int> CountPrivateMeshes;
 
         /// <summary>Next Time.realtimeSinceStartup when we emit a summary line.</summary>
         float _nextLogTime;
@@ -108,6 +118,15 @@ namespace TitanOrbit.NetCode
                 clientFps,
                 rollbacks);
 
+            long reservedMb = Profiler.GetTotalReservedMemoryLong() / BytesPerMegabyte;
+            long allocatedMb = Profiler.GetTotalAllocatedMemoryLong() / BytesPerMegabyte;
+            long monoMb = Profiler.GetMonoUsedSizeLong() / BytesPerMegabyte;
+            int privateMeshes = CountPrivateMeshes != null ? CountPrivateMeshes() : 0;
+
+            // reserved/allocated/mono are WASM-heap megabytes. privateMeshes is SgtPlanet
+            // bodies that still own a generated mesh and are not on a locked share.
+            // A climb in reserved toward ~2 GB, or privateMeshes far above the planet count,
+            // is the abort("OOM") / abortOnCannotGrowMemory path.
             string line =
                 "[NetDiagnostics/Client] RTT=" + rttMs.ToString("F0") + "±" + jitterMs.ToString("F0") + "ms" +
                 " cmdAge=" + commandAge.ToString("F2") + " ticks" +
@@ -116,6 +135,10 @@ namespace TitanOrbit.NetCode
                 " estErr=" + estimateAgeTicks.ToString("F2") + " ticks" +
                 " fps≈" + clientFps.ToString("F0") +
                 " rollbacks=" + rollbacks +
+                " mem reserved=" + reservedMb.ToString() +
+                " allocated=" + allocatedMb.ToString() +
+                " mono=" + monoMb.ToString() + "MB" +
+                " privateMeshes=" + privateMeshes.ToString() +
                 " | Likely: " + likely;
 
             Debug.Log(line);

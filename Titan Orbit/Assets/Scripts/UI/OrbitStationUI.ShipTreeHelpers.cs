@@ -590,6 +590,19 @@ namespace TitanOrbit.UI
                 GetPowerBreakdownForTreeNode(view.Level, view.BranchIndex),
                 ShipFamilyPowerBarNorm.ResolveForTreeLevel(view.Level, maxes, viewChassisId),
                 viewChassisId);
+
+            // --- Price chip is the only buy / swap control ---
+            // [TITAN-ORBIT] Spawn wires this once, before EnsurePriceButton may rebuild the
+            // pill. Repaint attaches it again so the "Free" same-slot chip actually clicks.
+            // The card body stays a picture. Capture level and branch so a later rebind of
+            // this view cannot purchase a different slot.
+            int clickLevel = view.Level;
+            int clickBranch = view.BranchIndex;
+            view.SetPriceClickHandler(clickable
+                ? () => OnUpgradeTreeNodeClicked(clickLevel, clickBranch)
+                : null);
+            if (megaOccupied)
+                view.SetOwnedOccupantStyle();
         }
 
         private void PopulateTreeNodeDebug(ShipUpgradeTreeNodeUI view, ShipPowerBarStatMaxes maxes)
@@ -865,13 +878,21 @@ namespace TitanOrbit.UI
                     return;
                 }
 
+                // Same ladder slot on this moon is another family's hull (or another Titan).
+                // The chip says "Free" — send this level, not level+1. The server skips the
+                // gem debit when the card value matches. A zero store id used to drop the
+                // click before that RPC (next-level buys already fell back to _ecsStorePlanetId).
                 if (nodeLevel == currentShip.ShipLevel && targetBranchIndex == currentShip.BranchIndex)
                 {
                     if (!CardShopSystem.Instance.CanSwapShipAtSameTreeSlot(
                             currentShip, storePlanet, nodeLevel, targetBranchIndex, out _))
                         return;
-                    MoonOrbitRpcClient.PurchaseShipUpgrade(
-                        OrbitStationEcsContext.StorePlanetId, nodeLevel, targetBranchIndex);
+
+                    int swapPlanetId = OrbitStationEcsContext.StorePlanetId;
+                    if (swapPlanetId <= 0)
+                        swapPlanetId = _ecsStorePlanetId;
+
+                    MoonOrbitRpcClient.PurchaseShipUpgrade(swapPlanetId, nodeLevel, targetBranchIndex);
                 }
 
                 return;

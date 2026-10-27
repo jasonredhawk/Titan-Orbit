@@ -29,6 +29,13 @@ namespace TitanOrbit.Simulation
         public const float FullRefillSeconds = 120f;
 
         /// <summary>
+        /// Friendly planets under this percent of max population keep receiving unloads.
+        /// Loading still takes only the surplus above 50%, so the gap is a buffer:
+        /// troops just dropped are not treated as spare crew on the next tick.
+        /// </summary>
+        public const int FriendlyGarrisonUnloadPercent = 49;
+
+        /// <summary>
         /// [TITAN-ORBIT] Exponent on planet level in the max-population formula
         /// (<c>size × level^PopulationLevelExponent</c>). Higher than the old 1.5 so late-game
         /// planets hold more population relative to a few fully loaded high-level ships.
@@ -95,6 +102,26 @@ namespace TitanOrbit.Simulation
             baseMax = GetMaxPopulation(planetSize, planetLevel);
             int effective = GetEffectiveMaxPopulation(planetSize, planetLevel, connectionBonusFraction);
             bonusAmount = math.max(0, effective - baseMax);
+        }
+
+        /// <summary>
+        /// Highest population that still counts as under
+        /// <see cref="FriendlyGarrisonUnloadPercent"/> of <paramref name="maxPopulation"/>.
+        /// Unload continues while the live count is below this. 0 when the cap is too
+        /// small for a 49% band (the 50% load reserve still applies).
+        /// </summary>
+        public static int FriendlyGarrisonUnloadCeiling(int maxPopulation)
+        {
+            int maxPop = math.max(1, maxPopulation);
+            return (maxPop * FriendlyGarrisonUnloadPercent) / 100;
+        }
+
+        /// <summary>
+        /// True when a friendly planet should keep receiving troops.
+        /// </summary>
+        public static bool NeedsFriendlyGarrison(int population, int maxPopulation)
+        {
+            return population < FriendlyGarrisonUnloadCeiling(maxPopulation);
         }
 
         /// <summary>

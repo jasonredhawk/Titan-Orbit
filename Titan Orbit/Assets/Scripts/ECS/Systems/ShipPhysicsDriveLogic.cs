@@ -451,6 +451,12 @@ namespace TitanOrbit.ECS
             }
             else
             {
+                // [TITAN-ORBIT] Frictionless coast (auto-brakes toggle off) never drops under
+                // ShipMoonDockSystem.MaxLandingSpeed, so the dock trigger keeps resetting.
+                // Free-fall inside a friendly moon shell applies the same brake curve so
+                // landing can start. Toggle already on: do not override — the player brakes.
+                bool moonZoneFreeFallBrake =
+                    input.DisableSpaceBrakes && !input.Thrust && inFriendlyMoonZone;
                 ApplyThrustCoastAndBrakes(
                     ref vel,
                     in transform.Rotation,
@@ -459,7 +465,7 @@ namespace TitanOrbit.ECS
                     motor.BrakeDeceleration,
                     movementMass,
                     input.Thrust,
-                    !input.DisableSpaceBrakes,
+                    !input.DisableSpaceBrakes || moonZoneFreeFallBrake,
                     dt);
 
                 ApplyRecoilDecay(ref vel, maxSpeed, motor.RecoilDecayPerSecond, dt);
@@ -590,6 +596,8 @@ namespace TitanOrbit.ECS
         /// bounce overspeed for <see cref="ApplyRecoilDecay"/>.
         /// When <paramref name="spaceBrakes"/> is false and the player is not thrusting,
         /// velocity is left alone (frictionless coast — Left Ctrl / AIR BRAKES toggle).
+        /// Callers may still pass true while that toggle is off if the hull is free-falling
+        /// inside a friendly moon dock shell, so moon landing can accumulate.
         /// </summary>
         static void ApplyThrustCoastAndBrakes(
             ref float3 vel,

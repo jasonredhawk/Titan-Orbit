@@ -48,6 +48,8 @@ namespace TitanOrbit.ECS
         /// <summary>
         /// Latched for this parked dwell: 0 none, 1 load, 2 unload.
         /// Once load is chosen, stay on load for the rest of this dwell.
+        /// Once unload is chosen, this dwell does not flip into a load — the 49%
+        /// garrison buffer would be undone by packing the same people back aboard.
         /// Cleared with the dwell when the ship leaves, thrusts, or changes planet.
         /// </summary>
         public byte TransferDirection;
