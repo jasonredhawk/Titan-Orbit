@@ -179,7 +179,8 @@ namespace TitanOrbit.UI
         /// <summary>
         /// Identity of what the 24 cards show. Gem totals are not included — only
         /// whether the next hull is currently affordable — so a deposit beat does
-        /// not redo every power bar.
+        /// not redo every power bar. The beta free-ship switch is included: without
+        /// it the poll keeps the paid labels and leaves the other cards locked.
         /// </summary>
         int ComputeTreeVisualSignature()
         {
@@ -219,6 +220,7 @@ namespace TitanOrbit.UI
                 hash = hash * 31 + homeLevel;
                 hash = hash * 31 + (canAffordNext ? 1 : 0);
                 hash = hash * 31 + (megaOpen ? 1 : 0);
+                hash = hash * 31 + (GameManager.IsDebugFreeShipUpgradeTreeActive ? 1 : 0);
                 hash = hash * 31 + (int)ShipFamilyMatchBonuses.ActiveMatchSeed;
                 return hash;
             }

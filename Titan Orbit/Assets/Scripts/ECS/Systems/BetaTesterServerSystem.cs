@@ -141,8 +141,12 @@ namespace TitanOrbit.ECS
         {
             var em = state.EntityManager;
 
-            // Editor / local host checkbox. Dedicated servers publish the flag off.
-            if (TitanOrbitDebugFlags.BetaFeedbackEnabled && !_hostMarked)
+            // Editor / local host. The checkbox is the stand-in. Owning the item
+            // on this machine is the real one. Dedicated servers leave both off,
+            // so a missing admin secret cannot make every player free.
+            bool hostOwnsBeta = TitanOrbitDebugFlags.BetaFeedbackEnabled
+                || BetaTesterClientFlags.LocalAccountOwned;
+            if (hostOwnsBeta && !_hostMarked)
                 _hostMarked = TryMarkHost(em);
             else if (_hostMarked && _inGameConnections.IsEmptyIgnoreFilter)
                 _hostMarked = false;
@@ -180,9 +184,9 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Marks the host connection owned without Cloud Save. Used so Editor
-        /// field notes still work when the checkbox is on. Returns false until
-        /// that connection exists, so the caller retries.
+        /// Marks the host connection owned without Cloud Save. Used when the
+        /// Editor checkbox is on, or when this process already owns the beta item.
+        /// Returns false until that connection exists, so the caller retries.
         /// </summary>
         bool TryMarkHost(EntityManager em)
         {

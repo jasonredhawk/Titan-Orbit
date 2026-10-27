@@ -1,5 +1,6 @@
 using System;
 using UnityEngine;
+using TitanOrbit;
 
 namespace TitanOrbit.Services
 {
@@ -409,6 +410,9 @@ namespace TitanOrbit.Services
 
         static void ApplyBetaOwned(bool owned)
         {
+            // Same process as an Editor host. The server reads this to confirm
+            // free ship and gear prices when the worker lookup cannot run.
+            BetaTesterClientFlags.SetLocalAccountOwned(owned);
             if (IsBetaTesterOwned == owned)
                 return;
             IsBetaTesterOwned = owned;
