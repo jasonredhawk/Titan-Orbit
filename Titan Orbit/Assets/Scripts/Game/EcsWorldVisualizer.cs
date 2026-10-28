@@ -2254,6 +2254,7 @@ namespace TitanOrbit.Game
                 ShipDisplayPose.SetLocalPose(pos, rot);
 
             MegaShipWeaponVisualSync.Apply(em, entity, go.gameObject);
+            ShipWeaponManualAimVisual.Apply(em, entity, go.gameObject);
         }
 
         /// <summary>
@@ -2793,6 +2794,7 @@ namespace TitanOrbit.Game
                     if (isLocalPlayerShip)
                         ShipDisplayPose.SetLocalPose(go.transform.position, go.transform.rotation);
                     MegaShipWeaponVisualSync.Apply(em, entity, go);
+                    ShipWeaponManualAimVisual.Apply(em, entity, go);
                 }
 
                 if (em.HasComponent<ShipState>(entity))

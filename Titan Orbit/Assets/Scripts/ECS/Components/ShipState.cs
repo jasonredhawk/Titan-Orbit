@@ -105,6 +105,24 @@ namespace TitanOrbit.ECS
         /// not a snapshot other players receive. Written by <see cref="ShipPhysicsDriveLogic"/>.
         /// </summary>
         [GhostField] public bool OverdriveBurstActive;
+
+        /// <summary>
+        /// Regular-ship weapon components are tracking the owner's aim point.
+        /// Always on while that point is valid — Shift does not gate it. Shift only
+        /// locks hull heading. MEGA hulls leave this false and use gunner slots.
+        /// Ghosted so remote clients can yaw the weapon meshes; <see cref="ShipInput"/>
+        /// is not on other players' snapshots.
+        /// </summary>
+        [GhostField] public bool ManualAimActive;
+
+        /// <summary>
+        /// World X of the aim point in the same unbounded space as the hull
+        /// (<c>hull + AimPlanarDir × AimDistance</c>). Zero when <see cref="ManualAimActive"/> is false.
+        /// </summary>
+        [GhostField(Quantization = 10)] public float ManualAimWorldX;
+
+        /// <summary>World Z paired with <see cref="ManualAimWorldX"/>.</summary>
+        [GhostField(Quantization = 10)] public float ManualAimWorldZ;
     }
 
     /// <summary>

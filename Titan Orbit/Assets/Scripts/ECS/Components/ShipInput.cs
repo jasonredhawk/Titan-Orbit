@@ -28,8 +28,9 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// [TITAN-ORBIT] Shift held (does <b>not</b> require thrust).
-        /// Regular ships: OVERDRIVE intent. Motor latch keys off this + energy; burst
-        /// speed/drain only while Thrust is also held.
+        /// Regular ships: OVERDRIVE intent only. The hull still yaws toward the
+        /// cursor. Burst speed/drain still require Thrust and energy. Weapon
+        /// components and shots track the mouse point whether or not this bit is set.
         /// MEGA hulls: no overdrive. This bit locks heading and aims all MEGA
         /// guns at the mouse world point (<see cref="AimPlanarDir"/> ×
         /// <see cref="AimDistance"/>). Fire is still required to shoot.
@@ -99,9 +100,9 @@ namespace TitanOrbit.ECS
         /// point, in world units. <see cref="AimPlanarDir"/> stays a unit vector so
         /// existing yaw / turret code does not change.
         /// <para>
-        /// [TITAN-ORBIT] MEGA Shift auto-guns need this so each muzzle aims at the
-        /// same world point (streams converge) instead of sharing one direction
-        /// (parallel volleys that miss the cursor on wide hulls).
+        /// [TITAN-ORBIT] MEGA guns and regular weapon components need this so each
+        /// muzzle aims at the same world point (streams converge) instead of sharing
+        /// one direction (parallel volleys that miss the cursor on wide hulls).
         /// </para>
         /// Appended after <see cref="SelectedMineSlot"/> so older command layouts
         /// still line up on the fields above.

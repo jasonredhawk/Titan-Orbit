@@ -638,8 +638,13 @@ namespace TitanOrbit.Game
             fireOrigin = live.Weapon.position;
 
             // --- Unbanked planar aim (strip BankPivot roll + pitch, keep weapon local yaw/pitch facing) ---
+            // Mouse tracking already points the mesh at the cursor, so the authored
+            // extra yaw would walk the tracer off that barrel.
             Vector3 unbankedFwd = GetUnbankedWorldForward(live.Weapon);
-            if (!TryBuildPlanarAimFromWeaponForward(unbankedFwd, live.DirectionAngleDeg, out fireForward))
+            float directionAngle = ShipWeaponManualAimVisual.IsMouseTracking(em, shipEntity)
+                ? 0f
+                : live.DirectionAngleDeg;
+            if (!TryBuildPlanarAimFromWeaponForward(unbankedFwd, directionAngle, out fireForward))
                 return false;
 
             if (TryGetLocalHullRoot(em, shipEntity, out Transform hullRoot) && hullRoot != null)

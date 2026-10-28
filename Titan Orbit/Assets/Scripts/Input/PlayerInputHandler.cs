@@ -291,16 +291,16 @@ namespace TitanOrbit.Input
                 spaceBrakesEnabled = !spaceBrakesEnabled;
 
             // --- Shift modifier (Left/Right Shift) ---
-            // [TITAN-ORBIT] ShipInput.Overdrive = Shift alone. Regular ships: motor latch
-            // re-engages at ≥25% energy while Shift stays held; burst speed applies when
-            // RMB thrust is also held. MEGAs: no overdrive — same bit locks heading and
-            // aims unoccupied auto-guns at the mouse. Desktop only; mobile leaves this false.
+            // [TITAN-ORBIT] ShipInput.Overdrive = Shift alone. Regular ships: burst
+            // while thrusting; the hull still yaws toward the cursor. MEGAs: no
+            // overdrive — same bit locks heading and aims guns at the mouse. Use TryResolveKeyboard so an
+            // unfocused Game view (Keyboard.current null) still sees the hold.
             // Typing in NOTES / the name field must not engage overdrive.
             overdriveHeld = false;
-            if (!typing && !Application.isMobilePlatform && Keyboard.current != null)
+            if (!typing && !Application.isMobilePlatform && TryResolveKeyboard(out var shiftKeyboard))
             {
-                overdriveHeld = Keyboard.current.leftShiftKey.isPressed
-                    || Keyboard.current.rightShiftKey.isPressed;
+                overdriveHeld = shiftKeyboard.leftShiftKey.isPressed
+                    || shiftKeyboard.rightShiftKey.isPressed;
             }
 
             // --- Q activates the focused loadout pack ---

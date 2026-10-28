@@ -300,6 +300,9 @@ namespace TitanOrbit.Game
 
             Vector3 hullFwd = Flatten(proxy.transform.forward);
             Quaternion shipHeading = Quaternion.LookRotation(hullFwd, Vector3.up);
+            // Fully landed: barrels stay on the nose. Mouse and combat locks
+            // would spin the guns in the orbit-menu portrait.
+            bool landed = ShipMoonDockState.IsFullyLandedOnMoon(em, shipEntity);
             bool ownerFiring = em.HasComponent<LocalPlayerShipTag>(shipEntity)
                 && em.HasComponent<ShipInput>(shipEntity)
                 && em.GetComponentData<ShipInput>(shipEntity).Fire.IsSet;
@@ -317,6 +320,18 @@ namespace TitanOrbit.Game
 
                 Quaternion desiredBarrelWorld;
                 float yawDeg = 0f;
+                if (landed)
+                {
+                    Vector3 landedRest = binding.RestBarrelLocalFwd != null && i < binding.RestBarrelLocalFwd.Length
+                        ? binding.RestBarrelLocalFwd[i]
+                        : Vector3.forward;
+                    if (landedRest.sqrMagnitude < 1e-6f)
+                        landedRest = Vector3.forward;
+                    Quaternion landedRestLook = Quaternion.LookRotation(landedRest.normalized, Vector3.up);
+                    yawRoot.rotation = shipHeading * Quaternion.Inverse(landedRestLook);
+                    continue;
+                }
+
                 bool ghostTracking = hasGunners && i < gunners.Length
                     && MegaShipWeaponAim.IsTrackingAim(gunners[i]);
                 bool liveTracking = ghostTracking

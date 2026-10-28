@@ -35,8 +35,10 @@ namespace TitanOrbit.ECS
     /// drop so the return to cruise is immediate — ram overspeed above the old cap still decays.
     /// Drain rate = <see cref="ShipMotorConfig.ThrustEnergyDrainPerSecond"/>
     /// (ExtraSpeedEnergyDrain summed across engines).
-    /// MEGA hulls never engage overdrive. Shift instead locks yaw (heading stays put
-    /// while the mouse moves) so unoccupied auto-guns can fire at the cursor.
+    /// MEGA hulls never engage overdrive. Shift locks MEGA yaw only (heading stays
+    /// put while the mouse moves) so guns can fire at the cursor. Regular hulls
+    /// keep turning toward the cursor and still burst; their weapon components
+    /// and shots track the mouse point.
     /// Live subtractive mass tax (<see cref="ShipMobilityResolution"/>) converts untaxed motor
     /// baselines into MaxSpeed / accel / turn from current gems/people + ComponentSize.
     /// While <see cref="ShipAsteroidContactState"/> reports contact from the previous physics
@@ -112,7 +114,7 @@ namespace TitanOrbit.ECS
         /// <param name="skipMassTax">True for MEGA hulls — keep chassis speed / accel / turn.</param>
         /// <param name="isMegaShip">
         /// True while <see cref="MegaShipState.IsMega"/>. Disables overdrive and treats
-        /// Shift as a heading lock instead of a speed burst.
+        /// Shift as a heading lock instead of a speed burst. Regular hulls always yaw.
         /// </param>
         /// <param name="shipPhysicsRadius">Live PhysX covering radius for moon-dock attach only.</param>
         public static void Step(
@@ -286,13 +288,18 @@ namespace TitanOrbit.ECS
             float rotationSpeed = taxed.RotationSpeed;
 
             // --- Yaw: dt-capped slerp toward aim (never snap to mouse in one frame) ---
-            // [TITAN-ORBIT] MEGA + Shift: lock heading. Mouse still aims unoccupied
-            // auto-guns (MegaShipAutoFireSystem); the hull keeps flying the last facing.
+            // [TITAN-ORBIT] MEGA + Shift: lock heading. Regular hulls always yaw
+            // toward the cursor. Weapon meshes and shots still use the mouse point.
             if (!(isMegaShip && input.Overdrive))
             {
                 AimWorldPoint(in transform.Position, in transform.Rotation, in input.AimPlanarDir, out float2 aimWorldXz);
                 TryRotateTowardAim(ref transform, in aimWorldXz, rotationSpeed, dt);
             }
+
+            if (isMegaShip)
+                ClearManualAim(ref shipState);
+            else
+                WriteManualAim(ref shipState, in transform, in input);
 
             // --- Orbit ring detection (toroidal) ---
             // [TITAN-ORBIT] PeopleTransportDispatchSystem dwells on InOrbitRing; without this write,
@@ -1010,6 +1017,31 @@ namespace TitanOrbit.ECS
             float decay = recoilDecayPerSecond > 0f ? recoilDecayPerSecond : 6f;
             float targetMag = math.clamp(mag - decay * dt, maxSpeed, mag);
             vel = math.normalize(vel) * targetMag;
+        }
+
+        /// <summary>
+        /// Ghosts the regular-ship mouse point so remote weapon meshes can converge on it.
+        /// Inactive when the owner has no usable aim sample.
+        /// </summary>
+        public static void WriteManualAim(ref ShipState shipState, in LocalTransform hull, in ShipInput input)
+        {
+            if (!MegaShipWeaponAim.TryGetOwnerMouseAimPoint(in hull, in input, out float3 aim))
+            {
+                ClearManualAim(ref shipState);
+                return;
+            }
+
+            shipState.ManualAimActive = true;
+            shipState.ManualAimWorldX = aim.x;
+            shipState.ManualAimWorldZ = aim.z;
+        }
+
+        /// <summary>Parks ghosted regular-ship mouse aim (MEGA, shock, turret).</summary>
+        public static void ClearManualAim(ref ShipState shipState)
+        {
+            shipState.ManualAimActive = false;
+            shipState.ManualAimWorldX = 0f;
+            shipState.ManualAimWorldZ = 0f;
         }
 
         /// <summary>

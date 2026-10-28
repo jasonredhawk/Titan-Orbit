@@ -42,7 +42,7 @@ namespace TitanOrbit.Game
             /// <summary>Flying a MEGA with Shift up (sticky auto-aim).</summary>
             Mega = 2,
 
-            /// <summary>Flying a MEGA with Shift held (heading lock + mouse gun aim).</summary>
+            /// <summary>MEGA with Shift held: hull heading locked, guns aimed at the cursor.</summary>
             MegaManual = 3,
         }
 
@@ -218,13 +218,11 @@ namespace TitanOrbit.Game
                 return GameplayCursorMode.SystemDefault;
 
             // --- Combat reticles ---
-            // MEGA + Shift is manual mouse gun aim (Overdrive is reused; it is NOT OVERDRIVE
-            // on a MEGA). Regular-ship Shift stays General — that key is the speed burst.
+            // Shift locks MEGA heading only. Regular hulls keep the general cursor
+            // and still yaw toward the mouse.
+            bool shiftHeld = _input != null && _input.OverdriveHeld;
             if (EcsGameBridge.TryGetLocalMegaShipState(out MegaShipState mega) && mega.IsMega)
-            {
-                bool shiftHeld = _input != null && _input.OverdriveHeld;
                 return shiftHeld ? GameplayCursorMode.MegaManual : GameplayCursorMode.Mega;
-            }
 
             return GameplayCursorMode.General;
         }

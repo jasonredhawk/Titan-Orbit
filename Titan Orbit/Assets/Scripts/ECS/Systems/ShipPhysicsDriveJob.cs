@@ -107,6 +107,7 @@ namespace TitanOrbit.ECS
                 CommitFlight(ref physicsVelocity, ref kinematics, float3.zero);
                 physicsDamping.ValueRW = default;
                 shipState.ValueRW.OverdriveBurstActive = false;
+                ShipPhysicsDriveLogic.ClearManualAim(ref shipState.ValueRW);
                 return;
             }
 
@@ -116,6 +117,7 @@ namespace TitanOrbit.ECS
                 CommitFlight(ref physicsVelocity, ref kinematics, float3.zero);
                 physicsDamping.ValueRW = default;
                 shipState.ValueRW.OverdriveBurstActive = false;
+                ShipPhysicsDriveLogic.ClearManualAim(ref shipState.ValueRW);
                 return;
             }
 

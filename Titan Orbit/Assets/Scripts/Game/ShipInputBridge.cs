@@ -223,9 +223,10 @@ namespace TitanOrbit.Game
                 setWeaponArm.Set();
 
             // [TITAN-ORBIT] Shift alone (not AND thrust). Regular ships: OVERDRIVE
-            // latch + burst while thrusting. MEGAs: same bit is heading-lock / unoccupied
-            // auto-gun mouse-aim (no speed burst). Clear while stowed so prediction
-            // does not fight turret possession.
+            // burst while thrusting; the hull still yaws. Weapon components and
+            // shots track the mouse even when Shift is up. MEGAs: same bit is heading-lock / mouse-aim
+            // (no speed burst). Clear while stowed so prediction does not fight
+            // turret possession.
             bool overdrive = !turretControl && _input.OverdriveHeld;
 
             // [TITAN-ORBIT] Hold V to dump cargo. Server pulses while this bit stays true.

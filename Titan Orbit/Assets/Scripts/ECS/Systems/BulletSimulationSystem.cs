@@ -483,17 +483,42 @@ namespace TitanOrbit.ECS
                     planned.Damage = TeamCommandRoleRules.ScaleFirePower(planned.Damage, topKiller);
                     int mountIdx = planned.MountIndex;
                     var mount = mounts[mountIdx];
-                    ResolveFirePose(transform.ValueRO, in mount, out float3 fireOrigin, out float3 fireForward);
+                    // Spawn copy only. Regular weapons always converge on the owner's
+                    // aim point (Shift only locks hull yaw). Keep the mount buffer's
+                    // baked rest pose so a missing sample fires hull-forward again.
+                    var fireMount = mount;
+                    float interceptDistance = 0f;
+                    if (MegaShipWeaponAim.TryGetMuzzleDirToMousePoint(
+                            in transform.ValueRO, in fireMount, in input.ValueRO, mapW, mapH,
+                            out float3 toCursor))
+                    {
+                        MegaShipWeaponAim.RotateMountTowardWorldDir(
+                            in transform.ValueRO, ref fireMount, toCursor, 0f);
+                        fireMount.DirectionAngleDeg = 0f;
+                    }
+
+                    ResolveFirePose(transform.ValueRO, in fireMount, out float3 fireOrigin, out float3 fireForward);
+                    if (MegaShipWeaponAim.TryGetOwnerMouseAimPoint(
+                            in transform.ValueRO, in input.ValueRO, out float3 mousePoint))
+                    {
+                        float3 toMouse = ToroidalMapEcs.ShortestOffsetXZ(
+                            fireOrigin, mousePoint, mapW, mapH);
+                        toMouse.y = 0f;
+                        interceptDistance = math.length(toMouse);
+                        if (!math.isfinite(interceptDistance))
+                            interceptDistance = 0f;
+                    }
 
                     float fireRateMul = SpawnAndCollideShipBullet(
                         ref state, ref ecb, bulletEntity, mountIdx,
                         fireOrigin, fireForward, planned.Damage,
-                        weaponCfg.ValueRO, in mount, bankIndex, firePowerExtras,
+                        weaponCfg.ValueRO, in fireMount, bankIndex, firePowerExtras,
                         categoryUpgradeScale, shipVel,
                         ghostOwner.ValueRO.NetworkId, (byte)shipState.ValueRO.Team,
                         shipState.ValueRO.ShipLevel,
                         dt, gemPrefab, gemSpawnServerTime, mapW, mapH,
-                        moonElapsed, serverElapsed);
+                        moonElapsed, serverElapsed,
+                        interceptDistance);
 
                     // The planner already spent the shot and restarted this barrel's delay.
                     _ = fireRateMul;
