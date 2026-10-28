@@ -1578,8 +1578,10 @@ namespace TitanOrbit.UI
         /// One chassis barrel used to explain Fire Power × rate of fire.
         /// Fire Power and rate are after family scalars and before the bullet-type
         /// rate multiplier. A Titan row already folds copy-count into Fire Power.
-        /// <see cref="XyScale"/> is average |X|+|Y| (damage and bullet size).
-        /// <see cref="RateScale"/> is 1/|Z| (shots per second). Both are 1 when
+        /// <see cref="XyScale"/> is fire power after the exponent (average |X| and |Y|,
+        /// raised to that average). Damage and bullet size both use it.
+        /// <see cref="RateScale"/> is (1/|Z|) raised to that same average.
+        /// <see cref="AxisXy"/> is the raw average before the power. Both factors are 1 when
         /// this row has no prefab scale (catalog Titans).
         /// </summary>
         struct DpsGunRow
@@ -1590,6 +1592,7 @@ namespace TitanOrbit.UI
             public float XyScale;
             public float RateScale;
             public float AxisZ;
+            public float AxisXy;
             public bool HasPrefabScale;
         }
 
@@ -1599,9 +1602,11 @@ namespace TitanOrbit.UI
         /// This prints weapon scale, then
         /// <c>Fire Power × rate of fire × this weapon's rate = DPS</c>
         /// so a 3.75 Fire Power and a 7.31 chip are one multiplication.
-        /// Prefab weapon scale is the lever combat uses: average |X|+|Y| multiplies
-        /// damage, and the bullet grows with that damage. 1/|Z| multiplies fire rate
-        /// (Z 2 is half rate, Z 0.9 is faster than 1). Those factors are already inside
+        /// Prefab weapon scale is the lever combat uses. The average of |X| and |Y|
+        /// is the exponent: that average raised to itself multiplies damage, and the
+        /// bullet grows with that damage. (1/|Z|) raised to the same average multiplies
+        /// fire rate (uniform scale 2 is 4× damage and quarter rate; XY average 1
+        /// leaves Z linear, so Z 0.9 is still faster than 1). Those factors are already inside
         /// the parts total — this block shows the multiply instead of leaving it baked in.
         /// The bullet-type factor is the Rate token on the Multipliers line
         /// (Plasma, Fireballs, …). It is omitted when that type does not change cadence.
@@ -1680,17 +1685,19 @@ namespace TitanOrbit.UI
             float xyScale = 1f;
             float rateScale = 1f;
             float axisZ = 1f;
+            float axisXy = 1f;
             bool haveScale = false;
             if (guns.Count > 0 && guns[0].HasPrefabScale && !scalesDiffer)
             {
                 xyScale = guns[0].XyScale > 0.0001f ? guns[0].XyScale : 1f;
                 rateScale = guns[0].RateScale > 0.0001f ? guns[0].RateScale : 1f;
                 axisZ = guns[0].AxisZ > 0.0001f ? guns[0].AxisZ : 1f;
+                axisXy = guns[0].AxisXy > 0.0001f ? guns[0].AxisXy : 1f;
                 haveScale = true;
             }
             else if (guns.Count == 0)
             {
-                haveScale = TryReadSharedWeaponScale(in parts, out xyScale, out rateScale, out axisZ);
+                haveScale = TryReadSharedWeaponScale(in parts, out xyScale, out rateScale, out axisZ, out axisXy);
             }
 
             ShipStatTooltipChrome.AppendSectionBanner(sb, "DPS", "FFAA66");
@@ -1713,10 +1720,11 @@ namespace TitanOrbit.UI
             AppendFireRateFleetLine(sb, in parts, in live);
 
             // --- Weapon scale (prefab localScale on the barrel) ---
-            // XY fattens the hit and the bullet. Z divides cadence. Unit scale is
-            // still printed so a ×1 barrel is visible next to rate of fire.
+            // XY average is the exponent. Damage and bullet size use average^average.
+            // Fire rate uses (1/Z) ^ that average. Unit scale is still printed so a
+            // ×1 barrel is visible next to rate of fire.
             if (haveScale && !scalesDiffer)
-                AppendWeaponScaleLine(sb, xyScale, axisZ, rateScale);
+                AppendWeaponScaleLine(sb, axisXy, xyScale, axisZ, rateScale);
             else if (scalesDiffer)
             {
                 AppendTint(sb, HexMute, "Weapon scale differs per barrel.");
@@ -1748,7 +1756,7 @@ namespace TitanOrbit.UI
             {
                 AppendTint(sb, HexMute, "Fire Power  ");
                 AppendTint(sb, HexPrimary, FEq(damageBeforeScale));
-                AppendTint(sb, HexMute, "  ×  XY ");
+                AppendTint(sb, HexMute, "  ×  XY^avg ");
                 AppendTint(sb, HexScale, FEq(xyScale));
                 AppendTint(sb, HexMute, "  =  ");
                 AppendTint(sb, HexResult, FResult(firePower));
@@ -1798,22 +1806,30 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// One legend line: XY changes damage and bullet size, Z changes fire rate.
+        /// One legend line: XY average raised to itself changes damage and bullet size.
+        /// (1/Z) raised to that average changes fire rate.
         /// Matches <see cref="ShipComponentAbilityStatsMath.GetWeaponFirePowerScale"/>
         /// and <see cref="ShipComponentAbilityStatsMath.GetWeaponFireRateScale"/>.
         /// </summary>
-        static void AppendWeaponScaleLine(StringBuilder sb, float xyScale, float axisZ, float rateScale)
+        static void AppendWeaponScaleLine(StringBuilder sb, float axisXy, float firePowerScale, float axisZ, float rateScale)
         {
+            float exponent = axisXy > 0.0001f ? axisXy : 1f;
             AppendTint(sb, HexMute, "Weapon scale  XY ");
-            AppendTint(sb, HexScale, FEq(xyScale));
-            AppendTint(sb, HexMute, "  Z ");
+            AppendTint(sb, HexScale, FEq(exponent));
+            AppendTint(sb, HexMute, "^");
+            AppendTint(sb, HexScale, FEq(exponent));
+            AppendTint(sb, HexMute, " = ×");
+            AppendTint(sb, HexScale, FEq(firePowerScale));
+            AppendTint(sb, HexMute, "    Z ");
             AppendTint(sb, HexScale, FEq(axisZ));
+            AppendTint(sb, HexMute, "  rate ×");
+            AppendTint(sb, HexScale, FEq(rateScale));
             sb.AppendLine();
-            AppendTint(sb, HexMute, "XY  damage ×");
-            AppendTint(sb, HexScale, FEq(xyScale));
+            AppendTint(sb, HexMute, "XY^avg  damage ×");
+            AppendTint(sb, HexScale, FEq(firePowerScale));
             AppendTint(sb, HexMute, "  bullet size ×");
-            AppendTint(sb, HexScale, FEq(xyScale));
-            AppendTint(sb, HexMute, "    Z  fire rate ×");
+            AppendTint(sb, HexScale, FEq(firePowerScale));
+            AppendTint(sb, HexMute, "    (1/Z)^avg  fire rate ×");
             AppendTint(sb, HexScale, FEq(rateScale));
             sb.AppendLine();
         }
@@ -1833,8 +1849,11 @@ namespace TitanOrbit.UI
             sb.Append("  ");
             if (gun.HasPrefabScale)
             {
+                float rawXy = gun.AxisXy > 0.0001f ? gun.AxisXy : 1f;
                 AppendTint(sb, HexMute, "XY ");
-                AppendTint(sb, HexScale, FEq(xy));
+                AppendTint(sb, HexScale, FEq(rawXy));
+                AppendTint(sb, HexMute, "^");
+                AppendTint(sb, HexScale, FEq(rawXy));
                 AppendTint(sb, HexMute, "  Z ");
                 AppendTint(sb, HexScale, FEq(gun.AxisZ > 0.0001f ? gun.AxisZ : 1f));
                 sb.Append("  ");
@@ -1872,11 +1891,13 @@ namespace TitanOrbit.UI
             in ShipSpeedometerStatTooltips.PartCache parts,
             out float xyScale,
             out float rateScale,
-            out float axisZ)
+            out float axisZ,
+            out float axisXy)
         {
             xyScale = 1f;
             rateScale = 1f;
             axisZ = 1f;
+            axisXy = 1f;
             if (!parts.Valid || parts.Ids == null)
                 return false;
 
@@ -1890,7 +1911,7 @@ namespace TitanOrbit.UI
                 if (string.IsNullOrWhiteSpace(id) || !ShipComponentAbilityStatsMath.IsWeaponComponent(id))
                     continue;
 
-                ReadWeaponScale(ReadLocalScale(in parts, i), out xyScale, out rateScale, out axisZ);
+                ReadWeaponScale(ReadLocalScale(in parts, i), out xyScale, out rateScale, out axisZ, out axisXy);
                 return true;
             }
 
@@ -1901,8 +1922,14 @@ namespace TitanOrbit.UI
         /// Splits a barrel <c>localScale</c> the way
         /// <see cref="ShipComponentAbilityStatsMath.ScaleStatsByTransform"/> does.
         /// </summary>
-        static void ReadWeaponScale(Vector3 localScale, out float xyScale, out float rateScale, out float axisZ)
+        static void ReadWeaponScale(
+            Vector3 localScale,
+            out float xyScale,
+            out float rateScale,
+            out float axisZ,
+            out float axisXy)
         {
+            axisXy = ShipComponentAbilityStatsMath.GetWeaponXyAverage(localScale);
             xyScale = ShipComponentAbilityStatsMath.GetWeaponFirePowerScale(localScale);
             rateScale = ShipComponentAbilityStatsMath.GetWeaponFireRateScale(localScale);
             axisZ = Mathf.Abs(localScale.z);
@@ -1912,6 +1939,8 @@ namespace TitanOrbit.UI
                 rateScale = 1f;
             if (axisZ <= 0.0001f)
                 axisZ = 1f;
+            if (axisXy <= 0.0001f)
+                axisXy = 1f;
         }
 
         /// <summary>
@@ -2026,7 +2055,7 @@ namespace TitanOrbit.UI
                     continue;
 
                 string name = ResolvePartName(parts.Family, id);
-                ReadWeaponScale(ReadLocalScale(in parts, i), out float xy, out float zRate, out float axisZ);
+                ReadWeaponScale(ReadLocalScale(in parts, i), out float xy, out float zRate, out float axisZ, out float axisXy);
                 into.Add(new DpsGunRow
                 {
                     Name = string.IsNullOrWhiteSpace(name) ? id : name,
@@ -2035,6 +2064,7 @@ namespace TitanOrbit.UI
                     XyScale = xy,
                     RateScale = zRate,
                     AxisZ = axisZ,
+                    AxisXy = axisXy,
                     HasPrefabScale = true
                 });
             }
@@ -2117,6 +2147,7 @@ namespace TitanOrbit.UI
                     XyScale = 1f,
                     RateScale = 1f,
                     AxisZ = 1f,
+                    AxisXy = 1f,
                     HasPrefabScale = false
                 });
             }

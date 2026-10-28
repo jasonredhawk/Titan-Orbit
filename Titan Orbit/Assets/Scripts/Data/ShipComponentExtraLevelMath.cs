@@ -82,8 +82,9 @@ namespace TitanOrbit.Data
     /// A Cockpit at scale 3 is <c>3 ×</c> catalog Health, Gems, Troops, and Ramming.
     /// An engine or thruster at scale 2 is <c>2 ×</c> Move and Acceleration. Turn
     /// uses that same average. Weapon bullet speed and bullet range stay the
-    /// catalog values at every barrel size. A weapon at scale 2 is
-    /// <c>2 ×</c> fire power and <c>½ ×</c> fire rate (average XY vs 1/Z).
+    /// catalog values at every barrel size. A weapon at uniform scale 2 is
+    /// <c>4 ×</c> fire power and <c>¼ ×</c> fire rate (XY average raised to itself,
+    /// and 1/Z raised to that same average).
     /// Ability details cards show that multiply as its own formula step. Moon-store extras stay at ×1.
     /// </para>
     /// <para>

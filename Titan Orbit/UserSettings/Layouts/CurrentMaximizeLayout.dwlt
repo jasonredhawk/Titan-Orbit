@@ -23,7 +23,7 @@ MonoBehaviour:
   m_MinSize: {x: 300, y: 112}
   m_MaxSize: {x: 24288, y: 16192}
   vertical: 1
-  controlID: 22570
+  controlID: 22803
   draggingID: 0
 --- !u!114 &2
 MonoBehaviour:
@@ -154,7 +154,7 @@ MonoBehaviour:
   m_MinSize: {x: 300, y: 112}
   m_MaxSize: {x: 24288, y: 16192}
   vertical: 0
-  controlID: 22571
+  controlID: 22804
   draggingID: 0
 --- !u!114 &4
 MonoBehaviour:
@@ -180,7 +180,7 @@ MonoBehaviour:
   m_MinSize: {x: 200, y: 112}
   m_MaxSize: {x: 16192, y: 16192}
   vertical: 1
-  controlID: 22578
+  controlID: 22682
   draggingID: 0
 --- !u!114 &5
 MonoBehaviour:
@@ -206,7 +206,7 @@ MonoBehaviour:
   m_MinSize: {x: 200, y: 56}
   m_MaxSize: {x: 16192, y: 8096}
   vertical: 0
-  controlID: 22502
+  controlID: 22683
   draggingID: 0
 --- !u!114 &6
 MonoBehaviour:
@@ -280,8 +280,8 @@ MonoBehaviour:
       m_LastClickedID:
         m_Data: 0
       m_ExpandedIDs:
-      - m_Data: -20900258
-      - m_Data: 5578832
+      - m_Data: -25155560
+      - m_Data: 5588806
       m_RenameOverlay:
         m_UserAcceptedRename: 0
         m_Name: 
@@ -932,9 +932,9 @@ MonoBehaviour:
   m_AudioPlay: 0
   m_DebugDrawModesUseInteractiveLightBakingData: 0
   m_Position:
-    m_Target: {x: 2.0121727, y: -0.31097174, z: 1.1026131}
+    m_Target: {x: -5.7334113, y: 35.2061, z: 3.626904}
     speed: 2
-    m_Value: {x: 2.0121727, y: -0.31097174, z: 1.1026131}
+    m_Value: {x: -5.7334113, y: 35.2061, z: 3.626904}
   m_RenderMode: 0
   m_CameraMode:
     drawMode: 0
@@ -981,13 +981,13 @@ MonoBehaviour:
     m_gridOpacity: 0.5
     m_NearestPlaneToHandleMode: 0
   m_Rotation:
-    m_Target: {x: -0.11791013, y: -0.7402478, z: 0.13514152, w: -0.6480899}
+    m_Target: {x: -0.60140014, y: 0.07271737, z: -0.05473057, w: -0.79384243}
     speed: 2
-    m_Value: {x: -0.117901094, y: -0.74019104, z: 0.13513117, w: -0.64804024}
+    m_Value: {x: -0.60135466, y: 0.07271187, z: -0.054726437, w: -0.7937824}
   m_Size:
-    m_Target: 7.8748965
+    m_Target: 7.740132
     speed: 2
-    m_Value: 7.8748965
+    m_Value: 7.740132
   m_Ortho:
     m_Target: 0
     speed: 2
@@ -1107,7 +1107,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 1
   m_Script: {fileID: 12006, guid: 0000000000000000e000000000000000, type: 0}
-  m_Name: ConsoleWindow
+  m_Name: ProjectBrowser
   m_EditorClassIdentifier: 
   m_Children: []
   m_Position:
@@ -1116,15 +1116,15 @@ MonoBehaviour:
     y: 1050
     width: 2056
     height: 291
-  m_MinSize: {x: 101, y: 126}
-  m_MaxSize: {x: 4001, y: 4026}
-  m_ActualView: {fileID: 15}
+  m_MinSize: {x: 230, y: 250}
+  m_MaxSize: {x: 10000, y: 10000}
+  m_ActualView: {fileID: 14}
   m_Panes:
   - {fileID: 14}
   - {fileID: 15}
   - {fileID: 16}
-  m_Selected: 1
-  m_LastSelected: 0
+  m_Selected: 0
+  m_LastSelected: 1
 --- !u!114 &14
 MonoBehaviour:
   m_ObjectHideFlags: 52
@@ -1174,7 +1174,7 @@ MonoBehaviour:
     m_SkipHidden: 0
     m_SearchArea: 0
     m_Folders:
-    - Assets/Scripts/Game
+    - Assets/Prefabs/Ships/AstroEagle
     m_Globs: []
     m_ProductIds: 
     m_AnyWithAssetOrigin: 0
@@ -1184,18 +1184,18 @@ MonoBehaviour:
   m_ViewMode: 1
   m_StartGridSize: 16
   m_LastFolders:
-  - Assets/Scripts/Game
+  - Assets/Prefabs/Ships/AstroEagle
   m_LastFoldersGridSize: 16
   m_LastProjectPath: C:\Users\jason\Documents\repo\Titan-Orbit\Titan Orbit
   m_LockTracker:
     m_IsLocked: 0
   m_LastLocalAssetsSearchArea: 0
   m_FolderTreeState:
-    scrollPos: {x: 0, y: 923}
+    scrollPos: {x: 0, y: 455}
     m_SelectedIDs:
-    - m_Data: 335516
+    - m_Data: 104312
     m_LastClickedID:
-      m_Data: 335516
+      m_Data: 104312
     m_ExpandedIDs:
     - m_Data: 0
     - m_Data: 82788
@@ -1444,7 +1444,7 @@ MonoBehaviour:
       m_Icon: {fileID: 0}
       m_ResourceFile: 
     m_NewAssetIndexInList: -1
-    m_ScrollPosition: {x: 0, y: 1987}
+    m_ScrollPosition: {x: 0, y: 374}
     m_GridSize: 16
   m_SkipHiddenPackages: 0
   m_DirectoriesAreaWidth: 240
@@ -2568,7 +2568,7 @@ MonoBehaviour:
   m_MinSize: {x: 100, y: 112}
   m_MaxSize: {x: 8096, y: 16192}
   vertical: 1
-  controlID: 22572
+  controlID: 22805
   draggingID: 0
 --- !u!114 &18
 MonoBehaviour:
@@ -2827,8 +2827,8 @@ MonoBehaviour:
     y: 1014
     width: 504
     height: 327
-  m_MinSize: {x: 50, y: 50}
-  m_MaxSize: {x: 4000, y: 4000}
+  m_MinSize: {x: 51, y: 76}
+  m_MaxSize: {x: 4001, y: 4026}
   m_ActualView: {fileID: 25}
   m_Panes:
   - {fileID: 25}
