@@ -227,6 +227,16 @@ namespace SpaceGraphicsToolkit
 		}
 
 		/// <summary>
+		/// WebGL asteroid copies call this before the shared mesh is assigned.
+		/// LateUpdate must not Instantiate a private Geosphere while this is set.
+		/// </summary>
+		public void HoldWebGlSharedMesh()
+		{
+			lockSharedMesh = true;
+			dirtyMesh = false;
+		}
+
+		/// <summary>
 		/// WebGL asteroid buckets. Game code returns the shared mesh for a bucket so
 		/// <see cref="LateUpdate"/> never <c>Instantiate</c>s a private Geosphere.
 		/// The callback may build the bucket when the slot is empty.
@@ -290,6 +300,13 @@ namespace SpaceGraphicsToolkit
 			sentWaterLevel = float.NaN;
 			sentNightValid = false;
 			webGlDrawMaterialReady = false;
+			// The spin migrate builds a new component, then the caller assigns the share.
+			// Copying the bucket (often still -1) and holding the lock stops that new
+			// component from Instantiate-ing its own Geosphere in the same LateUpdate.
+			sharedMeshBucket = source.sharedMeshBucket;
+			if (Application.platform == RuntimePlatform.WebGLPlayer &&
+			    (source.lockSharedMesh || source.sharedMeshBucket >= 0))
+				lockSharedMesh = true;
 		}
 
 		/// <summary>Writes a texture onto the WebGL draw material. Shared asteroid meshes skip this.</summary>
@@ -366,6 +383,7 @@ namespace SpaceGraphicsToolkit
 			dirtyMesh = false;
 			usesSharedGeneratedMesh = true;
 			lockSharedMesh = true;
+			ReleaseGeneratedVertexLists();
 			if (sharedGeneratedUsers.TryGetValue(shared, out int users))
 				sharedGeneratedUsers[shared] = users + 1;
 			else
@@ -419,6 +437,9 @@ namespace SpaceGraphicsToolkit
 		[ContextMenu("Rebuild")]
 		public void Rebuild()
 		{
+			// Locked bodies keep the shared mesh. RebuildAsSharedMesh clears the lock
+			// before the one legitimate build, then locks again. Calling TryRebind from
+			// here would recurse: rebind builds the bucket by calling Rebuild.
 			if (lockSharedMesh)
 			{
 				dirtyMesh = false;
@@ -516,6 +537,33 @@ namespace SpaceGraphicsToolkit
 					meshCollider.sharedMesh = null;
 					meshCollider.sharedMesh = generatedMesh;
 				}
+			}
+
+			// Vertex lists are only needed while displacing. Leaving a Geosphere50
+			// on every body pins the managed arrays after the mesh is destroyed,
+			// and the WebGL mono heap does not shrink.
+			ReleaseGeneratedVertexLists();
+		}
+
+		/// <summary>Drops displaced vertex buffers so a rebuilt mesh cannot pin them.</summary>
+		void ReleaseGeneratedVertexLists()
+		{
+			if (generatedPositions != null)
+			{
+				generatedPositions.Clear();
+				generatedPositions.TrimExcess();
+			}
+
+			if (generatedNormals != null)
+			{
+				generatedNormals.Clear();
+				generatedNormals.TrimExcess();
+			}
+
+			if (generatedTangents != null)
+			{
+				generatedTangents.Clear();
+				generatedTangents.TrimExcess();
 			}
 		}
 
@@ -618,12 +666,15 @@ namespace SpaceGraphicsToolkit
 
 		protected virtual void LateUpdate()
 		{
-			// WebGL asteroids carry a bucket id. A missing lock or mesh must re-bind that
-			// share. Rebuild() would Instantiate a private Geosphere per rock (~2 GB) and
-			// the tab dies in abort("OOM") / abortOnCannotGrowMemory.
-			if (Application.platform == RuntimePlatform.WebGLPlayer && sharedMeshBucket >= 0)
+			// WebGL asteroids either carry a bucket id or are held until the share is
+			// assigned. Rebuild() would Instantiate a private Geosphere per rock (~2 GB)
+			// and the tab dies in abort("OOM") / abortOnCannotGrowMemory.
+			// A hold with no bucket yet draws nothing for one frame; that is the migrate
+			// window. Dropping the hold and building a private mesh is the leak.
+			if (Application.platform == RuntimePlatform.WebGLPlayer &&
+			    (sharedMeshBucket >= 0 || lockSharedMesh))
 			{
-				if (lockSharedMesh == false || generatedMesh == null)
+				if (sharedMeshBucket >= 0 && (lockSharedMesh == false || generatedMesh == null))
 					TryRebindWebGlSharedBucket();
 				dirtyMesh = false;
 			}
@@ -631,10 +682,6 @@ namespace SpaceGraphicsToolkit
 			{
 				// A locked share must survive Displacement / WaterLevel dirties. Rebuilding
 				// would Release the share and Instantiate a private Geosphere per rock.
-				// A lock with no mesh draws nothing. Drop that lock and build a mesh.
-				if (lockSharedMesh && generatedMesh == null)
-					lockSharedMesh = false;
-
 				if (lockSharedMesh && generatedMesh != null)
 					dirtyMesh = false;
 				else if (generatedMesh == null || dirtyMesh == true)

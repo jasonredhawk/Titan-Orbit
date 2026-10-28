@@ -158,11 +158,80 @@ namespace TitanOrbit.UI
                 home.AssignedTeam = view.TeamOwnership;
         }
 
+        /// <summary>
+        /// Copies the live ghost <see cref="PlanetState.PlanetLevel"/> onto the dock adapters
+        /// the upgrade tree reads. <see cref="BindEcsViews"/> does this once when the menu
+        /// opens. Deposits raise the planet while the menu stays up: the gem header already
+        /// reads the ghost, but the tree kept the opening level and left the new tier gray
+        /// ("Planet Lv 6+"). A purchased hull's two next options stay blocked until this runs.
+        /// The lookup is <see cref="EcsGameBridge"/>'s per-frame planet cache, not a new query.
+        /// </summary>
+        /// <returns>True when the store or home adapter level actually changed.</returns>
+        bool SyncDockedPlanetLevelsFromEcs()
+        {
+            // --- Store moon, then home (they are different adapters even on the same world) ---
+            bool changed = false;
+            changed |= SyncPlanetViewLevel(_ecsStorePlanetView, _ecsStorePlanetId);
+            if (currentPlanet != null && !ReferenceEquals(currentPlanet, _ecsStorePlanetView))
+            {
+                int storeId = currentPlanet.PlanetId > 0 ? currentPlanet.PlanetId : _ecsStorePlanetId;
+                changed |= SyncPlanetViewLevel(currentPlanet, storeId);
+            }
+
+            int homeId = _ecsHomePlanetId;
+            if (homeId <= 0 && currentHomePlanet != null)
+                homeId = currentHomePlanet.PlanetId;
+            changed |= SyncPlanetViewLevel(_ecsHomePlanetView, homeId);
+            if (currentHomePlanet != null && !ReferenceEquals(currentHomePlanet, _ecsHomePlanetView))
+            {
+                int id = currentHomePlanet.PlanetId > 0 ? currentHomePlanet.PlanetId : homeId;
+                changed |= SyncPlanetViewLevel(currentHomePlanet, id);
+            }
+
+            return changed;
+        }
+
+        /// <summary>
+        /// Writes one planet's ghost level onto a legacy adapter.
+        /// A missing ghost leaves the adapter alone so a join-settle gap cannot
+        /// snap the tree back to level 1.
+        /// </summary>
+        /// <param name="view">Store or home adapter the orbit menu already holds.</param>
+        /// <param name="planetId">Stable <c>PlanetState.PlanetId</c>. Zero skips the write.</param>
+        /// <returns>True when <paramref name="view"/>'s level number changed.</returns>
+        static bool SyncPlanetViewLevel(Planet view, int planetId)
+        {
+            if (view == null || planetId <= 0)
+                return false;
+            if (!EcsGameBridge.TryGetPlanetStateByPlanetId(planetId, out var state))
+                return false;
+
+            // [NETCODE] PlanetLevel is a ghost field. The server increments it in
+            // PlanetEconomyMath.TryLevelUp; clients see the new value on this read.
+            int level = Mathf.Max(1, state.PlanetLevel);
+            if (view.PlanetLevel == level)
+                return false;
+
+            view.PlanetLevel = level;
+            return true;
+        }
+
         partial void OnOrbitStationEcsUpdate()
         {
             // --- Consume RPC scratch state and refresh ship view ---
             if (MoonOrbitClientState.TryConsumeContributedGems(out float gems))
                 OnContributedGemsReceived(gems);
+
+            // Hull and planet level before any store refresh. The purchase result and
+            // the level-up both land on the ghost first. Painting first used the hull
+            // and planet level from when the menu opened, so the two next cards stayed gray.
+            if (_ecsShipView != null && _ecsStorePlanetId > 0)
+            {
+                // [TITAN-ORBIT] Sync ship view every frame for dock state, but only rebuild
+                // equipment/card lists when store RPCs fire (RefreshAll) or every ~0.35s —
+                // SyncLoadoutBuffers used to scan ServerWorld buffers every Update and felt laggy.
+                _ecsShipView.SyncFromEcs(_ecsStorePlanetId);
+            }
 
             if (MoonOrbitClientState.TryConsumeStoreMessage(out string message))
             {
@@ -172,6 +241,7 @@ namespace TitanOrbit.UI
                 // Refresh Bank after spend (Local Host already updated ledger; dedicated needs a pull).
                 if (OrbitStationEcsContext.HomePlanetId > 0)
                     MoonOrbitRpcClient.RequestContributedGems(OrbitStationEcsContext.HomePlanetId);
+                SyncDockedPlanetLevelsFromEcs();
                 RefreshAll();
             }
 
@@ -189,14 +259,6 @@ namespace TitanOrbit.UI
                 _ecsShipView?.InvalidateLoadoutCache();
                 RefreshStoreLabels();
                 RefreshSlots();
-            }
-
-            if (_ecsShipView != null && _ecsStorePlanetId > 0)
-            {
-                // [TITAN-ORBIT] Sync ship view every frame for dock state, but only rebuild
-                // equipment/card lists when store RPCs fire (RefreshAll) or every ~0.25s —
-                // SyncLoadoutBuffers used to scan ServerWorld buffers every Update and felt laggy.
-                _ecsShipView.SyncFromEcs(_ecsStorePlanetId);
             }
         }
 
@@ -228,7 +290,8 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// Writes Ship + Bank sidebar numbers from optimistic metronome state in one paint.
-        /// Planet progress may still come from ECS (cosmetic under the Bank banner).
+        /// Planet progress comes from the ghost. When that ghost level changes, the upgrade
+        /// tree is repainted once so the next hulls unlock on the same beat as the header.
         /// </summary>
         void RefreshDepositFlowFromMetronome()
         {
@@ -263,6 +326,13 @@ namespace TitanOrbit.UI
                 planetGems = planetState.CurrentGems;
                 planetLevel = Mathf.Max(1, planetState.PlanetLevel);
             }
+
+            // The header reads the ghost directly. The tree reads the adapter, which
+            // stayed at the level from menu open. Push the ghost level across on the
+            // same beat that fills the bar, and repaint only when that number changes
+            // so ordinary gem ticks do not rebuild all 24 cards.
+            if (SyncDockedPlanetLevelsFromEcs())
+                RefreshShipTreeVisualStateOnly();
 
             orbitDockSidebar.RefreshDepositStatus(shipGems, bankGems, planetGems, planetLevel);
             orbitDockSidebar.RefreshOrbitPlanetName(storePlanetId);

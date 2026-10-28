@@ -4024,7 +4024,21 @@ namespace TitanOrbit.UI
             // Ships / Cards tabs do not need the GEAR purchase grid rebuilt every 0.35s.
             RefreshSidebar(includeStore: _moonDockCenterView == MoonDockCenterView.Gear);
 
-            if (cardRoots == null || cardButtons == null || currentShip == null || currentPlanet == null) return;
+            if (cardRoots == null || cardButtons == null || currentShip == null || currentPlanet == null)
+            {
+                // Card grid is not built yet. The ship tree still has to see a
+                // planet level-up, or the next hulls stay gray until the menu reopens.
+                if (currentShip != null && currentPlanet != null
+                    && (!_moonDockLayoutActive || _moonDockCenterView == MoonDockCenterView.Ships))
+                    RefreshShipTreeVisualStateOnly();
+                return;
+            }
+
+            // Card tier and the ship tree both gate on the docked planet's level.
+            // Copy the ghost level before either read so a level-up in this poll
+            // unlocks the next hulls instead of leaving them on "Planet Lv N+".
+            SyncDockedPlanetLevelsFromEcs();
+
             if (CardShopSystem.Instance == null)
             {
                 for (int i = 0; i < cardRoots.Length; i++)

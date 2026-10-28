@@ -33,6 +33,8 @@ namespace TitanOrbit.Core
     /// the spin-offer panel back without deleting that UI. The Your Ship card toggles
     /// (<see cref="PortraitShipOnly"/>, moon, stars, nearby hulls, auto-rotate) live here too
     /// so the live camera and the card buttons share one set of switches.
+    /// <see cref="ParkLandedWeapons"/> (default on) keeps guns facing forward while a hull
+    /// is fully landed, including in that card.
     /// <see cref="ShowJoinGameClosesIn"/>
     /// hides the Join Game "closes in…" countdown (default off); flip it to show empty-lobby
     /// idle-kill time again. <see cref="EnableBetaFeedback"/> (default off) treats the
@@ -158,6 +160,9 @@ namespace TitanOrbit.Core
 
         [Tooltip("ON: the Your Ship camera slowly orbits the hull, keeping the theatrical 3/4 height. Drag on the picture still spins it either way.")]
         [SerializeField] bool portraitAutoRotate;
+
+        [Tooltip("ON: while a ship is fully landed on a gem moon, its guns stay facing forward, including in the Your Ship card. OFF: those guns keep tracking the cursor while parked. Flight aim is unchanged either way.")]
+        [SerializeField] bool parkLandedWeapons = true;
 
         /// <summary>
         /// Play Mode: fired when any Your Ship camera checkbox changes so the card
@@ -295,6 +300,12 @@ namespace TitanOrbit.Core
 
         /// <summary>True when the Your Ship camera slowly orbits the hull.</summary>
         public bool PortraitAutoRotate => portraitAutoRotate;
+
+        /// <summary>
+        /// True when a fully landed hull should park its guns forward.
+        /// Off leaves cursor tracking on while the ship sits on the moon.
+        /// </summary>
+        public bool ParkLandedWeapons => parkLandedWeapons;
 
         /// <summary>
         /// True when the card is showing moon, stars, and nearby hulls.

@@ -11,8 +11,10 @@ namespace TitanOrbit.Data
     /// the shared ProfileSet.
     /// <para>
     /// <see cref="partType"/> is the <b>group</b> (mesh-scale bucket + which Part Profile seeds
-    /// a new row). <see cref="baseStats"/> is the master ability block for <b>this name only</b>
-    /// — HyperFalcon_Cockpit and LightFox_Cockpit each keep their own numbers.
+    /// a new row). <see cref="additionalPartTypes"/> add more Part Profiles onto this same part
+    /// (an engine mesh can also carry Thruster and Tail stats). <see cref="baseStats"/> is the
+    /// master ability block for <b>this name only</b> — HyperFalcon_Cockpit and LightFox_Cockpit
+    /// each keep their own numbers.
     /// </para>
     /// </summary>
     [Serializable]
@@ -23,9 +25,16 @@ namespace TitanOrbit.Data
         /// <summary>
         /// Broad group key matching a Part Profile row (Engine, Thruster, Wing, Cockpit, Weapon, …).
         /// Also selects the attribute mesh-scale group at runtime.
+        /// Extra stat groups belong in <see cref="additionalPartTypes"/> — they do not change the mesh group.
         /// </summary>
         [ShipFamilyPartType]
         public string partType = "Unmapped";
+        /// <summary>
+        /// More Part Profiles whose stats are added onto this part.
+        /// Example: Engine plus Thruster (and Tail) when the hull has no separate thruster or tail mesh.
+        /// </summary>
+        [Tooltip("Extra Part Profiles added onto this part. Part Type above still picks the mesh-scale group.")]
+        public List<string> additionalPartTypes = new List<string>();
         /// <summary>
         /// When false, Scan writes zero ability stats (mass still comes from hierarchy scale).
         /// Use for covers / plates / holders that share a group for visual grow only.
@@ -54,16 +63,87 @@ namespace TitanOrbit.Data
         /// </summary>
         public bool hasBaseStats;
 
-        /// <summary>True when partType is empty, Unmapped, or Ignore.</summary>
+        /// <summary>
+        /// True when this row should not receive ability stats.
+        /// Ignore always wins. Unmapped / empty counts only when no extra part type is set.
+        /// </summary>
         public bool IsUnmappedOrIgnore
         {
             get
             {
-                if (string.IsNullOrWhiteSpace(partType))
+                if (string.Equals(partType, ShipFamilyPartTypes.Ignore, StringComparison.OrdinalIgnoreCase))
                     return true;
-                return string.Equals(partType, "Unmapped", StringComparison.OrdinalIgnoreCase)
-                    || string.Equals(partType, "Ignore", StringComparison.OrdinalIgnoreCase);
+                if (ShipFamilyPartTypes.IsContributingProfile(partType))
+                    return false;
+                return !HasAdditionalContributingPartType();
             }
+        }
+
+        /// <summary>True when <see cref="additionalPartTypes"/> contains a real Part Profile.</summary>
+        public bool HasAdditionalContributingPartType()
+        {
+            if (additionalPartTypes == null)
+                return false;
+            for (int i = 0; i < additionalPartTypes.Count; i++)
+            {
+                if (ShipFamilyPartTypes.IsContributingProfile(additionalPartTypes[i]))
+                    return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// True when this part should keep turn stats from a Thruster or Tail profile,
+        /// including an engine mesh that also lists one of those types.
+        /// </summary>
+        public bool ContributesTurnStats()
+        {
+            if (ShipFamilyPartTypes.ContributesTurn(partType))
+                return true;
+            if (additionalPartTypes == null)
+                return false;
+            for (int i = 0; i < additionalPartTypes.Count; i++)
+            {
+                if (ShipFamilyPartTypes.ContributesTurn(additionalPartTypes[i]))
+                    return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Writes the primary type, then each extra type, into <paramref name="dest"/>.
+        /// Skips Unmapped, Ignore, blanks, and duplicates. Primary is normalized with the part name
+        /// so legacy Engine/Thrust still splits. Extra types are not rewritten from the part name.
+        /// </summary>
+        public int CollectContributingPartTypes(List<string> dest)
+        {
+            if (dest == null)
+                return 0;
+            dest.Clear();
+            AddContributingType(dest, partType, discoveredName);
+            if (additionalPartTypes == null)
+                return dest.Count;
+            for (int i = 0; i < additionalPartTypes.Count; i++)
+                AddContributingType(dest, additionalPartTypes[i], null);
+            return dest.Count;
+        }
+
+        static void AddContributingType(List<string> dest, string raw, string componentIdOrName)
+        {
+            if (!ShipFamilyPartTypes.IsContributingProfile(raw))
+                return;
+            string normalized = ShipFamilyPartTypes.Normalize(raw.Trim(), componentIdOrName);
+            if (!ShipFamilyPartTypes.IsContributingProfile(normalized))
+                return;
+            for (int i = 0; i < dest.Count; i++)
+            {
+                if (string.Equals(dest[i], normalized, StringComparison.OrdinalIgnoreCase))
+                    return;
+            }
+
+            dest.Add(normalized);
         }
     }
 
@@ -397,7 +477,10 @@ namespace TitanOrbit.Data
                         continue;
                     if (string.Equals(m.partType, ShipFamilyPartTypes.Unmapped, StringComparison.OrdinalIgnoreCase)
                         || string.Equals(m.partType, ShipFamilyPartTypes.Ignore, StringComparison.OrdinalIgnoreCase))
+                    {
+                        changed += NormalizeAdditionalPartTypes(m);
                         continue;
+                    }
 
                     string next = ShipFamilyPartTypes.Normalize(m.partType, m.discoveredName);
                     if (!string.Equals(m.partType, next, StringComparison.Ordinal))
@@ -405,11 +488,54 @@ namespace TitanOrbit.Data
                         m.partType = next;
                         changed++;
                     }
+
+                    changed += NormalizeAdditionalPartTypes(m);
                 }
             }
 
             SortNameMappingsAlphabetically();
             InvalidateLookups();
+            return changed;
+        }
+
+        /// <summary>
+        /// Canonicalizes extra part types. Drops blanks, Unmapped, Ignore, and copies of the primary type.
+        /// </summary>
+        static int NormalizeAdditionalPartTypes(ShipFamilyPartNameMapping mapping)
+        {
+            if (mapping?.additionalPartTypes == null || mapping.additionalPartTypes.Count == 0)
+                return 0;
+
+            int changed = 0;
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (ShipFamilyPartTypes.IsContributingProfile(mapping.partType))
+                seen.Add(ShipFamilyPartTypes.Normalize(mapping.partType.Trim(), mapping.discoveredName));
+
+            for (int i = mapping.additionalPartTypes.Count - 1; i >= 0; i--)
+            {
+                string raw = mapping.additionalPartTypes[i];
+                if (!ShipFamilyPartTypes.IsContributingProfile(raw))
+                {
+                    mapping.additionalPartTypes.RemoveAt(i);
+                    changed++;
+                    continue;
+                }
+
+                string next = ShipFamilyPartTypes.Normalize(raw.Trim(), null);
+                if (!ShipFamilyPartTypes.IsContributingProfile(next) || !seen.Add(next))
+                {
+                    mapping.additionalPartTypes.RemoveAt(i);
+                    changed++;
+                    continue;
+                }
+
+                if (!string.Equals(raw, next, StringComparison.Ordinal))
+                {
+                    mapping.additionalPartTypes[i] = next;
+                    changed++;
+                }
+            }
+
             return changed;
         }
 
@@ -493,7 +619,19 @@ namespace TitanOrbit.Data
                 ShipFamilyComponentPartKey.InferDefaultStatCategoriesForPartType(partType, componentId);
             if (categories == null || categories.Count == 0)
                 categories = ShipFamilyComponentPartKey.InferDefaultStatCategories(componentId);
-            return categories ?? new List<ShipComponentStatCategory>();
+            if (categories == null)
+                categories = new List<ShipComponentStatCategory>();
+
+            // Extra part types add their categories (Thruster/Tail stay on Movement; Wing adds Capacity).
+            if (TryGetNameMapping(componentId, out ShipFamilyPartNameMapping mapping)
+                && mapping?.additionalPartTypes != null)
+            {
+                for (int i = 0; i < mapping.additionalPartTypes.Count; i++)
+                    ShipFamilyComponentPartKey.UnionCategoriesForPartType(
+                        categories, mapping.additionalPartTypes[i]);
+            }
+
+            return categories;
         }
 
         /// <summary>
@@ -506,6 +644,28 @@ namespace TitanOrbit.Data
         {
             if (!ContributesAbilityStats(componentId))
                 return default;
+
+            // Several part types: add each profile's own fields (Engine move/energy + Thruster accel/turn).
+            if (TryGetNameMapping(componentId, out ShipFamilyPartNameMapping mapping)
+                && mapping != null
+                && mapping.HasAdditionalContributingPartType())
+            {
+                var types = new List<string>(4);
+                if (mapping.CollectContributingPartTypes(types) == 0)
+                    return default;
+
+                int combinedVersion = ExtractVersion(componentId);
+                ShipComponentAbilityStats combined = default;
+                for (int i = 0; i < types.Count; i++)
+                {
+                    ShipComponentAbilityStats part = EvaluateSinglePartProfile(types[i], combinedVersion);
+                    combined = i == 0
+                        ? part
+                        : ShipComponentAbilityStatsMath.Add(combined, part);
+                }
+
+                return combined;
+            }
 
             string partType = ResolvePartType(componentId);
             int version = ExtractVersion(componentId);
@@ -522,6 +682,22 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
+        /// One Part Profile at <paramref name="version"/>, limited to the fields that type authors.
+        /// Does not use the part name, so a Thruster extra on an engine id still contributes accel and turn.
+        /// </summary>
+        ShipComponentAbilityStats EvaluateSinglePartProfile(string partType, int version)
+        {
+            ShipComponentAbilityStats raw;
+            if (TryGetProfile(partType, out ShipFamilyPartCalcProfile profile) && profile != null)
+                raw = profile.EvaluateAtVersion(version);
+            else
+                raw = SeedStatsHeuristic(partType, version, null);
+
+            string[] fields = ShipFamilyComponentPartKey.GetAuthoringStatFieldNamesForExplicitPartType(partType);
+            return ShipComponentAbilityStats.KeepOnlyFieldNames(raw, fields);
+        }
+
+        /// <summary>
         /// Ability stats for a component. A name mapping that already has
         /// <see cref="ShipFamilyPartNameMapping.baseStats"/> is the master for that part.
         /// Otherwise the shared Part Profile is evaluated (and apply should stamp the mapping).
@@ -534,12 +710,14 @@ namespace TitanOrbit.Data
             if (!ContributesAbilityStats(componentId))
                 return default;
 
-            if (categories == null || categories.Count == 0)
+            bool widenForExtraTypes = TryGetNameMapping(componentId, out ShipFamilyPartNameMapping mapping)
+                && mapping != null
+                && mapping.HasAdditionalContributingPartType();
+            if (widenForExtraTypes || categories == null || categories.Count == 0)
                 categories = GetAuthoringCategories(componentId);
 
             // --- Per-part master: HyperFalcon_Cockpit does not share numbers with LightFox_Cockpit ---
-            if (TryGetNameMapping(componentId, out ShipFamilyPartNameMapping mapping)
-                && mapping != null
+            if (mapping != null
                 && mapping.hasBaseStats
                 && mapping.contributesAbilityStats)
             {
@@ -676,6 +854,7 @@ namespace TitanOrbit.Data
                 enablePropulsionVfx = false,
                 propulsionVfxScale = 1f,
                 includeInPopulate = true,
+                additionalPartTypes = new List<string>(),
             };
             AppendSeenFamily(created, familyId);
             // Seed known specials from aliases / plan examples (first discover only).
@@ -836,7 +1015,11 @@ namespace TitanOrbit.Data
                     var m = nameMappings[i];
                     if (m == null || m.IsUnmappedOrIgnore)
                         continue;
-                    needed.Add(ShipFamilyPartTypes.Normalize(m.partType.Trim(), m.discoveredName));
+                    var types = new List<string>(4);
+                    if (m.CollectContributingPartTypes(types) == 0)
+                        continue;
+                    for (int t = 0; t < types.Count; t++)
+                        needed.Add(types[t]);
                 }
             }
 

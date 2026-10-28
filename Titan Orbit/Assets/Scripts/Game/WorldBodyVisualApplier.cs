@@ -439,7 +439,7 @@ namespace TitanOrbit.Game
             if (cache == null)
                 cache = root.AddComponent<AsteroidTerritoryTintCache>();
 
-            var sgt = root.GetComponentInChildren<SgtPlanet>(true);
+            var sgt = FindLiveAsteroidPlanet(root);
             if (sgt == null || sgt.Material == null)
                 return false;
 
@@ -534,6 +534,46 @@ namespace TitanOrbit.Game
             return copy;
         }
 
+        /// <summary>
+        /// The spin migrate leaves the prefab <see cref="SgtPlanet"/> on the root until
+        /// end of frame, and adds the one that actually draws under AsteroidBody.
+        /// <see cref="GameObject.GetComponentInChildren{T}"/> hits the doomed root first
+        /// and would bind the share onto a component that is about to be destroyed.
+        /// The body then LateUpdates with no bucket and Instantiates its own mesh.
+        /// </summary>
+        static SgtPlanet FindLiveAsteroidPlanet(GameObject root)
+        {
+            if (root == null)
+                return null;
+
+            Transform body = FindNamedChild(root.transform, "AsteroidBody");
+            if (body != null)
+            {
+                SgtPlanet onBody = body.GetComponent<SgtPlanet>();
+                if (onBody != null)
+                    return onBody;
+            }
+
+            return root.GetComponentInChildren<SgtPlanet>(true);
+        }
+
+        static Transform FindNamedChild(Transform root, string childName)
+        {
+            if (root == null)
+                return null;
+            if (root.name == childName)
+                return root;
+
+            for (int i = 0; i < root.childCount; i++)
+            {
+                Transform found = FindNamedChild(root.GetChild(i), childName);
+                if (found != null)
+                    return found;
+            }
+
+            return null;
+        }
+
         /// <summary>Same Barren asteroid texture for every rock; vary UV scale, normals, and displacement per instance.</summary>
         static void ApplyAsteroidSurfaceVariation(GameObject root, Vector3 worldPosition, float rawSize)
         {
@@ -541,7 +581,7 @@ namespace TitanOrbit.Game
             if (rawSize < 0.01f)
                 return;
 
-            var sgt = root.GetComponentInChildren<SgtPlanet>(true);
+            var sgt = FindLiveAsteroidPlanet(root);
             if (sgt == null)
                 return;
 

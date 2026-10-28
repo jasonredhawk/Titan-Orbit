@@ -298,8 +298,23 @@ namespace TitanOrbit.Data
         /// <summary>
         /// Stat fields shown and stored for a component based on category and part id.
         /// Offense always returns <see cref="OffenseFields"/> — fire power stays on the list.
+        /// Extra part types on the name mapping add that profile's fields for this category.
         /// </summary>
         public static string[] GetAuthoringStatFieldNames(ShipComponentStatCategory category, string componentId)
+        {
+            string[] named = FieldsForResolvedName(category, componentId);
+            IReadOnlyList<string> extra = AdditionalPartTypesFor(componentId);
+            if (extra == null || extra.Count == 0)
+                return named;
+
+            var seen = new HashSet<string>(named, StringComparer.Ordinal);
+            var ordered = new List<string>(named);
+            AppendAdditionalPartTypeFields(seen, ordered, new[] { category }, extra);
+            return ordered.Count == named.Length ? named : ordered.ToArray();
+        }
+
+        /// <summary>Name-resolved fields only. Does not read extra part types.</summary>
+        static string[] FieldsForResolvedName(ShipComponentStatCategory category, string componentId)
         {
             string partType = ShipFamilyPartTypes.Normalize(
                 ShipComponentAbilityStats.ResolvePartTypeForSuggestedStats(componentId), componentId);
@@ -336,10 +351,97 @@ namespace TitanOrbit.Data
             }
         }
 
+        /// <summary>
+        /// Stat fields for one Part Profile, ignoring the part's name.
+        /// Thruster stays accel + turn even when the prefab id says Engine.
+        /// </summary>
+        public static string[] FieldsForExplicitPartType(ShipComponentStatCategory category, string partType)
+        {
+            partType = ShipFamilyPartTypes.Normalize(
+                string.IsNullOrEmpty(partType) ? string.Empty : partType,
+                null);
+            switch (category)
+            {
+                case ShipComponentStatCategory.Offense:
+                    return OffenseFields;
+                case ShipComponentStatCategory.Health:
+                    return HealthFields;
+                case ShipComponentStatCategory.Energy:
+                    return ShipFamilyPartTypes.IsWeapon(partType) ? WeaponEnergyCapFields : EnergyFields;
+                case ShipComponentStatCategory.Movement:
+                    if (ShipFamilyPartTypes.IsTurn(partType))
+                        return TurnMovementFields;
+                    if (ShipFamilyPartTypes.IsThrusterProfile(partType))
+                        return ThrusterMovementFields;
+                    return PropulsionMovementFields;
+                case ShipComponentStatCategory.Capacity:
+                    if (string.Equals(partType, ShipFamilyPartTypes.Wing, StringComparison.OrdinalIgnoreCase))
+                        return WingCapacityFields;
+                    return CapacityFields;
+                default:
+                    return HealthFields;
+            }
+        }
+
+        /// <summary>Every field one Part Profile authors, in display order.</summary>
+        public static string[] GetAuthoringStatFieldNamesForExplicitPartType(string partType)
+        {
+            partType = ShipFamilyPartTypes.Normalize(
+                string.IsNullOrEmpty(partType) ? string.Empty : partType,
+                null);
+            List<ShipComponentStatCategory> categories =
+                InferDefaultStatCategoriesForPartType(partType, null);
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            var ordered = new List<string>();
+            AppendExplicitPartTypeFields(seen, ordered, categories, partType);
+            return ordered.ToArray();
+        }
+
+        /// <summary>
+        /// Adds <paramref name="partType"/>'s categories onto <paramref name="dest"/> when that type contributes stats.
+        /// </summary>
+        public static void UnionCategoriesForPartType(List<ShipComponentStatCategory> dest, string partType)
+        {
+            if (dest == null || !ShipFamilyPartTypes.IsContributingProfile(partType))
+                return;
+
+            string normalized = ShipFamilyPartTypes.Normalize(partType, null);
+            List<ShipComponentStatCategory> extra = InferDefaultStatCategoriesForPartType(normalized, null);
+            if (extra == null)
+                return;
+            for (int i = 0; i < extra.Count; i++)
+            {
+                if (!ContainsStatCategory(dest, extra[i]))
+                    dest.Add(extra[i]);
+            }
+        }
+
         /// <summary>Union of stat fields for all assigned categories (stable display order).</summary>
         public static string[] GetAuthoringStatFieldNames(
             IReadOnlyList<ShipComponentStatCategory> categories,
             string componentId)
+        {
+            return GetAuthoringStatFieldNames(
+                categories, componentId, AdditionalPartTypesFor(componentId));
+        }
+
+        static IReadOnlyList<string> AdditionalPartTypesFor(string componentId)
+        {
+            ShipFamilyPartCalcProfileSet set = ShipFamilyPartCalcProfileSet.LoadShared();
+            if (set == null
+                || !set.TryGetNameMapping(componentId, out ShipFamilyPartNameMapping mapping)
+                || mapping == null)
+                return null;
+            return mapping.additionalPartTypes;
+        }
+
+        /// <summary>
+        /// Name-based fields for <paramref name="componentId"/>, plus each extra part type's own fields.
+        /// </summary>
+        public static string[] GetAuthoringStatFieldNames(
+            IReadOnlyList<ShipComponentStatCategory> categories,
+            string componentId,
+            IReadOnlyList<string> additionalPartTypes)
         {
             if (categories == null || categories.Count == 0)
                 return GetAuthoringStatFieldNames(ShipComponentStatCategory.Health, componentId);
@@ -352,7 +454,7 @@ namespace TitanOrbit.Data
                 if (!ContainsStatCategory(categories, category))
                     continue;
 
-                string[] fields = GetAuthoringStatFieldNames(category, componentId);
+                string[] fields = FieldsForResolvedName(category, componentId);
                 for (int f = 0; f < fields.Length; f++)
                 {
                     if (seen.Add(fields[f]))
@@ -360,7 +462,57 @@ namespace TitanOrbit.Data
                 }
             }
 
+            AppendAdditionalPartTypeFields(seen, ordered, categories, additionalPartTypes);
             return ordered.ToArray();
+        }
+
+        static void AppendAdditionalPartTypeFields(
+            HashSet<string> seen,
+            List<string> ordered,
+            IReadOnlyList<ShipComponentStatCategory> requested,
+            IReadOnlyList<string> additionalPartTypes)
+        {
+            if (additionalPartTypes == null)
+                return;
+            for (int i = 0; i < additionalPartTypes.Count; i++)
+            {
+                string type = additionalPartTypes[i];
+                if (!ShipFamilyPartTypes.IsContributingProfile(type))
+                    continue;
+                AppendExplicitPartTypeFields(
+                    seen,
+                    ordered,
+                    requested,
+                    ShipFamilyPartTypes.Normalize(type, null));
+            }
+        }
+
+        static void AppendExplicitPartTypeFields(
+            HashSet<string> seen,
+            List<string> ordered,
+            IReadOnlyList<ShipComponentStatCategory> requested,
+            string partType)
+        {
+            if (seen == null || ordered == null || !ShipFamilyPartTypes.IsContributingProfile(partType))
+                return;
+
+            List<ShipComponentStatCategory> typeCategories =
+                InferDefaultStatCategoriesForPartType(partType, null);
+            for (int i = 0; i < CategoryDisplayOrder.Length; i++)
+            {
+                ShipComponentStatCategory category = CategoryDisplayOrder[i];
+                if (requested != null && !ContainsStatCategory(requested, category))
+                    continue;
+                if (!ContainsStatCategory(typeCategories, category))
+                    continue;
+
+                string[] fields = FieldsForExplicitPartType(category, partType);
+                for (int f = 0; f < fields.Length; f++)
+                {
+                    if (seen.Add(fields[f]))
+                        ordered.Add(fields[f]);
+                }
+            }
         }
 
         /// <summary>True when any assigned category is offense and the part is a weapon (not cockpit).</summary>

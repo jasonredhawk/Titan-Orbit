@@ -250,6 +250,10 @@ namespace TitanOrbit.UI
         Sprite _megaTriangleSpriteCache;
         /// <summary>Shared X on the regular-ship blip (white; Image.color tints team).</summary>
         Sprite _shipSquareCrossSpriteCache;
+        /// <summary>One diamond for every asteroid blip. A texture per rock OOMs WebGL when the map is expanded.</summary>
+        Sprite _asteroidBlipSpriteCache;
+        /// <summary>Circular fill/ring textures stay this size. The RectTransform scales them. A full-screen Color[] per expand toggle does not return on WebGL.</summary>
+        const int MaxCircularSpriteTex = 256;
         const string MegaTriangleSpriteName = "MegaTriangleSolid_v1";
         const string ShipSquareCrossSpriteName = "ShipSquareCross_v4";
 
@@ -2137,8 +2141,8 @@ namespace TitanOrbit.UI
                     borderImage.useSpriteMesh = false;
                     borderImage.type = Image.Type.Simple;
 
-                    int discTex = Mathf.Max(8, Mathf.RoundToInt(displaySize));
-                    int textureSize = discTex + Mathf.RoundToInt(RingEdgeCoverPx) * 2;
+                    int textureSize = CircularSpriteTexSize(displaySize);
+                    int discTex = Mathf.Max(8, textureSize - Mathf.RoundToInt(RingEdgeCoverPx) * 2);
                     AssignOwnedCircularSprite(borderImage, CreateCircularBorderSprite(textureSize, discTex));
                 }
             }
@@ -2202,7 +2206,7 @@ namespace TitanOrbit.UI
             
             // Collapsed disc matches the team leaderboard panel (black at 0.72). Expanded stays near-opaque.
             float backgroundAlpha = isExpanded ? expandedBackgroundAlpha : 0.72f;
-            AssignOwnedCircularSprite(bgImage, CreateCircularBackgroundSprite((int)displaySize, backgroundAlpha));
+            AssignOwnedCircularSprite(bgImage, CreateCircularBackgroundSprite(CircularSpriteTexSize(displaySize), backgroundAlpha));
             bgImage.type = Image.Type.Simple;
             // Scene Image may ship with alpha 0.4; use white so sprite alpha is not multiplied down.
             bgImage.color = Color.white;
@@ -2269,7 +2273,7 @@ namespace TitanOrbit.UI
             }
             
             // Create circular mask sprite
-            AssignOwnedCircularSprite(maskImage, CreateCircularMaskSprite((int)displaySize));
+            AssignOwnedCircularSprite(maskImage, CreateCircularMaskSprite(CircularSpriteTexSize(displaySize)));
             maskImage.type = Image.Type.Simple;
         }
         
@@ -2285,6 +2289,17 @@ namespace TitanOrbit.UI
             edgeMarkerContainer.offsetMax = Vector2.zero;
         }
         
+        /// <summary>Pixel size for the circle textures. The widget can be larger; the sprite stretches.</summary>
+        static int CircularSpriteTexSize(float displayPixels)
+        {
+            int size = Mathf.RoundToInt(displayPixels);
+            if (size < 8)
+                size = 8;
+            if (size > MaxCircularSpriteTex)
+                size = MaxCircularSpriteTex;
+            return size;
+        }
+
         private Sprite CreateCircularMaskSprite(int size)
         {
             int textureSize = size;
@@ -3502,6 +3517,18 @@ namespace TitanOrbit.UI
             }
         }
 
+        /// <summary>One white diamond. Image.color tints each asteroid. Built once.</summary>
+        Sprite GetSharedAsteroidBlipSprite()
+        {
+            if (_asteroidBlipSpriteCache != null)
+                return _asteroidBlipSpriteCache;
+
+            _asteroidBlipSpriteCache = CreateBlipSprite(32, BlipType.Irregular);
+            if (_asteroidBlipSpriteCache != null && _asteroidBlipSpriteCache.texture is Texture2D tex)
+                DropCpuTextureCopy(tex);
+            return _asteroidBlipSpriteCache;
+        }
+
         private RectTransform CreateBlip(Color color, float size, BlipType blipType)
         {
             if (minimapContent == null) return null;
@@ -3514,8 +3541,11 @@ namespace TitanOrbit.UI
             img.color = color;
             img.raycastTarget = false; // Don't block clicks - let them pass through to minimap background
             
-            // Create sprite based on blip type
-            Sprite sprite = CreateBlipSprite((int)size, blipType);
+            // Asteroids share one diamond. Expanded mode used to stamp a Texture2D per rock
+            // (up to every asteroid on the map). Those textures stay in the WASM heap.
+            Sprite sprite = blipType == BlipType.Irregular
+                ? GetSharedAsteroidBlipSprite()
+                : CreateBlipSprite((int)size, blipType);
             img.sprite = sprite;
 
             var rt = go.GetComponent<RectTransform>();

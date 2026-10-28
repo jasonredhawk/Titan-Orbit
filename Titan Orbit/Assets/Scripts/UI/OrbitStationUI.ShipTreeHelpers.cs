@@ -135,14 +135,21 @@ namespace TitanOrbit.UI
         /// nodes. Does not Instantiate. Landing-delay prepare already did this for the
         /// docked moon — Show skips this when <see cref="IsLandedMoonTreePreparedForCurrentPlanet"/>
         /// is true so the first visible frame is not a 24-card hitch.
-        /// A later poll skips again while the hull, moon, loadout, and whether the
-        /// next ship is affordable are unchanged. Bank and cargo labels still update.
+        /// A later poll skips again while the hull, moon, planet level, loadout, and
+        /// whether the next ship is affordable are unchanged. Bank and cargo labels
+        /// still update. Planet level is copied from the ghost first — the adapter
+        /// otherwise keeps the level from when the menu opened, and a 5→6 level-up
+        /// leaves the two next hulls gray.
         /// </summary>
         internal void RefreshShipTreeVisualStateOnly()
         {
             // --- Paint existing cards ---
             if (shipUpgradeTree == null)
                 return;
+
+            // [NETCODE] Ghost PlanetLevel → adapter, before the signature hash.
+            // Without this, a level-up changes the header and not the cards.
+            SyncDockedPlanetLevelsFromEcs();
 
             if (!IsTreeDataAvailable())
             {

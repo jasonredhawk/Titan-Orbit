@@ -625,11 +625,15 @@ namespace TitanOrbit.Editor
                 else
                     type = ShipFamilyPartTypes.Normalize(type, componentId);
 
-                var categories = contributesStats
-                    ? ShipFamilyComponentPartKey.InferDefaultStatCategoriesForPartType(
+                List<ShipComponentStatCategory> categories;
+                if (!contributesStats)
+                    categories = new List<ShipComponentStatCategory>();
+                else if (profileSet != null)
+                    categories = profileSet.GetAuthoringCategories(componentId);
+                else
+                    categories = ShipFamilyComponentPartKey.InferDefaultStatCategoriesForPartType(
                         string.IsNullOrEmpty(type) ? componentId : type,
-                        componentId)
-                    : new List<ShipComponentStatCategory>();
+                        componentId);
                 if (contributesStats && (categories == null || categories.Count == 0))
                     categories = ShipFamilyComponentPartKey.InferDefaultStatCategories(componentId);
 
@@ -855,12 +859,12 @@ namespace TitanOrbit.Editor
                 }
                 else
                 {
-                    // Categories from the resolved Part Profile group (not a second keyword guess on id).
-                    categories = ShipFamilyComponentPartKey.InferDefaultStatCategoriesForPartType(
-                        partType,
-                        componentId);
+                    // Categories from every part type on the name mapping (primary plus extras).
+                    categories = profileSet.GetAuthoringCategories(componentId);
                     if (categories == null || categories.Count == 0)
-                        categories = ShipFamilyComponentPartKey.InferDefaultStatCategories(componentId);
+                        categories = ShipFamilyComponentPartKey.InferDefaultStatCategoriesForPartType(
+                            partType,
+                            componentId);
 
                     stats = profileSet.SuggestStatsForComponent(componentId, categories);
                     if (profileSet.TryWriteAppliedBaseStats(componentId, stats))

@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using TitanOrbit.Core;
 using TitanOrbit.Data;
 using TitanOrbit.ECS;
 using TitanOrbit.Generation;
@@ -11,9 +12,10 @@ namespace TitanOrbit.Game
 {
     /// <summary>
     /// Yaws regular-ship weapon meshes onto the owner's aim point every frame.
-    /// Tracking is always on in flight. A hull fully landed on a gem moon parks
-    /// every weapon on its authored forward pose so the orbit-menu portrait
-    /// does not spin the guns. Boosters stay parented to the hull.
+    /// Tracking is always on in flight. While <see cref="GameManager.ParkLandedWeapons"/>
+    /// is on, a hull fully landed on a gem moon parks every weapon on its authored
+    /// forward pose so the orbit-menu portrait does not spin the guns.
+    /// Boosters stay parented to the hull.
     /// MEGA hulls keep <see cref="MegaShipWeaponVisualSync"/>.
     /// </summary>
     public static class ShipWeaponManualAimVisual
@@ -40,9 +42,9 @@ namespace TitanOrbit.Game
             var binding = proxy.GetComponent<ShipWeaponManualAimBinding>();
             bool mega = em.HasComponent<MegaShipState>(shipEntity)
                         && em.GetComponentData<MegaShipState>(shipEntity).IsMega;
-            // Parked on the moon: authored forward, not the cursor. The orbit
-            // menu films this same proxy, so a tracking barrel spins in that view.
-            if (mega || ShipMoonDockState.IsFullyLandedOnMoon(em, shipEntity)
+            // Parked on the moon (toggle on): authored forward, not the cursor.
+            // The orbit menu films this same proxy, so a tracking barrel spins in that view.
+            if (mega || ShouldParkLandedWeapons(em, shipEntity)
                      || !TryGetAimPoint(em, shipEntity, out float3 aimPoint))
             {
                 if (binding != null)
@@ -65,7 +67,7 @@ namespace TitanOrbit.Game
             if (em.HasComponent<MegaShipState>(shipEntity)
                 && em.GetComponentData<MegaShipState>(shipEntity).IsMega)
                 return false;
-            if (ShipMoonDockState.IsFullyLandedOnMoon(em, shipEntity))
+            if (ShouldParkLandedWeapons(em, shipEntity))
                 return false;
 
             if (em.HasComponent<LocalPlayerShipTag>(shipEntity)
@@ -86,6 +88,18 @@ namespace TitanOrbit.Game
 
             aimPoint = new float3(state.ManualAimWorldX, 0f, state.ManualAimWorldZ);
             return math.isfinite(aimPoint.x) && math.isfinite(aimPoint.z);
+        }
+
+        /// <summary>
+        /// True when this hull is fully landed and Game Manager → Park Landed Weapons is on.
+        /// Missing Game Manager keeps the park, matching the checkbox default.
+        /// </summary>
+        public static bool ShouldParkLandedWeapons(EntityManager em, Entity shipEntity)
+        {
+            if (!ShipMoonDockState.IsFullyLandedOnMoon(em, shipEntity))
+                return false;
+            GameManager manager = GameManager.Instance;
+            return manager == null || manager.ParkLandedWeapons;
         }
     }
 

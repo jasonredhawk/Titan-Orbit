@@ -300,9 +300,9 @@ namespace TitanOrbit.Game
 
             Vector3 hullFwd = Flatten(proxy.transform.forward);
             Quaternion shipHeading = Quaternion.LookRotation(hullFwd, Vector3.up);
-            // Fully landed: barrels stay on the nose. Mouse and combat locks
-            // would spin the guns in the orbit-menu portrait.
-            bool landed = ShipMoonDockState.IsFullyLandedOnMoon(em, shipEntity);
+            // Fully landed and the Game Manager checkbox is on: barrels stay on
+            // the nose. Mouse and combat locks would spin the guns in the portrait.
+            bool landed = ShipWeaponManualAimVisual.ShouldParkLandedWeapons(em, shipEntity);
             bool ownerFiring = em.HasComponent<LocalPlayerShipTag>(shipEntity)
                 && em.HasComponent<ShipInput>(shipEntity)
                 && em.GetComponentData<ShipInput>(shipEntity).Fire.IsSet;
