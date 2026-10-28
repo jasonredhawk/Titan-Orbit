@@ -99,9 +99,15 @@ namespace TitanOrbit.Game
         LoadingScreenControllerNce _loadingScreen;
         JoinGameBrowserController _joinBrowser;
         RejoinShipChoiceController _rejoinChoice;
-        string _statusMessage = "Join a match or start local play.";
+        string _statusMessage = "Pick a match, or quick join.";
         bool _mainMenuButtonsBuilt;
         bool _initialized;
+
+        /// <summary>
+        /// True after the Command Deck has been re-embedded for the current menu visit.
+        /// Cleared when the menu hides so a dock studio opened mid-match is pulled back.
+        /// </summary>
+        bool _commandDeckLatched;
         /// <summary>
         /// Keeps the loading overlay up from the Play/join click until connecting flags catch up,
         /// so MainMenuPanel cannot flash under the (slightly transparent) loading backdrop.
@@ -322,7 +328,8 @@ namespace TitanOrbit.Game
                 statusText.text = _statusMessage;
 
             _mainMenuButtonsBuilt = true;
-            Debug.Log("[NceGameFlow] Main menu presented (logo, account, Join game" +
+            _commandDeckLatched = true;
+            Debug.Log("[NceGameFlow] Command deck presented (callsign, ship studio, matches, Orbit Unlocked" +
                       (TitanOrbitMultiplayerConfig.ShowLocalPlayOptions ? ", Local client" : "") + ").");
         }
 
@@ -456,7 +463,7 @@ namespace TitanOrbit.Game
                 if (lobbies.Count > 0)
                 {
                     _statusMessage = lobbies.Count + " dedicated match" + (lobbies.Count == 1 ? "" : "es") +
-                                     " available — tap Join game.";
+                                     " available.";
                     Debug.Log("[NceGameFlow] Menu lobby prefetch found " + lobbies.Count +
                               " browsable match(es); first=\"" + lobbies[0].Name + "\".");
                     return;
@@ -468,12 +475,12 @@ namespace TitanOrbit.Game
                 {
                     string detail = TitanOrbitLobbyService.LastOpenLobbyQueryErrorDetail;
                     _statusMessage = string.IsNullOrEmpty(detail)
-                        ? "Could not query lobbies — tap Join game → Refresh."
+                        ? "Could not query lobbies — tap Refresh."
                         : "Lobby query failed: " + detail;
                     return;
                 }
 
-                _statusMessage = "No dedicated matches listed yet — tap Join game → Request match or Refresh.";
+                _statusMessage = "No dedicated matches listed yet — tap Refresh.";
                 Debug.Log("[NceGameFlow] Menu lobby prefetch: zero browsable dedicated matches (see TitanOrbitLobbyService query log).");
             }
             catch (Exception ex)
@@ -533,7 +540,7 @@ namespace TitanOrbit.Game
 
             if (statusText == null && mainMenuPanel != null)
             {
-                var statusGo = mainMenuPanel.transform.Find("MainMenuStatus");
+                var statusGo = MainMenuPresenter.FindDeep(mainMenuPanel.transform, "MainMenuStatus");
                 if (statusGo != null)
                     statusText = statusGo.GetComponent<TextMeshProUGUI>();
             }
@@ -1386,6 +1393,20 @@ namespace TitanOrbit.Game
                                       !showLoadingOverlay &&
                                       !MatchCloseGate.SuppressMainMenu &&
                                       (_joinBrowser == null || !_joinBrowser.IsVisible));
+
+            bool menuOn = mainMenuPanel != null && mainMenuPanel.activeSelf;
+            if (menuOn)
+            {
+                if (!_commandDeckLatched)
+                {
+                    _commandDeckLatched = true;
+                    MainMenuPresenter.RefreshCommandDeck(mainMenuPanel);
+                }
+            }
+            else
+            {
+                _commandDeckLatched = false;
+            }
 
             if (showRejoinChoice && hasRejoinableShip && _rejoinChoice != null)
                 _rejoinChoice.Show(rejoinShipState);

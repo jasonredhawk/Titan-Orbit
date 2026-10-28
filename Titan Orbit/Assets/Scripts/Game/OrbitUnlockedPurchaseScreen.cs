@@ -6,9 +6,10 @@ using UnityEngine.UI;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// One-item IAP overlay for Orbit Unlocked: no ads, full hangar cosmetics, and
+    /// One-item IAP card for Orbit Unlocked: no ads, full hangar cosmetics, and
     /// an automatic +1 gear slot every match. Runtime-built dark HUD chrome — no
-    /// prefab. Opened from the Main Menu stack button and the Customize Ship CTA.
+    /// prefab. Lives on the Command Deck. <see cref="Open"/> still raises a modal
+    /// when the in-match Customize Ship studio asks for it.
     /// <para>
     /// Buy / Restore talk to <see cref="TitanOrbitIapManager"/> on the services host.
     /// Editor Play Mode can also grant via TitanOrbit → Economy without a store.
@@ -43,6 +44,9 @@ namespace TitanOrbit.Game
         TextMeshProUGUI _price;
         TextMeshProUGUI _buyLabel;
         Button _buyButton;
+
+        /// <summary>True when this card is a Command Deck slot, not a modal sheet.</summary>
+        bool _embedded;
 #if UNITY_WEBGL && !UNITY_EDITOR
         bool _checkoutInFlight;
         int _priceRequest;
@@ -82,18 +86,66 @@ namespace TitanOrbit.Game
             screen.Show();
         }
 
+        /// <summary>
+        /// Drops the buy sheet into a Command Deck slot. No dim backdrop and no Close.
+        /// Reuses an existing screen if one was already built as a modal.
+        /// </summary>
+        public static void Embed(Transform slot)
+        {
+            if (slot == null)
+                return;
+
+            OrbitUnlockedPurchaseScreen screen = slot.GetComponentInChildren<OrbitUnlockedPurchaseScreen>(true);
+            if (screen == null)
+            {
+                var found = UnityEngine.Object.FindObjectsByType<OrbitUnlockedPurchaseScreen>(
+                    FindObjectsInactive.Include,
+                    FindObjectsSortMode.None);
+                for (int i = 0; i < found.Length; i++)
+                {
+                    if (found[i] == null)
+                        continue;
+                    screen = found[i];
+                    break;
+                }
+            }
+
+            if (screen == null)
+            {
+                var go = new GameObject(
+                    OverlayObjectName,
+                    typeof(RectTransform),
+                    typeof(OrbitUnlockedPurchaseScreen));
+                go.layer = slot.gameObject.layer;
+                go.transform.SetParent(slot, false);
+                screen = go.GetComponent<OrbitUnlockedPurchaseScreen>();
+            }
+            else if (screen.transform.parent != slot)
+            {
+                screen.transform.SetParent(slot, false);
+            }
+
+            StripOwnCanvas(screen.gameObject);
+            screen._embedded = true;
+            StretchFull(screen.GetComponent<RectTransform>());
+            screen.Show();
+        }
+
         /// <summary>Builds chrome once, then paints owned vs buy state.</summary>
         public void Show()
         {
             EnsureChrome();
             Refresh();
             gameObject.SetActive(true);
-            transform.SetAsLastSibling();
+            if (!_embedded)
+                transform.SetAsLastSibling();
         }
 
-        /// <summary>Hides the overlay. Does not change entitlements.</summary>
+        /// <summary>Hides the modal sheet. The deck card stays put.</summary>
         public void Close()
         {
+            if (_embedded)
+                return;
             gameObject.SetActive(false);
         }
 
@@ -115,12 +167,29 @@ namespace TitanOrbit.Game
         /// </summary>
         void EnsureChrome()
         {
+            if (_embedded)
+            {
+                if (transform.Find("EmbedCard") == null)
+                {
+                    ClearChildrenImmediate();
+                    BuildEmbedCard();
+                }
+
+                return;
+            }
+
+            if (transform.Find("EmbedCard") != null)
+                ClearChildrenImmediate();
+
             if (transform.Find("Panel") != null)
                 return;
 
             var overlayCanvas = GetComponent<Canvas>();
-            overlayCanvas.overrideSorting = true;
-            overlayCanvas.sortingOrder = OverlaySortingOrder;
+            if (overlayCanvas != null)
+            {
+                overlayCanvas.overrideSorting = true;
+                overlayCanvas.sortingOrder = OverlaySortingOrder;
+            }
 
             var rootRt = GetComponent<RectTransform>();
             StretchFull(rootRt);
@@ -339,7 +408,7 @@ namespace TitanOrbit.Game
 
             if (!UnityGameServicesBootstrap.HasDurablePlayerAccount())
             {
-                UsernamePasswordSignInScreen.Open(transform.parent);
+                UsernamePasswordSignInScreen.Open(ResolveOverlayHost());
                 if (_status != null)
                     _status.text = "Sign in with Google, or a username and password. The purchase stays on that account.";
                 return;
@@ -410,7 +479,7 @@ namespace TitanOrbit.Game
             {
                 if (_status != null)
                     _status.text = "Sign in before restoring Orbit Unlocked.";
-                UsernamePasswordSignInScreen.Open(transform.parent);
+                UsernamePasswordSignInScreen.Open(ResolveOverlayHost());
                 return;
             }
 
@@ -443,6 +512,112 @@ namespace TitanOrbit.Game
                 else
                     _status.text = "No Orbit Unlocked receipt on this store account.";
             });
+        }
+
+        /// <summary>
+        /// Compact deck card: title, three benefits, price, status, Unlock and Restore.
+        /// Stretches the slot so the column height drives the card.
+        /// </summary>
+        void BuildEmbedCard()
+        {
+            var card = CreateUi("EmbedCard", transform, typeof(Image), typeof(Outline));
+            StretchFull(card.GetComponent<RectTransform>());
+            card.GetComponent<Image>().color = PanelFill;
+            var outline = card.GetComponent<Outline>();
+            outline.effectColor = new Color(AccentGold.r, AccentGold.g, AccentGold.b, 0.65f);
+            outline.effectDistance = new Vector2(1.25f, -1.25f);
+
+            var rail = CreateUi("TopRail", card.transform, typeof(Image));
+            var railRt = rail.GetComponent<RectTransform>();
+            railRt.anchorMin = new Vector2(0f, 1f);
+            railRt.anchorMax = new Vector2(1f, 1f);
+            railRt.pivot = new Vector2(0.5f, 1f);
+            railRt.sizeDelta = new Vector2(0f, 3f);
+            railRt.anchoredPosition = Vector2.zero;
+            rail.GetComponent<Image>().color = AccentGold;
+            rail.GetComponent<Image>().raycastTarget = false;
+
+            var title = CreateTmp(card.transform, "Title", "ORBIT UNLOCKED", 18f, FontStyles.Bold);
+            PlaceTop(title.rectTransform, 10f, 24f);
+            title.alignment = TextAlignmentOptions.MidlineLeft;
+            title.color = AccentGold;
+            title.characterSpacing = 1.6f;
+
+            var blurb = CreateTmp(
+                card.transform,
+                "Blurb",
+                "No ads — keep your gear\nFull hangar — hulls, badges, jets\n+1 gear slot every match",
+                13f,
+                FontStyles.Bold);
+            PlaceTop(blurb.rectTransform, 36f, 54f);
+            blurb.alignment = TextAlignmentOptions.TopLeft;
+            blurb.color = BodyColor;
+            blurb.enableWordWrapping = true;
+
+            _price = CreateTmp(card.transform, "Price", "", 16f, FontStyles.Bold);
+            PlaceTop(_price.rectTransform, 94f, 22f);
+            _price.alignment = TextAlignmentOptions.MidlineLeft;
+            _price.color = AccentCyan;
+
+            _status = CreateTmp(card.transform, "Status", "", 12f, FontStyles.Normal);
+            PlaceTop(_status.rectTransform, 116f, 32f);
+            _status.alignment = TextAlignmentOptions.TopLeft;
+            _status.color = CaptionColor;
+            _status.enableWordWrapping = true;
+
+            _buyButton = CreateActionButton(
+                card.transform,
+                "Buy",
+                "UNLOCK",
+                new Vector2(-108f, 10f),
+                BuyFill,
+                OnBuyClicked);
+            _buyLabel = _buyButton.GetComponentInChildren<TextMeshProUGUI>();
+
+            CreateActionButton(
+                card.transform,
+                "Restore",
+                "RESTORE",
+                new Vector2(108f, 10f),
+                RestoreFill,
+                OnRestoreClicked);
+        }
+
+        /// <summary>Root canvas so the sign-in sheet is not clipped inside the deck slot.</summary>
+        Transform ResolveOverlayHost()
+        {
+            var canvas = GetComponentInParent<Canvas>();
+            if (canvas == null)
+                return transform.parent != null ? transform.parent : transform;
+            var root = canvas.rootCanvas != null ? canvas.rootCanvas : canvas;
+            return root.transform;
+        }
+
+        /// <summary>Drops a leftover modal canvas so the card draws with the menu.</summary>
+        static void StripOwnCanvas(GameObject go)
+        {
+            if (go == null)
+                return;
+            var ray = go.GetComponent<GraphicRaycaster>();
+            if (ray != null)
+                DestroyImmediate(ray);
+            var scaler = go.GetComponent<CanvasScaler>();
+            if (scaler != null)
+                DestroyImmediate(scaler);
+            var canvas = go.GetComponent<Canvas>();
+            if (canvas != null)
+                DestroyImmediate(canvas);
+        }
+
+        /// <summary>Same-frame wipe so a modal sheet cannot sit under the deck card.</summary>
+        void ClearChildrenImmediate()
+        {
+            for (int i = transform.childCount - 1; i >= 0; i--)
+                DestroyImmediate(transform.GetChild(i).gameObject);
+            _status = null;
+            _price = null;
+            _buyLabel = null;
+            _buyButton = null;
         }
 
         Button CreateActionButton(

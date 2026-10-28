@@ -41,6 +41,22 @@ namespace TitanOrbit.Game
         /// <summary>True while the player can see and click the studio.</summary>
         bool _open;
 
+        /// <summary>
+        /// True when the studio is a column on the Command Deck instead of a modal.
+        /// The dock still opens the full-screen studio via <see cref="Open"/>.
+        /// </summary>
+        bool _embedded;
+
+        /// <summary>Command Deck slot while <see cref="_embedded"/> is set.</summary>
+        Transform _embedSlot;
+
+        /// <summary>Last callsign painted on the preview nameplate.</summary>
+        string _previewPilotName;
+
+        /// <summary>Design size of the studio card. The deck scales this to the slot.</summary>
+        const float EmbeddedDesignWidth = 1180f;
+        const float EmbeddedDesignHeight = 752f;
+
         static readonly Color PanelFill = new Color(0.012f, 0.016f, 0.028f, 0.96f);
         static readonly Color CaptionColor = new Color(0.62f, 0.78f, 0.95f, 0.92f);
         static readonly Color BodyColor = new Color(0.88f, 0.92f, 0.98f, 0.95f);
@@ -120,8 +136,54 @@ namespace TitanOrbit.Game
                 s_Screen = screen;
             }
 
+            screen._embedded = false;
+            screen._embedSlot = null;
             screen._scaleSource = ResolveScaleSource(canvasRoot);
             screen.Show(team);
+        }
+
+        /// <summary>
+        /// Parks the studio in a Command Deck slot. No dim backdrop and no Done button —
+        /// the hull stays on the menu until the player leaves for a match.
+        /// Safe to call again; a studio already in <paramref name="slot"/> is left alone.
+        /// </summary>
+        public static void Embed(Transform slot, TeamId team)
+        {
+            if (slot == null)
+                return;
+
+            ShipCustomizeScreen screen = FindScreen(slot);
+            if (screen == null)
+            {
+                var go = new GameObject(
+                    OverlayObjectName,
+                    typeof(RectTransform),
+                    typeof(ShipCustomizeScreen));
+                go.layer = slot.gameObject.layer;
+                go.transform.SetParent(slot, false);
+                screen = go.GetComponent<ShipCustomizeScreen>();
+                s_Screen = screen;
+            }
+
+            bool already = screen._embedded
+                && screen._open
+                && screen.transform.parent == slot
+                && screen.transform.Find("Panel/Layout_hub") != null;
+            if (already)
+            {
+                if (!screen.gameObject.activeSelf)
+                    screen.gameObject.SetActive(true);
+                screen.ApplyVisibility(true);
+                return;
+            }
+
+            screen._embedded = true;
+            screen._embedSlot = slot;
+            screen._scaleSource = ResolveScaleSource(slot);
+            TeamId useTeam = screen._team == TeamId.None ? team : screen._team;
+            if (useTeam == TeamId.None)
+                useTeam = TeamId.TeamA;
+            screen.Show(useTeam);
         }
 
         /// <summary>
@@ -221,6 +283,28 @@ namespace TitanOrbit.Game
             if (overlayCanvas != null)
                 DestroyImmediate(overlayCanvas);
 
+            if (_embedded && _embedSlot != null)
+            {
+                if (_scaleSource != null)
+                {
+                    var embedChannels =
+                        AdditionalCanvasShaderChannels.TexCoord1
+                        | AdditionalCanvasShaderChannels.Normal
+                        | AdditionalCanvasShaderChannels.Tangent;
+                    if ((_scaleSource.additionalShaderChannels & embedChannels) != embedChannels)
+                        _scaleSource.additionalShaderChannels |= embedChannels;
+                }
+
+                if (transform.parent != _embedSlot)
+                    transform.SetParent(_embedSlot, false);
+
+                var embeddedRt = GetComponent<RectTransform>();
+                if (embeddedRt != null)
+                    StretchFull(embeddedRt);
+                FitEmbeddedPanel();
+                return;
+            }
+
             if (_scaleSource == null)
                 return;
 
@@ -271,6 +355,10 @@ namespace TitanOrbit.Game
         /// </summary>
         public void Close()
         {
+            // The deck keeps the studio up. Done / backdrop exist only on the dock modal.
+            if (_embedded)
+                return;
+
             if (TitanOrbitCosmeticGate.IsCustomizationUnlocked)
                 FlushPersist();
             TitanOrbitCosmeticGate.EndHangarPreview();
@@ -283,14 +371,27 @@ namespace TitanOrbit.Game
 
         void OnEnable()
         {
+            TitanOrbit.Services.TitanOrbitEntitlements.OrbitUnlockedOwnershipChanged -= OnOrbitUnlockedChanged;
             TitanOrbit.Services.TitanOrbitEntitlements.OrbitUnlockedOwnershipChanged += OnOrbitUnlockedChanged;
-            if (_open)
-                EnsureDrawOnTop();
+            if (!_open)
+                return;
+
+            // Menu panel was hidden (join / loading). Bring the preview camera back with it.
+            TitanOrbitCosmeticGate.BeginHangarPreview();
+            SetPreviewWorldActive(true);
+            EnsureDrawOnTop();
+            RefreshFromStore();
+            RefreshThrusterSection();
         }
 
         void OnDisable()
         {
             TitanOrbit.Services.TitanOrbitEntitlements.OrbitUnlockedOwnershipChanged -= OnOrbitUnlockedChanged;
+            // The preview camera is not parented to this canvas. Stop it or it keeps
+            // drawing a hull into the game view after the menu hides.
+            if (_open && TitanOrbitCosmeticGate.IsCustomizationUnlocked)
+                FlushPersist();
+            SetPreviewWorldActive(false);
             TitanOrbitCosmeticGate.EndHangarPreview();
         }
 
@@ -366,6 +467,11 @@ namespace TitanOrbit.Game
         /// <summary>Opens the one-item IAP overlay above this studio.</summary>
         void OpenOrbitUnlockedFromCustomize()
         {
+            // The Command Deck already shows the Orbit Unlocked card. A second sheet
+            // would cover the matches list the player is looking at.
+            if (_embedded)
+                return;
+
             // Host is the dock canvas (our parent). The buy sheet adds its own canvas
             // at sort 580 so it paints above this studio and the Orbit Menu.
             Transform host = transform.parent != null ? transform.parent : transform;
@@ -392,9 +498,10 @@ namespace TitanOrbit.Game
         void EnsureChrome()
         {
             EnsureSprites();
-            if (transform.Find("Panel/Layout_v15") == null)
+            string marker = _embedded ? "Panel/Layout_hub" : "Panel/Layout_v15";
+            if (transform.Find(marker) == null)
             {
-                if (transform.Find("Backdrop") != null)
+                if (transform.childCount > 0)
                     TearDownChrome();
                 BuildFullChrome();
             }
@@ -453,16 +560,20 @@ namespace TitanOrbit.Game
             EnsureDrawOnTop();
 
             var rootRt = GetComponent<RectTransform>();
-            StretchFull(rootRt);
+            if (!_embedded)
+                StretchFull(rootRt);
 
-            var backdrop = CreateUi("Backdrop", transform, typeof(Image), typeof(Button));
-            StretchFull(backdrop.GetComponent<RectTransform>());
-            var backdropImage = backdrop.GetComponent<Image>();
-            MainMenuPresenter.ApplyTransparentMenuBackdrop(backdropImage);
-            backdropImage.color = new Color(0.02f, 0.04f, 0.08f, 0.55f);
-            var backdropBtn = backdrop.GetComponent<Button>();
-            backdropBtn.transition = Selectable.Transition.None;
-            backdropBtn.onClick.AddListener(Close);
+            if (!_embedded)
+            {
+                var backdrop = CreateUi("Backdrop", transform, typeof(Image), typeof(Button));
+                StretchFull(backdrop.GetComponent<RectTransform>());
+                var backdropImage = backdrop.GetComponent<Image>();
+                MainMenuPresenter.ApplyTransparentMenuBackdrop(backdropImage);
+                backdropImage.color = new Color(0.02f, 0.04f, 0.08f, 0.55f);
+                var backdropBtn = backdrop.GetComponent<Button>();
+                backdropBtn.transition = Selectable.Transition.None;
+                backdropBtn.onClick.AddListener(Close);
+            }
 
             var panel = CreateUi("Panel", transform, typeof(Image), typeof(Outline));
             var panelRt = panel.GetComponent<RectTransform>();
@@ -480,7 +591,7 @@ namespace TitanOrbit.Game
             AddAccentRail(panel.transform, "TopRail", AccentCyan, 3f, top: true);
             AddAccentRail(panel.transform, "BottomRail", AccentGold, 2f, top: false);
 
-            CreateUi("Layout_v15", panel.transform);
+            CreateUi(_embedded ? "Layout_hub" : "Layout_v15", panel.transform);
 
             var title = CreateTmp(panel.transform, "Title", "CUSTOMIZE SHIP", 22f, FontStyles.Bold);
             PlaceTop(title.rectTransform, 10f, 26f);
@@ -544,7 +655,7 @@ namespace TitanOrbit.Game
             var rightRt = right.GetComponent<RectTransform>();
             rightRt.anchorMin = new Vector2(0f, 0f);
             rightRt.anchorMax = new Vector2(1f, 1f);
-            rightRt.offsetMin = new Vector2(486f, 56f);
+            rightRt.offsetMin = new Vector2(486f, _embedded ? 16f : 56f);
             rightRt.offsetMax = new Vector2(-18f, -56f);
             var vlg = right.GetComponent<VerticalLayoutGroup>();
             vlg.padding = new RectOffset(0, 0, 0, 0);
@@ -555,14 +666,45 @@ namespace TitanOrbit.Game
             vlg.childForceExpandWidth = true;
             vlg.childForceExpandHeight = false;
 
-            CreateFooterButton(
-                panel.transform,
-                "Done",
-                "DONE",
-                new Vector2(0f, 12f),
-                new Vector2(220f, 34f),
-                new Color(0.16f, 0.28f, 0.40f, 0.95f),
-                Close);
+            if (!_embedded)
+            {
+                CreateFooterButton(
+                    panel.transform,
+                    "Done",
+                    "DONE",
+                    new Vector2(0f, 12f),
+                    new Vector2(220f, 34f),
+                    new Color(0.16f, 0.28f, 0.40f, 0.95f),
+                    Close);
+            }
+        }
+
+        /// <summary>
+        /// Scales the fixed 1180×752 studio so it sits inside the deck slot.
+        /// The badge grid is a sibling of Panel, so it stays full-slot and is not shrunk.
+        /// </summary>
+        void FitEmbeddedPanel()
+        {
+            if (!_embedded)
+                return;
+
+            var panel = transform.Find("Panel") as RectTransform;
+            var parent = transform.parent as RectTransform;
+            if (panel == null || parent == null)
+                return;
+
+            float width = parent.rect.width;
+            float height = parent.rect.height;
+            if (width < 8f || height < 8f)
+                return;
+
+            float scale = Mathf.Min(width / EmbeddedDesignWidth, height / EmbeddedDesignHeight);
+            panel.anchorMin = new Vector2(0.5f, 0.5f);
+            panel.anchorMax = new Vector2(0.5f, 0.5f);
+            panel.pivot = new Vector2(0.5f, 0.5f);
+            panel.sizeDelta = new Vector2(EmbeddedDesignWidth, EmbeddedDesignHeight);
+            panel.anchoredPosition = Vector2.zero;
+            panel.localScale = new Vector3(scale, scale, 1f);
         }
 
         static void BindLayoutSlot(RectTransform rt, float height)
@@ -1499,8 +1641,12 @@ namespace TitanOrbit.Game
 
             TickPreviewFlight();
             int badgeId = LocalPlayerBadge.Get();
-            if (badgeId != _previewBadgeId)
+            string pilotName = LocalPlayerDisplayName.Get();
+            if (badgeId != _previewBadgeId || pilotName != _previewPilotName)
+            {
+                _previewPilotName = pilotName;
                 RefreshPreviewNameplate();
+            }
         }
 
         void TickPreviewFlight()

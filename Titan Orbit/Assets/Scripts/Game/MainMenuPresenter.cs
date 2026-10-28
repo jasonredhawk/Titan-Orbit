@@ -1,7 +1,6 @@
 using TitanOrbit.Core;
 using TitanOrbit.Data;
 using TitanOrbit.NetCode;
-using TitanOrbit.Services;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -9,14 +8,15 @@ using UnityEngine.UI;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// Builds and refreshes the Main Menu visual layout at runtime: logo hero, account strip,
-    /// player name field, stacked action buttons, and status line. Client-only [HYBRID]
-    /// presentation — does not touch ECS ship sim. Called from <see cref="NceGameFlowController"/>
-    /// and <see cref="MainMenuUiBootstrap"/>.
+    /// Builds the Command Deck: one space-HUD screen that keeps sign-in, callsign,
+    /// the ship studio, live matches, and Orbit Unlocked visible together.
+    /// Client-only [HYBRID] presentation — does not touch ECS ship sim.
+    /// Called from <see cref="NceGameFlowController"/> and <see cref="MainMenuUiBootstrap"/>.
     ///
     /// Layout contract:
-    ///   Sign in (top-right) · Logo (centered, below top edge) · Player name label+input (tight) ·
-    ///   Play / Join / Customize ship / Unlock Orbit / Local client (lower) · Status
+    ///   Header — logo, callsign, Sign in
+    ///   Left — embedded Customize Ship studio
+    ///   Right — match list, Orbit Unlocked card, Quick join / Local client, status
     /// Local host is omitted because Play already starts local host when local options are enabled.
     /// </summary>
     public static class MainMenuPresenter
@@ -30,8 +30,11 @@ namespace TitanOrbit.Game
         /// <summary>Child name for the Unity account strip (Sign in / Sign out only).</summary>
         public const string AccountBarObjectName = "AccountBar";
 
-        /// <summary>Child name for the vertical button column (Play is reparented here).</summary>
+        /// <summary>Child name for the retired vertical button column. Hidden once the deck exists.</summary>
         public const string ButtonStackObjectName = "ButtonStack";
+
+        /// <summary>Root of the combined menu. Direct child of MainMenuPanel.</summary>
+        public const string CommandDeckObjectName = "CommandDeck";
 
         /// <summary>Child name for the player-name label.</summary>
         public const string PlayerNameLabelObjectName = "PlayerNameLabel";
@@ -87,106 +90,131 @@ namespace TitanOrbit.Game
             if (panel == null)
                 return;
 
+            // Join is the match column now. The callback stays on the signature so older
+            // call sites compile; the deck does not open a second screen.
+            _ = onJoinGame;
+
             // --- Panel backdrop ---
             // [TITAN-ORBIT] Clear Placeholder HUD BG so SpaceBackground shows through.
-            // Sprite left null — designer can assign a new space art later.
             EnsureTransparentPanelBackdrop(panel);
 
-            // Play already covers "Local host" when ShowLocalPlayOptions is on.
             DestroyChildIfPresent(panel.transform, "LocalHostButton");
 
-            // --- Hide text title (logo already says TITAN ORBIT) ---
             var title = panel.transform.Find("Title");
             if (title != null)
                 title.gameObject.SetActive(false);
 
-            // Capture Play's Shift Cut Frame look before we rebuild the rest of the menu.
             MenuButtonStyle buttonStyle = CaptureButtonStyle(playButton);
 
-            // --- Hero logo (transparent PNG from Resources) ---
-            EnsureLogo(panel.transform);
-
-            // --- Account strip: Sign in / Sign out (same style as Play) ---
-            EnsureAccountBar(panel.transform, buttonStyle);
-
-            // --- Player display name (persisted via LocalPlayerDisplayName) ---
-            EnsurePlayerNameField(panel.transform);
-
-            // Badge lives on Customize Ship now — drop any leftover Main Menu chip.
             DestroyChildIfPresent(panel.transform, PlayerBadgePickerObjectName);
             DestroyChildIfPresent(panel.transform, MainMenuBadgePicker.OverlayObjectName);
-
-            // Hull paint is a dedicated overlay — do not keep the old inline picker here.
             DestroyChildIfPresent(panel.transform, PlayerAccentPickerObjectName);
 
-            // --- Button column ---
-            var stack = EnsureButtonStack(panel.transform);
+            Transform deck = EnsureCommandDeck(panel.transform);
+            Transform header = deck.Find("Header");
+            Transform shipSlot = deck.Find("Body/ShipSlot");
+            Transform right = deck.Find("Body/RightColumn");
+            Transform matchSlot = right != null ? right.Find("MatchSlot") : null;
+            Transform unlockSlot = right != null ? right.Find("UnlockSlot") : null;
+            Transform actionRow = right != null ? right.Find("ActionRow") : null;
 
-            if (playButton != null)
+            EnsureHeaderLogo(header);
+            EnsureAccountBar(header, buttonStyle);
+            EnsurePlayerNameField(header);
+
+            RetireStackButton(panel.transform, "BrowseGamesButton");
+            RetireStackButton(panel.transform, "CustomizeShipButton");
+            RetireStackButton(panel.transform, "UnlockOrbitButton");
+            RetireStackButton(panel.transform, "LocalHostButton");
+
+            if (playButton != null && actionRow != null)
             {
-                // Reparent Play into the stack so spacing is consistent with code-built buttons.
-                EnsureInStack(playButton.transform, stack, 0);
-                StyleButton(playButton.gameObject, GetPlayLabel(), buttonStyle, 48f, 340f);
+                playButton.transform.SetParent(actionRow, false);
+                playButton.transform.SetAsFirstSibling();
+                var playFitter = playButton.GetComponent<ContentSizeFitter>();
+                if (playFitter != null)
+                    playFitter.enabled = false;
+                StyleButton(playButton.gameObject, GetPlayLabel(), buttonStyle, 48f, 280f);
+                var playLe = playButton.GetComponent<LayoutElement>();
+                if (playLe != null)
+                    playLe.flexibleWidth = 1f;
+                playButton.gameObject.SetActive(true);
             }
 
-            CreateOrWireStackButton(
-                stack,
-                "BrowseGamesButton",
-                "Join game",
-                buttonStyle,
-                onJoinGame,
-                playButton != null ? 1 : 0);
-
-            int customizeIndex = playButton != null ? 2 : 1;
-            CreateOrWireStackButton(
-                stack,
-                "CustomizeShipButton",
-                "Customize ship",
-                buttonStyle,
-                () => OpenCustomizeShip(panel.transform),
-                customizeIndex);
-
-            // Orbit Unlocked IAP — one SKU for ads-off + hangar + auto +1 slot.
-            string unlockLabel = TitanOrbitEntitlements.IsOrbitUnlockedOwned
-                ? "Orbit Unlocked"
-                : "Unlock Orbit";
-            CreateOrWireStackButton(
-                stack,
-                "UnlockOrbitButton",
-                unlockLabel,
-                buttonStyle,
-                null,
-                customizeIndex + 1);
-            var unlockGo = stack.Find("UnlockOrbitButton");
-            if (unlockGo != null)
+            if (TitanOrbitMultiplayerConfig.ShowLocalPlayOptions && actionRow != null)
             {
-                var binder = unlockGo.GetComponent<OrbitUnlockedMenuButton>();
-                if (binder == null)
-                    binder = unlockGo.gameObject.AddComponent<OrbitUnlockedMenuButton>();
-                binder.Bind();
-            }
-
-            if (TitanOrbitMultiplayerConfig.ShowLocalPlayOptions)
-            {
-                // Local client is for MPPM / LAN second window — keep it; Local host is redundant with Play.
-                CreateOrWireStackButton(
-                    stack,
-                    "LocalClientButton",
-                    "Local client",
-                    buttonStyle,
-                    onLocalClient,
-                    -1);
+                CreateDeckSideButton(panel.transform, actionRow, "LocalClientButton", "Local client", buttonStyle, onLocalClient);
             }
             else
             {
-                DestroyChildIfPresent(panel.transform, "LocalClientButton");
-                DestroyChildIfPresent(stack, "LocalClientButton");
+                RetireStackButton(panel.transform, "LocalClientButton");
+                if (actionRow != null)
+                    DestroyChildIfPresent(actionRow, "LocalClientButton");
             }
 
-            LayoutStack(stack, ComputeStackYBelowName(panel.transform));
+            var stack = panel.transform.Find(ButtonStackObjectName);
+            if (stack != null)
+                stack.gameObject.SetActive(false);
 
-            // --- Status line under the stack (must run after LayoutStack so height is known) ---
-            statusText = EnsureStatusTextBelowStack(panel.transform, stack);
+            statusText = right != null ? EnsureDeckStatus(panel.transform, right) : null;
+
+            var deckRt = deck as RectTransform;
+            if (deckRt != null)
+                LayoutRebuilder.ForceRebuildLayoutImmediate(deckRt);
+
+            if (shipSlot != null)
+                ShipCustomizeScreen.Embed(shipSlot, TeamId.TeamA);
+            if (unlockSlot != null)
+                OrbitUnlockedPurchaseScreen.Embed(unlockSlot);
+
+            var browser = UnityEngine.Object.FindFirstObjectByType<JoinGameBrowserController>();
+            if (browser != null && matchSlot != null)
+                browser.Embed(matchSlot, panel);
+        }
+
+        /// <summary>
+        /// Puts the studio, match list, and Orbit Unlocked card back in their slots
+        /// after a match (the dock studio can steal the customize instance).
+        /// </summary>
+        public static void RefreshCommandDeck(GameObject panel)
+        {
+            if (panel == null)
+                return;
+
+            Transform deck = panel.transform.Find(CommandDeckObjectName);
+            if (deck == null)
+                return;
+
+            Transform shipSlot = deck.Find("Body/ShipSlot");
+            Transform matchSlot = deck.Find("Body/RightColumn/MatchSlot");
+            Transform unlockSlot = deck.Find("Body/RightColumn/UnlockSlot");
+            if (shipSlot != null)
+                ShipCustomizeScreen.Embed(shipSlot, TeamId.TeamA);
+            if (unlockSlot != null)
+                OrbitUnlockedPurchaseScreen.Embed(unlockSlot);
+            if (matchSlot != null)
+            {
+                var browser = UnityEngine.Object.FindFirstObjectByType<JoinGameBrowserController>();
+                if (browser != null)
+                    browser.Embed(matchSlot, panel);
+            }
+        }
+
+        /// <summary>Depth-first child lookup. <see cref="Transform.Find"/> only walks one path.</summary>
+        public static Transform FindDeep(Transform root, string childName)
+        {
+            if (root == null || string.IsNullOrEmpty(childName))
+                return null;
+            if (root.name == childName)
+                return root;
+            for (int i = 0; i < root.childCount; i++)
+            {
+                Transform found = FindDeep(root.GetChild(i), childName);
+                if (found != null)
+                    return found;
+            }
+
+            return null;
         }
 
         /// <summary>
@@ -256,28 +284,246 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Creates or refreshes the brand logo Image. Always loads the Resources sprite so we use
-        /// the alpha-keyed PNG (the Art copy can stay locked by the Editor importer).
+        /// Command Deck chrome: header, ship slot, match column, unlock card, action row.
+        /// Idempotent — safe on the bootstrap retry loop.
         /// </summary>
-        static void EnsureLogo(Transform panel)
+        static Transform EnsureCommandDeck(Transform panel)
         {
-            Transform existing = panel.Find(LogoObjectName);
+            Transform existing = panel.Find(CommandDeckObjectName);
+            GameObject deckGo = existing != null
+                ? existing.gameObject
+                : new GameObject(CommandDeckObjectName, typeof(RectTransform));
+            if (existing == null)
+                deckGo.transform.SetParent(panel, false);
+
+            var deckRt = deckGo.GetComponent<RectTransform>();
+            deckRt.anchorMin = Vector2.zero;
+            deckRt.anchorMax = Vector2.one;
+            deckRt.offsetMin = new Vector2(16f, 14f);
+            deckRt.offsetMax = new Vector2(-16f, -14f);
+            deckRt.localScale = Vector3.one;
+
+            var deckImage = deckGo.GetComponent<Image>();
+            if (deckImage == null)
+                deckImage = deckGo.AddComponent<Image>();
+            deckImage.sprite = null;
+            deckImage.color = new Color(0.01f, 0.02f, 0.04f, 0.18f);
+            deckImage.raycastTarget = false;
+
+            EnsureEdgeRail(deckGo.transform, "TopRail", new Color(0.42f, 0.78f, 0.98f, 0.9f), top: true);
+            EnsureEdgeRail(deckGo.transform, "BottomRail", new Color(0.95f, 0.78f, 0.22f, 0.85f), top: false);
+            EnsureCornerTicks(deckGo.transform);
+
+            Transform header = EnsureStretchChild(deckGo.transform, "Header");
+            var headerRt = header.GetComponent<RectTransform>();
+            headerRt.anchorMin = new Vector2(0f, 1f);
+            headerRt.anchorMax = new Vector2(1f, 1f);
+            headerRt.pivot = new Vector2(0.5f, 1f);
+            headerRt.sizeDelta = new Vector2(0f, 92f);
+            headerRt.anchoredPosition = new Vector2(0f, -8f);
+
+            Transform body = EnsureStretchChild(deckGo.transform, "Body");
+            var bodyRt = body.GetComponent<RectTransform>();
+            bodyRt.anchorMin = Vector2.zero;
+            bodyRt.anchorMax = Vector2.one;
+            bodyRt.offsetMin = new Vector2(8f, 10f);
+            bodyRt.offsetMax = new Vector2(-8f, -108f);
+
+            Transform ship = EnsureSlot(body, "ShipSlot", new Color(0.42f, 0.78f, 0.98f, 0.45f));
+            var shipRt = ship.GetComponent<RectTransform>();
+            shipRt.anchorMin = Vector2.zero;
+            shipRt.anchorMax = new Vector2(0.56f, 1f);
+            shipRt.offsetMin = Vector2.zero;
+            shipRt.offsetMax = new Vector2(-8f, 0f);
+            shipRt.pivot = new Vector2(0.5f, 0.5f);
+
+            Transform right = EnsureStretchChild(body, "RightColumn", typeof(VerticalLayoutGroup));
+            var rightRt = right.GetComponent<RectTransform>();
+            rightRt.anchorMin = new Vector2(0.56f, 0f);
+            rightRt.anchorMax = Vector2.one;
+            rightRt.offsetMin = new Vector2(8f, 0f);
+            rightRt.offsetMax = Vector2.zero;
+            rightRt.pivot = new Vector2(0.5f, 0.5f);
+            var rightLayout = right.GetComponent<VerticalLayoutGroup>();
+            if (rightLayout == null)
+                rightLayout = right.gameObject.AddComponent<VerticalLayoutGroup>();
+            rightLayout.spacing = 10f;
+            rightLayout.padding = new RectOffset(0, 0, 0, 0);
+            rightLayout.childAlignment = TextAnchor.UpperCenter;
+            rightLayout.childControlWidth = true;
+            rightLayout.childControlHeight = true;
+            rightLayout.childForceExpandWidth = true;
+            rightLayout.childForceExpandHeight = false;
+
+            Transform match = EnsureSlot(right, "MatchSlot", new Color(0.42f, 0.78f, 0.98f, 0.28f));
+            SetColumnSlot(match, flexibleHeight: 1f, preferredHeight: -1f, minHeight: 180f);
+
+            Transform unlock = EnsureSlot(right, "UnlockSlot", new Color(0.95f, 0.78f, 0.22f, 0.4f));
+            SetColumnSlot(unlock, flexibleHeight: 0f, preferredHeight: 206f, minHeight: 188f);
+
+            Transform action = EnsureStretchChild(right, "ActionRow", typeof(HorizontalLayoutGroup), typeof(LayoutElement));
+            var actionLayout = action.GetComponent<HorizontalLayoutGroup>();
+            if (actionLayout == null)
+                actionLayout = action.gameObject.AddComponent<HorizontalLayoutGroup>();
+            actionLayout.spacing = 10f;
+            actionLayout.padding = new RectOffset(0, 0, 0, 0);
+            actionLayout.childAlignment = TextAnchor.MiddleCenter;
+            actionLayout.childControlWidth = true;
+            actionLayout.childControlHeight = true;
+            actionLayout.childForceExpandWidth = false;
+            actionLayout.childForceExpandHeight = true;
+            SetColumnSlot(action, flexibleHeight: 0f, preferredHeight: 52f, minHeight: 48f);
+
+            return deckGo.transform;
+        }
+
+        /// <summary>Finds or creates a direct child with a RectTransform.</summary>
+        static Transform EnsureStretchChild(Transform parent, string name, params System.Type[] extras)
+        {
+            return EnsureChild(parent, name, extras).transform;
+        }
+
+        /// <summary>Glass slot with a thin accent outline.</summary>
+        static Transform EnsureSlot(Transform parent, string name, Color outlineColor)
+        {
+            Transform slot = EnsureStretchChild(parent, name, typeof(Image), typeof(Outline));
+            var image = slot.GetComponent<Image>();
+            image.sprite = null;
+            image.color = new Color(0.012f, 0.02f, 0.04f, 0.42f);
+            image.raycastTarget = false;
+            var outline = slot.GetComponent<Outline>();
+            outline.effectColor = outlineColor;
+            outline.effectDistance = new Vector2(1.25f, -1.25f);
+            return slot;
+        }
+
+        /// <summary>Vertical-layout height for a right-column region.</summary>
+        static void SetColumnSlot(Transform slot, float flexibleHeight, float preferredHeight, float minHeight)
+        {
+            var layout = slot.GetComponent<LayoutElement>();
+            if (layout == null)
+                layout = slot.gameObject.AddComponent<LayoutElement>();
+            layout.flexibleWidth = 1f;
+            layout.flexibleHeight = flexibleHeight;
+            layout.preferredHeight = preferredHeight;
+            layout.minHeight = minHeight;
+        }
+
+        /// <summary>Cyan / gold hairline along the deck edge, inset so the corner ticks stay visible.</summary>
+        static void EnsureEdgeRail(Transform parent, string name, Color color, bool top)
+        {
+            Transform existing = parent.Find(name);
+            GameObject go = existing != null
+                ? existing.gameObject
+                : new GameObject(name, typeof(RectTransform), typeof(Image));
+            if (existing == null)
+                go.transform.SetParent(parent, false);
+
+            var rt = go.GetComponent<RectTransform>();
+            if (top)
+            {
+                rt.anchorMin = new Vector2(0f, 1f);
+                rt.anchorMax = new Vector2(1f, 1f);
+                rt.pivot = new Vector2(0.5f, 1f);
+                rt.anchoredPosition = new Vector2(0f, -4f);
+            }
+            else
+            {
+                rt.anchorMin = new Vector2(0f, 0f);
+                rt.anchorMax = new Vector2(1f, 0f);
+                rt.pivot = new Vector2(0.5f, 0f);
+                rt.anchoredPosition = new Vector2(0f, 4f);
+            }
+
+            rt.sizeDelta = new Vector2(-36f, 2f);
+            var image = go.GetComponent<Image>();
+            image.color = color;
+            image.raycastTarget = false;
+        }
+
+        /// <summary>Four HUD corner brackets.</summary>
+        static void EnsureCornerTicks(Transform deck)
+        {
+            EnsureCornerTick(deck, "TickTL", new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(8f, -8f), left: true, top: true);
+            EnsureCornerTick(deck, "TickTR", new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(-8f, -8f), left: false, top: true);
+            EnsureCornerTick(deck, "TickBL", new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(8f, 8f), left: true, top: false);
+            EnsureCornerTick(deck, "TickBR", new Vector2(1f, 0f), new Vector2(1f, 0f), new Vector2(-8f, 8f), left: false, top: false);
+        }
+
+        /// <summary>One L-shaped bracket.</summary>
+        static void EnsureCornerTick(
+            Transform parent,
+            string name,
+            Vector2 anchor,
+            Vector2 pivot,
+            Vector2 position,
+            bool left,
+            bool top)
+        {
+            if (parent.Find(name) != null)
+                return;
+
+            var root = new GameObject(name, typeof(RectTransform));
+            root.transform.SetParent(parent, false);
+            var rt = root.GetComponent<RectTransform>();
+            rt.anchorMin = anchor;
+            rt.anchorMax = anchor;
+            rt.pivot = pivot;
+            rt.sizeDelta = new Vector2(26f, 26f);
+            rt.anchoredPosition = position;
+
+            Color color = new Color(0.42f, 0.78f, 0.98f, 0.95f);
+            var horizontal = new GameObject("H", typeof(RectTransform), typeof(Image));
+            horizontal.transform.SetParent(root.transform, false);
+            var horizontalRt = horizontal.GetComponent<RectTransform>();
+            horizontalRt.anchorMin = new Vector2(0f, top ? 1f : 0f);
+            horizontalRt.anchorMax = new Vector2(1f, top ? 1f : 0f);
+            horizontalRt.pivot = new Vector2(0.5f, top ? 1f : 0f);
+            horizontalRt.sizeDelta = new Vector2(0f, 2f);
+            horizontalRt.anchoredPosition = Vector2.zero;
+            var horizontalImage = horizontal.GetComponent<Image>();
+            horizontalImage.color = color;
+            horizontalImage.raycastTarget = false;
+
+            var vertical = new GameObject("V", typeof(RectTransform), typeof(Image));
+            vertical.transform.SetParent(root.transform, false);
+            var verticalRt = vertical.GetComponent<RectTransform>();
+            verticalRt.anchorMin = new Vector2(left ? 0f : 1f, 0f);
+            verticalRt.anchorMax = new Vector2(left ? 0f : 1f, 1f);
+            verticalRt.pivot = new Vector2(left ? 0f : 1f, 0.5f);
+            verticalRt.sizeDelta = new Vector2(2f, 0f);
+            verticalRt.anchoredPosition = Vector2.zero;
+            var verticalImage = vertical.GetComponent<Image>();
+            verticalImage.color = color;
+            verticalImage.raycastTarget = false;
+        }
+
+        /// <summary>
+        /// Brand mark in the deck header. Adopts a leftover centered Logo from the old menu.
+        /// </summary>
+        static void EnsureHeaderLogo(Transform header)
+        {
+            if (header == null)
+                return;
+
+            Transform panel = header.parent != null ? header.parent.parent : null;
+            Transform existing = header.Find(LogoObjectName);
+            if (existing == null && panel != null)
+                existing = panel.Find(LogoObjectName);
+
             GameObject go = existing != null
                 ? existing.gameObject
                 : new GameObject(LogoObjectName, typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
 
-            if (existing == null)
-                go.transform.SetParent(panel, false);
-
-            go.transform.SetSiblingIndex(0);
+            if (go.transform.parent != header)
+                go.transform.SetParent(header, false);
 
             var rt = go.GetComponent<RectTransform>();
-            // Hero brand — nudged down from the top so it is not flush with the screen edge.
-            rt.anchorMin = new Vector2(0.5f, 0.58f);
-            rt.anchorMax = new Vector2(0.5f, 0.88f);
-            rt.pivot = new Vector2(0.5f, 0.5f);
-            rt.sizeDelta = new Vector2(720f, 300f);
-            rt.anchoredPosition = Vector2.zero;
+            rt.anchorMin = new Vector2(0f, 0.5f);
+            rt.anchorMax = new Vector2(0f, 0.5f);
+            rt.pivot = new Vector2(0f, 0.5f);
+            rt.sizeDelta = new Vector2(300f, 72f);
+            rt.anchoredPosition = new Vector2(12f, 0f);
             rt.localScale = Vector3.one;
 
             var image = go.GetComponent<Image>();
@@ -296,17 +542,24 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Compact Sign in / Sign out button in the top-right — uses the same Cut Frame style as Play.
+        /// Compact Sign in / Sign out button on the right of the deck header.
         /// </summary>
-        static void EnsureAccountBar(Transform panel, MenuButtonStyle buttonStyle)
+        static void EnsureAccountBar(Transform header, MenuButtonStyle buttonStyle)
         {
-            Transform existing = panel.Find(AccountBarObjectName);
+            if (header == null)
+                return;
+
+            Transform panel = header.parent != null ? header.parent.parent : null;
+            Transform existing = header.Find(AccountBarObjectName);
+            if (existing == null && panel != null)
+                existing = panel.Find(AccountBarObjectName);
+
             GameObject barGo = existing != null
                 ? existing.gameObject
                 : new GameObject(AccountBarObjectName, typeof(RectTransform));
 
-            if (existing == null)
-                barGo.transform.SetParent(panel, false);
+            if (barGo.transform.parent != header)
+                barGo.transform.SetParent(header, false);
 
             // Remove old navy strip background + Guest status label from earlier layout.
             var oldBg = barGo.GetComponent<Image>();
@@ -321,12 +574,11 @@ namespace TitanOrbit.Game
             DestroyChildIfPresent(barGo.transform, "AccountStatus");
 
             var barRt = barGo.GetComponent<RectTransform>();
-            // Top-right corner — Sign in / Sign out stays out of the logo / name column.
-            barRt.anchorMin = new Vector2(1f, 1f);
-            barRt.anchorMax = new Vector2(1f, 1f);
-            barRt.pivot = new Vector2(1f, 1f);
-            barRt.sizeDelta = new Vector2(240f, 44f);
-            barRt.anchoredPosition = new Vector2(-24f, -24f);
+            barRt.anchorMin = new Vector2(1f, 0.5f);
+            barRt.anchorMax = new Vector2(1f, 0.5f);
+            barRt.pivot = new Vector2(1f, 0.5f);
+            barRt.sizeDelta = new Vector2(200f, 44f);
+            barRt.anchoredPosition = new Vector2(-12f, 0f);
 
             // --- Single action button filling the bar ---
             Transform btnTf = barGo.transform.Find("AccountActionButton");
@@ -344,7 +596,7 @@ namespace TitanOrbit.Game
             btnRt.pivot = new Vector2(0.5f, 0.5f);
 
             // Reuse Play's sliced Cut Frame sprite + ColorBlock (not a flat navy fill).
-            StyleButton(btnGo, "Sign in", buttonStyle, 44f, 240f);
+            StyleButton(btnGo, "Sign in", buttonStyle, 44f, 200f);
 
             var btnLabel = btnGo.GetComponentInChildren<TextMeshProUGUI>(true);
             if (btnLabel != null)
@@ -360,37 +612,45 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Player name label + TMP input. Restores scene orphans when present; otherwise builds them.
+        /// Callsign plate in the deck header. Restores scene orphans when present.
         /// Saves to <see cref="LocalPlayerDisplayName"/> on every edit.
         /// </summary>
-        static void EnsurePlayerNameField(Transform panel)
+        static void EnsurePlayerNameField(Transform header)
         {
-            // --- Label ---
-            Transform labelTf = panel.Find(PlayerNameLabelObjectName);
+            if (header == null)
+                return;
+
+            Transform panel = header.parent != null ? header.parent.parent : null;
+
+            Transform labelTf = header.Find(PlayerNameLabelObjectName);
+            if (labelTf == null && panel != null)
+                labelTf = panel.Find(PlayerNameLabelObjectName);
             GameObject labelGo = labelTf != null
                 ? labelTf.gameObject
                 : new GameObject(PlayerNameLabelObjectName, typeof(RectTransform), typeof(TextMeshProUGUI));
-            if (labelTf == null)
-                labelGo.transform.SetParent(panel, false);
+            if (labelGo.transform.parent != header)
+                labelGo.transform.SetParent(header, false);
 
             var labelRt = labelGo.GetComponent<RectTransform>();
-            // Tight stack with the input — small gap under the label.
-            labelRt.anchorMin = new Vector2(0.5f, 0.50f);
-            labelRt.anchorMax = new Vector2(0.5f, 0.50f);
+            labelRt.anchorMin = new Vector2(0.5f, 0.5f);
+            labelRt.anchorMax = new Vector2(0.5f, 0.5f);
             labelRt.pivot = new Vector2(0.5f, 0.5f);
-            labelRt.sizeDelta = new Vector2(480f, 28f);
-            labelRt.anchoredPosition = Vector2.zero;
+            labelRt.sizeDelta = new Vector2(420f, 18f);
+            labelRt.anchoredPosition = new Vector2(0f, 22f);
 
             var labelTmp = labelGo.GetComponent<TextMeshProUGUI>();
-            labelTmp.text = "Player name";
-            labelTmp.fontSize = 20f;
+            labelTmp.text = "CALLSIGN";
+            labelTmp.fontSize = 13f;
+            labelTmp.fontStyle = FontStyles.Bold;
+            labelTmp.characterSpacing = 2.4f;
             labelTmp.alignment = TextAlignmentOptions.Center;
-            labelTmp.color = StatusColor;
+            labelTmp.color = new Color(0.42f, 0.78f, 0.98f, 0.92f);
             labelTmp.raycastTarget = false;
             labelGo.SetActive(true);
 
-            // --- Input field ---
-            Transform inputTf = panel.Find(PlayerNameInputObjectName);
+            Transform inputTf = header.Find(PlayerNameInputObjectName);
+            if (inputTf == null && panel != null)
+                inputTf = panel.Find(PlayerNameInputObjectName);
             GameObject inputGo = inputTf != null
                 ? inputTf.gameObject
                 : new GameObject(
@@ -398,17 +658,21 @@ namespace TitanOrbit.Game
                     typeof(RectTransform),
                     typeof(Image),
                     typeof(TMP_InputField));
-            if (inputTf == null)
-                inputGo.transform.SetParent(panel, false);
+            if (inputGo.transform.parent != header)
+                inputGo.transform.SetParent(header, false);
 
             var inputRt = inputGo.GetComponent<RectTransform>();
-            // Just below the label (anchors ~0.50 → 0.42) for a tight vertical gap.
-            inputRt.anchorMin = new Vector2(0.5f, 0.42f);
-            inputRt.anchorMax = new Vector2(0.5f, 0.42f);
+            inputRt.anchorMin = new Vector2(0.5f, 0.5f);
+            inputRt.anchorMax = new Vector2(0.5f, 0.5f);
             inputRt.pivot = new Vector2(0.5f, 0.5f);
-            // Twice the previous field size (was 420×56).
-            inputRt.sizeDelta = new Vector2(840f, 112f);
-            inputRt.anchoredPosition = Vector2.zero;
+            inputRt.sizeDelta = new Vector2(420f, 46f);
+            inputRt.anchoredPosition = new Vector2(0f, -12f);
+
+            var nameOutline = inputGo.GetComponent<Outline>();
+            if (nameOutline == null)
+                nameOutline = inputGo.AddComponent<Outline>();
+            nameOutline.effectColor = new Color(0.42f, 0.78f, 0.98f, 0.55f);
+            nameOutline.effectDistance = new Vector2(1f, -1f);
 
             var inputBg = inputGo.GetComponent<Image>();
             // Semi-transparent black plate — clearly an input, not a Cut Frame button.
@@ -426,13 +690,12 @@ namespace TitanOrbit.Game
             var textRt = textTmp.rectTransform;
             textRt.anchorMin = Vector2.zero;
             textRt.anchorMax = Vector2.one;
-            textRt.offsetMin = new Vector2(28f, 16f);
-            textRt.offsetMax = new Vector2(-28f, -16f);
-            // Fill most of the 112px-tall field — auto-size so typed text matches the box.
+            textRt.offsetMin = new Vector2(16f, 6f);
+            textRt.offsetMax = new Vector2(-16f, -6f);
             textTmp.enableAutoSizing = true;
-            textTmp.fontSizeMin = 40f;
-            textTmp.fontSizeMax = 56f;
-            textTmp.fontSize = 52f;
+            textTmp.fontSizeMin = 18f;
+            textTmp.fontSizeMax = 28f;
+            textTmp.fontSize = 24f;
             textTmp.alignment = TextAlignmentOptions.Center;
             textTmp.color = Color.white;
             textTmp.raycastTarget = false;
@@ -442,16 +705,16 @@ namespace TitanOrbit.Game
             var phRt = placeholderTmp.rectTransform;
             phRt.anchorMin = Vector2.zero;
             phRt.anchorMax = Vector2.one;
-            phRt.offsetMin = new Vector2(28f, 16f);
-            phRt.offsetMax = new Vector2(-28f, -16f);
+            phRt.offsetMin = new Vector2(16f, 6f);
+            phRt.offsetMax = new Vector2(-16f, -6f);
             placeholderTmp.enableAutoSizing = true;
-            placeholderTmp.fontSizeMin = 40f;
-            placeholderTmp.fontSizeMax = 56f;
-            placeholderTmp.fontSize = 52f;
+            placeholderTmp.fontSizeMin = 18f;
+            placeholderTmp.fontSizeMax = 28f;
+            placeholderTmp.fontSize = 24f;
             placeholderTmp.alignment = TextAlignmentOptions.Center;
             placeholderTmp.fontStyle = FontStyles.Italic;
             placeholderTmp.color = new Color(0.65f, 0.72f, 0.82f, 0.55f);
-            placeholderTmp.text = "Enter your name";
+            placeholderTmp.text = "Enter callsign";
             placeholderTmp.raycastTarget = false;
 
             input.textViewport = inputRt;
@@ -479,14 +742,6 @@ namespace TitanOrbit.Game
             inputGo.SetActive(true);
         }
 
-        /// <summary>Opens the dedicated hull-paint studio over this menu's canvas.</summary>
-        static void OpenCustomizeShip(Transform panel)
-        {
-            var canvas = panel != null ? panel.GetComponentInParent<Canvas>() : null;
-            Transform root = canvas != null ? canvas.transform : panel;
-            ShipCustomizeScreen.Open(root, TeamId.TeamA);
-        }
-
         /// <summary>Finds or creates a named child with the given extra components.</summary>
         static GameObject EnsureChild(Transform parent, string name, params System.Type[] extras)
         {
@@ -502,98 +757,6 @@ namespace TitanOrbit.Game
             var go = new GameObject(name, types);
             go.transform.SetParent(parent, false);
             return go;
-        }
-
-        /// <summary>Creates the centered vertical column that holds Play / Join / Local client.</summary>
-        static Transform EnsureButtonStack(Transform panel)
-        {
-            Transform existing = panel.Find(ButtonStackObjectName);
-            GameObject go = existing != null
-                ? existing.gameObject
-                : new GameObject(ButtonStackObjectName, typeof(RectTransform), typeof(VerticalLayoutGroup), typeof(ContentSizeFitter));
-
-            if (existing == null)
-                go.transform.SetParent(panel, false);
-
-            var rt = go.GetComponent<RectTransform>();
-            // Same anchor as the name field — Y is set in LayoutStack just under that box.
-            var nameRt = panel.Find(PlayerNameInputObjectName) as RectTransform;
-            Vector2 columnAnchor = nameRt != null ? nameRt.anchorMin : new Vector2(0.5f, 0.42f);
-            rt.anchorMin = columnAnchor;
-            rt.anchorMax = columnAnchor;
-            rt.pivot = new Vector2(0.5f, 1f);
-            rt.sizeDelta = new Vector2(360f, 240f);
-            rt.anchoredPosition = Vector2.zero;
-            rt.localScale = Vector3.one;
-
-            var vlg = go.GetComponent<VerticalLayoutGroup>();
-            if (vlg == null)
-                vlg = go.AddComponent<VerticalLayoutGroup>();
-            vlg.spacing = 12f;
-            vlg.childAlignment = TextAnchor.UpperCenter;
-            vlg.childControlWidth = true;
-            vlg.childControlHeight = true;
-            vlg.childForceExpandWidth = true;
-            vlg.childForceExpandHeight = false;
-            vlg.padding = new RectOffset(0, 0, 0, 0);
-
-            var fitter = go.GetComponent<ContentSizeFitter>();
-            if (fitter == null)
-                fitter = go.AddComponent<ContentSizeFitter>();
-            fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
-            fitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
-
-            return go.transform;
-        }
-
-        /// <summary>Places <paramref name="child"/> under the stack at a stable sibling index.</summary>
-        static void EnsureInStack(Transform child, Transform stack, int siblingIndex)
-        {
-            if (child.parent != stack)
-                child.SetParent(stack, false);
-            if (siblingIndex >= 0)
-                child.SetSiblingIndex(Mathf.Clamp(siblingIndex, 0, stack.childCount - 1));
-        }
-
-        /// <summary>Creates or updates a stack button using the shared Play / Cut Frame style.</summary>
-        static void CreateOrWireStackButton(
-            Transform stack,
-            string name,
-            string label,
-            MenuButtonStyle style,
-            UnityEngine.Events.UnityAction onClick,
-            int siblingIndex)
-        {
-            Transform existing = stack.Find(name);
-            // Also search panel root for buttons created by older bootstraps.
-            if (existing == null && stack.parent != null)
-            {
-                var orphan = stack.parent.Find(name);
-                if (orphan != null)
-                {
-                    orphan.SetParent(stack, false);
-                    existing = orphan;
-                }
-            }
-
-            GameObject go = existing != null
-                ? existing.gameObject
-                : new GameObject(name, typeof(RectTransform), typeof(Image), typeof(Button), typeof(LayoutElement));
-
-            if (existing == null)
-                go.transform.SetParent(stack, false);
-
-            if (siblingIndex >= 0)
-                go.transform.SetSiblingIndex(Mathf.Clamp(siblingIndex, 0, stack.childCount - 1));
-
-            StyleButton(go, label, style, 46f, 340f);
-
-            var button = go.GetComponent<Button>();
-            button.onClick.RemoveAllListeners();
-            if (onClick != null)
-                button.onClick.AddListener(onClick);
-            button.interactable = true;
-            go.SetActive(true);
         }
 
         /// <summary>
@@ -671,71 +834,83 @@ namespace TitanOrbit.Game
             }
         }
 
-        /// <summary>
-        /// Pixel Y for the button stack: just under the player-name field.
-        /// The name box is pivot-centered on the shared column anchor.
-        /// </summary>
-        static float ComputeStackYBelowName(Transform panel)
+        /// <summary>Removes a leftover stack button from the panel or the retired ButtonStack.</summary>
+        static void RetireStackButton(Transform panel, string name)
         {
-            const float gap = 16f;
-            var nameRt = panel.Find(PlayerNameInputObjectName) as RectTransform;
-            if (nameRt == null)
-                return -80f;
-            return -(nameRt.sizeDelta.y * 0.5f) - gap;
+            DestroyChildIfPresent(panel, name);
+            var stack = panel.Find(ButtonStackObjectName);
+            if (stack != null)
+                DestroyChildIfPresent(stack, name);
         }
 
-        /// <summary>Forces layout rebuild after children change.</summary>
-        static void LayoutStack(Transform stack, float anchoredY)
+        /// <summary>Secondary deck action (Local client). Play stays the flexible primary.</summary>
+        static void CreateDeckSideButton(
+            Transform panel,
+            Transform actionRow,
+            string name,
+            string label,
+            MenuButtonStyle style,
+            UnityEngine.Events.UnityAction onClick)
         {
-            var rt = stack.GetComponent<RectTransform>();
-            rt.anchoredPosition = new Vector2(0f, anchoredY);
-            LayoutRebuilder.ForceRebuildLayoutImmediate(rt);
+            Transform existing = actionRow.Find(name);
+            if (existing == null)
+                existing = panel.Find(name);
+            if (existing == null)
+            {
+                var stack = panel.Find(ButtonStackObjectName);
+                if (stack != null)
+                    existing = stack.Find(name);
+            }
+
+            GameObject go = existing != null
+                ? existing.gameObject
+                : new GameObject(name, typeof(RectTransform), typeof(Image), typeof(Button), typeof(LayoutElement));
+            if (go.transform.parent != actionRow)
+                go.transform.SetParent(actionRow, false);
+
+            StyleButton(go, label, style, 48f, 180f);
+            var layout = go.GetComponent<LayoutElement>();
+            if (layout != null)
+                layout.flexibleWidth = 0f;
+
+            var button = go.GetComponent<Button>();
+            button.onClick.RemoveAllListeners();
+            if (onClick != null)
+                button.onClick.AddListener(onClick);
+            button.interactable = true;
+            go.SetActive(true);
         }
 
-        /// <summary>
-        /// Status TMP placed directly under the button stack so it never overlaps Play / Join.
-        /// Stays a direct child of the panel (so <c>panel.Find("MainMenuStatus")</c> still works).
-        /// </summary>
-        /// <param name="panel">MainMenuPanel root.</param>
-        /// <param name="stack">ButtonStack whose laid-out height drives the Y offset.</param>
-        static TextMeshProUGUI EnsureStatusTextBelowStack(Transform panel, Transform stack)
+        /// <summary>Connection status under Quick join. Found by name anywhere under the panel.</summary>
+        static TextMeshProUGUI EnsureDeckStatus(Transform panel, Transform rightColumn)
         {
-            var statusGo = panel.Find("MainMenuStatus");
-            GameObject go = statusGo != null
-                ? statusGo.gameObject
+            Transform existing = FindDeep(panel, "MainMenuStatus");
+            GameObject go = existing != null
+                ? existing.gameObject
                 : new GameObject("MainMenuStatus", typeof(RectTransform), typeof(TextMeshProUGUI));
+            if (go.transform.parent != rightColumn)
+                go.transform.SetParent(rightColumn, false);
+            go.transform.SetAsLastSibling();
 
-            if (statusGo == null)
-                go.transform.SetParent(panel, false);
-            else if (statusGo.parent != panel)
-                statusGo.SetParent(panel, false);
-
-            // Ensure stack height is current before we measure it.
-            var stackRt = stack.GetComponent<RectTransform>();
-            LayoutRebuilder.ForceRebuildLayoutImmediate(stackRt);
-
-            const float gapBelowStack = 18f;
-            float stackHeight = Mathf.Max(stackRt.rect.height, 1f);
+            var layout = go.GetComponent<LayoutElement>();
+            if (layout == null)
+                layout = go.AddComponent<LayoutElement>();
+            layout.preferredHeight = 36f;
+            layout.minHeight = 28f;
+            layout.flexibleHeight = 0f;
+            layout.flexibleWidth = 1f;
 
             var rt = go.GetComponent<RectTransform>();
-            // Same anchor as the stack; pivot at top so we hang just under the last button.
-            rt.anchorMin = stackRt.anchorMin;
-            rt.anchorMax = stackRt.anchorMax;
-            rt.pivot = new Vector2(0.5f, 1f);
-            rt.sizeDelta = new Vector2(680f, 72f);
-            rt.anchoredPosition = new Vector2(
-                0f,
-                stackRt.anchoredPosition.y - stackHeight - gapBelowStack);
             rt.localScale = Vector3.one;
 
             var tmp = go.GetComponent<TextMeshProUGUI>();
-            tmp.fontSize = 16f;
+            tmp.fontSize = 14f;
             tmp.alignment = TextAlignmentOptions.Center;
             tmp.color = StatusColor;
             tmp.raycastTarget = false;
             tmp.enableWordWrapping = true;
             if (string.IsNullOrEmpty(tmp.text))
-                tmp.text = "Join a match or start local play.";
+                tmp.text = "Pick a match, or quick join.";
             return tmp;
         }
 
@@ -777,7 +952,7 @@ namespace TitanOrbit.Game
         {
             if (panel == null || logoSprite == null)
                 return;
-            var logo = panel.Find(LogoObjectName);
+            var logo = FindDeep(panel, LogoObjectName);
             if (logo == null)
                 return;
             var image = logo.GetComponent<Image>();

@@ -12,11 +12,10 @@ using UnityEngine.UI;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// [HYBRID] Join Game screen — programmatic UGUI overlay listing Unity Gaming Services (UGS) dedicated
-    /// lobbies and connecting the client via Relay. Opened from <see cref="NceGameFlowController"/> main menu.
+    /// [HYBRID] Join Game browser — programmatic UGUI list of Unity Gaming Services (UGS) dedicated
+    /// lobbies, connecting the client via Relay. Embedded in the Command Deck on the main menu.
+    /// <see cref="Show"/> still opens the full-screen browser if the deck has not claimed it.
     /// Client only; dedicated server builds have no canvas.
-    /// Layout matches the Main Menu look: transparent backdrop over SpaceBackground, Titan Orbit logo,
-    /// a Refresh control in the top bar, then the lobby list.
     /// Each lobby row shows team cards, map extras, capacity, and its own Join button (no footer Join).
     /// When the list is empty, a silent auto-request can still wake a dedicated match (no Request Match button).
     /// </summary>
@@ -41,6 +40,15 @@ namespace TitanOrbit.Game
         static readonly Color TeamCardBgColor = new Color(0.07f, 0.11f, 0.18f, 0.96f);
 
         [SerializeField] GameObject mainMenuPanel;
+
+        /// <summary>True when the list lives in the Command Deck instead of a full-screen overlay.</summary>
+        bool _embedded;
+
+        /// <summary>Deck slot while <see cref="_embedded"/> is set.</summary>
+        Transform _embedSlot;
+
+        /// <summary>Lobby rows stretch to the deck column instead of a fixed 720px card.</summary>
+        bool _relaxRowWidth;
 
         GameObject _screenRoot;
         GameObject _lobbyBrowserRoot;
@@ -69,7 +77,12 @@ namespace TitanOrbit.Game
 
         ScrollRect _lobbyScroll;
 
-        public bool IsVisible => _screenRoot != null && _screenRoot.activeSelf;
+        /// <summary>
+        /// True only for the full-screen overlay. The deck list stays inside MainMenuPanel,
+        /// so this stays false while the player is on the Command Deck — otherwise
+        /// <see cref="NceGameFlowController"/> would hide the menu out from under the list.
+        /// </summary>
+        public bool IsVisible => !_embedded && _screenRoot != null && _screenRoot.activeSelf;
 
         /// <summary>
         /// True after <see cref="DismissForLoading"/> until the browser is shown or hidden again,
@@ -83,8 +96,53 @@ namespace TitanOrbit.Game
 
         public void Configure(GameObject menuPanel) => mainMenuPanel = menuPanel;
 
+        /// <summary>
+        /// Mounts the lobby list in a Command Deck slot. Does not hide the main menu.
+        /// Safe to call again; an already mounted list refreshes in place.
+        /// </summary>
+        public void Embed(Transform slot, GameObject menuPanel)
+        {
+            if (slot == null)
+                return;
+
+            Configure(menuPanel);
+            _embedded = true;
+            _embedSlot = slot;
+            IsHandedOffToLoading = false;
+
+            if (_screenRoot != null && _screenRoot.transform.parent == slot)
+            {
+                _screenRoot.SetActive(true);
+                _ = RefreshAsync(silent: true);
+                return;
+            }
+
+            if (_screenRoot != null)
+            {
+                Destroy(_screenRoot);
+                _screenRoot = null;
+                _lobbyBrowserRoot = null;
+                _lobbyRowPrefab = null;
+                _listContainer = null;
+                _refreshButton = null;
+                _statusText = null;
+                _lobbyScroll = null;
+            }
+
+            EnsureEmbeddedUi();
+            _autoRefreshTimer = 0f;
+            _autoRequestMatchSent = false;
+            _ = ShowAndRefreshAsync();
+        }
+
         public void Show()
         {
+            if (_embedded && _embedSlot != null)
+            {
+                Embed(_embedSlot, mainMenuPanel);
+                return;
+            }
+
             IsHandedOffToLoading = false;
             // --- Show ---
             // Rebuild when status is still inside the list panel (last over-tight pass) or layout is outdated.
@@ -158,6 +216,10 @@ namespace TitanOrbit.Game
 
         public void Hide()
         {
+            // The deck has no Back control — the list is the menu.
+            if (_embedded)
+                return;
+
             // --- Hide (Back / leave join flow) ---
             // [UNITY] Deactivates this overlay and returns the player to the main menu panel.
             IsHandedOffToLoading = false;
@@ -178,7 +240,9 @@ namespace TitanOrbit.Game
             // [TITAN-ORBIT] Do NOT call Hide() here: Hide() turns mainMenuPanel back on, which
             // would flash the Play menu under the loading screen for a frame.
             IsHandedOffToLoading = true;
-            if (_screenRoot != null)
+            // Deck list is a child of MainMenuPanel. Hiding the panel hides the list.
+            // Deactivating the overlay root as well would leave it dark when the deck returns.
+            if (!_embedded && _screenRoot != null)
                 _screenRoot.SetActive(false);
             if (mainMenuPanel != null)
                 mainMenuPanel.SetActive(false);
@@ -191,7 +255,7 @@ namespace TitanOrbit.Game
         {
             // --- Per-frame refresh ---
             // [UNITY] Runs every frame while the Join Game overlay is visible.
-            if (!IsVisible || _refreshInProgress || _joinInProgress)
+            if (_screenRoot == null || !_screenRoot.activeInHierarchy || _refreshInProgress || _joinInProgress)
                 return;
 
             // --- Auto-refresh lobby list ---
@@ -215,11 +279,86 @@ namespace TitanOrbit.Game
             }
         }
 
+        /// <summary>
+        /// Deck column: MATCHES header, Refresh, status, then the same lobby cards as the overlay.
+        /// No logo and no Back — those live on the Command Deck header and are not a second screen.
+        /// </summary>
+        void EnsureEmbeddedUi()
+        {
+            if (_screenRoot != null || _embedSlot == null)
+                return;
+
+            _relaxRowWidth = true;
+            _screenRoot = CreateChild("JoinGameScreen", _embedSlot, typeof(RectTransform), typeof(Image), typeof(VerticalLayoutGroup));
+            var screenRt = _screenRoot.GetComponent<RectTransform>();
+            screenRt.anchorMin = Vector2.zero;
+            screenRt.anchorMax = Vector2.one;
+            screenRt.offsetMin = Vector2.zero;
+            screenRt.offsetMax = Vector2.zero;
+            var screenImage = _screenRoot.GetComponent<Image>();
+            screenImage.color = new Color(0.03f, 0.05f, 0.09f, 0.35f);
+            screenImage.raycastTarget = false;
+
+            var column = _screenRoot.GetComponent<VerticalLayoutGroup>();
+            column.spacing = 6f;
+            column.padding = new RectOffset(10, 10, 8, 8);
+            column.childAlignment = TextAnchor.UpperLeft;
+            column.childControlWidth = true;
+            column.childControlHeight = true;
+            column.childForceExpandWidth = true;
+            column.childForceExpandHeight = false;
+
+            var header = CreateChild("MatchHeader", _screenRoot.transform,
+                typeof(RectTransform), typeof(HorizontalLayoutGroup), typeof(LayoutElement));
+            var headerLe = header.GetComponent<LayoutElement>();
+            headerLe.preferredHeight = 40f;
+            headerLe.minHeight = 40f;
+            headerLe.flexibleHeight = 0f;
+            headerLe.flexibleWidth = 1f;
+            var headerH = header.GetComponent<HorizontalLayoutGroup>();
+            headerH.spacing = 8f;
+            headerH.childAlignment = TextAnchor.MiddleLeft;
+            headerH.childControlWidth = true;
+            headerH.childControlHeight = true;
+            headerH.childForceExpandWidth = false;
+            headerH.childForceExpandHeight = false;
+
+            var title = CreateStyledLabel("MatchTitle", "MATCHES", header.transform, 18f,
+                FontStyles.Bold, TextAlignmentOptions.MidlineLeft);
+            title.color = new Color(0.42f, 0.78f, 0.98f, 0.95f);
+            title.characterSpacing = 1.8f;
+            var titleLe = title.gameObject.AddComponent<LayoutElement>();
+            titleLe.flexibleWidth = 1f;
+            titleLe.minHeight = 28f;
+            titleLe.preferredHeight = 32f;
+
+            _refreshButton = CreateMenuButton("RefreshLobbies", "Refresh", header.transform,
+                new Vector2(140f, 36f), false);
+            _refreshButton.onClick.AddListener(() => _ = RefreshAsync(silent: false));
+            PinToolbarButtonWidth(_refreshButton);
+
+            _statusText = CreateStyledLabel("JoinGameStatus", "Loading lobbies...", _screenRoot.transform,
+                14f, FontStyles.Normal, TextAlignmentOptions.MidlineLeft);
+            _statusText.color = MutedLabelColor;
+            _statusText.enableWordWrapping = true;
+            _statusText.overflowMode = TextOverflowModes.Ellipsis;
+            var statusLe = _statusText.gameObject.AddComponent<LayoutElement>();
+            statusLe.minHeight = 18f;
+            statusLe.preferredHeight = 20f;
+            statusLe.flexibleHeight = 0f;
+            statusLe.flexibleWidth = 1f;
+
+            BuildLobbyBrowserPanel(_screenRoot.transform);
+            _screenRoot.SetActive(true);
+            LayoutRebuilder.ForceRebuildLayoutImmediate(screenRt);
+        }
+
         void EnsureUi()
         {
             // --- Ensure setup ---
             // Builds the full Join Game overlay once; Show() destroys and rebuilds when the layout
             // version is outdated (logo / per-row Join missing).
+            _relaxRowWidth = false;
             if (_screenRoot != null)
                 return;
 
@@ -354,7 +493,7 @@ namespace TitanOrbit.Game
             rootVlg.childForceExpandHeight = true;
 
             var rootLe = _lobbyBrowserRoot.GetComponent<LayoutElement>();
-            ApplyContentColumnLayout(rootLe);
+            ApplyContentColumnLayout(rootLe, _relaxRowWidth);
             // flexibleHeight=1 → eats leftover space under the logo and status, down to the screen bottom.
             // preferredHeight stays unset (-1). 0 meant "prefer nothing" and let the stretch rect win.
             rootLe.minHeight = 160f;
@@ -370,7 +509,7 @@ namespace TitanOrbit.Game
             scrollLe.minHeight = 120f;
             scrollLe.preferredHeight = -1f;
             scrollLe.flexibleHeight = 1f;
-            ApplyContentColumnLayout(scrollLe);
+            ApplyContentColumnLayout(scrollLe, _relaxRowWidth);
 
             var viewport = CreateChild("Viewport", scrollRoot.transform, typeof(RectTransform), typeof(Image), typeof(Mask));
             viewport.GetComponent<Image>().color = new Color(0.07f, 0.1f, 0.14f, 0.35f);
@@ -1133,10 +1272,18 @@ namespace TitanOrbit.Game
                 _statusText.text = message;
         }
 
-        static void ApplyContentColumnLayout(LayoutElement layoutElement)
+        static void ApplyContentColumnLayout(LayoutElement layoutElement, bool relaxWidth = false)
         {
             if (layoutElement == null)
                 return;
+            if (relaxWidth)
+            {
+                layoutElement.preferredWidth = -1f;
+                layoutElement.minWidth = 0f;
+                layoutElement.flexibleWidth = 1f;
+                return;
+            }
+
             layoutElement.preferredWidth = ContentWidth;
             layoutElement.minWidth = Mathf.Min(300f, ContentWidth);
             layoutElement.flexibleWidth = 0f;
@@ -1171,8 +1318,8 @@ namespace TitanOrbit.Game
             var layoutElement = rowObj.GetComponent<LayoutElement>();
             layoutElement.minHeight = 150f;
             layoutElement.preferredHeight = RowHeight;
-            layoutElement.preferredWidth = ContentWidth - 32f;
-            layoutElement.flexibleWidth = 0f;
+            layoutElement.preferredWidth = _relaxRowWidth ? -1f : ContentWidth - 32f;
+            layoutElement.flexibleWidth = _relaxRowWidth ? 1f : 0f;
 
             // --- Main column: header → team cards → footer ---
             var mainCol = CreateChild("LobbyRowMain", rowObj.transform,
