@@ -141,8 +141,14 @@
         }
       };
     </script>
-    <!-- Live AdSense only. No sample/test placement. -->
-    <script async data-ad-client="ca-pub-6601000494638397" data-ad-frequency-hint="30s"
+    <!--
+      data-adbreak-test="on" forces Google's sample rewarded video.
+      Live AdSense is not filling, so without this flag Watch Ad is answered
+      with silence and ad-locked features stay locked. Remove the attribute
+      for paid ads once AdSense returns a rewarded fill for titanorbit.io.
+      A finished sample still reports adViewed, which the game treats as complete.
+    -->
+    <script async data-adbreak-test="on" data-ad-client="ca-pub-6601000494638397" data-ad-frequency-hint="30s"
       src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6601000494638397"
       crossorigin="anonymous"></script>
   </head>
