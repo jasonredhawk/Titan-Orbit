@@ -413,9 +413,11 @@ namespace TitanOrbit.Editor
                 MessageType.None);
             EditorGUILayout.Space();
             EditorGUILayout.HelpBox(
-                "Resort Upgrade Tree: recomputes power scores from prefabs (all-gun DPS + energy sustain) and places ships into levels by ascending power score " +
-                "(weaker unlock earlier). Within each level, ships are sorted by purchase gem cost descending " +
-                "(most expensive → least expensive). Locked tiers keep their list index.",
+                "Resort Upgrade Tree: recomputes power scores from prefabs, then places ships into levels by total gem cost " +
+                "(cheapest unlock earlier). Within each level, branch 0 is the cheapest hull at that level. " +
+                "Cost is prefab scale, then base + Per Extra at that ship level, then the family bonuses, then Stat Gem Rates. " +
+                "The catalog button Recalculate All Families From Profiles & Resort Upgrade Trees uses this same order. " +
+                "Locked tiers keep their list index.",
                 MessageType.None);
             EditorGUILayout.Space();
             EditorGUILayout.HelpBox(
@@ -1138,9 +1140,9 @@ namespace TitanOrbit.Editor
                 return;
             }
 
-            // Level placement by ascending power; within each level, gem cost descending.
-            list.Sort((a, b) => a.power.CompareTo(b.power));
-            var orderedForTree = OrderPrefabsIntoLevelsByPowerThenGemCost(list);
+            // Level placement by total gem cost, cheapest first. Within a level, cheapest branch first.
+            list.Sort((a, b) => CompareHullGemCost(def, a.prefab, b.prefab, shipLevel: 1, a.power, b.power));
+            var orderedForTree = OrderPrefabsIntoLevelsByGemCost(list, def);
 
             Undo.RecordObject(def, "Build Ship Family Upgrade Tree");
 
@@ -1278,7 +1280,7 @@ namespace TitanOrbit.Editor
             }
 
             List<(ShipFamilyChassisTierEntry entry, float power, ShipFamilyPowerScoreBreakdown breakdown)> orderedUnlocked =
-                OrderUpgradeTreeEntriesByPower(unlockedWithPrefab);
+                OrderUpgradeTreeEntriesByGemCost(unlockedWithPrefab, def);
 
             Undo.RecordObject(def, "Resort Ship Family Upgrade Tree");
 
@@ -1363,16 +1365,23 @@ namespace TitanOrbit.Editor
         }
 
         /// <summary>
-        /// Ascending power into triangular level rows; within each row sort by gem cost descending
-        /// (most expensive → least expensive). Tie-break: higher power, then chassis/prefab name.
+        /// Cheapest total gem cost into the early triangular rows (1 ship, then 2, then 3…).
+        /// Within a row, branch 0 is the cheapest hull at that row's ship level, so the
+        /// price on the card and the left-to-right order match. Tie-break: lower power, then name.
         /// </summary>
-        private static List<(ShipFamilyChassisTierEntry entry, float power, ShipFamilyPowerScoreBreakdown breakdown)> OrderUpgradeTreeEntriesByPower(
-            List<(ShipFamilyChassisTierEntry entry, float power, ShipFamilyPowerScoreBreakdown breakdown)> withPrefab)
+        private static List<(ShipFamilyChassisTierEntry entry, float power, ShipFamilyPowerScoreBreakdown breakdown)> OrderUpgradeTreeEntriesByGemCost(
+            List<(ShipFamilyChassisTierEntry entry, float power, ShipFamilyPowerScoreBreakdown breakdown)> withPrefab,
+            ShipFamilyDefinition family)
         {
             if (withPrefab == null || withPrefab.Count == 0)
                 return new List<(ShipFamilyChassisTierEntry entry, float power, ShipFamilyPowerScoreBreakdown breakdown)>();
 
-            withPrefab.Sort((a, b) => a.power.CompareTo(b.power));
+            // Level 1 cost, including each child's prefab scale, decides which band a hull
+            // belongs to. Extra Level at the destination row then orders the cards the player sees.
+            withPrefab.Sort((a, b) => CompareHullGemCost(
+                family, a.entry?.prefab, b.entry?.prefab, 1, a.power, b.power,
+                a.entry?.chassisId, b.entry?.chassisId));
+
             var orderedForTree = new List<(ShipFamilyChassisTierEntry entry, float power, ShipFamilyPowerScoreBreakdown breakdown)>();
             int listIdx = 0;
             int chunkSize = 1;
@@ -1384,18 +1393,9 @@ namespace TitanOrbit.Editor
                     chunk.Add(withPrefab[listIdx++]);
 
                 int levelForCost = level;
-                chunk.Sort((a, b) =>
-                {
-                    int costA = ShipFamilyPowerScoreBreakdown.GetPurchaseGemCost(a.entry, levelForCost);
-                    int costB = ShipFamilyPowerScoreBreakdown.GetPurchaseGemCost(b.entry, levelForCost);
-                    int cmp = costB.CompareTo(costA); // expensive first
-                    if (cmp != 0) return cmp;
-                    cmp = b.power.CompareTo(a.power);
-                    if (cmp != 0) return cmp;
-                    string idA = a.entry?.chassisId ?? a.entry?.prefab?.name ?? string.Empty;
-                    string idB = b.entry?.chassisId ?? b.entry?.prefab?.name ?? string.Empty;
-                    return string.Compare(idA, idB, StringComparison.OrdinalIgnoreCase);
-                });
+                chunk.Sort((a, b) => CompareHullGemCost(
+                    family, a.entry?.prefab, b.entry?.prefab, levelForCost, a.power, b.power,
+                    a.entry?.chassisId, b.entry?.chassisId));
 
                 orderedForTree.AddRange(chunk);
                 chunkSize++;
@@ -1405,47 +1405,27 @@ namespace TitanOrbit.Editor
             return orderedForTree;
         }
 
-        /// <summary>Same level/cost rules for Build Upgrade Tree From Folder (prefab tuples).</summary>
-        static List<(GameObject prefab, float power, ShipFamilyPowerScoreBreakdown breakdown)> OrderPrefabsIntoLevelsByPowerThenGemCost(
-            List<(GameObject prefab, float power, ShipFamilyPowerScoreBreakdown breakdown)> sortedByPower)
+        /// <summary>Same cost order for Build Upgrade Tree From Folder (prefab tuples).</summary>
+        static List<(GameObject prefab, float power, ShipFamilyPowerScoreBreakdown breakdown)> OrderPrefabsIntoLevelsByGemCost(
+            List<(GameObject prefab, float power, ShipFamilyPowerScoreBreakdown breakdown)> sortedByCost,
+            ShipFamilyDefinition family)
         {
             var orderedForTree = new List<(GameObject prefab, float power, ShipFamilyPowerScoreBreakdown breakdown)>();
-            if (sortedByPower == null || sortedByPower.Count == 0)
+            if (sortedByCost == null || sortedByCost.Count == 0)
                 return orderedForTree;
 
             int listIdx = 0;
             int chunkSize = 1;
             int level = 1;
-            while (listIdx < sortedByPower.Count)
+            while (listIdx < sortedByCost.Count)
             {
                 var chunk = new List<(GameObject prefab, float power, ShipFamilyPowerScoreBreakdown breakdown)>();
-                for (int c = 0; c < chunkSize && listIdx < sortedByPower.Count; c++)
-                    chunk.Add(sortedByPower[listIdx++]);
+                for (int c = 0; c < chunkSize && listIdx < sortedByCost.Count; c++)
+                    chunk.Add(sortedByCost[listIdx++]);
 
                 int levelForCost = level;
-                chunk.Sort((a, b) =>
-                {
-                    // Temporary tier wrappers for GetPurchaseGemCost.
-                    var tierA = new ShipFamilyChassisTierEntry
-                    {
-                        powerScoreBreakdown = a.breakdown,
-                        minHomePlanetLevel = levelForCost
-                    };
-                    var tierB = new ShipFamilyChassisTierEntry
-                    {
-                        powerScoreBreakdown = b.breakdown,
-                        minHomePlanetLevel = levelForCost
-                    };
-                    int costA = ShipFamilyPowerScoreBreakdown.GetPurchaseGemCost(tierA, levelForCost);
-                    int costB = ShipFamilyPowerScoreBreakdown.GetPurchaseGemCost(tierB, levelForCost);
-                    int cmp = costB.CompareTo(costA);
-                    if (cmp != 0) return cmp;
-                    cmp = b.power.CompareTo(a.power);
-                    if (cmp != 0) return cmp;
-                    string nameA = a.prefab != null ? a.prefab.name : string.Empty;
-                    string nameB = b.prefab != null ? b.prefab.name : string.Empty;
-                    return string.Compare(nameA, nameB, StringComparison.OrdinalIgnoreCase);
-                });
+                chunk.Sort((a, b) => CompareHullGemCost(
+                    family, a.prefab, b.prefab, levelForCost, a.power, b.power));
 
                 orderedForTree.AddRange(chunk);
                 chunkSize++;
@@ -1453,6 +1433,33 @@ namespace TitanOrbit.Editor
             }
 
             return orderedForTree;
+        }
+
+        /// <summary>
+        /// Cheap hulls sort first. Equal prices fall through to lower power, then name,
+        /// so a resort does not shuffle identical stickers at random.
+        /// </summary>
+        static int CompareHullGemCost(
+            ShipFamilyDefinition family,
+            GameObject prefabA,
+            GameObject prefabB,
+            int shipLevel,
+            float powerA,
+            float powerB,
+            string nameA = null,
+            string nameB = null)
+        {
+            int costA = StatGemPricing.PriceFamilyPrefab(prefabA, family, shipLevel);
+            int costB = StatGemPricing.PriceFamilyPrefab(prefabB, family, shipLevel);
+            int cmp = costA.CompareTo(costB);
+            if (cmp != 0)
+                return cmp;
+            cmp = powerA.CompareTo(powerB);
+            if (cmp != 0)
+                return cmp;
+            string idA = nameA ?? prefabA?.name ?? string.Empty;
+            string idB = nameB ?? prefabB?.name ?? string.Empty;
+            return string.Compare(idA, idB, StringComparison.OrdinalIgnoreCase);
         }
 
         private static void AssignTierPowerScores(

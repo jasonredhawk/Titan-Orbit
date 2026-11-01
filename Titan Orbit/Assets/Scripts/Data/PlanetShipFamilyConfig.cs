@@ -559,10 +559,13 @@ namespace TitanOrbit.Data
             return null;
         }
 
-        /// <summary>Gem purchase cost for a chassis at the given ship level (2× gem cap, L1→L6 gradient).</summary>
+        /// <summary>
+        /// Gems to buy this chassis: the sum of its parts at <paramref name="shipLevel"/>,
+        /// each priced from <see cref="StatGemRates"/>. The orbit-tree pill and the server debit both read this.
+        /// </summary>
         public int GetPurchaseGemCostForChassisId(string chassisId, int shipLevel)
         {
-            return ShipFamilyPowerScoreBreakdown.GetPurchaseGemCost(GetTierEntryForChassisId(chassisId), shipLevel);
+            return StatGemPricing.PriceFamilyHull(this, chassisId, shipLevel);
         }
 
         /// <summary>Power score breakdown for this chassis from baked data or live prefab sum.</summary>
@@ -743,7 +746,7 @@ namespace TitanOrbit.Data
                 {
                     chassis = chassis,
                     minHomePlanetLevel = tier.minHomePlanetLevel,
-                    gemCost = ShipFamilyPowerScoreBreakdown.GetPurchaseGemCost(tier, tier.minHomePlanetLevel)
+                    gemCost = GetPurchaseGemCostForChassisId(tier.chassisId, tier.minHomePlanetLevel)
                 });
             }
             return result;

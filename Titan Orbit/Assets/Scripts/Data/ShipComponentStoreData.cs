@@ -14,11 +14,13 @@ namespace TitanOrbit.Data
     /// </summary>
     public static class ShipComponentStoreData
     {
-        /// <summary>Gems charged per power point when pricing moon-dock components.</summary>
+        /// <summary>
+        /// Retired raw-stat rate. Live prices multiply each stat by <see cref="StatGemRates"/>.
+        /// </summary>
         public const float GemCostPerPowerPoint = 1.75f;
-        /// <summary>Price multiplier per ship level above 1 (12% per level).</summary>
+        /// <summary>Retired 12% per-level scale. Extra Level changes the stats, and the rate table prices those stats.</summary>
         public const float LevelPriceScalePerLevel = 0.12f;
-        /// <summary>Floor gem price so zero-stat placeholder parts still cost something.</summary>
+        /// <summary>Retired floor. The live floor is <see cref="StatGemRates.minimumPartGems"/>.</summary>
         public const int MinimumComponentGemPrice = 8;
 
         /// <summary>
@@ -160,38 +162,23 @@ namespace TitanOrbit.Data
                 effective, entry, family, planetOrHullBankIndex);
         }
 
-        /// <summary>Gem cost from power score × level multiplier, floored at <see cref="MinimumComponentGemPrice"/>.</summary>
+        /// <summary>
+        /// Gems to buy this gear part. Extra Level grows the stats, then
+        /// <see cref="StatGemRates"/> prices each stat (damage, health, turn, and the rest).
+        /// </summary>
         public static int GetComponentGemPrice(ShipFamilyComponentEntry entry, int shipLevel)
         {
-            float power = GetComponentPowerScore(entry, shipLevel);
-            if (power < 0.01f)
-                return MinimumComponentGemPrice;
-            float levelMult = 1f + Mathf.Max(0, shipLevel - 1) * LevelPriceScalePerLevel;
-            return Mathf.Max(MinimumComponentGemPrice, Mathf.RoundToInt(power * GemCostPerPowerPoint * levelMult));
+            return StatGemPricing.PriceFamilyPart(entry, shipLevel);
         }
 
         /// <summary>
-        /// Gem price of one frozen part, such as a single Titan component.
-        /// Uses the same gems-per-power rate as <see cref="GetComponentGemPrice"/>
-        /// and the same category total (offense + defense + energy + mobility + capacity).
-        /// Skips Extra Level growth and the ship-level price scale: Titan parts do not
-        /// gain stats as the hull levels, so the price is only what that part contributes.
-        /// A near-zero part still costs <see cref="MinimumComponentGemPrice"/>.
+        /// Gems for one Titan part. Same <see cref="StatGemRates"/> table as a family part.
+        /// Titans do not Extra-Level, so the catalog bases are the numbers that get priced.
         /// </summary>
         /// <param name="stats">Base stats of one copy. Per-extra fields are ignored.</param>
-        /// <returns>Contributed gems for one copy of this part.</returns>
         public static int GetFrozenPartGemPrice(in ShipComponentAbilityStats stats)
         {
-            // --- Power of this part alone ---
-            // [TITAN-ORBIT] Same Total the moon store uses for a gear card, but the
-            // numbers stay at the catalog bases. No ship-level ×1.12 and no Extra Level.
-            float power = ShipFamilyPowerScoreBreakdown.FromSummedShipStats(stats).Total;
-            if (power < 0.01f)
-                return MinimumComponentGemPrice;
-
-            return Mathf.Max(
-                MinimumComponentGemPrice,
-                Mathf.RoundToInt(power * GemCostPerPowerPoint));
+            return StatGemPricing.Price(stats);
         }
 
         /// <summary>

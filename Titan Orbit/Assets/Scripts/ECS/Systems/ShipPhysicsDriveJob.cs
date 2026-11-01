@@ -62,6 +62,12 @@ namespace TitanOrbit.ECS
         public byte SkipBots;
 
         /// <summary>
+        /// 1 when Game Manager regular-ship guns are Point. 0 keeps barrels on the nose.
+        /// Copied on the main thread — this Burst job cannot read GameManager.
+        /// </summary>
+        public byte PointGuns;
+
+        /// <summary>
         /// Per-ship motor tick. Writes velocity and yaw. Position is integrated by
         /// <see cref="ShipDeterministicTickSystem"/> except while moon-docked or taking off,
         /// where this motor already pinned the hull.
@@ -153,7 +159,8 @@ namespace TitanOrbit.ECS
                 shipPhysicsRadius: PhysicsColliders.HasComponent(entity)
                     ? ShipPhysicsDriveLogic.MeasurePhysicsHullRadiusXZ(
                         PhysicsColliders[entity], transform.ValueRO)
-                    : -1f);
+                    : -1f,
+                pointGuns: PointGuns != 0);
 
             CommitFlight(ref physicsVelocity, ref kinematics, physicsVelocity.ValueRO.Linear);
         }

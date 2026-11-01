@@ -226,9 +226,9 @@ namespace TitanOrbit.Systems
         }
 
         /// <summary>
-        /// Gems to buy this chassis. A Titan (<c>MEGA_###</c>) sums the parts on that hull.
-        /// Any other level-7 id still uses the catalog fallback, because planets never sell
-        /// a regular family hull at tier 7. Levels 1–6 use the family's 2× gem-cap formula.
+        /// Gems to buy this chassis. A Titan (<c>MEGA_###</c>) sums that hull's parts
+        /// through <see cref="StatGemRates"/>. Levels 1–6 sum the family's gear prices
+        /// at this card's level. Any other level-7 id uses the catalog fallback.
         /// </summary>
         public int GetPurchaseGemCostForChassisId(string chassisId, int shipLevel)
         {

@@ -929,8 +929,15 @@ namespace TitanOrbit.ECS
         {
             if (state.World.IsClient() && ClientJoinSettleCache.ShouldSkipShipSimulation)
                 return;
-            if (!SystemAPI.TryGetSingletonBuffer<ShipTickAsteroidPoseElement>(out var poses))
+            if (!SystemAPI.TryGetSingletonBuffer<ShipTickAsteroidPoseElement>(out var poses) || poses.Length == 0)
                 return;
+
+            // OrderFirst in AfterPhysics, before ShipPhysicsContactCollectSystem syncs the step.
+            // ExportDynamicBodiesJob is still the registered writer of LocalTransform. A live
+            // match fills this buffer as soon as a hull touches a rock; reading it on the main
+            // thread without completing that job aborts client prediction.
+            state.Dependency.Complete();
+            state.EntityManager.CompleteDependencyBeforeRW<LocalTransform>();
 
             var transforms = SystemAPI.GetComponentLookup<LocalTransform>(false);
             for (int i = 0; i < poses.Length; i++)

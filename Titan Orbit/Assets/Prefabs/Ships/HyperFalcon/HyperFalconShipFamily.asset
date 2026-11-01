@@ -853,6 +853,86 @@ MonoBehaviour:
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
   upgradeTree:
+  - chassisId: HyperFalcon_03
+    upgradeTreeShipName: Stoop
+    prefab: {fileID: 8771789760030154906, guid: ca88eb8e52507e247ae76ad7e9225bfe, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: a6f436200009f3f48adf299fa226956d, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: a6f436200009f3f48adf299fa226956d, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: a4841e6eecee0274ba15e0096612593e, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 8671cda5015ae5f4ea1ab2ffbbd01e27, type: 3}
+    - variantName: Gold
+      team: 4
+      sprite: {fileID: 21300000, guid: fe528b8c3477fd14b9e4f89bc9087cdb, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 2c8e435a8f36fa64e87f5131a685337b, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: a6f436200009f3f48adf299fa226956d, type: 3}
+    teamTheatricalMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: a6f436200009f3f48adf299fa226956d, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: a4841e6eecee0274ba15e0096612593e, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 8671cda5015ae5f4ea1ab2ffbbd01e27, type: 3}
+    - variantName: Gold
+      team: 4
+      sprite: {fileID: 21300000, guid: fe528b8c3477fd14b9e4f89bc9087cdb, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 2c8e435a8f36fa64e87f5131a685337b, type: 3}
+    minHomePlanetLevel: 1
+    powerScore: 188.70984
+    powerScoreAtMaxLevel: 247.32918
+    powerScoreBreakdown:
+      offense: 56
+      defense: 42.609795
+      energy: 30.5
+      mobility: 59.53028
+      capacity: 47.457947
+      firePower: 6
+      bulletSpeed: 10
+      fireRate: 1
+      sustainedDps: 0
+      rammingPower: 9
+      healthCap: 40.89166
+      healthRegen: 1.718137
+      energyCap: 24
+      energyRegen: 6.5
+      moveSpeed: 7.32
+      turnSpeed: 44.822105
+      gemCap: 28.163193
+      peopleCap: 19.294752
+    powerScoreBreakdownAtShipLevel:
+      offense: 56
+      defense: 42.609795
+      energy: 30.5
+      mobility: 59.53028
+      capacity: 47.457947
+      firePower: 6
+      bulletSpeed: 10
+      fireRate: 1
+      sustainedDps: 0
+      rammingPower: 9
+      healthCap: 40.89166
+      healthRegen: 1.718137
+      energyCap: 24
+      energyRegen: 6.5
+      moveSpeed: 7.32
+      turnSpeed: 44.822105
+      gemCap: 28.163193
+      peopleCap: 19.294752
+    componentMass: 9.506616
+    lockedInUpgradeTree: 0
   - chassisId: HyperFalcon_02
     upgradeTreeShipName: Divewind
     prefab: {fileID: 6431040843001023359, guid: 74ffec7e11c266c418900c7e17d00534, type: 3}
@@ -890,9 +970,9 @@ MonoBehaviour:
     - variantName: Purple
       team: 5
       sprite: {fileID: 21300000, guid: c8144f4041aa1194c8c5f8a128e6ab49, type: 3}
-    minHomePlanetLevel: 1
+    minHomePlanetLevel: 2
     powerScore: 175.03096
-    powerScoreAtMaxLevel: 235.86507
+    powerScoreAtMaxLevel: 357.53323
     powerScoreBreakdown:
       offense: 56
       defense: 48.81136
@@ -913,25 +993,185 @@ MonoBehaviour:
       gemCap: 35.694813
       peopleCap: 23.31301
     powerScoreBreakdownAtShipLevel:
+      offense: 59
+      defense: 81.58488
+      energy: 37.388885
+      mobility: 24.08035
+      capacity: 77.57095
+      firePower: 7
+      bulletSpeed: 11
+      fireRate: 1
+      sustainedDps: 0
+      rammingPower: 10
+      healthCap: 78.295166
+      healthRegen: 3.2897122
+      energyCap: 29.51754
+      energyRegen: 7.871344
+      moveSpeed: 7.32035
+      turnSpeed: 14
+      gemCap: 47.3577
+      peopleCap: 30.21325
+    componentMass: 7.7465672
+    lockedInUpgradeTree: 0
+  - chassisId: HyperFalcon_10
+    upgradeTreeShipName: Peak
+    prefab: {fileID: 8276186623104467166, guid: 92e6d3b8e03026a45b2cc4f17dcd9d53, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: ba6c3ed8f2d97874e83765039e21ea79, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: ba6c3ed8f2d97874e83765039e21ea79, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 02fc6179ec1ad9547bf2fb95a25642b1, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: cf9ecfce7614e6d4ca8d594019096aa0, type: 3}
+    - variantName: Gold
+      team: 4
+      sprite: {fileID: 21300000, guid: 76e0b4f4455b3524bb18db6cc1cfe072, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: d61fede143a78d64a9ddf8b670ccfc6c, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: ba6c3ed8f2d97874e83765039e21ea79, type: 3}
+    teamTheatricalMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: ba6c3ed8f2d97874e83765039e21ea79, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 02fc6179ec1ad9547bf2fb95a25642b1, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: cf9ecfce7614e6d4ca8d594019096aa0, type: 3}
+    - variantName: Gold
+      team: 4
+      sprite: {fileID: 21300000, guid: 76e0b4f4455b3524bb18db6cc1cfe072, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: d61fede143a78d64a9ddf8b670ccfc6c, type: 3}
+    minHomePlanetLevel: 2
+    powerScore: 247.44305
+    powerScoreAtMaxLevel: 502.55618
+    powerScoreBreakdown:
       offense: 56
-      defense: 48.81136
-      energy: 30.009499
-      mobility: 23.96228
-      capacity: 59.00782
+      defense: 42.407997
+      energy: 38
+      mobility: 120.38285
+      capacity: 45.7
       firePower: 6
       bulletSpeed: 10
       fireRate: 1
       sustainedDps: 0
       rammingPower: 9
-      healthCap: 46.84316
-      healthRegen: 1.9681996
-      energyCap: 23.614033
-      energyRegen: 6.395467
-      moveSpeed: 7.2022805
-      turnSpeed: 14
-      gemCap: 35.694813
-      peopleCap: 23.31301
-    componentMass: 7.7465672
+      healthCap: 40.697998
+      healthRegen: 1.7100002
+      energyCap: 30
+      energyRegen: 8
+      moveSpeed: 7.44
+      turnSpeed: 97.89506
+      gemCap: 26.7
+      peopleCap: 19
+    powerScoreBreakdownAtShipLevel:
+      offense: 59
+      defense: 71.423996
+      energy: 53
+      mobility: 148.1835
+      capacity: 58.7
+      firePower: 7
+      bulletSpeed: 11
+      fireRate: 1
+      sustainedDps: 0
+      rammingPower: 10
+      healthCap: 68.544
+      healthRegen: 2.88
+      energyCap: 42
+      energyRegen: 11
+      moveSpeed: 7.68
+      turnSpeed: 123.676765
+      gemCap: 34.9
+      peopleCap: 23.8
+    componentMass: 14.356342
+    lockedInUpgradeTree: 0
+  - chassisId: HyperFalcon_01
+    upgradeTreeShipName: Rush
+    prefab: {fileID: 8437679288721851717, guid: 68c9e5c8d8ab9bb478eaf0571ee10961, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 62ac953ce481786489067fcc5228479c, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 62ac953ce481786489067fcc5228479c, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 789e4944d35c16547b62a7097f89e2e5, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 10f0ed5bcc59a0347b84b3ad4e5040b9, type: 3}
+    - variantName: Gold
+      team: 4
+      sprite: {fileID: 21300000, guid: 4d5381afbfa74294dbda3949baa1cc00, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: f3a1bdbd63e876a44b1cc23cadee12ec, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 62ac953ce481786489067fcc5228479c, type: 3}
+    teamTheatricalMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 62ac953ce481786489067fcc5228479c, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 789e4944d35c16547b62a7097f89e2e5, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 10f0ed5bcc59a0347b84b3ad4e5040b9, type: 3}
+    - variantName: Gold
+      team: 4
+      sprite: {fileID: 21300000, guid: 4d5381afbfa74294dbda3949baa1cc00, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: f3a1bdbd63e876a44b1cc23cadee12ec, type: 3}
+    minHomePlanetLevel: 3
+    powerScore: 222.39998
+    powerScoreAtMaxLevel: 588.27246
+    powerScoreBreakdown:
+      offense: 56
+      defense: 45.099174
+      energy: 42.598587
+      mobility: 90.803665
+      capacity: 38.47856
+      firePower: 6
+      bulletSpeed: 10
+      fireRate: 1
+      sustainedDps: 0
+      rammingPower: 9
+      healthCap: 43.28066
+      healthRegen: 1.8185151
+      energyCap: 33.5202
+      energyRegen: 9.078387
+      moveSpeed: 10.223661
+      turnSpeed: 70
+      gemCap: 22.22016
+      peopleCap: 16.2584
+    powerScoreBreakdownAtShipLevel:
+      offense: 62
+      defense: 109.05277
+      energy: 63.548714
+      mobility: 133.89886
+      capacity: 55.58864
+      firePower: 8
+      bulletSpeed: 12
+      fireRate: 1
+      sustainedDps: 0
+      rammingPower: 11
+      healthCap: 104.65549
+      healthRegen: 4.3972883
+      energyCap: 50.2803
+      energyRegen: 13.268413
+      moveSpeed: 10.558863
+      turnSpeed: 110
+      gemCap: 33.62688
+      peopleCap: 21.96176
+    componentMass: 15.006214
     lockedInUpgradeTree: 0
   - chassisId: HyperFalcon_06
     upgradeTreeShipName: Volt
@@ -970,9 +1210,9 @@ MonoBehaviour:
     - variantName: Purple
       team: 5
       sprite: {fileID: 21300000, guid: 256e048dd949d2a4db02830eb1aae822, type: 3}
-    minHomePlanetLevel: 2
+    minHomePlanetLevel: 3
     powerScore: 210.34074
-    powerScoreAtMaxLevel: 406.83835
+    powerScoreAtMaxLevel: 537.8368
     powerScoreBreakdown:
       offense: 56
       defense: 48.86351
@@ -993,425 +1233,265 @@ MonoBehaviour:
       gemCap: 32.546597
       peopleCap: 21.880644
     powerScoreBreakdownAtShipLevel:
-      offense: 59
-      defense: 82.967224
-      energy: 21
-      mobility: 91.380005
-      capacity: 74.82273
-      firePower: 7
-      bulletSpeed: 11
-      fireRate: 1
-      sustainedDps: 0
-      rammingPower: 10
-      healthCap: 79.62177
-      healthRegen: 3.3454523
-      energyCap: 18
-      energyRegen: 3
-      moveSpeed: 10.8
-      turnSpeed: 70
-      gemCap: 45.641937
-      peopleCap: 29.180792
-    componentMass: 8.568384
-    lockedInUpgradeTree: 0
-  - chassisId: HyperFalcon_03
-    upgradeTreeShipName: Stoop
-    prefab: {fileID: 8771789760030154906, guid: ca88eb8e52507e247ae76ad7e9225bfe, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: a6f436200009f3f48adf299fa226956d, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: a6f436200009f3f48adf299fa226956d, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: a4841e6eecee0274ba15e0096612593e, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: 8671cda5015ae5f4ea1ab2ffbbd01e27, type: 3}
-    - variantName: Gold
-      team: 4
-      sprite: {fileID: 21300000, guid: fe528b8c3477fd14b9e4f89bc9087cdb, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: 2c8e435a8f36fa64e87f5131a685337b, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: a6f436200009f3f48adf299fa226956d, type: 3}
-    teamTheatricalMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: a6f436200009f3f48adf299fa226956d, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: a4841e6eecee0274ba15e0096612593e, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: 8671cda5015ae5f4ea1ab2ffbbd01e27, type: 3}
-    - variantName: Gold
-      team: 4
-      sprite: {fileID: 21300000, guid: fe528b8c3477fd14b9e4f89bc9087cdb, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: 2c8e435a8f36fa64e87f5131a685337b, type: 3}
-    minHomePlanetLevel: 2
-    powerScore: 188.70984
-    powerScoreAtMaxLevel: 364.5678
-    powerScoreBreakdown:
-      offense: 56
-      defense: 42.609795
-      energy: 30.5
-      mobility: 59.53028
-      capacity: 47.457947
-      firePower: 6
-      bulletSpeed: 10
-      fireRate: 1
-      sustainedDps: 0
-      rammingPower: 9
-      healthCap: 40.89166
-      healthRegen: 1.718137
-      energyCap: 24
-      energyRegen: 6.5
-      moveSpeed: 7.32
-      turnSpeed: 44.822105
-      gemCap: 28.163193
-      peopleCap: 19.294752
-    powerScoreBreakdownAtShipLevel:
-      offense: 59
-      defense: 71.20456
-      energy: 38
-      mobility: 67.636086
-      capacity: 60.392166
-      firePower: 7
-      bulletSpeed: 11
-      fireRate: 1
-      sustainedDps: 0
-      rammingPower: 10
-      healthCap: 68.333405
-      healthRegen: 2.8711512
-      energyCap: 30
-      energyRegen: 8
-      moveSpeed: 7.44
-      turnSpeed: 52.292458
-      gemCap: 36.523724
-      peopleCap: 23.86844
-    componentMass: 9.506616
-    lockedInUpgradeTree: 0
-  - chassisId: HyperFalcon_07
-    upgradeTreeShipName: Swoop
-    prefab: {fileID: 3571592331501742404, guid: b4d69c4f9c3d162448102b7fb3a96fbf, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 3d3cca10f31017543b74671efa13d10e, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: 3d3cca10f31017543b74671efa13d10e, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: 829dfd2beb41af44fbda67e8f2eb5ca1, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: 96c7a04e267c4f940ba7e09154fcac4f, type: 3}
-    - variantName: Gold
-      team: 4
-      sprite: {fileID: 21300000, guid: 75f85ee748c343e46a7a7084313ec591, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: 88f31c8e7806c664e98c857131c532e9, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 3d3cca10f31017543b74671efa13d10e, type: 3}
-    teamTheatricalMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: 3d3cca10f31017543b74671efa13d10e, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: 829dfd2beb41af44fbda67e8f2eb5ca1, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: 96c7a04e267c4f940ba7e09154fcac4f, type: 3}
-    - variantName: Gold
-      team: 4
-      sprite: {fileID: 21300000, guid: 75f85ee748c343e46a7a7084313ec591, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: 88f31c8e7806c664e98c857131c532e9, type: 3}
-    minHomePlanetLevel: 3
-    powerScore: 211.11752
-    powerScoreAtMaxLevel: 590.6273
-    powerScoreBreakdown:
-      offense: 62.995773
-      defense: 50.37218
-      energy: 30.5
-      mobility: 51.6892
-      capacity: 65.39228
-      firePower: 7.4740753
-      bulletSpeed: 11.744975
-      fireRate: 1.067725
-      sustainedDps: 0
-      rammingPower: 10.67725
-      healthCap: 48.341045
-      healthRegen: 2.031136
-      energyCap: 24
-      energyRegen: 6.5
-      moveSpeed: 7.32
-      turnSpeed: 37.807827
-      gemCap: 39.657288
-      peopleCap: 25.734995
-    powerScoreBreakdownAtShipLevel:
-      offense: 75.80847
-      defense: 120.88444
-      energy: 45.5
-      mobility: 59.277668
-      capacity: 115.73874
-      firePower: 11.744974
-      bulletSpeed: 16.015875
-      fireRate: 1.067725
-      sustainedDps: 0
-      rammingPower: 14.948149
-      healthCap: 116.01006
-      healthRegen: 4.8743715
-      energyCap: 36
-      energyRegen: 9.5
-      moveSpeed: 7.5600004
-      turnSpeed: 44.681976
-      gemCap: 71.88826
-      peopleCap: 43.85048
-    componentMass: 8.258868
-    lockedInUpgradeTree: 0
-  - chassisId: HyperFalcon_11
-    upgradeTreeShipName: Flashdive
-    prefab: {fileID: 6227767746155620266, guid: 7a68d04ea37628a4881aabbeacc2a513, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 51a7d8a8b6bd07b44b3d196f05631bce, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: 51a7d8a8b6bd07b44b3d196f05631bce, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: a2edb2c759c61c64b856796a76b71945, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: 9341b46af481f9441b9ae2416336fcea, type: 3}
-    - variantName: Gold
-      team: 4
-      sprite: {fileID: 21300000, guid: 7ffae2c6de316cc40830927d99c29f3d, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: 7db27f705e1f52742acbc61087c07184, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 51a7d8a8b6bd07b44b3d196f05631bce, type: 3}
-    teamTheatricalMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: 51a7d8a8b6bd07b44b3d196f05631bce, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: a2edb2c759c61c64b856796a76b71945, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: 9341b46af481f9441b9ae2416336fcea, type: 3}
-    - variantName: Gold
-      team: 4
-      sprite: {fileID: 21300000, guid: 7ffae2c6de316cc40830927d99c29f3d, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: 7db27f705e1f52742acbc61087c07184, type: 3}
-    minHomePlanetLevel: 3
-    powerScore: 221.56299
-    powerScoreAtMaxLevel: 686.1338
-    powerScoreBreakdown:
-      offense: 56
-      defense: 67.33379
-      energy: 24.570004
-      mobility: 57.192497
-      capacity: 64.21301
-      firePower: 6
-      bulletSpeed: 10
-      fireRate: 1
-      sustainedDps: 0
-      rammingPower: 9
-      healthCap: 64.61872
-      healthRegen: 2.7150717
-      energyCap: 19.397371
-      energyRegen: 5.172632
-      moveSpeed: 4.8105483
-      turnSpeed: 44.635635
-      gemCap: 38.727806
-      peopleCap: 25.485203
-    powerScoreBreakdownAtShipLevel:
       offense: 62
-      defense: 170.91278
-      energy: 43.967377
-      mobility: 66.1784
-      capacity: 114.63902
+      defense: 117.070946
+      energy: 21
+      mobility: 102.07
+      capacity: 95.218216
       firePower: 8
       bulletSpeed: 12
       fireRate: 1
       sustainedDps: 0
       rammingPower: 11
-      healthCap: 164.02113
-      healthRegen: 6.8916426
-      energyCap: 34.915268
-      energyRegen: 9.052107
-      moveSpeed: 5.120906
-      turnSpeed: 52.751205
-      gemCap: 70.18341
-      peopleCap: 44.455612
-    componentMass: 13.57174
+      healthCap: 112.35034
+      healthRegen: 4.720602
+      energyCap: 18
+      energyRegen: 3
+      moveSpeed: 10.8
+      turnSpeed: 80
+      gemCap: 58.73728
+      peopleCap: 36.480938
+    componentMass: 8.568384
     lockedInUpgradeTree: 0
-  - chassisId: HyperFalcon_20
-    upgradeTreeShipName: Burstail
-    prefab: {fileID: 8502949886050205693, guid: 22124f0ba44537547bfd80bcdb9bed0f, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: a064e61425923054e8d050a38e48fdb2, type: 3}
+  - chassisId: HyperFalcon_09
+    upgradeTreeShipName: Peakwind
+    prefab: {fileID: 5015609858578011754, guid: 00a4ee30e7d043f409030ebb13180816, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: b2f28ddc039a2d4428dae3d093c24e47, type: 3}
     teamMenuPreviewSprites:
     - variantName: Red
       team: 1
-      sprite: {fileID: 21300000, guid: a064e61425923054e8d050a38e48fdb2, type: 3}
+      sprite: {fileID: 21300000, guid: b2f28ddc039a2d4428dae3d093c24e47, type: 3}
     - variantName: Blue
       team: 2
-      sprite: {fileID: 21300000, guid: 5606817bd2cc0b145882baf2251d3fde, type: 3}
+      sprite: {fileID: 21300000, guid: 5c8306c168efeef42bb9d83b67fb4cf1, type: 3}
     - variantName: Green
       team: 3
-      sprite: {fileID: 21300000, guid: c8213be3edb711e4e8f72fd3f4ae7714, type: 3}
+      sprite: {fileID: 21300000, guid: 55473a7def827af46bc7e4a28eb9166a, type: 3}
     - variantName: Gold
       team: 4
-      sprite: {fileID: 21300000, guid: a485474bef6b9e44da519eca9336ce17, type: 3}
+      sprite: {fileID: 21300000, guid: b223726bd1344024e896c73edf4e1ec3, type: 3}
     - variantName: Purple
       team: 5
-      sprite: {fileID: 21300000, guid: 2ffe0a0732120724eafa9fcff33dcab3, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: a064e61425923054e8d050a38e48fdb2, type: 3}
+      sprite: {fileID: 21300000, guid: 421b7de01ae2303468542727ca0c4393, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: b2f28ddc039a2d4428dae3d093c24e47, type: 3}
     teamTheatricalMenuPreviewSprites:
     - variantName: Red
       team: 1
-      sprite: {fileID: 21300000, guid: a064e61425923054e8d050a38e48fdb2, type: 3}
+      sprite: {fileID: 21300000, guid: b2f28ddc039a2d4428dae3d093c24e47, type: 3}
     - variantName: Blue
       team: 2
-      sprite: {fileID: 21300000, guid: 5606817bd2cc0b145882baf2251d3fde, type: 3}
+      sprite: {fileID: 21300000, guid: 5c8306c168efeef42bb9d83b67fb4cf1, type: 3}
     - variantName: Green
       team: 3
-      sprite: {fileID: 21300000, guid: c8213be3edb711e4e8f72fd3f4ae7714, type: 3}
+      sprite: {fileID: 21300000, guid: 55473a7def827af46bc7e4a28eb9166a, type: 3}
     - variantName: Gold
       team: 4
-      sprite: {fileID: 21300000, guid: a485474bef6b9e44da519eca9336ce17, type: 3}
+      sprite: {fileID: 21300000, guid: b223726bd1344024e896c73edf4e1ec3, type: 3}
     - variantName: Purple
       team: 5
-      sprite: {fileID: 21300000, guid: 2ffe0a0732120724eafa9fcff33dcab3, type: 3}
+      sprite: {fileID: 21300000, guid: 421b7de01ae2303468542727ca0c4393, type: 3}
     minHomePlanetLevel: 3
-    powerScore: 220.33235
-    powerScoreAtMaxLevel: 686.08276
+    powerScore: 271.7664
+    powerScoreAtMaxLevel: 759.72284
     powerScoreBreakdown:
-      offense: 42
-      defense: 57.415356
-      energy: 20.9
-      mobility: 84.157745
-      capacity: 57.800003
-      firePower: 4.5
-      bulletSpeed: 7.5
-      fireRate: 0.75
+      offense: 44.063267
+      defense: 47.04404
+      energy: 69.52065
+      mobility: 107.59046
+      capacity: 49.884254
+      firePower: 4.721064
+      bulletSpeed: 7.8684406
+      fireRate: 0.786844
       sustainedDps: 0
-      rammingPower: 6.75
-      healthCap: 55.10022
-      healthRegen: 2.315135
-      energyCap: 16.5
-      energyRegen: 4.4
-      moveSpeed: 4.0920005
-      turnSpeed: 69.25
-      gemCap: 35.5
-      peopleCap: 22.300001
+      rammingPower: 7.0815964
+      healthCap: 45.147102
+      healthRegen: 1.8969369
+      energyCap: 55.0385
+      energyRegen: 14.482151
+      moveSpeed: 10.984912
+      turnSpeed: 82.74933
+      gemCap: 30.442127
+      peopleCap: 19.442127
     powerScoreBreakdownAtShipLevel:
-      offense: 46.5
-      defense: 144.22652
-      energy: 37.4
-      mobility: 120.23325
-      capacity: 104.4
-      firePower: 6
-      bulletSpeed: 9
-      fireRate: 0.75
+      offense: 48.78433
+      defense: 112.42236
+      energy: 142.08966
+      mobility: 134.21523
+      capacity: 79.326385
+      firePower: 6.294752
+      bulletSpeed: 9.442128
+      fireRate: 0.786844
       sustainedDps: 0
-      rammingPower: 8.25
-      healthCap: 138.41093
-      healthRegen: 5.815583
-      energyCap: 29.7
-      energyRegen: 7.700001
-      moveSpeed: 4.3560004
-      turnSpeed: 102.75
-      gemCap: 64.5
-      peopleCap: 39.9
-    componentMass: 13.286121
+      rammingPower: 8.655284
+      healthCap: 107.889206
+      healthRegen: 4.5331597
+      energyCap: 113.093704
+      energyRegen: 28.995953
+      moveSpeed: 12.146016
+      turnSpeed: 106.569405
+      gemCap: 48.73688
+      peopleCap: 30.589504
+    componentMass: 15.006784
     lockedInUpgradeTree: 0
-  - chassisId: HyperFalcon_04
-    upgradeTreeShipName: Afterburn
-    prefab: {fileID: 5184615716735559179, guid: 5e515ed97c5dd0448a038c848bc9d8a8, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: ab2740508d0abc14386b223374e4ddf6, type: 3}
+  - chassisId: HyperFalcon_09B
+    upgradeTreeShipName: Peakgust
+    prefab: {fileID: 5015609858578011754, guid: 00a4ee30e7d043f409030ebb13180816, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 1bc8b84e223472d4394842fd197174e2, type: 3}
     teamMenuPreviewSprites:
     - variantName: Red
       team: 1
-      sprite: {fileID: 21300000, guid: ab2740508d0abc14386b223374e4ddf6, type: 3}
+      sprite: {fileID: 21300000, guid: 1bc8b84e223472d4394842fd197174e2, type: 3}
     - variantName: Blue
       team: 2
-      sprite: {fileID: 21300000, guid: 3b529ba5025f7174dbc83173b3651ad9, type: 3}
+      sprite: {fileID: 21300000, guid: 1ba58b7492f7f76478ad7b25bcd713d8, type: 3}
     - variantName: Green
       team: 3
-      sprite: {fileID: 21300000, guid: 58e45c603cc94af438718719d2158e5d, type: 3}
+      sprite: {fileID: 21300000, guid: 3e56ca95d8abb534189cedb89c2ffbd1, type: 3}
     - variantName: Gold
       team: 4
-      sprite: {fileID: 21300000, guid: 368ee3d4add676d46a37375ad49607fe, type: 3}
+      sprite: {fileID: 21300000, guid: c625cfeb18ea6c94194898f45a3d685c, type: 3}
     - variantName: Purple
       team: 5
-      sprite: {fileID: 21300000, guid: def0bff2e52a7d542977dd832f795273, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: ab2740508d0abc14386b223374e4ddf6, type: 3}
+      sprite: {fileID: 21300000, guid: 559127dd77cf2de4c8f35258683ab510, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 1bc8b84e223472d4394842fd197174e2, type: 3}
     teamTheatricalMenuPreviewSprites:
     - variantName: Red
       team: 1
-      sprite: {fileID: 21300000, guid: ab2740508d0abc14386b223374e4ddf6, type: 3}
+      sprite: {fileID: 21300000, guid: 1bc8b84e223472d4394842fd197174e2, type: 3}
     - variantName: Blue
       team: 2
-      sprite: {fileID: 21300000, guid: 3b529ba5025f7174dbc83173b3651ad9, type: 3}
+      sprite: {fileID: 21300000, guid: 1ba58b7492f7f76478ad7b25bcd713d8, type: 3}
     - variantName: Green
       team: 3
-      sprite: {fileID: 21300000, guid: 58e45c603cc94af438718719d2158e5d, type: 3}
+      sprite: {fileID: 21300000, guid: 3e56ca95d8abb534189cedb89c2ffbd1, type: 3}
     - variantName: Gold
       team: 4
-      sprite: {fileID: 21300000, guid: 368ee3d4add676d46a37375ad49607fe, type: 3}
+      sprite: {fileID: 21300000, guid: c625cfeb18ea6c94194898f45a3d685c, type: 3}
     - variantName: Purple
       team: 5
-      sprite: {fileID: 21300000, guid: def0bff2e52a7d542977dd832f795273, type: 3}
+      sprite: {fileID: 21300000, guid: 559127dd77cf2de4c8f35258683ab510, type: 3}
     minHomePlanetLevel: 4
-    powerScore: 221.78307
-    powerScoreAtMaxLevel: 720.10455
+    powerScore: 271.7664
+    powerScoreAtMaxLevel: 954.90533
     powerScoreBreakdown:
-      offense: 59
-      defense: 47.82857
-      energy: 21
-      mobility: 84.86391
-      capacity: 62
-      firePower: 7
-      bulletSpeed: 11
-      fireRate: 1
+      offense: 44.063267
+      defense: 47.04404
+      energy: 69.52065
+      mobility: 107.59046
+      capacity: 49.884254
+      firePower: 4.721064
+      bulletSpeed: 7.8684406
+      fireRate: 0.786844
       sustainedDps: 0
-      rammingPower: 10
-      healthCap: 45.9
-      healthRegen: 1.9285715
-      energyCap: 18
-      energyRegen: 3
-      moveSpeed: 10.8
-      turnSpeed: 63.904495
-      gemCap: 38
-      peopleCap: 24
+      rammingPower: 7.0815964
+      healthCap: 45.147102
+      healthRegen: 1.8969369
+      energyCap: 55.0385
+      energyRegen: 14.482151
+      moveSpeed: 10.984912
+      turnSpeed: 82.74933
+      gemCap: 30.442127
+      peopleCap: 19.442127
     powerScoreBreakdownAtShipLevel:
-      offense: 77
-      defense: 144.68143
-      energy: 21
-      mobility: 129.45563
-      capacity: 131
-      firePower: 13
-      bulletSpeed: 17
-      fireRate: 1
+      offense: 51.14486
+      defense: 145.11151
+      energy: 178.37416
+      mobility: 147.5276
+      capacity: 94.04745
+      firePower: 7.0815964
+      bulletSpeed: 10.228972
+      fireRate: 0.786844
       sustainedDps: 0
-      rammingPower: 16
-      healthCap: 138.8475
-      healthRegen: 5.833929
+      rammingPower: 9.442128
+      healthCap: 139.26024
+      healthRegen: 5.8512716
+      energyCap: 142.1213
+      energyRegen: 36.252853
+      moveSpeed: 12.726567
+      turnSpeed: 118.47944
+      gemCap: 57.884254
+      peopleCap: 36.163193
+    componentMass: 15.006784
+    lockedInUpgradeTree: 0
+  - chassisId: HyperFalcon_14
+    upgradeTreeShipName: Voltail
+    prefab: {fileID: 700671235637858216, guid: 9abcb08127d0aa9419be3b369bf695b7, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 873513305777f824e81df19233a8e395, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 873513305777f824e81df19233a8e395, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 0f7aea1673eb63a43b01c760113562ef, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: d804c444e07f35f488af24ff310e35ca, type: 3}
+    - variantName: Gold
+      team: 4
+      sprite: {fileID: 21300000, guid: 63803a91abe492f4f89d9d540f26cad9, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 5ba981744064e4f45b6d870095b9ca14, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 873513305777f824e81df19233a8e395, type: 3}
+    teamTheatricalMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 873513305777f824e81df19233a8e395, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 0f7aea1673eb63a43b01c760113562ef, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: d804c444e07f35f488af24ff310e35ca, type: 3}
+    - variantName: Gold
+      team: 4
+      sprite: {fileID: 21300000, guid: 63803a91abe492f4f89d9d540f26cad9, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 5ba981744064e4f45b6d870095b9ca14, type: 3}
+    minHomePlanetLevel: 4
+    powerScore: 241.0492
+    powerScoreAtMaxLevel: 891.13153
+    powerScoreBreakdown:
+      offense: 39.2
+      defense: 54.72386
+      energy: 21
+      mobility: 114.74951
+      capacity: 53.800003
+      firePower: 4.2
+      bulletSpeed: 6.9999995
+      fireRate: 0.7
+      sustainedDps: 0
+      rammingPower: 6.2999997
+      healthCap: 52.517254
+      healthRegen: 2.2066073
       energyCap: 18
       energyRegen: 3
       moveSpeed: 10.8
-      turnSpeed: 105.61798
-      gemCap: 83
-      peopleCap: 48
-    componentMass: 8.780899
+      turnSpeed: 90.785324
+      gemCap: 33.4
+      peopleCap: 20.4
+    powerScoreBreakdownAtShipLevel:
+      offense: 45.5
+      defense: 177.28458
+      energy: 21
+      mobility: 213.47807
+      capacity: 114.4
+      firePower: 6.3
+      bulletSpeed: 9.099999
+      fireRate: 0.7
+      sustainedDps: 0
+      rammingPower: 8.4
+      healthCap: 170.136
+      healthRegen: 7.148572
+      energyCap: 18
+      energyRegen: 3
+      moveSpeed: 10.8
+      turnSpeed: 183.14133
+      gemCap: 71.8
+      peopleCap: 42.6
+    componentMass: 14.957066
     lockedInUpgradeTree: 0
   - chassisId: HyperFalcon_15
     upgradeTreeShipName: Foldwing
@@ -1573,325 +1653,85 @@ MonoBehaviour:
       peopleCap: 42.55443
     componentMass: 14.0440035
     lockedInUpgradeTree: 0
-  - chassisId: HyperFalcon_01
-    upgradeTreeShipName: Rush
-    prefab: {fileID: 8437679288721851717, guid: 68c9e5c8d8ab9bb478eaf0571ee10961, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 62ac953ce481786489067fcc5228479c, type: 3}
+  - chassisId: HyperFalcon_04
+    upgradeTreeShipName: Afterburn
+    prefab: {fileID: 5184615716735559179, guid: 5e515ed97c5dd0448a038c848bc9d8a8, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: ab2740508d0abc14386b223374e4ddf6, type: 3}
     teamMenuPreviewSprites:
     - variantName: Red
       team: 1
-      sprite: {fileID: 21300000, guid: 62ac953ce481786489067fcc5228479c, type: 3}
+      sprite: {fileID: 21300000, guid: ab2740508d0abc14386b223374e4ddf6, type: 3}
     - variantName: Blue
       team: 2
-      sprite: {fileID: 21300000, guid: 789e4944d35c16547b62a7097f89e2e5, type: 3}
+      sprite: {fileID: 21300000, guid: 3b529ba5025f7174dbc83173b3651ad9, type: 3}
     - variantName: Green
       team: 3
-      sprite: {fileID: 21300000, guid: 10f0ed5bcc59a0347b84b3ad4e5040b9, type: 3}
+      sprite: {fileID: 21300000, guid: 58e45c603cc94af438718719d2158e5d, type: 3}
     - variantName: Gold
       team: 4
-      sprite: {fileID: 21300000, guid: 4d5381afbfa74294dbda3949baa1cc00, type: 3}
+      sprite: {fileID: 21300000, guid: 368ee3d4add676d46a37375ad49607fe, type: 3}
     - variantName: Purple
       team: 5
-      sprite: {fileID: 21300000, guid: f3a1bdbd63e876a44b1cc23cadee12ec, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 62ac953ce481786489067fcc5228479c, type: 3}
+      sprite: {fileID: 21300000, guid: def0bff2e52a7d542977dd832f795273, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: ab2740508d0abc14386b223374e4ddf6, type: 3}
     teamTheatricalMenuPreviewSprites:
     - variantName: Red
       team: 1
-      sprite: {fileID: 21300000, guid: 62ac953ce481786489067fcc5228479c, type: 3}
+      sprite: {fileID: 21300000, guid: ab2740508d0abc14386b223374e4ddf6, type: 3}
     - variantName: Blue
       team: 2
-      sprite: {fileID: 21300000, guid: 789e4944d35c16547b62a7097f89e2e5, type: 3}
+      sprite: {fileID: 21300000, guid: 3b529ba5025f7174dbc83173b3651ad9, type: 3}
     - variantName: Green
       team: 3
-      sprite: {fileID: 21300000, guid: 10f0ed5bcc59a0347b84b3ad4e5040b9, type: 3}
+      sprite: {fileID: 21300000, guid: 58e45c603cc94af438718719d2158e5d, type: 3}
     - variantName: Gold
       team: 4
-      sprite: {fileID: 21300000, guid: 4d5381afbfa74294dbda3949baa1cc00, type: 3}
+      sprite: {fileID: 21300000, guid: 368ee3d4add676d46a37375ad49607fe, type: 3}
     - variantName: Purple
       team: 5
-      sprite: {fileID: 21300000, guid: f3a1bdbd63e876a44b1cc23cadee12ec, type: 3}
-    minHomePlanetLevel: 4
-    powerScore: 222.39998
-    powerScoreAtMaxLevel: 734.62146
-    powerScoreBreakdown:
-      offense: 56
-      defense: 45.099174
-      energy: 42.598587
-      mobility: 90.803665
-      capacity: 38.47856
-      firePower: 6
-      bulletSpeed: 10
-      fireRate: 1
-      sustainedDps: 0
-      rammingPower: 9
-      healthCap: 43.28066
-      healthRegen: 1.8185151
-      energyCap: 33.5202
-      energyRegen: 9.078387
-      moveSpeed: 10.223661
-      turnSpeed: 70
-      gemCap: 22.22016
-      peopleCap: 16.2584
-    powerScoreBreakdownAtShipLevel:
-      offense: 65
-      defense: 141.02957
-      energy: 74.02377
-      mobility: 155.44646
-      capacity: 64.14368
-      firePower: 9
-      bulletSpeed: 13
-      fireRate: 1
-      sustainedDps: 0
-      rammingPower: 12
-      healthCap: 135.3429
-      healthRegen: 5.6866755
-      energyCap: 58.660347
-      energyRegen: 15.363424
-      moveSpeed: 10.726464
-      turnSpeed: 130
-      gemCap: 39.33024
-      peopleCap: 24.81344
-    componentMass: 15.006214
-    lockedInUpgradeTree: 0
-  - chassisId: HyperFalcon_12
-    upgradeTreeShipName: Ionstoop
-    prefab: {fileID: 9077878636187395866, guid: a7302d48dd7b919409408bb4a28e5215, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 2b77954e0e361dd48998cef0fddf4776, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: 2b77954e0e361dd48998cef0fddf4776, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: d338184c9e5e4b445987f25f02a48592, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: e1209128ca5b7b843ba0c11712b47225, type: 3}
-    - variantName: Gold
-      team: 4
-      sprite: {fileID: 21300000, guid: 4f2d972abfcff17419a4482b08fe89ba, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: af671e0985ee13a43b8053977dea693f, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 2b77954e0e361dd48998cef0fddf4776, type: 3}
-    teamTheatricalMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: 2b77954e0e361dd48998cef0fddf4776, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: d338184c9e5e4b445987f25f02a48592, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: e1209128ca5b7b843ba0c11712b47225, type: 3}
-    - variantName: Gold
-      team: 4
-      sprite: {fileID: 21300000, guid: 4f2d972abfcff17419a4482b08fe89ba, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: af671e0985ee13a43b8053977dea693f, type: 3}
+      sprite: {fileID: 21300000, guid: def0bff2e52a7d542977dd832f795273, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 242.57274
-    powerScoreAtMaxLevel: 1087.0289
+    powerScore: 221.78307
+    powerScoreAtMaxLevel: 862.4821
     powerScoreBreakdown:
-      offense: 56
-      defense: 56.601734
-      energy: 38
-      mobility: 81.10465
-      capacity: 61
-      firePower: 6
-      bulletSpeed: 10
+      offense: 59
+      defense: 47.82857
+      energy: 21
+      mobility: 84.86391
+      capacity: 62
+      firePower: 7
+      bulletSpeed: 11
       fireRate: 1
       sustainedDps: 0
-      rammingPower: 9
-      healthCap: 54.319405
-      healthRegen: 2.2823281
-      energyCap: 30
-      energyRegen: 8
-      moveSpeed: 7.44
-      turnSpeed: 63.53101
-      gemCap: 37
+      rammingPower: 10
+      healthCap: 45.9
+      healthRegen: 1.9285715
+      energyCap: 18
+      energyRegen: 3
+      moveSpeed: 10.8
+      turnSpeed: 63.904495
+      gemCap: 38
       peopleCap: 24
     powerScoreBreakdownAtShipLevel:
-      offense: 68
-      defense: 220.83154
-      energy: 98
-      mobility: 139.92325
-      capacity: 149
-      firePower: 10
-      bulletSpeed: 14
+      offense: 83
+      defense: 176.96573
+      energy: 21
+      mobility: 144.31952
+      capacity: 154
+      firePower: 15
+      bulletSpeed: 19
       fireRate: 1
       sustainedDps: 0
-      rammingPower: 13
-      healthCap: 211.92705
-      healthRegen: 8.904497
-      energyCap: 78
-      energyRegen: 20
-      moveSpeed: 8.400001
-      turnSpeed: 117.65505
-      gemCap: 93
+      rammingPower: 18
+      healthCap: 169.83002
+      healthRegen: 7.135714
+      energyCap: 18
+      energyRegen: 3
+      moveSpeed: 10.8
+      turnSpeed: 119.52248
+      gemCap: 98
       peopleCap: 56
-    componentMass: 13.279276
-    lockedInUpgradeTree: 0
-  - chassisId: HyperFalcon_14
-    upgradeTreeShipName: Voltail
-    prefab: {fileID: 700671235637858216, guid: 9abcb08127d0aa9419be3b369bf695b7, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 873513305777f824e81df19233a8e395, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: 873513305777f824e81df19233a8e395, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: 0f7aea1673eb63a43b01c760113562ef, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: d804c444e07f35f488af24ff310e35ca, type: 3}
-    - variantName: Gold
-      team: 4
-      sprite: {fileID: 21300000, guid: 63803a91abe492f4f89d9d540f26cad9, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: 5ba981744064e4f45b6d870095b9ca14, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 873513305777f824e81df19233a8e395, type: 3}
-    teamTheatricalMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: 873513305777f824e81df19233a8e395, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: 0f7aea1673eb63a43b01c760113562ef, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: d804c444e07f35f488af24ff310e35ca, type: 3}
-    - variantName: Gold
-      team: 4
-      sprite: {fileID: 21300000, guid: 63803a91abe492f4f89d9d540f26cad9, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: 5ba981744064e4f45b6d870095b9ca14, type: 3}
-    minHomePlanetLevel: 5
-    powerScore: 241.0492
-    powerScoreAtMaxLevel: 1076.2092
-    powerScoreBreakdown:
-      offense: 39.2
-      defense: 54.72386
-      energy: 21
-      mobility: 114.74951
-      capacity: 53.800003
-      firePower: 4.2
-      bulletSpeed: 6.9999995
-      fireRate: 0.7
-      sustainedDps: 0
-      rammingPower: 6.2999997
-      healthCap: 52.517254
-      healthRegen: 2.2066073
-      energyCap: 18
-      energyRegen: 3
-      moveSpeed: 10.8
-      turnSpeed: 90.785324
-      gemCap: 33.4
-      peopleCap: 20.4
-    powerScoreBreakdownAtShipLevel:
-      offense: 47.6
-      defense: 218.13815
-      energy: 21
-      mobility: 246.38757
-      capacity: 134.6
-      firePower: 7
-      bulletSpeed: 9.799999
-      fireRate: 0.7
-      sustainedDps: 0
-      rammingPower: 9.099999
-      healthCap: 209.34225
-      healthRegen: 8.795893
-      energyCap: 18
-      energyRegen: 3
-      moveSpeed: 10.8
-      turnSpeed: 213.92664
-      gemCap: 84.6
-      peopleCap: 50
-    componentMass: 14.957066
-    lockedInUpgradeTree: 0
-  - chassisId: HyperFalcon_13
-    upgradeTreeShipName: Pulse
-    prefab: {fileID: 4919701350902243033, guid: 761c8ba191d9b9941bad5ff458918bf2, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: e03900fea32c7a545a34eba6d5a32f10, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: e03900fea32c7a545a34eba6d5a32f10, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: 6764b62ca095e3b4a811dc92be758579, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: 89d9280c931f7b44b8e0f6e115b172c4, type: 3}
-    - variantName: Gold
-      team: 4
-      sprite: {fileID: 21300000, guid: 4ade3900f99b77f4a9ee02f3a93c1146, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: 0e06eae78d759814b8d61fbc4c40c842, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: e03900fea32c7a545a34eba6d5a32f10, type: 3}
-    teamTheatricalMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: e03900fea32c7a545a34eba6d5a32f10, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: 6764b62ca095e3b4a811dc92be758579, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: 89d9280c931f7b44b8e0f6e115b172c4, type: 3}
-    - variantName: Gold
-      team: 4
-      sprite: {fileID: 21300000, guid: 4ade3900f99b77f4a9ee02f3a93c1146, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: 0e06eae78d759814b8d61fbc4c40c842, type: 3}
-    minHomePlanetLevel: 5
-    powerScore: 240.0747
-    powerScoreAtMaxLevel: 1131.8635
-    powerScoreBreakdown:
-      offense: 25.199999
-      defense: 58.669716
-      energy: 38
-      mobility: 104.711
-      capacity: 46.25
-      firePower: 2.7
-      bulletSpeed: 4.4999995
-      fireRate: 0.45
-      sustainedDps: 0
-      rammingPower: 4.0499997
-      healthCap: 56.304
-      healthRegen: 2.3657146
-      energyCap: 30
-      energyRegen: 8
-      moveSpeed: 7.44
-      turnSpeed: 84
-      gemCap: 29.35
-      peopleCap: 16.9
-    powerScoreBreakdownAtShipLevel:
-      offense: 30.6
-      defense: 242.65028
-      energy: 98
-      mobility: 186.915
-      capacity: 119.05
-      firePower: 4.5
-      bulletSpeed: 6.2999997
-      fireRate: 0.45
-      sustainedDps: 0
-      rammingPower: 5.85
-      healthCap: 232.866
-      healthRegen: 9.7842865
-      energyCap: 78
-      energyRegen: 20
-      moveSpeed: 8.400001
-      turnSpeed: 160
-      gemCap: 75.35
-      peopleCap: 43.7
-    componentMass: 16.85
+    componentMass: 8.780899
     lockedInUpgradeTree: 0
   - chassisId: HyperFalcon_08
     upgradeTreeShipName: Leapstoop
@@ -1973,325 +1813,405 @@ MonoBehaviour:
       peopleCap: 39.89457
     componentMass: 16.49111
     lockedInUpgradeTree: 0
-  - chassisId: HyperFalcon_10
-    upgradeTreeShipName: Peak
-    prefab: {fileID: 8276186623104467166, guid: 92e6d3b8e03026a45b2cc4f17dcd9d53, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: ba6c3ed8f2d97874e83765039e21ea79, type: 3}
+  - chassisId: HyperFalcon_20
+    upgradeTreeShipName: Burstail
+    prefab: {fileID: 8502949886050205693, guid: 22124f0ba44537547bfd80bcdb9bed0f, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: a064e61425923054e8d050a38e48fdb2, type: 3}
     teamMenuPreviewSprites:
     - variantName: Red
       team: 1
-      sprite: {fileID: 21300000, guid: ba6c3ed8f2d97874e83765039e21ea79, type: 3}
+      sprite: {fileID: 21300000, guid: a064e61425923054e8d050a38e48fdb2, type: 3}
     - variantName: Blue
       team: 2
-      sprite: {fileID: 21300000, guid: 02fc6179ec1ad9547bf2fb95a25642b1, type: 3}
+      sprite: {fileID: 21300000, guid: 5606817bd2cc0b145882baf2251d3fde, type: 3}
     - variantName: Green
       team: 3
-      sprite: {fileID: 21300000, guid: cf9ecfce7614e6d4ca8d594019096aa0, type: 3}
+      sprite: {fileID: 21300000, guid: c8213be3edb711e4e8f72fd3f4ae7714, type: 3}
     - variantName: Gold
       team: 4
-      sprite: {fileID: 21300000, guid: 76e0b4f4455b3524bb18db6cc1cfe072, type: 3}
+      sprite: {fileID: 21300000, guid: a485474bef6b9e44da519eca9336ce17, type: 3}
     - variantName: Purple
       team: 5
-      sprite: {fileID: 21300000, guid: d61fede143a78d64a9ddf8b670ccfc6c, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: ba6c3ed8f2d97874e83765039e21ea79, type: 3}
+      sprite: {fileID: 21300000, guid: 2ffe0a0732120724eafa9fcff33dcab3, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: a064e61425923054e8d050a38e48fdb2, type: 3}
     teamTheatricalMenuPreviewSprites:
     - variantName: Red
       team: 1
-      sprite: {fileID: 21300000, guid: ba6c3ed8f2d97874e83765039e21ea79, type: 3}
+      sprite: {fileID: 21300000, guid: a064e61425923054e8d050a38e48fdb2, type: 3}
     - variantName: Blue
       team: 2
-      sprite: {fileID: 21300000, guid: 02fc6179ec1ad9547bf2fb95a25642b1, type: 3}
+      sprite: {fileID: 21300000, guid: 5606817bd2cc0b145882baf2251d3fde, type: 3}
     - variantName: Green
       team: 3
-      sprite: {fileID: 21300000, guid: cf9ecfce7614e6d4ca8d594019096aa0, type: 3}
+      sprite: {fileID: 21300000, guid: c8213be3edb711e4e8f72fd3f4ae7714, type: 3}
     - variantName: Gold
       team: 4
-      sprite: {fileID: 21300000, guid: 76e0b4f4455b3524bb18db6cc1cfe072, type: 3}
+      sprite: {fileID: 21300000, guid: a485474bef6b9e44da519eca9336ce17, type: 3}
     - variantName: Purple
       team: 5
-      sprite: {fileID: 21300000, guid: d61fede143a78d64a9ddf8b670ccfc6c, type: 3}
+      sprite: {fileID: 21300000, guid: 2ffe0a0732120724eafa9fcff33dcab3, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 247.44305
-    powerScoreAtMaxLevel: 1012.7825
+    powerScore: 220.33235
+    powerScoreAtMaxLevel: 1058.683
+    powerScoreBreakdown:
+      offense: 42
+      defense: 57.415356
+      energy: 20.9
+      mobility: 84.157745
+      capacity: 57.800003
+      firePower: 4.5
+      bulletSpeed: 7.5
+      fireRate: 0.75
+      sustainedDps: 0
+      rammingPower: 6.75
+      healthCap: 55.10022
+      healthRegen: 2.315135
+      energyCap: 16.5
+      energyRegen: 4.4
+      moveSpeed: 4.0920005
+      turnSpeed: 69.25
+      gemCap: 35.5
+      peopleCap: 22.300001
+    powerScoreBreakdownAtShipLevel:
+      offense: 51
+      defense: 231.03764
+      energy: 53.9
+      mobility: 156.30875
+      capacity: 151
+      firePower: 7.5
+      bulletSpeed: 10.5
+      fireRate: 0.75
+      sustainedDps: 0
+      rammingPower: 9.75
+      healthCap: 221.7216
+      healthRegen: 9.316033
+      energyCap: 42.9
+      energyRegen: 11
+      moveSpeed: 4.620001
+      turnSpeed: 136.25
+      gemCap: 93.5
+      peopleCap: 57.5
+    componentMass: 13.286121
+    lockedInUpgradeTree: 0
+  - chassisId: HyperFalcon_12
+    upgradeTreeShipName: Ionstoop
+    prefab: {fileID: 9077878636187395866, guid: a7302d48dd7b919409408bb4a28e5215, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 2b77954e0e361dd48998cef0fddf4776, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 2b77954e0e361dd48998cef0fddf4776, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: d338184c9e5e4b445987f25f02a48592, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: e1209128ca5b7b843ba0c11712b47225, type: 3}
+    - variantName: Gold
+      team: 4
+      sprite: {fileID: 21300000, guid: 4f2d972abfcff17419a4482b08fe89ba, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: af671e0985ee13a43b8053977dea693f, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 2b77954e0e361dd48998cef0fddf4776, type: 3}
+    teamTheatricalMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 2b77954e0e361dd48998cef0fddf4776, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: d338184c9e5e4b445987f25f02a48592, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: e1209128ca5b7b843ba0c11712b47225, type: 3}
+    - variantName: Gold
+      team: 4
+      sprite: {fileID: 21300000, guid: 4f2d972abfcff17419a4482b08fe89ba, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: af671e0985ee13a43b8053977dea693f, type: 3}
+    minHomePlanetLevel: 5
+    powerScore: 242.57274
+    powerScoreAtMaxLevel: 1087.0289
     powerScoreBreakdown:
       offense: 56
-      defense: 42.407997
+      defense: 56.601734
       energy: 38
-      mobility: 120.38285
-      capacity: 45.7
+      mobility: 81.10465
+      capacity: 61
       firePower: 6
       bulletSpeed: 10
       fireRate: 1
       sustainedDps: 0
       rammingPower: 9
-      healthCap: 40.697998
-      healthRegen: 1.7100002
+      healthCap: 54.319405
+      healthRegen: 2.2823281
       energyCap: 30
       energyRegen: 8
       moveSpeed: 7.44
-      turnSpeed: 97.89506
-      gemCap: 26.7
-      peopleCap: 19
+      turnSpeed: 63.53101
+      gemCap: 37
+      peopleCap: 24
     powerScoreBreakdownAtShipLevel:
       offense: 68
-      defense: 158.47202
+      defense: 220.83154
       energy: 98
-      mobility: 231.58542
-      capacity: 97.7
+      mobility: 139.92325
+      capacity: 149
       firePower: 10
       bulletSpeed: 14
       fireRate: 1
       sustainedDps: 0
       rammingPower: 13
-      healthCap: 152.08202
-      healthRegen: 6.3900003
+      healthCap: 211.92705
+      healthRegen: 8.904497
       energyCap: 78
       energyRegen: 20
       moveSpeed: 8.400001
-      turnSpeed: 201.02188
-      gemCap: 59.5
-      peopleCap: 38.2
-    componentMass: 14.356342
+      turnSpeed: 117.65505
+      gemCap: 93
+      peopleCap: 56
+    componentMass: 13.279276
     lockedInUpgradeTree: 0
-  - chassisId: HyperFalcon_17
-    upgradeTreeShipName: Gustail
-    prefab: {fileID: 5252824973556345277, guid: 86580f845bd6fe540b09fe334cf23400, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 871c1440c212dec4f9e187eaa576d248, type: 3}
+  - chassisId: HyperFalcon_13
+    upgradeTreeShipName: Pulse
+    prefab: {fileID: 4919701350902243033, guid: 761c8ba191d9b9941bad5ff458918bf2, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: e03900fea32c7a545a34eba6d5a32f10, type: 3}
     teamMenuPreviewSprites:
     - variantName: Red
       team: 1
-      sprite: {fileID: 21300000, guid: 871c1440c212dec4f9e187eaa576d248, type: 3}
+      sprite: {fileID: 21300000, guid: e03900fea32c7a545a34eba6d5a32f10, type: 3}
     - variantName: Blue
       team: 2
-      sprite: {fileID: 21300000, guid: 12839c19dfae7e145857ef900be780ae, type: 3}
+      sprite: {fileID: 21300000, guid: 6764b62ca095e3b4a811dc92be758579, type: 3}
     - variantName: Green
       team: 3
-      sprite: {fileID: 21300000, guid: 45425cebd4c78ce4498bbc25cb4584fe, type: 3}
+      sprite: {fileID: 21300000, guid: 89d9280c931f7b44b8e0f6e115b172c4, type: 3}
     - variantName: Gold
       team: 4
-      sprite: {fileID: 21300000, guid: 0ef004436357a2749868a214a1a7756c, type: 3}
+      sprite: {fileID: 21300000, guid: 4ade3900f99b77f4a9ee02f3a93c1146, type: 3}
     - variantName: Purple
       team: 5
-      sprite: {fileID: 21300000, guid: fd11f932d86c1a748b5bcbe9a39dc723, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 871c1440c212dec4f9e187eaa576d248, type: 3}
+      sprite: {fileID: 21300000, guid: 0e06eae78d759814b8d61fbc4c40c842, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: e03900fea32c7a545a34eba6d5a32f10, type: 3}
     teamTheatricalMenuPreviewSprites:
     - variantName: Red
       team: 1
-      sprite: {fileID: 21300000, guid: 871c1440c212dec4f9e187eaa576d248, type: 3}
+      sprite: {fileID: 21300000, guid: e03900fea32c7a545a34eba6d5a32f10, type: 3}
     - variantName: Blue
       team: 2
-      sprite: {fileID: 21300000, guid: 12839c19dfae7e145857ef900be780ae, type: 3}
+      sprite: {fileID: 21300000, guid: 6764b62ca095e3b4a811dc92be758579, type: 3}
     - variantName: Green
       team: 3
-      sprite: {fileID: 21300000, guid: 45425cebd4c78ce4498bbc25cb4584fe, type: 3}
+      sprite: {fileID: 21300000, guid: 89d9280c931f7b44b8e0f6e115b172c4, type: 3}
     - variantName: Gold
       team: 4
-      sprite: {fileID: 21300000, guid: 0ef004436357a2749868a214a1a7756c, type: 3}
+      sprite: {fileID: 21300000, guid: 4ade3900f99b77f4a9ee02f3a93c1146, type: 3}
     - variantName: Purple
       team: 5
-      sprite: {fileID: 21300000, guid: fd11f932d86c1a748b5bcbe9a39dc723, type: 3}
-    minHomePlanetLevel: 6
-    powerScore: 291.48602
-    powerScoreAtMaxLevel: 1811.9991
+      sprite: {fileID: 21300000, guid: 0e06eae78d759814b8d61fbc4c40c842, type: 3}
+    minHomePlanetLevel: 5
+    powerScore: 240.0747
+    powerScoreAtMaxLevel: 1131.8635
     powerScoreBreakdown:
-      offense: 95.2
-      defense: 86.97892
-      energy: 20.9
-      mobility: 80.22332
-      capacity: 89.94522
-      firePower: 10.2
-      bulletSpeed: 17
-      fireRate: 1.7
+      offense: 25.199999
+      defense: 58.669716
+      energy: 38
+      mobility: 104.711
+      capacity: 46.25
+      firePower: 2.7
+      bulletSpeed: 4.4999995
+      fireRate: 0.45
       sustainedDps: 0
-      rammingPower: 15.3
-      healthCap: 83.4717
-      healthRegen: 3.507214
-      energyCap: 16.5
-      energyRegen: 4.4
-      moveSpeed: 4.0920005
-      turnSpeed: 66.10741
-      gemCap: 53.052658
-      peopleCap: 36.892563
+      rammingPower: 4.0499997
+      healthCap: 56.304
+      healthRegen: 2.3657146
+      energyCap: 30
+      energyRegen: 8
+      moveSpeed: 7.44
+      turnSpeed: 84
+      gemCap: 29.35
+      peopleCap: 16.9
     powerScoreBreakdownAtShipLevel:
-      offense: 120.700005
-      defense: 426.13745
-      energy: 62.15
-      mobility: 180.33992
-      capacity: 286.107
-      firePower: 18.7
-      bulletSpeed: 25.5
-      fireRate: 1.7
+      offense: 30.6
+      defense: 242.65028
+      energy: 98
+      mobility: 186.915
+      capacity: 119.05
+      firePower: 4.5
+      bulletSpeed: 6.2999997
+      fireRate: 0.45
       sustainedDps: 0
-      rammingPower: 23.800001
-      healthCap: 408.9545
-      healthRegen: 17.18296
-      energyCap: 49.5
-      energyRegen: 12.650001
-      moveSpeed: 4.7520003
-      turnSpeed: 159.14445
-      gemCap: 178.48428
-      peopleCap: 107.6227
-    componentMass: 18.061779
+      rammingPower: 5.85
+      healthCap: 232.866
+      healthRegen: 9.7842865
+      energyCap: 78
+      energyRegen: 20
+      moveSpeed: 8.400001
+      turnSpeed: 160
+      gemCap: 75.35
+      peopleCap: 43.7
+    componentMass: 16.85
     lockedInUpgradeTree: 0
-  - chassisId: HyperFalcon_19
-    upgradeTreeShipName: Bolt
-    prefab: {fileID: 1344076883211271124, guid: 53f75bca70c86c14282f84bdc6b3f1ab, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 1b0ac585ffb09634982d3cb900525d45, type: 3}
+  - chassisId: HyperFalcon_07
+    upgradeTreeShipName: Swoop
+    prefab: {fileID: 3571592331501742404, guid: b4d69c4f9c3d162448102b7fb3a96fbf, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 3d3cca10f31017543b74671efa13d10e, type: 3}
     teamMenuPreviewSprites:
     - variantName: Red
       team: 1
-      sprite: {fileID: 21300000, guid: 1b0ac585ffb09634982d3cb900525d45, type: 3}
+      sprite: {fileID: 21300000, guid: 3d3cca10f31017543b74671efa13d10e, type: 3}
     - variantName: Blue
       team: 2
-      sprite: {fileID: 21300000, guid: db5b4e6f14056dd4ab51614d209d10e2, type: 3}
+      sprite: {fileID: 21300000, guid: 829dfd2beb41af44fbda67e8f2eb5ca1, type: 3}
     - variantName: Green
       team: 3
-      sprite: {fileID: 21300000, guid: 2de2c6e295f09ce4fbe572392e2589c2, type: 3}
+      sprite: {fileID: 21300000, guid: 96c7a04e267c4f940ba7e09154fcac4f, type: 3}
     - variantName: Gold
       team: 4
-      sprite: {fileID: 21300000, guid: 74c96418a6809094aaaf72a0ecb3c936, type: 3}
+      sprite: {fileID: 21300000, guid: 75f85ee748c343e46a7a7084313ec591, type: 3}
     - variantName: Purple
       team: 5
-      sprite: {fileID: 21300000, guid: 152456564f58c3746805a3bb5d297771, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 1b0ac585ffb09634982d3cb900525d45, type: 3}
+      sprite: {fileID: 21300000, guid: 88f31c8e7806c664e98c857131c532e9, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 3d3cca10f31017543b74671efa13d10e, type: 3}
     teamTheatricalMenuPreviewSprites:
     - variantName: Red
       team: 1
-      sprite: {fileID: 21300000, guid: 1b0ac585ffb09634982d3cb900525d45, type: 3}
+      sprite: {fileID: 21300000, guid: 3d3cca10f31017543b74671efa13d10e, type: 3}
     - variantName: Blue
       team: 2
-      sprite: {fileID: 21300000, guid: db5b4e6f14056dd4ab51614d209d10e2, type: 3}
+      sprite: {fileID: 21300000, guid: 829dfd2beb41af44fbda67e8f2eb5ca1, type: 3}
     - variantName: Green
       team: 3
-      sprite: {fileID: 21300000, guid: 2de2c6e295f09ce4fbe572392e2589c2, type: 3}
+      sprite: {fileID: 21300000, guid: 96c7a04e267c4f940ba7e09154fcac4f, type: 3}
     - variantName: Gold
       team: 4
-      sprite: {fileID: 21300000, guid: 74c96418a6809094aaaf72a0ecb3c936, type: 3}
+      sprite: {fileID: 21300000, guid: 75f85ee748c343e46a7a7084313ec591, type: 3}
     - variantName: Purple
       team: 5
-      sprite: {fileID: 21300000, guid: 152456564f58c3746805a3bb5d297771, type: 3}
+      sprite: {fileID: 21300000, guid: 88f31c8e7806c664e98c857131c532e9, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 308.2706
-    powerScoreAtMaxLevel: 1915.5823
+    powerScore: 211.11752
+    powerScoreAtMaxLevel: 1046.0391
+    powerScoreBreakdown:
+      offense: 62.995773
+      defense: 50.37218
+      energy: 30.5
+      mobility: 51.6892
+      capacity: 65.39228
+      firePower: 7.4740753
+      bulletSpeed: 11.744975
+      fireRate: 1.067725
+      sustainedDps: 0
+      rammingPower: 10.67725
+      healthCap: 48.341045
+      healthRegen: 2.031136
+      energyCap: 24
+      energyRegen: 6.5
+      moveSpeed: 7.32
+      turnSpeed: 37.807827
+      gemCap: 39.657288
+      peopleCap: 25.734995
+    powerScoreBreakdownAtShipLevel:
+      offense: 95.02752
+      defense: 226.65282
+      energy: 68
+      mobility: 70.66037
+      capacity: 191.25844
+      firePower: 18.151323
+      bulletSpeed: 22.422224
+      fireRate: 1.067725
+      sustainedDps: 0
+      rammingPower: 21.354498
+      healthCap: 217.5136
+      healthRegen: 9.139226
+      energyCap: 54
+      energyRegen: 14
+      moveSpeed: 7.92
+      turnSpeed: 54.993202
+      gemCap: 120.234726
+      peopleCap: 71.02371
+    componentMass: 8.258868
+    lockedInUpgradeTree: 0
+  - chassisId: HyperFalcon_11
+    upgradeTreeShipName: Flashdive
+    prefab: {fileID: 6227767746155620266, guid: 7a68d04ea37628a4881aabbeacc2a513, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 51a7d8a8b6bd07b44b3d196f05631bce, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 51a7d8a8b6bd07b44b3d196f05631bce, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: a2edb2c759c61c64b856796a76b71945, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 9341b46af481f9441b9ae2416336fcea, type: 3}
+    - variantName: Gold
+      team: 4
+      sprite: {fileID: 21300000, guid: 7ffae2c6de316cc40830927d99c29f3d, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 7db27f705e1f52742acbc61087c07184, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 51a7d8a8b6bd07b44b3d196f05631bce, type: 3}
+    teamTheatricalMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 51a7d8a8b6bd07b44b3d196f05631bce, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: a2edb2c759c61c64b856796a76b71945, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 9341b46af481f9441b9ae2416336fcea, type: 3}
+    - variantName: Gold
+      team: 4
+      sprite: {fileID: 21300000, guid: 7ffae2c6de316cc40830927d99c29f3d, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 7db27f705e1f52742acbc61087c07184, type: 3}
+    minHomePlanetLevel: 6
+    powerScore: 221.56299
+    powerScoreAtMaxLevel: 1243.6187
     powerScoreBreakdown:
       offense: 56
-      defense: 82.28357
-      energy: 38
-      mobility: 113.41329
-      capacity: 72.23506
+      defense: 67.33379
+      energy: 24.570004
+      mobility: 57.192497
+      capacity: 64.21301
       firePower: 6
       bulletSpeed: 10
       fireRate: 1
       sustainedDps: 0
       rammingPower: 9
-      healthCap: 78.96568
-      healthRegen: 3.3178852
-      energyCap: 30
-      energyRegen: 8
-      moveSpeed: 7.44
-      turnSpeed: 92.31196
-      gemCap: 43.741035
-      peopleCap: 28.494022
+      healthCap: 64.61872
+      healthRegen: 2.7150717
+      energyCap: 19.397371
+      energyRegen: 5.172632
+      moveSpeed: 4.8105483
+      turnSpeed: 44.635635
+      gemCap: 38.727806
+      peopleCap: 25.485203
     powerScoreBreakdownAtShipLevel:
       offense: 71
-      defense: 415.98
-      energy: 113
-      mobility: 269.10995
-      capacity: 238.41034
+      defense: 326.28128
+      energy: 73.06343
+      mobility: 79.65725
+      capacity: 190.27806
       firePower: 11
       bulletSpeed: 15
       fireRate: 1
       sustainedDps: 0
       rammingPower: 14
-      healthCap: 399.20663
-      healthRegen: 16.773386
-      energyCap: 90
-      energyRegen: 23
-      moveSpeed: 8.64
-      turnSpeed: 236.83644
-      gemCap: 147.44621
-      peopleCap: 90.964134
-    componentMass: 22.027992
-    lockedInUpgradeTree: 0
-  - chassisId: HyperFalcon_16
-    upgradeTreeShipName: Plungewind
-    prefab: {fileID: 3220722000867962959, guid: ce7b91020bbc0454e928d6b346b92ce5, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 38a6c1df1c6a7dd458086f50c944c3f5, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: 38a6c1df1c6a7dd458086f50c944c3f5, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: 37e55dc98152ace4a8c1c4050b66259f, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: ef743b6d0bfcf7c4d8329fb2fb1bc2db, type: 3}
-    - variantName: Gold
-      team: 4
-      sprite: {fileID: 21300000, guid: 90b62fa4523479841bc41ac2bac2b581, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: 83ff29d3623b65b498f7eb5f373d65c2, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 38a6c1df1c6a7dd458086f50c944c3f5, type: 3}
-    teamTheatricalMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: 38a6c1df1c6a7dd458086f50c944c3f5, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: 37e55dc98152ace4a8c1c4050b66259f, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: ef743b6d0bfcf7c4d8329fb2fb1bc2db, type: 3}
-    - variantName: Gold
-      team: 4
-      sprite: {fileID: 21300000, guid: 90b62fa4523479841bc41ac2bac2b581, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: 83ff29d3623b65b498f7eb5f373d65c2, type: 3}
-    minHomePlanetLevel: 6
-    powerScore: 271.4724
-    powerScoreAtMaxLevel: 1646.9417
-    powerScoreBreakdown:
-      offense: 47.6
-      defense: 68.23543
-      energy: 30.4
-      mobility: 107.725746
-      capacity: 65.3
-      firePower: 5.1
-      bulletSpeed: 8.5
-      fireRate: 0.85
-      sustainedDps: 0
-      rammingPower: 7.65
-      healthCap: 65.484
-      healthRegen: 2.7514286
-      energyCap: 24
-      energyRegen: 6.3999996
-      moveSpeed: 5.952
-      turnSpeed: 88.75
-      gemCap: 39.8
-      peopleCap: 25.5
-    powerScoreBreakdownAtShipLevel:
-      offense: 60.350002
-      defense: 335.8762
-      energy: 90.4
-      mobility: 262.3545
-      capacity: 210.3
-      firePower: 9.35
-      bulletSpeed: 12.75
-      fireRate: 0.85
-      sustainedDps: 0
-      rammingPower: 11.900001
-      healthCap: 322.3328
-      healthRegen: 13.543391
-      energyCap: 72
-      energyRegen: 18.400002
-      moveSpeed: 6.9120007
-      turnSpeed: 232.5
-      gemCap: 129.8
-      peopleCap: 80.5
-    componentMass: 18.1
+      healthCap: 313.1248
+      healthRegen: 13.1565
+      energyCap: 58.192112
+      energyRegen: 14.871318
+      moveSpeed: 5.5864434
+      turnSpeed: 64.92456
+      gemCap: 117.36684
+      peopleCap: 72.911224
+    componentMass: 13.57174
     lockedInUpgradeTree: 0
   - chassisId: HyperFalcon_18
     upgradeTreeShipName: Quickswoop
@@ -2373,165 +2293,245 @@ MonoBehaviour:
       peopleCap: 67.16128
     componentMass: 19.28497
     lockedInUpgradeTree: 0
-  - chassisId: HyperFalcon_09
-    upgradeTreeShipName: Peakwind
-    prefab: {fileID: 5015609858578011754, guid: 00a4ee30e7d043f409030ebb13180816, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: b2f28ddc039a2d4428dae3d093c24e47, type: 3}
+  - chassisId: HyperFalcon_16
+    upgradeTreeShipName: Plungewind
+    prefab: {fileID: 3220722000867962959, guid: ce7b91020bbc0454e928d6b346b92ce5, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 38a6c1df1c6a7dd458086f50c944c3f5, type: 3}
     teamMenuPreviewSprites:
     - variantName: Red
       team: 1
-      sprite: {fileID: 21300000, guid: b2f28ddc039a2d4428dae3d093c24e47, type: 3}
+      sprite: {fileID: 21300000, guid: 38a6c1df1c6a7dd458086f50c944c3f5, type: 3}
     - variantName: Blue
       team: 2
-      sprite: {fileID: 21300000, guid: 5c8306c168efeef42bb9d83b67fb4cf1, type: 3}
+      sprite: {fileID: 21300000, guid: 37e55dc98152ace4a8c1c4050b66259f, type: 3}
     - variantName: Green
       team: 3
-      sprite: {fileID: 21300000, guid: 55473a7def827af46bc7e4a28eb9166a, type: 3}
+      sprite: {fileID: 21300000, guid: ef743b6d0bfcf7c4d8329fb2fb1bc2db, type: 3}
     - variantName: Gold
       team: 4
-      sprite: {fileID: 21300000, guid: b223726bd1344024e896c73edf4e1ec3, type: 3}
+      sprite: {fileID: 21300000, guid: 90b62fa4523479841bc41ac2bac2b581, type: 3}
     - variantName: Purple
       team: 5
-      sprite: {fileID: 21300000, guid: 421b7de01ae2303468542727ca0c4393, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: b2f28ddc039a2d4428dae3d093c24e47, type: 3}
+      sprite: {fileID: 21300000, guid: 83ff29d3623b65b498f7eb5f373d65c2, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 38a6c1df1c6a7dd458086f50c944c3f5, type: 3}
     teamTheatricalMenuPreviewSprites:
     - variantName: Red
       team: 1
-      sprite: {fileID: 21300000, guid: b2f28ddc039a2d4428dae3d093c24e47, type: 3}
+      sprite: {fileID: 21300000, guid: 38a6c1df1c6a7dd458086f50c944c3f5, type: 3}
     - variantName: Blue
       team: 2
-      sprite: {fileID: 21300000, guid: 5c8306c168efeef42bb9d83b67fb4cf1, type: 3}
+      sprite: {fileID: 21300000, guid: 37e55dc98152ace4a8c1c4050b66259f, type: 3}
     - variantName: Green
       team: 3
-      sprite: {fileID: 21300000, guid: 55473a7def827af46bc7e4a28eb9166a, type: 3}
+      sprite: {fileID: 21300000, guid: ef743b6d0bfcf7c4d8329fb2fb1bc2db, type: 3}
     - variantName: Gold
       team: 4
-      sprite: {fileID: 21300000, guid: b223726bd1344024e896c73edf4e1ec3, type: 3}
+      sprite: {fileID: 21300000, guid: 90b62fa4523479841bc41ac2bac2b581, type: 3}
     - variantName: Purple
       team: 5
-      sprite: {fileID: 21300000, guid: 421b7de01ae2303468542727ca0c4393, type: 3}
+      sprite: {fileID: 21300000, guid: 83ff29d3623b65b498f7eb5f373d65c2, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 271.7664
-    powerScoreAtMaxLevel: 1345.2705
+    powerScore: 271.4724
+    powerScoreAtMaxLevel: 1646.9417
     powerScoreBreakdown:
-      offense: 44.063267
-      defense: 47.04404
-      energy: 69.52065
-      mobility: 107.59046
-      capacity: 49.884254
-      firePower: 4.721064
-      bulletSpeed: 7.8684406
-      fireRate: 0.786844
+      offense: 47.6
+      defense: 68.23543
+      energy: 30.4
+      mobility: 107.725746
+      capacity: 65.3
+      firePower: 5.1
+      bulletSpeed: 8.5
+      fireRate: 0.85
       sustainedDps: 0
-      rammingPower: 7.0815964
-      healthCap: 45.147102
-      healthRegen: 1.8969369
-      energyCap: 55.0385
-      energyRegen: 14.482151
-      moveSpeed: 10.984912
-      turnSpeed: 82.74933
-      gemCap: 30.442127
-      peopleCap: 19.442127
+      rammingPower: 7.65
+      healthCap: 65.484
+      healthRegen: 2.7514286
+      energyCap: 24
+      energyRegen: 6.3999996
+      moveSpeed: 5.952
+      turnSpeed: 88.75
+      gemCap: 39.8
+      peopleCap: 25.5
     powerScoreBreakdownAtShipLevel:
-      offense: 55.865925
-      defense: 210.48985
-      energy: 250.94318
-      mobility: 174.15236
-      capacity: 123.48958
-      firePower: 8.655284
-      bulletSpeed: 11.80266
-      fireRate: 0.786844
+      offense: 60.350002
+      defense: 335.8762
+      energy: 90.4
+      mobility: 262.3545
+      capacity: 210.3
+      firePower: 9.35
+      bulletSpeed: 12.75
+      fireRate: 0.85
       sustainedDps: 0
-      rammingPower: 11.015816
-      healthCap: 202.00237
-      healthRegen: 8.4874935
-      energyCap: 200.17651
-      energyRegen: 50.766655
-      moveSpeed: 13.887673
-      turnSpeed: 142.2995
-      gemCap: 76.17901
-      peopleCap: 47.31057
-    componentMass: 15.006784
+      rammingPower: 11.900001
+      healthCap: 322.3328
+      healthRegen: 13.543391
+      energyCap: 72
+      energyRegen: 18.400002
+      moveSpeed: 6.9120007
+      turnSpeed: 232.5
+      gemCap: 129.8
+      peopleCap: 80.5
+    componentMass: 18.1
     lockedInUpgradeTree: 0
-  - chassisId: HyperFalcon_09B
-    upgradeTreeShipName: Peakgust
-    prefab: {fileID: 5015609858578011754, guid: 00a4ee30e7d043f409030ebb13180816, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 1bc8b84e223472d4394842fd197174e2, type: 3}
+  - chassisId: HyperFalcon_19
+    upgradeTreeShipName: Bolt
+    prefab: {fileID: 1344076883211271124, guid: 53f75bca70c86c14282f84bdc6b3f1ab, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 1b0ac585ffb09634982d3cb900525d45, type: 3}
     teamMenuPreviewSprites:
     - variantName: Red
       team: 1
-      sprite: {fileID: 21300000, guid: 1bc8b84e223472d4394842fd197174e2, type: 3}
+      sprite: {fileID: 21300000, guid: 1b0ac585ffb09634982d3cb900525d45, type: 3}
     - variantName: Blue
       team: 2
-      sprite: {fileID: 21300000, guid: 1ba58b7492f7f76478ad7b25bcd713d8, type: 3}
+      sprite: {fileID: 21300000, guid: db5b4e6f14056dd4ab51614d209d10e2, type: 3}
     - variantName: Green
       team: 3
-      sprite: {fileID: 21300000, guid: 3e56ca95d8abb534189cedb89c2ffbd1, type: 3}
+      sprite: {fileID: 21300000, guid: 2de2c6e295f09ce4fbe572392e2589c2, type: 3}
     - variantName: Gold
       team: 4
-      sprite: {fileID: 21300000, guid: c625cfeb18ea6c94194898f45a3d685c, type: 3}
+      sprite: {fileID: 21300000, guid: 74c96418a6809094aaaf72a0ecb3c936, type: 3}
     - variantName: Purple
       team: 5
-      sprite: {fileID: 21300000, guid: 559127dd77cf2de4c8f35258683ab510, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 1bc8b84e223472d4394842fd197174e2, type: 3}
+      sprite: {fileID: 21300000, guid: 152456564f58c3746805a3bb5d297771, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 1b0ac585ffb09634982d3cb900525d45, type: 3}
     teamTheatricalMenuPreviewSprites:
     - variantName: Red
       team: 1
-      sprite: {fileID: 21300000, guid: 1bc8b84e223472d4394842fd197174e2, type: 3}
+      sprite: {fileID: 21300000, guid: 1b0ac585ffb09634982d3cb900525d45, type: 3}
     - variantName: Blue
       team: 2
-      sprite: {fileID: 21300000, guid: 1ba58b7492f7f76478ad7b25bcd713d8, type: 3}
+      sprite: {fileID: 21300000, guid: db5b4e6f14056dd4ab51614d209d10e2, type: 3}
     - variantName: Green
       team: 3
-      sprite: {fileID: 21300000, guid: 3e56ca95d8abb534189cedb89c2ffbd1, type: 3}
+      sprite: {fileID: 21300000, guid: 2de2c6e295f09ce4fbe572392e2589c2, type: 3}
     - variantName: Gold
       team: 4
-      sprite: {fileID: 21300000, guid: c625cfeb18ea6c94194898f45a3d685c, type: 3}
+      sprite: {fileID: 21300000, guid: 74c96418a6809094aaaf72a0ecb3c936, type: 3}
     - variantName: Purple
       team: 5
-      sprite: {fileID: 21300000, guid: 559127dd77cf2de4c8f35258683ab510, type: 3}
+      sprite: {fileID: 21300000, guid: 152456564f58c3746805a3bb5d297771, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 271.7664
-    powerScoreAtMaxLevel: 1345.2705
+    powerScore: 308.2706
+    powerScoreAtMaxLevel: 1915.5823
     powerScoreBreakdown:
-      offense: 44.063267
-      defense: 47.04404
-      energy: 69.52065
-      mobility: 107.59046
-      capacity: 49.884254
-      firePower: 4.721064
-      bulletSpeed: 7.8684406
-      fireRate: 0.786844
+      offense: 56
+      defense: 82.28357
+      energy: 38
+      mobility: 113.41329
+      capacity: 72.23506
+      firePower: 6
+      bulletSpeed: 10
+      fireRate: 1
       sustainedDps: 0
-      rammingPower: 7.0815964
-      healthCap: 45.147102
-      healthRegen: 1.8969369
-      energyCap: 55.0385
-      energyRegen: 14.482151
-      moveSpeed: 10.984912
-      turnSpeed: 82.74933
-      gemCap: 30.442127
-      peopleCap: 19.442127
+      rammingPower: 9
+      healthCap: 78.96568
+      healthRegen: 3.3178852
+      energyCap: 30
+      energyRegen: 8
+      moveSpeed: 7.44
+      turnSpeed: 92.31196
+      gemCap: 43.741035
+      peopleCap: 28.494022
     powerScoreBreakdownAtShipLevel:
-      offense: 55.865925
-      defense: 210.48985
-      energy: 250.94318
-      mobility: 174.15236
-      capacity: 123.48958
-      firePower: 8.655284
-      bulletSpeed: 11.80266
-      fireRate: 0.786844
+      offense: 71
+      defense: 415.98
+      energy: 113
+      mobility: 269.10995
+      capacity: 238.41034
+      firePower: 11
+      bulletSpeed: 15
+      fireRate: 1
       sustainedDps: 0
-      rammingPower: 11.015816
-      healthCap: 202.00237
-      healthRegen: 8.4874935
-      energyCap: 200.17651
-      energyRegen: 50.766655
-      moveSpeed: 13.887673
-      turnSpeed: 142.2995
-      gemCap: 76.17901
-      peopleCap: 47.31057
-    componentMass: 15.006784
+      rammingPower: 14
+      healthCap: 399.20663
+      healthRegen: 16.773386
+      energyCap: 90
+      energyRegen: 23
+      moveSpeed: 8.64
+      turnSpeed: 236.83644
+      gemCap: 147.44621
+      peopleCap: 90.964134
+    componentMass: 22.027992
+    lockedInUpgradeTree: 0
+  - chassisId: HyperFalcon_17
+    upgradeTreeShipName: Gustail
+    prefab: {fileID: 5252824973556345277, guid: 86580f845bd6fe540b09fe334cf23400, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 871c1440c212dec4f9e187eaa576d248, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 871c1440c212dec4f9e187eaa576d248, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 12839c19dfae7e145857ef900be780ae, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 45425cebd4c78ce4498bbc25cb4584fe, type: 3}
+    - variantName: Gold
+      team: 4
+      sprite: {fileID: 21300000, guid: 0ef004436357a2749868a214a1a7756c, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: fd11f932d86c1a748b5bcbe9a39dc723, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 871c1440c212dec4f9e187eaa576d248, type: 3}
+    teamTheatricalMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 871c1440c212dec4f9e187eaa576d248, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 12839c19dfae7e145857ef900be780ae, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 45425cebd4c78ce4498bbc25cb4584fe, type: 3}
+    - variantName: Gold
+      team: 4
+      sprite: {fileID: 21300000, guid: 0ef004436357a2749868a214a1a7756c, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: fd11f932d86c1a748b5bcbe9a39dc723, type: 3}
+    minHomePlanetLevel: 6
+    powerScore: 291.48602
+    powerScoreAtMaxLevel: 1811.9991
+    powerScoreBreakdown:
+      offense: 95.2
+      defense: 86.97892
+      energy: 20.9
+      mobility: 80.22332
+      capacity: 89.94522
+      firePower: 10.2
+      bulletSpeed: 17
+      fireRate: 1.7
+      sustainedDps: 0
+      rammingPower: 15.3
+      healthCap: 83.4717
+      healthRegen: 3.507214
+      energyCap: 16.5
+      energyRegen: 4.4
+      moveSpeed: 4.0920005
+      turnSpeed: 66.10741
+      gemCap: 53.052658
+      peopleCap: 36.892563
+    powerScoreBreakdownAtShipLevel:
+      offense: 120.700005
+      defense: 426.13745
+      energy: 62.15
+      mobility: 180.33992
+      capacity: 286.107
+      firePower: 18.7
+      bulletSpeed: 25.5
+      fireRate: 1.7
+      sustainedDps: 0
+      rammingPower: 23.800001
+      healthCap: 408.9545
+      healthRegen: 17.18296
+      energyCap: 49.5
+      energyRegen: 12.650001
+      moveSpeed: 4.7520003
+      turnSpeed: 159.14445
+      gemCap: 178.48428
+      peopleCap: 107.6227
+    componentMass: 18.061779
     lockedInUpgradeTree: 0
   teamMaterials:
   - variantName: Red
@@ -2555,4 +2555,4 @@ MonoBehaviour:
     materials:
     - {fileID: 2100000, guid: b870f9aaa6fec494d989c9cc055f8a38, type: 2}
   upgradeCardDeck: {fileID: 0}
-  TotalComponentMass: 7.7465672
+  TotalComponentMass: 9.506616

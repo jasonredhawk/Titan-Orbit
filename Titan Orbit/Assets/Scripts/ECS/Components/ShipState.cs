@@ -108,8 +108,9 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Regular-ship weapon components are tracking the owner's aim point.
-        /// Always on while that point is valid — Shift does not gate it. Shift only
-        /// locks hull heading. MEGA hulls leave this false and use gunner slots.
+        /// On only while Game Manager guns are Point and that point is in front of
+        /// the nose. Forward, and a cursor behind the ship, leave this false.
+        /// MEGA hulls leave this false and use gunner slots.
         /// Ghosted so remote clients can yaw the weapon meshes; <see cref="ShipInput"/>
         /// is not on other players' snapshots.
         /// </summary>

@@ -1,3 +1,4 @@
+using TitanOrbit;
 using TitanOrbit.Data;
 using TitanOrbit.Generation;
 using Unity.Collections;
@@ -97,6 +98,7 @@ namespace TitanOrbit.ECS
                 MinAccel = mobility.minAccel,
                 MinTurn = mobility.minTurn,
                 PhysicsColliders = SystemAPI.GetComponentLookup<PhysicsCollider>(true),
+                PointGuns = TitanOrbitDebugFlags.RegularShipGunsPoint ? (byte)1 : (byte)0,
             };
             state.Dependency = job.ScheduleParallel(state.Dependency);
             state.Dependency = planets.Dispose(state.Dependency);

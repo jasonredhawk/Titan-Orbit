@@ -1,6 +1,5 @@
 using System;
 using System.Collections;
-using System.Threading.Tasks;
 using TitanOrbit.Data;
 using TitanOrbit.Core;
 using TitanOrbit.ECS;
@@ -99,15 +98,9 @@ namespace TitanOrbit.Game
         LoadingScreenControllerNce _loadingScreen;
         JoinGameBrowserController _joinBrowser;
         RejoinShipChoiceController _rejoinChoice;
-        string _statusMessage = "Pick a match, or quick join.";
+        string _statusMessage = "Join a match or start local play.";
         bool _mainMenuButtonsBuilt;
         bool _initialized;
-
-        /// <summary>
-        /// True after the Command Deck has been re-embedded for the current menu visit.
-        /// Cleared when the menu hides so a dock studio opened mid-match is pulled back.
-        /// </summary>
-        bool _commandDeckLatched;
         /// <summary>
         /// Keeps the loading overlay up from the Play/join click until connecting flags catch up,
         /// so MainMenuPanel cannot flash under the (slightly transparent) loading backdrop.
@@ -319,7 +312,6 @@ namespace TitanOrbit.Game
                 mainMenuPanel,
                 playButton,
                 OnBrowseGamesClicked,
-                OnLocalClientClicked,
                 out var presentedStatus);
             if (presentedStatus != null)
                 statusText = presentedStatus;
@@ -328,9 +320,8 @@ namespace TitanOrbit.Game
                 statusText.text = _statusMessage;
 
             _mainMenuButtonsBuilt = true;
-            _commandDeckLatched = true;
-            Debug.Log("[NceGameFlow] Command deck presented (callsign, ship studio, matches, Orbit Unlocked" +
-                      (TitanOrbitMultiplayerConfig.ShowLocalPlayOptions ? ", Local client" : "") + ").");
+            Debug.Log("[NceGameFlow] Main menu presented (logo, account, Join game" +
+                      (TitanOrbitMultiplayerConfig.ShowLocalPlayOptions ? ", Local play" : "") + ").");
         }
 
         /// <summary>Shows connection errors on the main menu status line (not only the console).</summary>
@@ -350,7 +341,6 @@ namespace TitanOrbit.Game
                 mainMenuPanel,
                 playButton,
                 OnBrowseGamesClicked,
-                OnLocalClientClicked,
                 out var presentedStatus);
             if (presentedStatus != null)
                 statusText = presentedStatus;
@@ -366,13 +356,6 @@ namespace TitanOrbit.Game
         {
             if (statusText != null)
                 statusText.text = _statusMessage;
-        }
-
-        void OnLocalClientClicked()
-        {
-            if (TitanOrbitSessionManager.Instance == null)
-                return;
-            TitanOrbitSessionManager.Instance.StartLocalClientForLanTest();
         }
 
         void EnsureEcsWorldVisualizer()
@@ -463,7 +446,7 @@ namespace TitanOrbit.Game
                 if (lobbies.Count > 0)
                 {
                     _statusMessage = lobbies.Count + " dedicated match" + (lobbies.Count == 1 ? "" : "es") +
-                                     " available.";
+                                     " available — tap Join game.";
                     Debug.Log("[NceGameFlow] Menu lobby prefetch found " + lobbies.Count +
                               " browsable match(es); first=\"" + lobbies[0].Name + "\".");
                     return;
@@ -475,12 +458,12 @@ namespace TitanOrbit.Game
                 {
                     string detail = TitanOrbitLobbyService.LastOpenLobbyQueryErrorDetail;
                     _statusMessage = string.IsNullOrEmpty(detail)
-                        ? "Could not query lobbies — tap Refresh."
+                        ? "Could not query lobbies — tap Join game → Refresh."
                         : "Lobby query failed: " + detail;
                     return;
                 }
 
-                _statusMessage = "No dedicated matches listed yet — tap Refresh.";
+                _statusMessage = "No dedicated matches listed yet — tap Join game → Request match or Refresh.";
                 Debug.Log("[NceGameFlow] Menu lobby prefetch: zero browsable dedicated matches (see TitanOrbitLobbyService query log).");
             }
             catch (Exception ex)
@@ -540,7 +523,7 @@ namespace TitanOrbit.Game
 
             if (statusText == null && mainMenuPanel != null)
             {
-                var statusGo = MainMenuPresenter.FindDeep(mainMenuPanel.transform, "MainMenuStatus");
+                var statusGo = mainMenuPanel.transform.Find("MainMenuStatus");
                 if (statusGo != null)
                     statusText = statusGo.GetComponent<TextMeshProUGUI>();
             }
@@ -638,11 +621,15 @@ namespace TitanOrbit.Game
         void WirePlayButton()
         {
             if (playButton == null) return;
-            playButton.gameObject.SetActive(true);
+            // Production menu has no Quick join. This scene button is Local play only.
+            bool showLocalPlay = TitanOrbitMultiplayerConfig.ShowLocalPlayOptions;
+            playButton.gameObject.SetActive(showLocalPlay);
+            if (!showLocalPlay)
+                return;
+
             DisableChildRaycasts(playButton);
             EnsureMainMenuPlayButton();
             // [TITAN-ORBIT] Do NOT AddListener(OnPlayClicked) — MainMenuPlayButton owns onClick alone.
-            // Previously both IPointerClick + this listener double-fired Local play / Quick join.
             playButton.onClick.RemoveListener(OnPlayClicked);
         }
 
@@ -889,11 +876,8 @@ namespace TitanOrbit.Game
 
             if (!TitanOrbitMultiplayerConfig.ShowLocalPlayOptions)
             {
-                _statusMessage = "Finding a dedicated match...";
-                if (playButton != null)
-                    playButton.interactable = false;
-                BeginLoadingOverlay();
-                QuickJoinDedicatedFromMenuAsync();
+                _statusMessage = "Use Join game to enter a match.";
+                PushStatusToUi();
                 return;
             }
 
@@ -925,48 +909,6 @@ namespace TitanOrbit.Game
             else
                 TitanOrbitSessionManager.Instance.StartLocalPlay();
             _autoStartSent = true;
-        }
-
-        async void QuickJoinDedicatedFromMenuAsync()
-        {
-            try
-            {
-                bool ok = await TitanOrbitSessionManager.Instance.QuickJoinDedicatedAsync();
-                if (!ok)
-                {
-                    _statusMessage = TitanOrbitSessionManager.Instance.LastStatusMessage ?? "Quick join failed. Try Join game.";
-                    return;
-                }
-
-                _statusMessage = "Connecting to dedicated server...";
-                float deadline = Time.realtimeSinceStartup + 65f;
-                while (Time.realtimeSinceStartup < deadline)
-                {
-                    if (TitanOrbitSessionManager.Instance.IsInGame && EcsGameBridge.IsNetworkInGame())
-                    {
-                        _statusMessage = TitanOrbitSessionManager.Instance.LastStatusMessage;
-                        return;
-                    }
-
-                    if (!TitanOrbitSessionManager.IsDedicatedJoinConnecting)
-                    {
-                        _statusMessage = TitanOrbitSessionManager.Instance.LastStatusMessage ?? "Connection failed.";
-                        return;
-                    }
-
-                    await Task.Yield();
-                }
-
-                _statusMessage = TitanOrbitSessionManager.Instance.LastStatusMessage ?? "Connection timed out.";
-            }
-            finally
-            {
-                if (playButton != null)
-                    playButton.interactable = true;
-                if (!TitanOrbitSessionManager.IsJoinConnecting &&
-                    (TitanOrbitSessionManager.Instance == null || !TitanOrbitSessionManager.Instance.IsInGame))
-                    _holdLoadingOverlay = false;
-            }
         }
 
         static bool HasPlayableClientWorld()
@@ -1394,20 +1336,6 @@ namespace TitanOrbit.Game
                                       !MatchCloseGate.SuppressMainMenu &&
                                       (_joinBrowser == null || !_joinBrowser.IsVisible));
 
-            bool menuOn = mainMenuPanel != null && mainMenuPanel.activeSelf;
-            if (menuOn)
-            {
-                if (!_commandDeckLatched)
-                {
-                    _commandDeckLatched = true;
-                    MainMenuPresenter.RefreshCommandDeck(mainMenuPanel);
-                }
-            }
-            else
-            {
-                _commandDeckLatched = false;
-            }
-
             if (showRejoinChoice && hasRejoinableShip && _rejoinChoice != null)
                 _rejoinChoice.Show(rejoinShipState);
             else if (_rejoinChoice != null && _rejoinChoice.IsVisible)
@@ -1416,7 +1344,7 @@ namespace TitanOrbit.Game
             }
 
             if (playButton != null && mainMenuPanel != null && mainMenuPanel.activeSelf)
-                playButton.gameObject.SetActive(true);
+                playButton.gameObject.SetActive(TitanOrbitMultiplayerConfig.ShowLocalPlayOptions);
 
             // --- Planet lock for Join Team (cards stay visible) ---
             // [TITAN-ORBIT] Scan before the status line so "no planets" copy matches the buttons

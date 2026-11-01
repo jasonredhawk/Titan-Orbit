@@ -53,12 +53,9 @@ namespace TitanOrbit.Editor
             float line = EditorGUIUtility.singleLineHeight;
             float gap = EditorGUIUtility.standardVerticalSpacing;
 
-            SerializedProperty chassisIdProp = element.FindPropertyRelative("chassisId");
-            string chassisId = chassisIdProp.stringValue ?? string.Empty;
-            string header = string.IsNullOrWhiteSpace(chassisId) ? label.text : chassisId;
-
             SerializedProperty prefabProp = element.FindPropertyRelative("prefab");
             GameObject prefab = prefabProp.objectReferenceValue as GameObject;
+            string header = ResolveUpgradeTreeListHeader(element, prefab, label);
             int minHomePlanetLevel = GetMinHomePlanetLevel(element);
             bool hasPreview = TryGetStatPreview(familyDefinition, prefab, minHomePlanetLevel, out ShipFamilyUpgradeTreeStatScanner.UpgradeTreeStatPreview preview);
             bool hasMissingStats = hasPreview && HasMissingStats(preview);
@@ -406,6 +403,36 @@ namespace TitanOrbit.Editor
             float gap)
         {
             return DrawStatRow(rect, label, minValue, maxValue, labelWidth, valueWidth, valueGap, gap, null);
+        }
+
+        /// <summary>
+        /// Collapsed Upgrade Tree row title. Prefers the authored Upgrade Tree Ship Name
+        /// so designers can scan the list by hull name. Blank names fall back to the
+        /// formatted prefab name, then Chassis Id.
+        /// </summary>
+        static string ResolveUpgradeTreeListHeader(
+            SerializedProperty element,
+            GameObject prefab,
+            GUIContent label)
+        {
+            SerializedProperty nameProp = element.FindPropertyRelative("upgradeTreeShipName");
+            string shipName = nameProp != null ? nameProp.stringValue : null;
+            if (!string.IsNullOrWhiteSpace(shipName))
+                return shipName.Trim();
+
+            if (prefab != null && !string.IsNullOrWhiteSpace(prefab.name))
+            {
+                string fromPrefab = DisplayNameFormatting.FormatPrefabShipName(prefab.name);
+                if (!string.IsNullOrWhiteSpace(fromPrefab))
+                    return fromPrefab;
+            }
+
+            SerializedProperty chassisIdProp = element.FindPropertyRelative("chassisId");
+            string chassisId = chassisIdProp != null ? chassisIdProp.stringValue : null;
+            if (!string.IsNullOrWhiteSpace(chassisId))
+                return chassisId.Trim();
+
+            return label != null ? label.text : string.Empty;
         }
 
         /// <summary>

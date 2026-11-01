@@ -817,14 +817,26 @@ namespace TitanOrbit.UI
 
             UpgradeTree.GetNextLevelBranchTargets(currentLevel, currentBranch, _nextTargets);
             bool isNextChoice = view.Level == nextLevel && _nextTargets.Contains(view.BranchIndex);
-            // Level-7 cost is this card's parts. The old catalog field priced every Titan the same.
+            // Level-7 cost is this card's parts. Levels 2–6 are the hull's gear sum.
+            // A slot with no chassis is not free — the button stays locked until a price exists.
             int titanGemCost = view.Level == 7 ? ResolveTitanCardGemCost(view.BranchIndex) : 0;
-            float nodeCost = isNextChoice
-                ? (nextLevel == 7
-                    ? titanGemCost
-                    : MoonOrbitStorePricing.GetShipUpgradeCost(nextLevel))
-                : 0f;
-            bool canPurchase = isNextChoice && _contributedGems >= nodeCost && !tierBlocked && !megaOccupied && !megaUnarmed;
+            float nodeCost = 0f;
+            bool hasNodePrice = false;
+            if (isNextChoice)
+            {
+                if (nextLevel == 7)
+                {
+                    nodeCost = titanGemCost;
+                    hasNodePrice = true;
+                }
+                else if (TryGetChassisIdForTreeSlot(view.Level, view.BranchIndex, out string nextChassis))
+                {
+                    nodeCost = StatGemPricing.PriceFamilyHull(null, nextChassis, view.Level);
+                    hasNodePrice = true;
+                }
+            }
+            bool canPurchase = isNextChoice && hasNodePrice && _contributedGems >= nodeCost
+                && !tierBlocked && !megaOccupied && !megaUnarmed;
             bool clickable = !megaOccupied && (canPurchase || isCurrent);
 
             view.SetInteractable(clickable);

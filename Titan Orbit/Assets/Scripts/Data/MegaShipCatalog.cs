@@ -994,9 +994,9 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Sums this hull's parts into a gem price. One armor plate priced at 100 gems,
-        /// copied 15 times, adds 1500. Stats are the unique-component bases (not the
-        /// hull-wide runtime floors — those would bill every plate as a full ship).
+        /// Sums this hull's parts into a gem price using <see cref="StatGemRates"/>,
+        /// the same table as regular gear. One plate at 15 gems, copied 15 times, adds 225.
+        /// Stats are the unique-component bases (not the hull-wide runtime floors).
         /// </summary>
         /// <param name="entry">Catalog hull row. Null or an empty part list uses the fallback field.</param>
         /// <returns>Whole gems for this Titan.</returns>

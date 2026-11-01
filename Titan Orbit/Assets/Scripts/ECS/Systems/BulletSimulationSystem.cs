@@ -477,29 +477,45 @@ namespace TitanOrbit.ECS
                                      shipState.ValueRO.Team, ghostOwner.ValueRO.NetworkId);
 
                 // --- Spawn each planned barrel with that mount’s own damage ---
+                // Forward leaves the baked nose pose. Point yaws a spawn copy at the
+                // cursor only while that cursor, and the resulting barrel, sit in
+                // front of the nose. The mount buffer keeps its rest pose either way.
+                bool pointGuns = TitanOrbitDebugFlags.RegularShipGunsPoint;
                 for (int shot = 0; shot < shotCount; shot++)
                 {
                     var planned = s_ShotScratch[shot];
                     planned.Damage = TeamCommandRoleRules.ScaleFirePower(planned.Damage, topKiller);
                     int mountIdx = planned.MountIndex;
                     var mount = mounts[mountIdx];
-                    // Spawn copy only. Regular weapons always converge on the owner's
-                    // aim point (Shift only locks hull yaw). Keep the mount buffer's
-                    // baked rest pose so a missing sample fires hull-forward again.
                     var fireMount = mount;
                     float interceptDistance = 0f;
-                    if (MegaShipWeaponAim.TryGetMuzzleDirToMousePoint(
+                    bool aimedAtCursor = false;
+                    float3 mousePoint = default;
+                    if (pointGuns
+                        && MegaShipWeaponAim.TryGetOwnerMouseAimPoint(
+                            in transform.ValueRO, in input.ValueRO, out mousePoint)
+                        && MegaShipWeaponAim.IsInFrontOfHull(
+                            in transform.ValueRO, mousePoint, mapW, mapH)
+                        && MegaShipWeaponAim.TryGetMuzzleDirToMousePoint(
                             in transform.ValueRO, in fireMount, in input.ValueRO, mapW, mapH,
                             out float3 toCursor))
                     {
                         MegaShipWeaponAim.RotateMountTowardWorldDir(
                             in transform.ValueRO, ref fireMount, toCursor, 0f);
                         fireMount.DirectionAngleDeg = 0f;
+                        aimedAtCursor = true;
                     }
 
                     ResolveFirePose(transform.ValueRO, in fireMount, out float3 fireOrigin, out float3 fireForward);
-                    if (MegaShipWeaponAim.TryGetOwnerMouseAimPoint(
-                            in transform.ValueRO, in input.ValueRO, out float3 mousePoint))
+                    if (aimedAtCursor && !ShotLeavesForward(in transform.ValueRO, fireForward))
+                    {
+                        fireMount = mount;
+                        aimedAtCursor = false;
+                        ResolveFirePose(
+                            transform.ValueRO, in fireMount, out fireOrigin, out fireForward);
+                    }
+
+                    if (aimedAtCursor)
                     {
                         float3 toMouse = ToroidalMapEcs.ShortestOffsetXZ(
                             fireOrigin, mousePoint, mapW, mapH);
@@ -803,6 +819,20 @@ namespace TitanOrbit.ECS
             }
 
             weaponState.LastFiredMountIndex = s_ShotScratch[shotCount - 1].MountIndex;
+        }
+
+        /// <summary>
+        /// True when a shot direction is not behind the hull nose.
+        /// Straight off the beam still counts as forward.
+        /// </summary>
+        static bool ShotLeavesForward(in LocalTransform hull, float3 fireForward)
+        {
+            float3 hullFwd = math.mul(hull.Rotation, new float3(0f, 0f, 1f));
+            hullFwd.y = 0f;
+            fireForward.y = 0f;
+            if (math.lengthsq(hullFwd) < 0.0001f || math.lengthsq(fireForward) < 0.0001f)
+                return true;
+            return math.dot(math.normalize(hullFwd), math.normalize(fireForward)) >= 0f;
         }
 
         /// <summary>

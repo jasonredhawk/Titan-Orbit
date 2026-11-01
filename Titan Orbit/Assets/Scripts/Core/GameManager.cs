@@ -5,6 +5,23 @@ using UnityEngine;
 namespace TitanOrbit.Core
 {
     /// <summary>
+    /// Where a regular ship's guns and shots aim. MEGA hulls ignore this.
+    /// Both values only fire forward of the nose — a cursor behind the ship
+    /// does not flip the barrels around.
+    /// </summary>
+    public enum RegularShipWeaponAim
+    {
+        /// <summary>Guns stay on the authored nose. Shots leave along the ship.</summary>
+        Forward = 0,
+
+        /// <summary>
+        /// Guns and shots aim at the cursor while it is in the forward half of the ship.
+        /// Behind the nose, they stay on Forward.
+        /// </summary>
+        Point = 1,
+    }
+
+    /// <summary>
     /// Editor multiplayer workflow for this machine: Test (local Client &amp; Server) vs
     /// Production (Client-only join to a dedicated server via UGS/Relay).
     /// Stored on <see cref="GameManager"/> so you can flip it in the Inspector instead of the
@@ -35,6 +52,10 @@ namespace TitanOrbit.Core
     /// so the live camera and the card buttons share one set of switches.
     /// <see cref="ParkLandedWeapons"/> (default on) keeps guns facing forward while a hull
     /// is fully landed, including in that card.
+    /// <see cref="RegularShipGuns"/> chooses whether a regular hull's guns stay on the
+    /// nose (<see cref="RegularShipWeaponAim.Forward"/>) or track the cursor only while
+    /// that cursor is in front of the ship (<see cref="RegularShipWeaponAim.Point"/>).
+    /// Either way a regular ship only shoots forward of its nose. MEGA hulls ignore it.
     /// <see cref="ShowJoinGameClosesIn"/>
     /// hides the Join Game "closes in…" countdown (default off); flip it to show empty-lobby
     /// idle-kill time again. <see cref="EnableBetaFeedback"/> (default off) treats the
@@ -163,6 +184,13 @@ namespace TitanOrbit.Core
 
         [Tooltip("ON: while a ship is fully landed on a gem moon, its guns stay facing forward, including in the Your Ship card. OFF: those guns keep tracking the cursor while parked. Flight aim is unchanged either way.")]
         [SerializeField] bool parkLandedWeapons = true;
+
+        // [TITAN-ORBIT] Regular-ship guns. Forward is the nose (shots leave along the hull).
+        // Point tracks the cursor only in the forward half — never behind the ship.
+        // MEGA hulls keep their own Shift / auto-aim and ignore this.
+        [Header("Regular Ships — Guns")]
+        [Tooltip("Forward: regular-ship guns stay on the nose and every shot leaves along the ship. Point: guns and shots aim at the cursor, but only while that cursor is in front of the ship. A cursor behind the nose keeps the guns and the shot forward. MEGA hulls are unchanged.")]
+        [SerializeField] RegularShipWeaponAim regularShipWeaponAim = RegularShipWeaponAim.Forward;
 
         /// <summary>
         /// Play Mode: fired when any Your Ship camera checkbox changes so the card
@@ -306,6 +334,16 @@ namespace TitanOrbit.Core
         /// Off leaves cursor tracking on while the ship sits on the moon.
         /// </summary>
         public bool ParkLandedWeapons => parkLandedWeapons;
+
+        /// <summary>
+        /// Regular-ship gun aim from the Inspector. <see cref="RegularShipWeaponAim.Forward"/>
+        /// keeps barrels on the nose. <see cref="RegularShipWeaponAim.Point"/> tracks the
+        /// cursor only while it is in front of the ship.
+        /// </summary>
+        public RegularShipWeaponAim RegularShipGuns => regularShipWeaponAim;
+
+        /// <summary>True when regular-ship guns should track a cursor that is in front of the nose.</summary>
+        public bool RegularShipGunsPoint => regularShipWeaponAim == RegularShipWeaponAim.Point;
 
         /// <summary>
         /// True when the card is showing moon, stars, and nearby hulls.
@@ -600,6 +638,7 @@ namespace TitanOrbit.Core
                 TitanOrbitDebugFlags.AiShips = false;
                 TitanOrbitDebugFlags.AiShipsPerTeam = 0;
                 TitanOrbitDebugFlags.BetaFeedbackEnabled = false;
+                TitanOrbitDebugFlags.RegularShipGunsPoint = false;
                 ClearIsolationFlags();
                 _hasPublishedShowSpeedometer = false;
                 _hasPublishedShowEgressMeter = false;
@@ -643,6 +682,9 @@ namespace TitanOrbit.Core
             TitanOrbitDebugFlags.InfiniteMines = debugInfiniteMines;
             TitanOrbitDebugFlags.SelfHarmRocketsAndMines = debugSelfHarmRocketsAndMines;
 #endif
+            // [TITAN-ORBIT] Regular-ship gun aim is match rules. The dedicated server
+            // publishes the scene value so shots and client meshes use the same mode.
+            TitanOrbitDebugFlags.RegularShipGunsPoint = regularShipWeaponAim == RegularShipWeaponAim.Point;
             // [TITAN-ORBIT] AI ships are match simulation. WebGL never runs the brain —
             // the dedicated server must publish the same toggle the Editor host uses.
             TitanOrbitDebugFlags.AiShips = debugAiShips;

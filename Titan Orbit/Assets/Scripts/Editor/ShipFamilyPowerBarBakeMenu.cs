@@ -95,7 +95,9 @@ namespace TitanOrbit.Editor
             EditorUtility.DisplayDialog(
                 "Resort Upgrade Trees",
                 $"Resorted {unlocked} unlocked chassis across {updated} family asset(s).\n" +
-                "Power scores now use all-gun DPS and energy sustain.",
+                "Each level is ordered by total gem cost, cheapest first.\n" +
+                "Price includes prefab scale, Extra Level, and the family bonuses.\n" +
+                "ShipFamilyDefinitionCatalog has the same resort on its Recalculate All button.",
                 "OK");
         }
 

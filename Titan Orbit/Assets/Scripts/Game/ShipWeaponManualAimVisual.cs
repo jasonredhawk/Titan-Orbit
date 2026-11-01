@@ -11,11 +11,11 @@ using UnityEngine;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// Yaws regular-ship weapon meshes onto the owner's aim point every frame.
-    /// Tracking is always on in flight. While <see cref="GameManager.ParkLandedWeapons"/>
-    /// is on, a hull fully landed on a gem moon parks every weapon on its authored
-    /// forward pose so the orbit-menu portrait does not spin the guns.
-    /// Boosters stay parented to the hull.
+    /// Yaws regular-ship weapon meshes onto the owner's aim point every frame
+    /// when Game Manager → Regular Ships — Guns is Point and that point is in
+    /// front of the nose. Forward, a cursor behind the ship, and
+    /// <see cref="GameManager.ParkLandedWeapons"/> while fully landed all restore
+    /// the authored forward pose. Boosters stay parented to the hull.
     /// MEGA hulls keep <see cref="MegaShipWeaponVisualSync"/>.
     /// </summary>
     public static class ShipWeaponManualAimVisual
@@ -23,16 +23,18 @@ namespace TitanOrbit.Game
         /// <summary>
         /// True when this regular hull's weapon meshes should point at the aim point.
         /// Local owners read <see cref="ShipInput"/>. Remotes read ghosted
-        /// <see cref="ShipState.ManualAimActive"/>.
+        /// <see cref="ShipState.ManualAimActive"/>. Forward mode and a cursor behind
+        /// the nose return false so tracers leave along the ship.
         /// </summary>
         public static bool IsMouseTracking(EntityManager em, Entity shipEntity)
         {
-            return TryGetAimPoint(em, shipEntity, out _);
+            return TryGetTrackedAimPoint(em, shipEntity, out _);
         }
 
         /// <summary>
         /// Aims each live weapon assembly at the cursor. Restores authored local
-        /// rotation when the hull is a MEGA or the aim sample is missing.
+        /// rotation when the hull is a MEGA, guns are Forward, the cursor is
+        /// behind the nose, or the aim sample is missing.
         /// </summary>
         public static void Apply(EntityManager em, Entity shipEntity, GameObject proxy)
         {
@@ -45,7 +47,7 @@ namespace TitanOrbit.Game
             // Parked on the moon (toggle on): authored forward, not the cursor.
             // The orbit menu films this same proxy, so a tracking barrel spins in that view.
             if (mega || ShouldParkLandedWeapons(em, shipEntity)
-                     || !TryGetAimPoint(em, shipEntity, out float3 aimPoint))
+                     || !TryGetTrackedAimPoint(em, shipEntity, out float3 aimPoint))
             {
                 if (binding != null)
                     binding.RestoreRest();
@@ -56,6 +58,39 @@ namespace TitanOrbit.Game
                 binding = proxy.AddComponent<ShipWeaponManualAimBinding>();
 
             binding.AimAt(aimPoint);
+        }
+
+        /// <summary>
+        /// True when Regular Ships — Guns is Point. A missing Game Manager uses the
+        /// published flag, which defaults off (Forward).
+        /// </summary>
+        static bool GunsPointAtCursor()
+        {
+            GameManager manager = GameManager.Instance;
+            if (manager != null)
+                return manager.RegularShipGunsPoint;
+            return TitanOrbitDebugFlags.RegularShipGunsPoint;
+        }
+
+        /// <summary>
+        /// Owner or ghosted aim point, and only when guns are Point and that point
+        /// is in front of the nose.
+        /// </summary>
+        static bool TryGetTrackedAimPoint(EntityManager em, Entity shipEntity, out float3 aimPoint)
+        {
+            aimPoint = default;
+            if (!GunsPointAtCursor())
+                return false;
+            if (!TryGetAimPoint(em, shipEntity, out aimPoint))
+                return false;
+            if (!em.HasComponent<LocalTransform>(shipEntity))
+                return false;
+
+            var hull = em.GetComponentData<LocalTransform>(shipEntity);
+            ToroidalMapEcs.TryGetMapSize(out float mapW, out float mapH);
+            if (!MegaShipWeaponAim.IsInFrontOfHull(in hull, aimPoint, mapW, mapH))
+                return false;
+            return true;
         }
 
         /// <summary>Owner mouse point, or the ghosted point on a remote regular hull.</summary>
@@ -158,6 +193,16 @@ namespace TitanOrbit.Game
                     continue;
 
                 Vector3 desiredWorldFwd = ((Vector3)offset).normalized;
+                Vector3 hullFwd = transform.forward;
+                hullFwd.y = 0f;
+                Vector3 aimFlat = desiredWorldFwd;
+                aimFlat.y = 0f;
+                // A cursor in front of the hull can still sit behind a nose muzzle.
+                // Leave that barrel on its authored forward so it matches the shot.
+                if (hullFwd.sqrMagnitude > 1e-8f && aimFlat.sqrMagnitude > 1e-8f
+                    && Vector3.Dot(hullFwd.normalized, aimFlat.normalized) < 0f)
+                    continue;
+
                 if (bank != null)
                     desiredWorldFwd = bank.rotation * (Quaternion.Inverse(hullRot) * desiredWorldFwd);
 

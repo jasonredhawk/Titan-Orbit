@@ -38,7 +38,7 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Builds logo / account / Join game / Local client via <see cref="MainMenuPresenter"/>.
+        /// Builds logo / account / Join game via <see cref="MainMenuPresenter"/>.
         /// Idempotent — safe if <see cref="NceGameFlowController"/> already presented the menu.
         /// </summary>
         public static void EnsureButtonsCreated()
@@ -59,7 +59,6 @@ namespace TitanOrbit.Game
                 panel,
                 playButton,
                 OnJoinGameClicked,
-                OnLocalClientClicked,
                 out _);
 
             s_Created = true;
@@ -87,19 +86,6 @@ namespace TitanOrbit.Game
             var panel = FindSceneObjectByName("MainMenuPanel");
             browser.Configure(panel);
             browser.Show();
-        }
-
-        /// <summary>LAN / MPPM second-window client join.</summary>
-        static void OnLocalClientClicked()
-        {
-            Debug.Log("[MainMenuUiBootstrap] Local client clicked.");
-            if (TitanOrbitSessionManager.Instance == null)
-            {
-                Debug.LogError("[MainMenuUiBootstrap] TitanOrbitSessionManager missing.");
-                return;
-            }
-
-            TitanOrbitSessionManager.Instance.StartLocalClientForLanTest();
         }
 
         /// <summary>

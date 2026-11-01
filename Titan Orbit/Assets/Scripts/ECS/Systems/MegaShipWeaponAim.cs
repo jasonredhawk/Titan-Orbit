@@ -189,6 +189,33 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
+        /// True when <paramref name="aimPoint"/> is in the forward half-plane of the hull.
+        /// Dot of hull forward and the toroidal offset is at least 0, so a barrel can
+        /// aim up to straight off the beam and no further. A missing map size uses a
+        /// raw offset (callers skip toroidal math until the map exists).
+        /// </summary>
+        public static bool IsInFrontOfHull(
+            in LocalTransform hull,
+            float3 aimPoint,
+            float mapW,
+            float mapH)
+        {
+            float3 hullFwd = math.mul(hull.Rotation, new float3(0f, 0f, 1f));
+            hullFwd.y = 0f;
+            if (math.lengthsq(hullFwd) < MinDirectionSq)
+                return false;
+            hullFwd = math.normalize(hullFwd);
+
+            float3 offset = ToroidalMapEcs.IsValidMapSize(mapW, mapH)
+                ? ToroidalMapEcs.ShortestOffsetXZ(hull.Position, aimPoint, mapW, mapH)
+                : aimPoint - hull.Position;
+            offset.y = 0f;
+            if (math.lengthsq(offset) < MinDirectionSq)
+                return true;
+            return math.dot(hullFwd, offset) >= 0f;
+        }
+
+        /// <summary>
         /// Owner Shift mouse point in the same unbounded space as the hull
         /// (<c>hull + AimPlanarDir × AimDistance</c>).
         /// </summary>

@@ -441,6 +441,7 @@ namespace TitanOrbit.ECS
 
             bool buyingMega = targetLevel == 7;
             ushort megaCatalogIndex = 0;
+            string purchasedChassisId = null;
             if (buyingMega)
             {
                 if (!TryFindPlanetById(em, storePlanetId, out var storePlanetEntity, out _))
@@ -503,7 +504,7 @@ namespace TitanOrbit.ECS
                     ship.Team,
                     targetLevel,
                     targetBranchIndex,
-                    out _,
+                    out purchasedChassisId,
                     allowFallback: false,
                     shipFamilyConfigIndex: storeFamilyIndex))
             {
@@ -541,13 +542,14 @@ namespace TitanOrbit.ECS
             // Debug-free also skips the debit. A normal next-level buy still spends gems.
             if (!debugFree && !sameSlotFamilySwap)
             {
-                // Titan price is this hull's parts, not the shared fallback field.
-                // The orbit-tree button uses the same GetPurchaseGemCost(catalogIndex).
+                // --- Same number the card shows ---
+                // [TITAN-ORBIT] Family hulls sum their gear prices from StatGemRates.
+                // Titans sum the same rates over each bolted part. The old 100/150/250 ladder is not charged.
                 float cost = buyingMega
                     ? (MegaShipCatalog.Load() != null
                         ? MegaShipCatalog.Load().GetPurchaseGemCost(megaCatalogIndex)
-                        : MoonOrbitStorePricing.GetShipUpgradeCost(7))
-                    : MoonOrbitStorePricing.GetShipUpgradeCost(targetLevel);
+                        : MegaShipCatalog.DefaultPurchaseGemCost)
+                    : StatGemPricing.PriceFamilyHull(null, purchasedChassisId, targetLevel);
                 if (!ContributedGemsLogic.TrySpend(em, homeEntity, networkId, cost))
                 {
                     message = "Not enough contributed gems.";
@@ -1701,9 +1703,13 @@ namespace TitanOrbit.ECS
         }
     }
 
-    /// <summary>Simple ship upgrade pricing until full CardShop parity.</summary>
+    /// <summary>
+    /// Retired level ladder (100 / 150 / 250 / 400 / 650 / 1200).
+    /// Live buys charge <see cref="StatGemPricing"/> from <see cref="StatGemRates"/>.
+    /// </summary>
     public static class MoonOrbitStorePricing
     {
+        /// <summary>Old fixed ladder. Not used by the purchase debit or the orbit-tree pill.</summary>
         public static float GetShipUpgradeCost(int targetLevel)
         {
             switch (targetLevel)

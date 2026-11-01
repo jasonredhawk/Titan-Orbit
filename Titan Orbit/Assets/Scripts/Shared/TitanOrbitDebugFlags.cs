@@ -150,6 +150,16 @@ namespace TitanOrbit
         public static bool ShowMapSeamLines = true;
 
         /// <summary>
+        /// When true, regular-ship guns and shots aim at the cursor while that cursor
+        /// is in front of the nose. When false, guns stay on the nose and shots leave
+        /// along the ship. A cursor behind the hull never flips the barrels.
+        /// Written by GameManager (<c>Regular Ships — Guns</c>). Honored on the
+        /// dedicated server so client meshes and server shots use the same mode.
+        /// MEGA hulls ignore this.
+        /// </summary>
+        public static bool RegularShipGunsPoint;
+
+        /// <summary>
         /// When true, the server spawns generalist AI ships for each team that has a home planet.
         /// Honored on the dedicated server so WebGL clients see the same hulls as the Editor host.
         /// Bots stay parked until a real player has a ship in the match.

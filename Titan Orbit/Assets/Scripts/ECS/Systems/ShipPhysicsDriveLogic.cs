@@ -37,8 +37,9 @@ namespace TitanOrbit.ECS
     /// (ExtraSpeedEnergyDrain summed across engines).
     /// MEGA hulls never engage overdrive. Shift locks MEGA yaw only (heading stays
     /// put while the mouse moves) so guns can fire at the cursor. Regular hulls
-    /// keep turning toward the cursor and still burst; their weapon components
-    /// and shots track the mouse point.
+    /// keep turning toward the cursor and still burst. Their guns follow
+    /// Game Manager → Regular Ships — Guns: Forward stays on the nose, Point
+    /// ghosts the mouse point only while it is in front of the hull.
     /// Live subtractive mass tax (<see cref="ShipMobilityResolution"/>) converts untaxed motor
     /// baselines into MaxSpeed / accel / turn from current gems/people + ComponentSize.
     /// While <see cref="ShipAsteroidContactState"/> reports contact from the previous physics
@@ -117,6 +118,10 @@ namespace TitanOrbit.ECS
         /// Shift as a heading lock instead of a speed burst. Regular hulls always yaw.
         /// </param>
         /// <param name="shipPhysicsRadius">Live PhysX covering radius for moon-dock attach only.</param>
+        /// <param name="pointGuns">
+        /// True when Game Manager regular-ship guns are Point. Forward clears the
+        /// ghosted mouse point so barrels stay on the nose.
+        /// </param>
         public static void Step(
             in ShipInput input,
             in ShipMotorConfig motor,
@@ -146,7 +151,8 @@ namespace TitanOrbit.ECS
             float minTurn,
             bool skipMassTax = false,
             bool isMegaShip = false,
-            float shipPhysicsRadius = -1f)
+            float shipPhysicsRadius = -1f,
+            bool pointGuns = false)
         {
             // --- Guard: fixed-step dt only ---
             if (dt <= 0f)
@@ -289,17 +295,20 @@ namespace TitanOrbit.ECS
 
             // --- Yaw: dt-capped slerp toward aim (never snap to mouse in one frame) ---
             // [TITAN-ORBIT] MEGA + Shift: lock heading. Regular hulls always yaw
-            // toward the cursor. Weapon meshes and shots still use the mouse point.
+            // toward the cursor. Gun meshes follow Regular Ships — Guns, not this yaw.
             if (!(isMegaShip && input.Overdrive))
             {
                 AimWorldPoint(in transform.Position, in transform.Rotation, in input.AimPlanarDir, out float2 aimWorldXz);
                 TryRotateTowardAim(ref transform, in aimWorldXz, rotationSpeed, dt);
             }
 
-            if (isMegaShip)
+            if (isMegaShip || !pointGuns)
                 ClearManualAim(ref shipState);
-            else
+            else if (MegaShipWeaponAim.TryGetOwnerMouseAimPoint(in transform, in input, out float3 mousePoint)
+                     && MegaShipWeaponAim.IsInFrontOfHull(in transform, mousePoint, mapW, mapH))
                 WriteManualAim(ref shipState, in transform, in input);
+            else
+                ClearManualAim(ref shipState);
 
             // --- Orbit ring detection (toroidal) ---
             // [TITAN-ORBIT] PeopleTransportDispatchSystem dwells on InOrbitRing; without this write,
