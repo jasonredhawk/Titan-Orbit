@@ -135,6 +135,14 @@ namespace TitanOrbit.Simulation
         public const float EscortFollowCruiseMax = 6f;
 
         /// <summary>
+        /// Load and unload hops travel at 70% of drone formation speed.
+        /// The ship↔planet gap is only a few world units, so the ramp off the hull
+        /// sets the speed; acceleration scales with the square of this factor
+        /// inside the formation step so that ramp slows by the same 30%.
+        /// </summary>
+        public const float LoadUnloadSpeedMultiplier = 0.7f;
+
+        /// <summary>
         /// Magnet lerp rate toward cruise. Lower than the generic transport <c>4</c>
         /// so escorts ease on instead of snapping up to speed.
         /// </summary>

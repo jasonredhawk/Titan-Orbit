@@ -14,7 +14,7 @@ namespace TitanOrbit.ECS
     /// ship ghost (<see cref="PeopleEscortVitalElement"/> + the same slot pose drones use).
     /// Load hops join that slot when the batch opens a new escort. A batch that only
     /// tops up cargo homes on the parked capsule that grows. Unload hops leave a slot
-    /// toward the planet with drone formation accel, and a capture coasts them back.
+    /// toward the planet at 70% of drone formation speed, and a capture coasts them back.
     /// </summary>
     public static class PeopleTransportEscortLogic
     {
@@ -794,7 +794,8 @@ namespace TitanOrbit.ECS
                 dt,
                 mapW,
                 mapH,
-                intent.HoldWorld);
+                intent.HoldWorld,
+                PeopleTransportMath.LoadUnloadSpeedMultiplier);
             offset = new float3(state.Offset.x, 0f, state.Offset.z);
             offsetVelocity = new float3(state.Velocity.x, 0f, state.Velocity.z);
             previousIdle = new float3(state.PreviousIdle.x, 0f, state.PreviousIdle.z);
