@@ -6,15 +6,16 @@ namespace TitanOrbit.Data
     /// <summary>
     /// Turns a part's stats into a gem price using <see cref="StatGemRates"/>.
     /// Each stat is multiplied by that stat's rate (1.25 gems per damage, 0.375 gems per health)
-    /// and the products are added. Regular parts grow with Extra Level first, so a higher
-    /// buy level costs more because the numbers got bigger, not because of a separate percent.
-    /// Titan parts use the same rates on their catalog stats.
+    /// and the products are added. A hull still prices those grown numbers directly.
+    /// A gear card prices the same numbers, then multiplies by the buy level, so a higher
+    /// level costs more even when Per Extra is only a small step. Titan parts use the
+    /// same rates on their catalog stats (no buy-level multiply — Titans do not Extra-Level).
     /// <para>
     /// [TITAN-ORBIT] A ship's price is the sum of those part prices, one charge per bolted copy.
     /// The orbit-tree pill and the server debit both use the hull sum. A hull child is scaled
     /// by its prefab <c>localScale</c> first (same rules as the power bar), then Extra Level
     /// runs, then that family's bonus multipliers. A gear card bought in the store has no hull
-    /// mesh and no family roll yet, so that sticker stays the catalog part.
+    /// mesh and no family roll yet, so that sticker is the catalog part at the buy level.
     /// </para>
     /// </summary>
     public static class StatGemPricing
@@ -29,7 +30,60 @@ namespace TitanOrbit.Data
         {
             StatGemRates rates = StatGemRates.Load();
             rates.ClampRates();
+            return RoundGems(GemSum(stats, rates), rates);
+        }
 
+        /// <summary>
+        /// Gems to buy one family gear part at <paramref name="shipLevel"/>.
+        /// The orbit menu card and the server debit both call this, so the number on
+        /// the button is the number taken from the gem bank.
+        /// </summary>
+        /// <param name="entry">Catalog row for the part being bought. Null costs the part floor.</param>
+        /// <param name="shipLevel">
+        /// Buy level, already <c>min(ship, docked planet)</c>. Level 1 keeps the gem value.
+        /// Each higher level multiplies the value of the stats at that level.
+        /// </param>
+        public static int PriceFamilyPart(ShipFamilyComponentEntry entry, int shipLevel)
+        {
+            if (entry == null)
+                return Mathf.RoundToInt(StatGemRates.Load().minimumPartGems);
+
+            // --- Value at this buy level ---
+            // [TITAN-ORBIT] Extra Level grows the catalog numbers. Ability purchases stay
+            // at 0 — the sticker is the fresh part, not the ship's bottom-bar chips.
+            // Level 1 already includes one step of Per Extra. Weapon bullet speed stays
+            // at the catalog base unless a bullet-speed ability is purchased, and that
+            // purchase is not on this sticker.
+            // Ship-wide mobility drag is left off. That drag shrinks move and turn as the
+            // ship levels, which made a higher-level fin cheaper than a level-1 fin.
+            shipLevel = Mathf.Max(1, shipLevel);
+            var attrs = default(ShipAbilityLevelCounts);
+            bool weapon = ShipComponentAbilityStats.IsWeaponComponent(entry.componentId);
+            ShipComponentAbilityStats atLevel = ShipComponentExtraLevelMath.EvaluatePool(
+                entry.stats,
+                componentCount: 1,
+                shipLevel,
+                in attrs,
+                isWeaponPool: weapon);
+
+            // --- Gem value × buy level ---
+            // [TITAN-ORBIT] Per Extra is often a small step (a fin gains 10 degrees, an
+            // engine gains 0.1 move). The rate table turns that into a fraction of a gem,
+            // so the rounded sticker stayed flat from level 1 to level 6. Multiplying the
+            // gem value by the buy level makes the price follow both inputs: the stats at
+            // this level, and the level itself. Level 1 is unchanged (×1).
+            StatGemRates rates = StatGemRates.Load();
+            rates.ClampRates();
+            float gems = GemSum(atLevel, rates) * shipLevel;
+            return RoundGems(gems, rates);
+        }
+
+        /// <summary>
+        /// Unrounded gem sum for stats that are already final. Per-extra fields are not read.
+        /// Callers that need an integer sticker use <see cref="RoundGems"/>.
+        /// </summary>
+        static float GemSum(in ShipComponentAbilityStats stats, StatGemRates rates)
+        {
             // --- Each stat × its own rate ---
             // [TITAN-ORBIT] Turn is degrees, damage is a small number. They do not share a rate.
             // A stat at 0 adds nothing. Negative stats are treated as 0.
@@ -51,36 +105,24 @@ namespace TitanOrbit.Data
             gems += NonNegative(stats.tractorBeamDistance) * rates.gemsPerTractorRange;
             gems += NonNegative(stats.tractorBeamPower) * rates.gemsPerTractorPower;
             gems += NonNegative(stats.extraSpeedPercent) * rates.gemsPerOverdrive;
+            return gems;
+        }
 
+        /// <summary>
+        /// Nearest gem, never under <see cref="StatGemRates.minimumPartGems"/>.
+        /// </summary>
+        static int RoundGems(float gems, StatGemRates rates)
+        {
             int rounded = Mathf.RoundToInt(gems);
             int floor = Mathf.RoundToInt(rates.minimumPartGems);
             return Mathf.Max(floor, rounded);
         }
 
         /// <summary>
-        /// Gems to buy one family gear part at <paramref name="shipLevel"/>.
-        /// Extra Level runs first (ability purchases stay at 0 — the sticker is the fresh part).
-        /// Fleet bonuses and bullet-bank overlays stay off the price, matching the old gear card.
-        /// </summary>
-        public static int PriceFamilyPart(ShipFamilyComponentEntry entry, int shipLevel)
-        {
-            if (entry == null)
-                return Mathf.RoundToInt(StatGemRates.Load().minimumPartGems);
-
-            // --- Grow, then price ---
-            // [TITAN-ORBIT] Level 1 already includes one step of Per Extra. Weapons keep
-            // bullet speed at the catalog base unless a bullet-speed ability is purchased,
-            // and that purchase is not on this sticker.
-            shipLevel = Mathf.Max(1, shipLevel);
-            ShipComponentAbilityStats grown = ShipComponentStoreData.GetEffectiveStatsAtShipLevel(
-                entry.stats, shipLevel, entry.componentId);
-            return Price(grown);
-        }
-
-        /// <summary>
         /// Gems to buy this family hull: each prefab child that matches a catalog part
-        /// adds that part's gear price at <paramref name="shipLevel"/>. Two copies of the
-        /// same wing add the wing price twice.
+        /// adds the gem value of that child's stats at <paramref name="shipLevel"/>.
+        /// This is not the gear-card sticker — hulls do not also multiply by the level.
+        /// Two copies of the same wing add that value twice.
         /// </summary>
         /// <param name="config">Family list. Null loads the default Resources asset.</param>
         /// <param name="chassisId">Upgrade-tree id such as <c>AstroEagle_07</c>.</param>

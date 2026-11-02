@@ -10,8 +10,9 @@ namespace TitanOrbit.Game
     /// Hybrid-proxy restyle: swaps cockpit / engine / wing meshes when moon-store extras
     /// come from another family, and swaps all weapon mounts when B cycles
     /// <see cref="ShipLoadoutState.RuntimeBulletIndex"/> to that family's bank.
-    /// Host slot pose is kept; source authored scale is used; attribute + store grow
-    /// still run afterward via <see cref="ShipComponentAttributeScaleApplier"/>.
+    /// Host slot pose and authored scale are kept (a 1.5× wing stays 1.5×).
+    /// Attribute + store grow still run afterward via
+    /// <see cref="ShipComponentAttributeScaleApplier"/>.
     /// <para>
     /// [HYBRID] Presentation only. Covering colliders remesh the same way in
     /// <see cref="ShipHullColliderLogic"/>. MEGA hulls are skipped.

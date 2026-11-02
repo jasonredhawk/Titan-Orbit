@@ -2185,7 +2185,7 @@ namespace TitanOrbit.UI
         /// <param name="isCurrent">This is the hull the local player is flying.</param>
         /// <param name="purchasable">Next-tier buy (or debug-free pick) is legal.</param>
         /// <param name="occupied">Unique MEGA already claimed by someone.</param>
-        /// <param name="blocked">Locked (moon gems, no weapons, planet level).</param>
+        /// <param name="blocked">Locked (planet gem bank not full, no weapons, or planet level).</param>
         public void ApplyMegaShipCardStyle(bool isCurrent, bool purchasable, bool occupied, bool blocked)
         {
             // --- MEGA boss-card chrome ---

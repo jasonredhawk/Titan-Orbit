@@ -225,7 +225,7 @@ namespace TitanOrbit.ECS
                         AsteroidDeathPhysics.QueueStripColliders(ecb, state.EntityManager, entity);
                     }
 
-                    // Re-fetch the burn buffer: Record takes another buffer and drops this handle.
+                    // Re-fetch the burn buffer: credit SetComponentData drops this handle.
                     AsteroidDamageCredit.Record(
                         state.EntityManager, entity, inst.SourceNetworkId, healthBefore - asteroid.Health);
                     instances = state.EntityManager.GetBuffer<BurnOverTimeElement>(entity);

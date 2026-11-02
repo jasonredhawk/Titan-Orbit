@@ -31,6 +31,8 @@ namespace TitanOrbit.ECS
     /// Ghosted MEGA identity on a ship. When <see cref="IsMega"/> is true the hull is a static
     /// endgame ship: no attribute upgrades, no gems, auto-fire guns, unique occupancy.
     /// Previous L6 family/level/branch are stored so death can restore that chassis.
+    /// The ten ability purchases from that hull live on <see cref="PreTitanAttributeSnapshot"/>
+    /// (server only) and come back with the chassis.
     /// <para>
     /// [NETCODE] Must be baked on StarshipGhost — runtime AddComponent does not replicate.
     /// </para>
@@ -71,6 +73,24 @@ namespace TitanOrbit.ECS
         /// if Fire is still held (no interpolation — bool snaps).
         /// </summary>
         [GhostField] public bool CannonLaserPulseOn;
+    }
+
+    /// <summary>
+    /// Server-only copy of the ten bottom-bar ability purchases from the hull this
+    /// player flew before boarding a Titan. Not a ghost — clients never read it, and
+    /// it is not written every tick. <see cref="MegaShipStatApplyLogic.ParkAttributesForTitan"/>
+    /// stores it once at purchase. <see cref="MegaShipStatApplyLogic.RestorePreviousHull"/>
+    /// copies it onto the ghosted <see cref="ShipAttributeUpgradeState"/> when the Titan
+    /// dies, then removes this component. A Titan-to-Titan swap must not overwrite it:
+    /// the live bar is already zero, and replacing the copy would forget the old hull.
+    /// </summary>
+    public struct PreTitanAttributeSnapshot : IComponentData
+    {
+        /// <summary>
+        /// Firepower through people-capacity levels, exactly as they were on the
+        /// pre-Titan hull. Zero in a field means that ability was not purchased.
+        /// </summary>
+        public ShipAttributeUpgradeState Attributes;
     }
 
     /// <summary>

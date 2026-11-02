@@ -10,7 +10,9 @@ namespace TitanOrbit.ECS
     /// as <c>abilityLevel</c> in Extra Level math
     /// (each part: Base + its own PerExtra × (shipLevel + ability)),
     /// applied by <see cref="ShipStatApplyLogic"/>. Ghost-serialized for client upgrade UI.
-    /// All ten reset on ship level-up (chassis change).
+    /// All ten clear when the player pays for the next chassis level. A free same-slot
+    /// family swap keeps them. Buying a Titan parks a server copy and death restore
+    /// writes that copy back onto the old hull (<see cref="PreTitanAttributeSnapshot"/>).
     /// </summary>
     public struct ShipAttributeUpgradeState : IComponentData
     {

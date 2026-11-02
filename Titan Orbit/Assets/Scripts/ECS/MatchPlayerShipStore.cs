@@ -30,6 +30,17 @@ namespace TitanOrbit.ECS
         public ShipAccentColors Accents;
         public bool HasMega;
         public MegaShipState Mega;
+
+        /// <summary>
+        /// True when this player disconnected while flying a Titan and still had
+        /// the pre-Titan ability purchases parked. The live bar on a Titan is zero;
+        /// this copy is what death restore writes back.
+        /// </summary>
+        public bool HasParkedAttributes;
+
+        /// <summary>Ability levels from <see cref="PreTitanAttributeSnapshot"/> at capture time.</summary>
+        public ShipAttributeUpgradeState ParkedAttributes;
+
         public EquippedCardElement[] Cards = Array.Empty<EquippedCardElement>();
         public EquippedEquipmentElement[] Equipment = Array.Empty<EquippedEquipmentElement>();
     }
@@ -235,9 +246,18 @@ namespace TitanOrbit.ECS
                     networkId);
                 if (!megaKept)
                 {
-                    // Bay was taken while they were gone. Death-restore path writes the old L6.
+                    // Bay was taken while they were gone. Death-restore path writes the old L6
+                    // and the parked ability purchases. The second gear write below must not
+                    // put the Titan's zeroed live bar back on top of that restore.
                     MegaShipStatApplyLogic.RestorePreviousHull(em, ship);
                     restoredPreviousHull = true;
+                    if (em.HasComponent<ShipAttributeUpgradeState>(ship))
+                    {
+                        snapshot.HasAttributes = true;
+                        snapshot.Attributes = em.GetComponentData<ShipAttributeUpgradeState>(ship);
+                    }
+
+                    snapshot.HasParkedAttributes = false;
                 }
             }
 
@@ -320,6 +340,14 @@ namespace TitanOrbit.ECS
                 snapshot.Mega = em.GetComponentData<MegaShipState>(ship);
             }
 
+            // Server-only. Without this, a disconnect during a Titan drops the
+            // ability purchases that death is supposed to return.
+            if (em.HasComponent<PreTitanAttributeSnapshot>(ship))
+            {
+                snapshot.HasParkedAttributes = true;
+                snapshot.ParkedAttributes = em.GetComponentData<PreTitanAttributeSnapshot>(ship).Attributes;
+            }
+
             snapshot.Cards = CopyBuffer<EquippedCardElement>(em, ship);
             snapshot.Equipment = CopyBuffer<EquippedEquipmentElement>(em, ship);
             return true;
@@ -335,6 +363,20 @@ namespace TitanOrbit.ECS
                 SetOrAdd(em, ship, snapshot.MatchStats);
             if (snapshot.HasAccents)
                 SetOrAdd(em, ship, snapshot.Accents);
+
+            // Parked Titan abilities are not ghosted. Put them back before
+            // RestorePreviousHull, and drop them when this return already restored.
+            if (snapshot.HasParkedAttributes)
+            {
+                SetOrAdd(em, ship, new PreTitanAttributeSnapshot
+                {
+                    Attributes = snapshot.ParkedAttributes,
+                });
+            }
+            else if (em.HasComponent<PreTitanAttributeSnapshot>(ship))
+            {
+                em.RemoveComponent<PreTitanAttributeSnapshot>(ship);
+            }
 
             WriteBuffer(em, ship, snapshot.Cards);
             WriteBuffer(em, ship, snapshot.Equipment);

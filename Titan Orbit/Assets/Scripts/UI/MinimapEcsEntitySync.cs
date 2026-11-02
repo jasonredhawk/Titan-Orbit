@@ -948,9 +948,15 @@ namespace TitanOrbit.UI
                     continue;
                 }
 
-                if (_interestByNetId.ContainsKey(blip.NetworkId))
+                if (_interestByNetId.TryGetValue(blip.NetworkId, out MinimapBlipAnchor placed))
                 {
-                    PlaceInterest(_interestByNetId[blip.NetworkId], blip);
+                    // Position packets already carry FlagDead (4 Hz). The scoreboard can lag
+                    // half a second, which left this X on the expanded map after the hull died.
+                    // Only raise the bit here — a respawn clears it from the roster row above.
+                    if (ViewInterestTuning.ClientWantsAllShipPositions
+                        && (blip.Flags & ViewInterestTuning.FlagDead) != 0)
+                        placed.IsDead = true;
+                    PlaceInterest(placed, blip);
                     continue;
                 }
 

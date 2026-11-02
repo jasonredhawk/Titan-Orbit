@@ -1,5 +1,6 @@
 using TitanOrbit.Core;
 using TitanOrbit.Simulation;
+using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.NetCode;
@@ -392,11 +393,10 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
-    /// Server-only running total of health removed from one asteroid by one ship.
-    /// Not ghosted — added at spawn after ghost identity is stripped. Overkill past
-    /// 0 HP is not counted; only health the rock actually lost.
+    /// One ship's running total of health removed from one asteroid.
+    /// Overkill past 0 HP is not counted; only health the rock actually lost.
     /// </summary>
-    public struct AsteroidDamageCreditElement : IBufferElementData
+    public struct AsteroidDamageCreditElement
     {
         /// <summary><see cref="GhostOwner.NetworkId"/> of the attacker. Bots count.</summary>
         public int NetworkId;
@@ -406,13 +406,26 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
+    /// Server-only per-ship health totals for one asteroid. Not ghosted — added at
+    /// spawn. Every hit rewrites this whole table with <c>SetComponentData</c>.
+    /// The old dynamic buffer was updated inside bullet and burn loops that already
+    /// drop other buffer handles, and only the first ship's opening hit was still
+    /// there when the rock burst.
+    /// </summary>
+    public struct AsteroidDamageCreditState : IComponentData
+    {
+        /// <summary>One row per ship. When the list is full, a new ship replaces the smallest total.</summary>
+        public FixedList128Bytes<AsteroidDamageCreditElement> Entries;
+    }
+
+    /// <summary>
     /// Accumulates per-ship asteroid health damage and names the top contributor
     /// when the rock bursts its gems.
     /// </summary>
     public static class AsteroidDamageCredit
     {
         /// <summary>
-        /// Empty credit buffer on a freshly spawned rock. Clears a copied buffer so a
+        /// Empty credit table on a freshly spawned rock. Clears a copied table so a
         /// respawn cannot inherit the previous life's totals.
         /// </summary>
         public static void Ensure(EntityManager em, Entity asteroid)
@@ -420,55 +433,84 @@ namespace TitanOrbit.ECS
             if (!em.Exists(asteroid))
                 return;
 
-            if (!em.HasBuffer<AsteroidDamageCreditElement>(asteroid))
-                em.AddBuffer<AsteroidDamageCreditElement>(asteroid);
+            if (!em.HasComponent<AsteroidDamageCreditState>(asteroid))
+                em.AddComponentData(asteroid, default(AsteroidDamageCreditState));
             else
-                em.GetBuffer<AsteroidDamageCreditElement>(asteroid).Clear();
+                em.SetComponentData(asteroid, default(AsteroidDamageCreditState));
         }
 
         /// <summary>
         /// Adds health this hit actually removed. No-op for unknown attackers
-        /// (<paramref name="networkId"/> ≤ 0) or when the rock has no credit buffer.
-        /// Does not add the buffer — that would be a structural change inside combat queries.
+        /// (<paramref name="networkId"/> ≤ 0) or when the rock has no credit table.
+        /// Does not add the component — that would be a structural change inside combat queries.
         /// </summary>
         public static void Record(EntityManager em, Entity asteroid, int networkId, float appliedDamage)
         {
             if (networkId <= 0 || appliedDamage <= 0.0001f || !em.Exists(asteroid))
                 return;
-            if (!em.HasBuffer<AsteroidDamageCreditElement>(asteroid))
+            if (!em.HasComponent<AsteroidDamageCreditState>(asteroid))
                 return;
 
-            var credits = em.GetBuffer<AsteroidDamageCreditElement>(asteroid);
-            for (int i = 0; i < credits.Length; i++)
+            var state = em.GetComponentData<AsteroidDamageCreditState>(asteroid);
+            var entries = state.Entries;
+            for (int i = 0; i < entries.Length; i++)
             {
-                if (credits[i].NetworkId != networkId)
+                if (entries[i].NetworkId != networkId)
                     continue;
 
-                var row = credits[i];
+                var row = entries[i];
                 row.Damage += appliedDamage;
-                credits[i] = row;
+                entries[i] = row;
+                state.Entries = entries;
+                em.SetComponentData(asteroid, state);
                 return;
             }
 
-            credits.Add(new AsteroidDamageCreditElement
+            var added = new AsteroidDamageCreditElement
             {
                 NetworkId = networkId,
                 Damage = appliedDamage,
-            });
+            };
+            if (entries.Length < entries.Capacity)
+            {
+                entries.Add(added);
+            }
+            else
+            {
+                // Full table: keep the ships that have actually removed the most health.
+                int smallest = 0;
+                float smallestDamage = float.MaxValue;
+                for (int i = 0; i < entries.Length; i++)
+                {
+                    if (entries[i].Damage >= smallestDamage)
+                        continue;
+                    smallestDamage = entries[i].Damage;
+                    smallest = i;
+                }
+
+                if (appliedDamage <= smallestDamage)
+                    return;
+                entries[smallest] = added;
+            }
+
+            state.Entries = entries;
+            em.SetComponentData(asteroid, state);
         }
 
         /// <summary>
-        /// Highest accumulated health damage. Exact ties keep the earlier contributor
-        /// (first ship to reach that total). 0 when nobody has credit.
+        /// Highest accumulated health damage. Exact ties go to the later row
+        /// (the ship that most recently matched that total), not the first hit.
+        /// 0 when nobody has credit.
         /// </summary>
-        public static int ResolveTop(DynamicBuffer<AsteroidDamageCreditElement> credits)
+        public static int ResolveTop(in AsteroidDamageCreditState state)
         {
             int bestId = 0;
             float best = 0f;
-            for (int i = 0; i < credits.Length; i++)
+            var entries = state.Entries;
+            for (int i = 0; i < entries.Length; i++)
             {
-                var row = credits[i];
-                if (row.NetworkId <= 0 || row.Damage <= best)
+                var row = entries[i];
+                if (row.NetworkId <= 0 || row.Damage < best)
                     continue;
 
                 best = row.Damage;

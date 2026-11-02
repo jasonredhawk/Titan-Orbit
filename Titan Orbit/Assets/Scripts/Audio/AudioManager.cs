@@ -475,10 +475,10 @@ namespace TitanOrbit.Audio
         /// Gem-deposit metronome beat. Pitch follows <paramref name="gemValue"/> on the shared
         /// chromatic piano ladder (same math as collect). Leftover cargo uses the smaller chunk
         /// so the last ticks are not a fake full-load pitch. Optional <paramref name="volumeScale"/>
-        /// applies proximity falloff for other players' deposits (1 = full, 0 = silent).
+        /// scales the beat (1 = full, 0 = silent). Same-moon remote deposits pass 1.
         /// </summary>
         /// <param name="gemValue">Actual gem chunk for pitch this beat.</param>
-        /// <param name="volumeScale">Extra multiplier after mix settings — used for distance hear range.</param>
+        /// <param name="volumeScale">Extra multiplier after mix settings (1 = full).</param>
         public void PlayGemDepositSound(float gemValue, float volumeScale = 1f)
         {
             // --- Deposit metronome one-shot ---
@@ -527,7 +527,7 @@ namespace TitanOrbit.Audio
         /// <param name="clip">Usually <see cref="gemCollectSound"/>.</param>
         /// <param name="gemAmount">Gem value → piano key (1 = highest C, 88 = lowest A).</param>
         /// <param name="clipVolumeMultiplier">Mix slider for gems before global SFX volume.</param>
-        /// <param name="volumeScale">Extra 0–1 scale (remote deposit proximity).</param>
+        /// <param name="volumeScale">Extra 0–1 scale after the gem mix slider.</param>
         private void PlayGemMusicalSFX(
             AudioClip clip,
             float gemAmount,

@@ -324,9 +324,11 @@ namespace TitanOrbit.Systems
                 return false;
             if (nextLevel == 7)
             {
-                if (!EcsGameBridge.TryGetPlanetGemMoonStateByPlanetId(storePlanet.PlanetId, out var moon)
+                // Live ghost bank, not the moon combat reservoir. A level-6 world
+                // with a partial bar (or gems just expelled by moon damage) stays closed.
+                if (!EcsGameBridge.TryGetPlanetStateByPlanetId(storePlanet.PlanetId, out var planetBank)
                     || !MegaShipPlanetLogic.IsMegaPurchaseUnlocked(
-                        storePlanet.PlanetLevel, moon.CurrentMoonGems, moon.MaxMoonGems))
+                        planetBank.PlanetLevel, planetBank.CurrentGems))
                     return false;
             }
 
@@ -335,7 +337,7 @@ namespace TitanOrbit.Systems
             if (!isHome && !isCaptured)
                 return false;
 
-            // Planets cap at level 6; L7 MEGAs use the moon-full gate above, not planet level 7.
+            // Planets cap at level 6; L7 Titans use the full planet-gem gate above, not planet level 7.
             if (nextLevel < 7 && nextLevel > storePlanet.PlanetLevel)
                 return false;
 
@@ -359,8 +361,8 @@ namespace TitanOrbit.Systems
         /// <summary>
         /// True when this docked moon's hull at the player's current ladder slot is a
         /// different chassis (another family's L3, or another planet's unique MEGA).
-        /// L1–L6 still require home + store planet level. L7 uses the moon-full MEGA
-        /// gate — planets never reach level 7.
+        /// L1–L6 still require home + store planet level. L7 uses the full planet-gem
+        /// Titan gate — planets never reach level 7.
         /// </summary>
         public bool CanSwapShipAtSameTreeSlot(
             Starship ship, Planet storePlanet, int targetLevel, int targetBranchIndex, out string chassisId)
@@ -381,14 +383,14 @@ namespace TitanOrbit.Systems
                 return false;
 
             // --- MEGA same-slot swap (L7) ---
-            // [TITAN-ORBIT] Planets and homes cap at 6. L7 uses the moon-full gate, same
-            // as a first MEGA purchase. Comparing targetLevel 7 to those caps blocked
-            // every family swap after the player already owned a MEGA.
+            // [TITAN-ORBIT] Planets and homes cap at 6. L7 uses the full planet-gem gate,
+            // same as a first Titan purchase. Comparing targetLevel 7 to those caps blocked
+            // every family swap after the player already owned a Titan.
             if (targetLevel >= 7)
             {
-                if (!EcsGameBridge.TryGetPlanetGemMoonStateByPlanetId(storePlanet.PlanetId, out var moon)
+                if (!EcsGameBridge.TryGetPlanetStateByPlanetId(storePlanet.PlanetId, out var planetBank)
                     || !MegaShipPlanetLogic.IsMegaPurchaseUnlocked(
-                        storePlanet.PlanetLevel, moon.CurrentMoonGems, moon.MaxMoonGems))
+                        planetBank.PlanetLevel, planetBank.CurrentGems))
                     return false;
             }
             else

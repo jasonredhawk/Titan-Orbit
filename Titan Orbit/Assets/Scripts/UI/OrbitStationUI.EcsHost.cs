@@ -329,10 +329,11 @@ namespace TitanOrbit.UI
 
             // The header reads the ghost directly. The tree reads the adapter, which
             // stayed at the level from menu open. Push the ghost level across on the
-            // same beat that fills the bar, and repaint only when that number changes
-            // so ordinary gem ticks do not rebuild all 24 cards.
-            if (SyncDockedPlanetLevelsFromEcs())
-                RefreshShipTreeVisualStateOnly();
+            // same beat that fills the bar. The tree signature includes each next
+            // hull's gem gate, so this no-ops on ordinary ticks and repaints only
+            // when a buy button should turn on or a planet level unlocks the column.
+            SyncDockedPlanetLevelsFromEcs();
+            RefreshShipTreeVisualStateOnly();
 
             orbitDockSidebar.RefreshDepositStatus(shipGems, bankGems, planetGems, planetLevel);
             orbitDockSidebar.RefreshOrbitPlanetName(storePlanetId);

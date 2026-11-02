@@ -107,8 +107,8 @@ namespace TitanOrbit.Game
         /// <summary>
         /// Re-scans part groups after a mesh swap. Transforms that still exist keep their
         /// authored bind-time base scale/position so B-key weapon swaps cannot compound
-        /// grow onto engines / wings. New instances (the swapped mesh) use the scale they
-        /// were just given (source authored size).
+        /// grow onto engines / wings. New instances (the swapped mesh) use the
+        /// hardpoint scale they were just given — the size of the part they replaced.
         /// </summary>
         public void ForceRebuildAfterHierarchyChange()
         {
@@ -206,7 +206,7 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Puts saved authored bases back on surviving instances. New swapped meshes
-        /// keep the localScale captured from the template (not in the snapshot).
+        /// keep the hardpoint scale just written (not in the snapshot).
         /// </summary>
         static void RestoreAuthoredBases(
             ref ShipComponentAttributeScaleLogic.ScaleGroup group,

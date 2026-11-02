@@ -136,10 +136,10 @@ namespace TitanOrbit.UI
         /// docked moon — Show skips this when <see cref="IsLandedMoonTreePreparedForCurrentPlanet"/>
         /// is true so the first visible frame is not a 24-card hitch.
         /// A later poll skips again while the hull, moon, planet level, loadout, and
-        /// whether the next ship is affordable are unchanged. Bank and cargo labels
-        /// still update. Planet level is copied from the ghost first — the adapter
-        /// otherwise keeps the level from when the menu opened, and a 5→6 level-up
-        /// leaves the two next hulls gray.
+        /// which next-tier hulls the Bank can afford are unchanged. Bank and cargo
+        /// labels still update. Planet level is copied from the ghost first — the
+        /// adapter otherwise keeps the level from when the menu opened, and a 5→6
+        /// level-up leaves the two next hulls gray.
         /// </summary>
         internal void RefreshShipTreeVisualStateOnly()
         {
@@ -185,9 +185,12 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// Identity of what the 24 cards show. Gem totals are not included — only
-        /// whether the next hull is currently affordable — so a deposit beat does
-        /// not redo every power bar. The beta free-ship switch is included: without
-        /// it the poll keeps the paid labels and leaves the other cards locked.
+        /// which next-tier hulls the Bank can currently buy — so a deposit beat does
+        /// not redo every power bar. Each fork target has its own bit: the two ships
+        /// you can upgrade into often cost different amounts, and one shared
+        /// "next hull is affordable" flag left the dearer button grey after the
+        /// cheaper one had already unlocked. The beta free-ship switch is included:
+        /// without it the poll keeps the paid labels and leaves the other cards locked.
         /// </summary>
         int ComputeTreeVisualSignature()
         {
@@ -203,17 +206,17 @@ namespace TitanOrbit.UI
             int planetLevel = store != null ? Mathf.Max(1, store.PlanetLevel) : 0;
             int homeLevel = currentHomePlanet != null ? Mathf.Max(1, currentHomePlanet.HomePlanetLevel) : 0;
 
-            bool canAffordNext = false;
-            if (CardShopSystem.Instance != null && currentShip != null && store != null &&
-                CardShopSystem.Instance.CanPurchaseShipLevelUpgrade(
-                    currentShip, store, out _, out float cost, out _))
-                canAffordNext = contributedGems + 0.01f >= cost;
+            int nextAffordMask = ComputeNextHullAffordMask(store, level, branch);
 
+            // One bit for the Titan column: level 6 and the planet gem bank at its cap.
+            // Ordinary deposits under that cap do not flip the bit, so this poll does not
+            // repaint the 24 cards. Crossing the cap — or moon damage dropping the bank —
+            // does, and the cards lock or unlock on that frame.
             bool megaOpen = false;
             if (store != null &&
-                EcsGameBridge.TryGetPlanetGemMoonStateByPlanetId(store.PlanetId, out var moon))
+                EcsGameBridge.TryGetPlanetStateByPlanetId(store.PlanetId, out var planetBank))
                 megaOpen = MegaShipPlanetLogic.IsMegaPurchaseUnlocked(
-                    store.PlanetLevel, moon.CurrentMoonGems, moon.MaxMoonGems);
+                    planetBank.PlanetLevel, planetBank.CurrentGems);
 
             unchecked
             {
@@ -225,12 +228,47 @@ namespace TitanOrbit.UI
                 hash = hash * 31 + planetId;
                 hash = hash * 31 + planetLevel;
                 hash = hash * 31 + homeLevel;
-                hash = hash * 31 + (canAffordNext ? 1 : 0);
+                hash = hash * 31 + nextAffordMask;
                 hash = hash * 31 + (megaOpen ? 1 : 0);
                 hash = hash * 31 + (GameManager.IsDebugFreeShipUpgradeTreeActive ? 1 : 0);
                 hash = hash * 31 + (int)ShipFamilyMatchBonuses.ActiveMatchSeed;
                 return hash;
             }
+        }
+
+        /// <summary>
+        /// One bit per legal next-tier branch from (<paramref name="shipLevel"/>,
+        /// <paramref name="shipBranch"/>). Bit 0 is the first target
+        /// <see cref="UpgradeTree.GetNextLevelBranchTargets"/> returns. A bit is set
+        /// when Bank covers that hull's price — the same test the price chip uses
+        /// before it becomes a buy button.
+        /// </summary>
+        int ComputeNextHullAffordMask(Planet store, int shipLevel, int shipBranch)
+        {
+            // --- Per-fork gem gate ---
+            // [TITAN-ORBIT] Levels 1–5 offer two next hulls (this branch and the next).
+            // Their part totals differ. Folding both into one boolean meant the poll
+            // stopped repainting once the cheaper chip turned on.
+            if (CardShopSystem.Instance == null || currentShip == null || store == null)
+                return 0;
+            if (shipLevel < 1 || shipLevel > 6)
+                return 0;
+
+            UpgradeTree.GetNextLevelBranchTargets(shipLevel, shipBranch, _shipTreeNextTargets);
+            int nextLevel = shipLevel + 1;
+            int mask = 0;
+            int count = _shipTreeNextTargets.Count;
+            if (count > 8)
+                count = 8;
+            for (int i = 0; i < count; i++)
+            {
+                int cost = CardShopSystem.Instance.GetPurchaseGemCostForUpgradeSlot(
+                    currentShip, store.PlanetId, nextLevel, _shipTreeNextTargets[i]);
+                if (contributedGems >= cost)
+                    mask |= 1 << i;
+            }
+
+            return mask;
         }
 
         /// <summary>
@@ -261,16 +299,19 @@ namespace TitanOrbit.UI
             if (_landPrepareComplete && _landPreparePlanetId == storePlanetId)
             {
                 // --- Same moon as last dock ---
-                // Screenshots are already assigned, so we skip the 24-card paint.
-                // Hide() still SetActive(false) the backdrop; after a long inactive
-                // stretch those power-bar trays are 0×0. Re-arm once at alpha 0 and
-                // flush layout so the second land's hover math has real rects.
+                // Screenshots are already assigned, so a matching signature skips the
+                // 24-card paint. Hide() still SetActive(false) the backdrop; after a
+                // long inactive stretch those power-bar trays are 0×0. Re-arm once at
+                // alpha 0 and flush layout so the second land's hover math has real rects.
+                // If Bank crossed another hull's price while we were away, paint that
+                // chip. Remembering the new signature without a paint left the dearer
+                // button grey, and the later poll then thought the cards were current.
                 if (moonDockCenterBackdrop == null || !moonDockCenterBackdrop.activeSelf)
                 {
                     ArmHiddenLandPrepareHierarchy();
                     Canvas.ForceUpdateCanvases();
                 }
-                RememberTreeVisualSignature();
+                RefreshShipTreeVisualStateOnly();
                 return;
             }
 
@@ -483,9 +524,9 @@ namespace TitanOrbit.UI
                 if (MoonOrbitStationUI.TryResolveMegaOccupancy(
                         storePlanet.PlanetId, view.BranchIndex, out megaOccupiedBy, out megaUnarmed))
                     megaOccupied = megaOccupiedBy != 0;
-                if (!EcsGameBridge.TryGetPlanetGemMoonStateByPlanetId(storePlanet.PlanetId, out var moon)
+                if (!EcsGameBridge.TryGetPlanetStateByPlanetId(storePlanet.PlanetId, out var planetBank)
                     || !MegaShipPlanetLogic.IsMegaPurchaseUnlocked(
-                        storePlanet.PlanetLevel, moon.CurrentMoonGems, moon.MaxMoonGems))
+                        planetBank.PlanetLevel, planetBank.CurrentGems))
                     megaUnlockBlocked = true;
             }
 
@@ -574,8 +615,8 @@ namespace TitanOrbit.UI
                 view.SetPrice("NO WEAPONS");
             else if (megaUnlockBlocked)
             {
-                // The moon gate still blocks the buy. The pill shows what this
-                // Titan's parts cost, not the old "MOON FULL" status word.
+                // The planet gem bank is not full yet (or the world is under level 6).
+                // The pill still shows what this Titan's parts cost.
                 view.SetPrice(FormatTitanCardGemCost(viewChassisId));
             }
             else if (canSwapHull)

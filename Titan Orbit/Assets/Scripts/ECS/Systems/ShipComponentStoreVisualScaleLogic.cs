@@ -14,8 +14,8 @@ namespace TitanOrbit.ECS
     /// and it does not rewrite combat numbers (those stay on Extra Level merge).
     /// <para>
     /// A same-family purchase that wins its pool is omitted. That part replaces the hull
-    /// mesh (<see cref="ShipComponentVisualSwapLogic"/>) and must keep the purchased
-    /// part's authored size. Cross-family winners and extras that lost the pool still grow.
+    /// mesh (<see cref="ShipComponentVisualSwapLogic"/>) at the hardpoint's authored
+    /// scale. Cross-family winners and extras that lost the pool still grow.
     /// </para>
     /// <para>
     /// [TITAN-ORBIT] Scale amount is a <b>stat-increase ratio</b>, not prefab
@@ -230,7 +230,7 @@ namespace TitanOrbit.ECS
                 || chassisParts.MatchedComponentIds.Count == 0)
                 return factors;
 
-            // Same-family pool winners swap their mesh and stay at authored size.
+            // Same-family pool winners swap their mesh onto the hardpoint's scale.
             List<string> sameFamilyPrimaries = CollectSameFamilyReplacingPrimaries(
                 chassisId, chassisParts, extraComponentIds, extraFamilyConfigIndices);
 

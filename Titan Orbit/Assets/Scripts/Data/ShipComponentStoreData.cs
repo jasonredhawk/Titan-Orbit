@@ -163,8 +163,10 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Gems to buy this gear part. Extra Level grows the stats, then
-        /// <see cref="StatGemRates"/> prices each stat (damage, health, turn, and the rest).
+        /// Gems to buy this gear part at <paramref name="shipLevel"/>.
+        /// The price is the gem value of the part's stats at that buy level, multiplied
+        /// by the level. Level 1 is the gem value alone. The orbit menu button and the
+        /// server debit both call this.
         /// </summary>
         public static int GetComponentGemPrice(ShipFamilyComponentEntry entry, int shipLevel)
         {

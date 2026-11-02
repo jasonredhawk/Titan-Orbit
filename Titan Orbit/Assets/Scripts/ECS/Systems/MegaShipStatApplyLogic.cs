@@ -714,11 +714,12 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Leaves a live MEGA for a regular family hull (debug tree pick or same-tier family
-        /// swap after L7). Frees the unique planet slot and clears
+        /// Leaves a live MEGA for a regular family hull (debug tree pick or a non-Titan
+        /// hull after L7). Frees the unique planet slot, clears
         /// <see cref="MegaShipState.IsMega"/> so <see cref="ShipStatApplyLogic.ApplyToShip"/>
-        /// writes the new chassis instead of stamping ShipLevel 7 / MEGA stats again.
-        /// Death uses <see cref="RestorePreviousHull"/> instead — that path keeps the old L6.
+        /// writes the new chassis instead of stamping ShipLevel 7 / MEGA stats again,
+        /// and drops the parked ability bar. Death uses <see cref="RestorePreviousHull"/>
+        /// instead — that path keeps the old L6 and writes those purchases back.
         /// </summary>
         /// <param name="em">Server entity manager (occupancy is authoritative).</param>
         /// <param name="shipEntity">The ship that is leaving its MEGA hull.</param>
@@ -742,11 +743,75 @@ namespace TitanOrbit.ECS
             mega.MegaSlotIndex = 0;
             em.SetComponentData(shipEntity, mega);
             ClearLeftoverMegaMotor(em, shipEntity);
+
+            // --- Drop the parked ability bar ---
+            // [TITAN-ORBIT] This exit picks a new regular hull on purpose (debug tree,
+            // or any non-death leave). Death uses RestorePreviousHull, which writes
+            // the parked purchases back. Leaving them here would resurrect the old
+            // bar the next time this same entity dies as a Titan.
+            DiscardParkedTitanAttributes(em, shipEntity);
+        }
+
+        /// <summary>
+        /// Copies the ten bottom-bar ability purchases onto
+        /// <see cref="PreTitanAttributeSnapshot"/> before a Titan purchase zeros the
+        /// live ghosted bar. Call only when this hull is not already a Titan.
+        /// A Titan-to-Titan swap must keep the original copy — the live bar is
+        /// already zero, and parking it again would forget the old hull.
+        /// </summary>
+        /// <param name="em">Server entity manager.</param>
+        /// <param name="shipEntity">Hull that is about to become a Titan.</param>
+        public static void ParkAttributesForTitan(EntityManager em, Entity shipEntity)
+        {
+            if (!em.Exists(shipEntity) || !em.HasComponent<ShipAttributeUpgradeState>(shipEntity))
+                return;
+
+            // One write at purchase time. Not a per-tick copy, and not a ghost field.
+            var parked = new PreTitanAttributeSnapshot
+            {
+                Attributes = em.GetComponentData<ShipAttributeUpgradeState>(shipEntity),
+            };
+
+            if (em.HasComponent<PreTitanAttributeSnapshot>(shipEntity))
+                em.SetComponentData(shipEntity, parked);
+            else
+                em.AddComponentData(shipEntity, parked);
+        }
+
+        /// <summary>
+        /// Removes a parked pre-Titan ability bar without writing it back.
+        /// Used when the player leaves a Titan for a different regular hull
+        /// instead of dying on it.
+        /// </summary>
+        public static void DiscardParkedTitanAttributes(EntityManager em, Entity shipEntity)
+        {
+            if (em.Exists(shipEntity) && em.HasComponent<PreTitanAttributeSnapshot>(shipEntity))
+                em.RemoveComponent<PreTitanAttributeSnapshot>(shipEntity);
+        }
+
+        /// <summary>
+        /// Writes the parked pre-Titan ability purchases onto the live ghosted bar,
+        /// then removes the server-only copy so a later hull cannot apply them twice.
+        /// No-op when this Titan was bought with no snapshot (nothing was purchased).
+        /// </summary>
+        static void RestoreParkedTitanAttributes(EntityManager em, Entity shipEntity)
+        {
+            if (!em.HasComponent<PreTitanAttributeSnapshot>(shipEntity))
+                return;
+
+            var parked = em.GetComponentData<PreTitanAttributeSnapshot>(shipEntity);
+            if (em.HasComponent<ShipAttributeUpgradeState>(shipEntity))
+                em.SetComponentData(shipEntity, parked.Attributes);
+            else
+                em.AddComponentData(shipEntity, parked.Attributes);
+
+            em.RemoveComponent<PreTitanAttributeSnapshot>(shipEntity);
         }
 
         /// <summary>
         /// Restores the previous L6 hull after MEGA death: frees the planet slot (idempotent),
-        /// clears MEGA flags, and reapplies regular chassis stats.
+        /// clears MEGA flags, writes the parked ability purchases back onto the live bar,
+        /// and reapplies regular chassis stats so those levels affect the old hull.
         /// </summary>
         public static void RestorePreviousHull(EntityManager em, Entity shipEntity)
         {
@@ -776,6 +841,14 @@ namespace TitanOrbit.ECS
             ship.BranchIndex = prevBranch;
             ship.ShipFamilyConfigIndex = prevFamily;
             em.SetComponentData(shipEntity, ship);
+
+            // --- Ability bar from before this Titan ---
+            // [TITAN-ORBIT] Purchase zeroed the ghosted bar because Titans do not
+            // spend ability levels. The server copy still has firepower and the
+            // other nine. Write it back before ApplyToShip so the restored chassis
+            // is born with those levels, not zeros. Must run while IsMega is
+            // already false — ApplyToShip routes to Titan stats while that flag is set.
+            RestoreParkedTitanAttributes(em, shipEntity);
 
             ShipStatApplyLogic.ApplyToShip(em, shipEntity, ship.Team, prevLevel, prevBranch);
         }

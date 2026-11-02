@@ -333,7 +333,9 @@ namespace TitanOrbit.ECS
         /// Server-authoritative ship upgrade, same-slot family swap, or debug-free hull select.
         /// A same-level, same-branch click from another planet's tree is a free hull swap:
         /// that card has the same level price as the hull the player already owns, so no gems
-        /// are spent. A real upgrade is still the next level along a valid tree edge and still costs gems.
+        /// are spent, and the ten ability purchases move onto the new hull. A real upgrade is
+        /// still the next level along a valid tree edge, still costs gems, and still clears
+        /// that bar. A Titan purchase parks the bar first so death can put it back.
         /// Also called directly from <see cref="UI.MoonOrbitRpcClient"/> on Local Host.
         /// </summary>
         public static bool TryPurchaseShipUpgradeForNetworkId(
@@ -382,9 +384,11 @@ namespace TitanOrbit.ECS
             // and MoonOrbitStorePricing prices that card by level only. Charging again, or
             // rejecting it as "not the next level", made the Free button do nothing.
             // A next-level buy is still ShipLevel + 1 along a tree edge and still costs gems.
-            bool sameSlotFamilySwap = !debugFree
-                && targetLevel == ship.ShipLevel
+            // Same ladder card (level + branch), even when the debug free tree is on.
+            // The production Free button is this card on another planet's family.
+            bool sameLadderSlot = targetLevel == ship.ShipLevel
                 && targetBranchIndex == ship.BranchIndex;
+            bool sameSlotFamilySwap = !debugFree && sameLadderSlot;
 
             if (!debugFree)
             {
@@ -404,7 +408,7 @@ namespace TitanOrbit.ECS
                     }
                 }
 
-                // Planets cap at 6; L7 MEGAs use the moon-full gate below, not planet level 7.
+                // Planets cap at 6. L7 Titans use the full planet-gem gate below, not planet level 7.
                 // Same-slot swaps still cannot jump onto a hull this moon is too small to sell.
                 if (targetLevel < 7 && targetLevel > storePlanet.PlanetLevel)
                 {
@@ -452,13 +456,15 @@ namespace TitanOrbit.ECS
 
                 if (!debugFree)
                 {
-                    var moon = em.HasComponent<PlanetGemMoonState>(storePlanetEntity)
-                        ? em.GetComponentData<PlanetGemMoonState>(storePlanetEntity)
-                        : default;
+                    // --- Titan gem-bank gate ---
+                    // [TITAN-ORBIT] The moon combat reservoir stays full after spawn, so it
+                    // cannot tell us the planet is loaded. Moon hits pull gems out of
+                    // PlanetState.CurrentGems. Titans stay locked until that bank is full,
+                    // and lock again the moment damage drops it under the level-6 cap.
                     if (!MegaShipPlanetLogic.IsMegaPurchaseUnlocked(
-                            storePlanet.PlanetLevel, moon.CurrentMoonGems, moon.MaxMoonGems))
+                            storePlanet.PlanetLevel, storePlanet.CurrentGems))
                     {
-                        message = "Titan locked — planet must be level 6 with a full gem moon.";
+                        message = "Titan locked — level 6 planet must be full of gems.";
                         return false;
                     }
                 }
@@ -513,10 +519,10 @@ namespace TitanOrbit.ECS
             }
 
             // --- Already flying this exact card ---
-            // [TITAN-ORBIT] Same family + same slot is not a swap (it would reset attributes
-            // for nothing). A different family's slot at this level is the free swap.
-            // Titans compare catalog rows: another planet's L7 branch can be a different hull
-            // even when the previous family index still matches.
+            // [TITAN-ORBIT] Same family + same slot is not a swap. A different family's
+            // slot at this level is the free swap, and that path keeps every purchased
+            // ability level. Titans compare catalog rows: another planet's L7 branch
+            // can be a different hull even when the previous family index still matches.
             if (sameSlotFamilySwap)
             {
                 if (buyingMega)
@@ -573,10 +579,20 @@ namespace TitanOrbit.ECS
                     var existingMega = em.GetComponentData<MegaShipState>(shipEntity);
                     if (existingMega.IsMega)
                     {
+                        // Already a Titan. Keep Previous* and the parked ability bar
+                        // from the original hull. Parking the live bar here would
+                        // save zeros and forget those purchases.
                         prevFamily = existingMega.PreviousFamilyIndex;
                         prevLevel = math.max(1, existingMega.PreviousLevel);
                         prevBranch = math.max(0, existingMega.PreviousBranch);
                         MegaShipPlanetLogic.FreeSlot(em, existingMega.StorePlanetId, existingMega.MegaSlotIndex);
+                    }
+                    else
+                    {
+                        // First Titan on this hull. The live bar is zeroed below
+                        // because Titans do not use ability purchases. Keep a server
+                        // copy so death can put the same ten levels on the old chassis.
+                        MegaShipStatApplyLogic.ParkAttributesForTitan(em, shipEntity);
                     }
 
                     em.SetComponentData(shipEntity, new MegaShipState
@@ -610,7 +626,16 @@ namespace TitanOrbit.ECS
                 storePlanet.BulletBankIndex);
             em.SetComponentData(shipEntity, ship);
 
-            if (em.HasComponent<ShipAttributeUpgradeState>(shipEntity))
+            // --- Ability bar ---
+            // [TITAN-ORBIT] Paying for the next chassis clears all ten purchases
+            // (firepower, bullet speed, health, regen, energy, move, turn, gems, people).
+            // A Titan purchase does that too, after ParkAttributesForTitan copied them.
+            // A free same-slot family swap is another planet's hull at the same card,
+            // so those levels stay and ApplyToShip below stamps them onto the new chassis.
+            // Debug free-tree clicks on that same card keep them too. A different level
+            // still clears the bar. Titans are excluded: their live bar stays zero.
+            bool keepPurchasedAbilities = sameLadderSlot && !buyingMega;
+            if (!keepPurchasedAbilities && em.HasComponent<ShipAttributeUpgradeState>(shipEntity))
             {
                 var attrs = em.GetComponentData<ShipAttributeUpgradeState>(shipEntity);
                 ShipAttributeUpgradeLogic.Reset(ref attrs);

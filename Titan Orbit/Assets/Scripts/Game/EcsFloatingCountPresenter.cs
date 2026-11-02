@@ -3,13 +3,11 @@ using TitanOrbit;
 using TitanOrbit.Audio;
 using TitanOrbit.Core;
 using TitanOrbit.ECS;
-using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.NetCode;
-using Unity.Transforms;
 using UnityEngine;
 
 namespace TitanOrbit.Game
@@ -39,9 +37,9 @@ namespace TitanOrbit.Game
     /// Gem-deposit audio follows the <b>server</b> metronome via ghosted
     /// <see cref="ShipDepositFeedback.BeatSequence"/> (moon orbit and turret-pad deposits).
     /// Local beats use <see cref="TickLocalDepositMetronome"/> (tagged ship read). Remotes use
-    /// <see cref="TickRemoteGemDepositMetronomes"/> with toroidal hear range. Each beat uses the
-    /// server <see cref="ShipDepositFeedback.LastChunkAmount"/> for pitch. Moon-orbit also
-    /// notifies Orbit Menu Ship/Bank so UI stays locked to real deposits.
+    /// <see cref="TickRemoteGemDepositMetronomes"/> only while both hulls are fully landed on the
+    /// same moon. Each beat uses the server <see cref="ShipDepositFeedback.LastChunkAmount"/> for
+    /// pitch. Moon-orbit also notifies Orbit Menu Ship/Bank so UI stays locked to real deposits.
     /// </para>
     /// </summary>
     public class EcsFloatingCountPresenter : MonoBehaviour
@@ -1216,23 +1214,24 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Nearby <b>remote</b> deposit SFX driven by ghosted <see cref="ShipDepositFeedback"/>.
+        /// Remote deposit SFX driven by ghosted <see cref="ShipDepositFeedback"/>.
+        /// Plays only while the local ship and that remote ship are both fully landed on the
+        /// same moon (<see cref="ShipMoonDockState.MoonPlanetId"/>). Beats on other moons,
+        /// in flight, or on a turret pad stay silent. Sequence still advances off-moon so
+        /// landing does not replay a beat that already happened.
         /// Local beats are owned by <see cref="TickLocalDepositMetronome"/> (skips local owner).
         /// </summary>
         void TickRemoteGemDepositMetronomes(EntityManager em)
         {
-            float hearRange = GemEconomyConstants.GemDepositHearRange;
-            float fullVolumeRange = GemEconomyConstants.GemDepositHearFullVolumeRange;
-            // Missing map period → skip remote deposit SFX distance (never invent 1000).
-            if (!ToroidalMapEcs.TryGetMapSize(out float mapW, out float mapH))
-                return;
-
-            // --- Listener pose for remote proximity ---
-            bool hasListener =
-                EcsGameBridge.TryGetLocalShipPresentationPosition(out Vector3 listenerPos) ||
-                EcsGameBridge.TryGetLocalShipPosition(out listenerPos);
-            if (!hasListener)
-                return;
+            // --- Same moon as the local hull (ghosted dock state) ---
+            bool hearSameMoon = false;
+            int localMoonPlanetId = 0;
+            if (EcsGameBridge.TryGetLocalShipMoonDockState(out ShipMoonDockState localDock) &&
+                localDock.IsFullyLanded)
+            {
+                hearSameMoon = true;
+                localMoonPlanetId = localDock.MoonPlanetId;
+            }
 
             // Throttle: ship gather is fine after ShouldSkipShipEntityQueries; keep cheap when idle.
             if ((Time.frameCount % 3) != 0)
@@ -1242,11 +1241,13 @@ namespace TitanOrbit.Game
                 ComponentType.ReadOnly<ShipTag>(),
                 ComponentType.ReadOnly<ShipState>(),
                 ComponentType.ReadOnly<GhostOwner>(),
-                ComponentType.ReadOnly<ShipDepositFeedback>());
+                ComponentType.ReadOnly<ShipDepositFeedback>(),
+                ComponentType.ReadOnly<ShipMoonDockState>());
             using var entities = shipQuery.ToEntityArray(Allocator.Temp);
             using var shipStates = shipQuery.ToComponentDataArray<ShipState>(Allocator.Temp);
             using var owners = shipQuery.ToComponentDataArray<GhostOwner>(Allocator.Temp);
             using var feedbacks = shipQuery.ToComponentDataArray<ShipDepositFeedback>(Allocator.Temp);
+            using var docks = shipQuery.ToComponentDataArray<ShipMoonDockState>(Allocator.Temp);
 
             for (int i = 0; i < shipStates.Length; i++)
             {
@@ -1294,33 +1295,20 @@ namespace TitanOrbit.Game
                     continue;
                 }
 
+                // Fully landed on the listener's moon — full volume, no distance falloff.
+                // Moon bodies are small; sharing the moon is the hear rule.
+                ShipMoonDockState remoteDock = docks[i];
+                bool sameMoon = hearSameMoon &&
+                                remoteDock.IsFullyLanded &&
+                                remoteDock.MoonPlanetId == localMoonPlanetId;
+                if (!sameMoon)
+                {
+                    _ships[networkId] = snap;
+                    continue;
+                }
+
                 TryGetShipAnchor(networkId, out Transform anchor);
-
-                Vector3 depositorPos;
-                if (anchor != null)
-                    depositorPos = anchor.position;
-                else if (em.HasComponent<LocalTransform>(shipEntity))
-                    depositorPos = em.GetComponentData<LocalTransform>(shipEntity).Position;
-                else
-                {
-                    _ships[networkId] = snap;
-                    continue;
-                }
-
-                float3 listener = new float3(listenerPos.x, listenerPos.y, listenerPos.z);
-                float3 depositor = new float3(depositorPos.x, depositorPos.y, depositorPos.z);
-                float dist = ToroidalMapEcs.ToroidalDistance(listener, depositor, mapW, mapH);
-                if (dist > hearRange)
-                {
-                    _ships[networkId] = snap;
-                    continue;
-                }
-
-                float volumeScale = dist <= fullVolumeRange
-                    ? 1f
-                    : 1f - Mathf.InverseLerp(fullVolumeRange, hearRange, dist);
-
-                EmitGemDepositBeat(networkId, anchor, gemValue, state.Team, volumeScale);
+                EmitGemDepositBeat(networkId, anchor, gemValue, state.Team, 1f);
                 snap.ShipLevel = state.ShipLevel;
                 _ships[networkId] = snap;
             }
@@ -1333,7 +1321,7 @@ namespace TitanOrbit.Game
         /// <param name="anchor">Optional ship hull proxy (null = sound only).</param>
         /// <param name="gemValue">Actual gems this beat (ship × planet, or leftover — drives pitch).</param>
         /// <param name="team">Team tint for the floating count.</param>
-        /// <param name="volumeScale">Proximity volume 0–1 from toroidal hear range.</param>
+        /// <param name="volumeScale">1 for the local ship and for remotes on the same moon.</param>
         static void EmitGemDepositBeat(int networkId, Transform anchor, float gemValue, TeamId team, float volumeScale)
         {
             // Sound does not require a hull proxy — local deposit must tick even if GO sync lags.

@@ -171,6 +171,9 @@ namespace TitanOrbit.ECS.Authoring
                 // [NETCODE] ShipInput is IInputComponentData — replicated from owner client each tick.
                 AddComponent(entity, new ShipInput { DisableSpaceBrakes = false });
                 AddComponent(entity, new ShipKinematics());
+                // [NETCODE] Clamped flight anchor for remote motor prediction. Runtime
+                // AddComponent does not register GhostFields, so remotes would never see it.
+                AddComponent(entity, new ShipRemoteFlightSample());
                 // [NETCODE] Shock expiry must bake so GhostField replicates to owner prediction.
                 AddComponent(entity, new ShipElectricShockState());
                 AddComponent(entity, new ShipBurnOverTimeState());

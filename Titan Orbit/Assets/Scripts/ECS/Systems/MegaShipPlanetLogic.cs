@@ -35,12 +35,39 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// True when this store planet may sell MEGAs: planet level 6 and moon gem pool full.
-        /// Same gate as crown turret level 7.
+        /// True when this store planet may sell Titans (the level-7 MEGA hulls).
+        /// The world must already be level 6 — the highest planet level — and its
+        /// surface gem bank (<see cref="PlanetState.CurrentGems"/>) must sit on that
+        /// level's cap. Reaching level 6 empties the bank, so a fresh level-6 world
+        /// does not sell Titans until players fill the bar again.
+        /// Moon-body hits expel those stored gems as pickups. Any drop under the cap
+        /// locks the column until deposits put the bank back to max.
+        /// Crown turret level 7 is a different gate: it still uses the moon combat
+        /// reservoir via <see cref="PlanetaryDefenseMath.IsCrownTurretUnlocked"/>.
         /// </summary>
-        public static bool IsMegaPurchaseUnlocked(int planetLevel, float currentMoonGems, float maxMoonGems)
+        /// <param name="planetLevel">
+        /// Store planet level from <see cref="PlanetState.PlanetLevel"/>.
+        /// </param>
+        /// <param name="currentPlanetGems">
+        /// Gems stored on the planet. This is the number the moon label shows, not
+        /// <see cref="PlanetGemMoonState.CurrentMoonGems"/>.
+        /// </param>
+        public static bool IsMegaPurchaseUnlocked(int planetLevel, float currentPlanetGems)
         {
-            return PlanetaryDefenseMath.IsCrownTurretUnlocked(planetLevel, currentMoonGems, maxMoonGems);
+            // --- Level 6 only ---
+            // A full bar below 6 levels the planet up and zeroes the bank in the same
+            // deposit, so Titans cannot open on a world that is still climbing.
+            if (planetLevel < PlanetEconomyMath.MaxPlanetLevel)
+                return false;
+
+            // --- Bank must sit on the level-6 cap ---
+            // Same epsilon the deposit math uses when it decides the bar is full.
+            // Level 6 is 100 × 2^5 = 3200. Damage that expels even a few gems fails this.
+            float maxGems = PlanetEconomyMath.GetMaxGemsForLevel(planetLevel);
+            if (maxGems <= PlanetaryDefenseMath.MoonGemFullEpsilon)
+                return false;
+
+            return currentPlanetGems >= maxGems - PlanetaryDefenseMath.MoonGemFullEpsilon;
         }
 
         /// <summary>

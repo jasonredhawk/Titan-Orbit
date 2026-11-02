@@ -43,6 +43,8 @@ namespace TitanOrbit.UI
     /// Live comms sentences keep a dest bullseye on this disc for the message (and
     /// commander linger), clamped to the rim when the world point sits outside radar.
     /// Client presentation only — reads <see cref="MinimapBlipAnchor"/> caches, never map-body ECS gathers.
+    /// The background disc, the rim, and the content mask are drawn by <c>TitanOrbitMinimapDisc.shader</c>
+    /// so a full-screen map stays a smooth circle instead of a stretched low-resolution texture.
     /// </summary>
     public class MinimapController : MonoBehaviour
     {
@@ -87,10 +89,29 @@ namespace TitanOrbit.UI
         private RectTransform minimapRect;
         private RectTransform edgeMarkerContainer; // Container for edge markers (outside mask)
         private Image borderImage; // Reference to the border image
-        /// <summary>Rim stroke on top of the disc, in pixels.</summary>
+        /// <summary>Rim stroke measured inward from the background edge, in UI pixels.</summary>
         const float RingWidthPx = 10f;
-        /// <summary>Extra pixels past the disc so the stroke stays solid on the rim.</summary>
-        const float RingEdgeCoverPx = 2f;
+        /// <summary>
+        /// How far the stroke stays solid past the background edge, in UI pixels.
+        /// The fill and the rim share one circle; this overlap is what hides the fill's outer edge.
+        /// </summary>
+        const float RingPastBackgroundPx = 5f;
+        /// <summary>
+        /// Extra size of the Border rect on each side, in UI pixels.
+        /// Larger than <see cref="RingPastBackgroundPx"/> so the soft outer fade is not cut off by the quad.
+        /// </summary>
+        const float RingEdgeCoverPx = 7f;
+        /// <summary>Filled-circle material shared by the background and the stencil mask. Radii stay 0 and 0.5.</summary>
+        Material _filledDiscMaterial;
+        /// <summary>Rim material on the Border image. Radii are in that larger rect's UV space and change with size.</summary>
+        Material _ringDiscMaterial;
+        /// <summary>Cached lookup of <c>TitanOrbit/UI/MinimapDisc</c>. Null until the shader has imported.</summary>
+        static Shader _minimapDiscShader;
+        static bool _loggedMissingMinimapDiscShader;
+        /// <summary>Full-rect white quad the disc shader stretches. The circle comes from UV, not from the texture.</summary>
+        static Sprite _discQuadSprite;
+        static readonly int DiscInnerRadiusId = Shader.PropertyToID("_InnerRadius");
+        static readonly int DiscOuterRadiusId = Shader.PropertyToID("_OuterRadius");
         private CanvasGroup canvasGroup; // Used to hide minimap until team chosen (keeps Update running so we can show again)
         private Button expandButton;
         private TextMeshProUGUI expandButtonLabel;
@@ -209,6 +230,13 @@ namespace TitanOrbit.UI
         private Transform playerTransform;
         /// <summary>Last play session whose center we accepted. A new join must not keep the exited hull.</summary>
         int _playSessionGeneration = -1;
+        /// <summary>
+        /// Blip passes that must not turn a vanished asteroid into a faded diamond.
+        /// A new match destroys every rock at once. Treating that like a mining kill
+        /// left the previous map's asteroids on the minimap until a browser refresh.
+        /// Two passes cover the session-change frame and the frame after anchors are destroyed.
+        /// </summary>
+        int _suppressDeadAsteroidGhostFrames;
         private Dictionary<Transform, RectTransform> blips = new Dictionary<Transform, RectTransform>();
         private Dictionary<Transform, Image> blipImages = new Dictionary<Transform, Image>();
         private Dictionary<Transform, BlipType> blipTypes = new Dictionary<Transform, BlipType>();
@@ -246,6 +274,12 @@ namespace TitanOrbit.UI
         readonly Dictionary<Transform, Image> _shipTroopFillImages = new Dictionary<Transform, Image>();
         /// <summary>X on the regular-ship blip. Team tint; troops live on the hairline under it.</summary>
         readonly Dictionary<Transform, Image> _shipCrossImages = new Dictionary<Transform, Image>();
+        /// <summary>
+        /// Ship anchors whose mark stays off for this blip pass. A dead hull used to skip
+        /// the draw loop and leave its X (or MEGA triangle) sitting on the radar until respawn,
+        /// because <see cref="UpdateBlipPositions"/> turns every in-range blip back on.
+        /// </summary>
+        readonly HashSet<Transform> _deadShipBlips = new HashSet<Transform>();
         /// <summary>Shared solid MEGA triangle (white; Image.color tints team).</summary>
         Sprite _megaTriangleSpriteCache;
         /// <summary>Shared X on the regular-ship blip (white; Image.color tints team).</summary>
@@ -316,7 +350,11 @@ namespace TitanOrbit.UI
         private readonly List<Transform> blipsToRemove = new List<Transform>();
         private readonly List<Transform> edgeMarkersToRemoveList = new List<Transform>();
 
-        /// <summary>Destroyed asteroids despawn (transform gone); we keep a faded blip at last known position until a new asteroid spawns there (then full-color blip again).</summary>
+        /// <summary>
+        /// Destroyed asteroids despawn (transform gone); we keep a faded blip at the last
+        /// known position until a new asteroid spawns there (then a full-color blip again).
+        /// A new match clears these — the next map does not respawn rocks on the old sites.
+        /// </summary>
         private const float DeadAsteroidBlipAlpha = 0.2f;
         /// <summary>Toroidal distance under which a dim ghost is cleared because a live asteroid respawned at that site.</summary>
         private const float DeadAsteroidGhostClearMatchRadius = 2f;
@@ -1994,6 +2032,20 @@ namespace TitanOrbit.UI
                 ApplyHideNonMinimapUi();
             }
         }
+
+        /// <summary>
+        /// [UNITY] Component destroyed with the HUD. Drop the runtime disc materials so they
+        /// are not left behind after the images that used them are gone.
+        /// </summary>
+        private void OnDestroy()
+        {
+            if (_filledDiscMaterial != null)
+                Destroy(_filledDiscMaterial);
+            if (_ringDiscMaterial != null)
+                Destroy(_ringDiscMaterial);
+            _filledDiscMaterial = null;
+            _ringDiscMaterial = null;
+        }
         
         private void CollapseMinimap()
         {
@@ -2114,38 +2166,156 @@ namespace TitanOrbit.UI
                 texture.Apply(false, true);
         }
 
+        /// <summary>
+        /// Finds <c>TitanOrbit/UI/MinimapDisc</c>. A miss is not cached, so a late import still works.
+        /// </summary>
+        /// <returns>The disc shader, or null if it is not in the build yet.</returns>
+        static Shader GetMinimapDiscShader()
+        {
+            if (_minimapDiscShader == null)
+                _minimapDiscShader = Shader.Find("TitanOrbit/UI/MinimapDisc");
+            return _minimapDiscShader;
+        }
+
+        /// <summary>
+        /// White full-rect sprite used as a UV canvas. The disc shader does not sample it for the shape.
+        /// </summary>
+        /// <returns>A shared sprite. Do not destroy it.</returns>
+        static Sprite GetOrCreateDiscQuadSprite()
+        {
+            if (_discQuadSprite != null)
+                return _discQuadSprite;
+
+            // [UNITY] Built-in white texture. Other systems share it, so this sprite must not destroy the texture.
+            Texture2D tex = Texture2D.whiteTexture;
+            _discQuadSprite = Sprite.Create(
+                tex,
+                new Rect(0, 0, tex.width, tex.height),
+                new Vector2(0.5f, 0.5f),
+                100f,
+                0,
+                SpriteMeshType.FullRect);
+            _discQuadSprite.name = "MinimapDiscQuad";
+            return _discQuadSprite;
+        }
+
+        /// <summary>
+        /// Draws an analytic circle (or ring) on a UI Image.
+        /// Called whenever the minimap is created or resized. Reuses one material per slot.
+        /// </summary>
+        /// <param name="image">Background, border, or mask graphic.</param>
+        /// <param name="innerUv">Hole radius as a fraction of the rect width. 0 is a filled disc.</param>
+        /// <param name="outerUv">Outer half-alpha radius as a fraction of the rect width. 0.5 meets the rect edge.</param>
+        /// <param name="material">Reused material for this slot. Created on the first success.</param>
+        /// <returns>False when the shader is missing. The caller keeps the old texture circle.</returns>
+        bool TryApplyMinimapDisc(Image image, float innerUv, float outerUv, ref Material material)
+        {
+            if (image == null)
+                return false;
+
+            // --- Shader ---
+            Shader shader = GetMinimapDiscShader();
+            if (shader == null)
+            {
+                if (!_loggedMissingMinimapDiscShader)
+                {
+                    _loggedMissingMinimapDiscShader = true;
+                    Debug.LogWarning("Minimap disc shader missing (TitanOrbit/UI/MinimapDisc). Using the stretched circle texture.");
+                }
+                return false;
+            }
+
+            // --- Material radii ---
+            // [UNITY] One material instance per slot. Image.color still tints each graphic on its own.
+            if (material == null)
+            {
+                material = new Material(shader)
+                {
+                    name = "MinimapDisc",
+                    hideFlags = HideFlags.HideAndDontSave
+                };
+            }
+
+            material.SetFloat(DiscInnerRadiusId, innerUv);
+            material.SetFloat(DiscOuterRadiusId, outerUv);
+
+            // Full-rect quad so UV 0.5 is the center of the widget. The shader turns that into the circle.
+            AssignOwnedCircularSprite(image, GetOrCreateDiscQuadSprite());
+            image.useSpriteMesh = false;
+            image.type = Image.Type.Simple;
+            image.material = material;
+
+            // [UNITY] A Mask clones this material for the stencil. Push the radii onto that copy,
+            // or the blip clip would stay on the circle from the first time the mask was built.
+            Material live = image.materialForRendering;
+            if (live != null && live != material)
+            {
+                live.SetFloat(DiscInnerRadiusId, innerUv);
+                live.SetFloat(DiscOuterRadiusId, outerUv);
+            }
+
+            // Radius changes are material floats. Dirty the graphic so the canvas
+            // picks them up on the next draw instead of keeping a stale batch.
+            image.SetMaterialDirty();
+            return true;
+        }
+
+        /// <summary>
+        /// Builds the dark rim on the Border child.
+        /// The rect is a few pixels larger than the disc so the stroke can sit on top of the
+        /// background edge and still have room for a soft fade. Runs from Start, expand, collapse, and resize.
+        /// </summary>
         private void SetupCircularBorder()
         {
-            // Find the border object (it's a child named "Border")
+            // --- Find the rim graphic ---
             Transform borderTransform = transform.Find("Border");
-            if (borderTransform != null)
+            if (borderTransform == null)
+                return;
+
+            borderImage = borderTransform.GetComponent<Image>();
+            if (borderImage == null)
+                return;
+
+            // --- Overhang ---
+            // The corner HUD sits flush to the screen, so only a slim overhang fits there.
+            // The centered full map has room for a wider stroke that fully covers the fill's rim.
+            // Anchors stay stretched to the disc. sizeDelta adds `coverPx` on every side
+            // so the soft outer fade is not cut off by the quad.
+            float discSize = Mathf.Max(8f, displaySize);
+            float pastPx = IsFullMapView ? RingPastBackgroundPx : 2f;
+            float coverPx = IsFullMapView ? RingEdgeCoverPx : 4f;
+            RectTransform borderRect = borderTransform.GetComponent<RectTransform>();
+            if (borderRect != null)
             {
-                borderImage = borderTransform.GetComponent<Image>();
-                if (borderImage != null)
-                {
-                    // A flush ring fades on its last pixels, so blips flash in a bright
-                    // sliver just outside the stroke. Overhang the disc so that fringe
-                    // sits outside the background instead of on it.
-                    RectTransform borderRect = borderTransform.GetComponent<RectTransform>();
-                    if (borderRect != null)
-                    {
-                        borderRect.anchorMin = Vector2.zero;
-                        borderRect.anchorMax = Vector2.one;
-                        borderRect.pivot = new Vector2(0.5f, 0.5f);
-                        borderRect.anchoredPosition = Vector2.zero;
-                        borderRect.sizeDelta = new Vector2(RingEdgeCoverPx * 2f, RingEdgeCoverPx * 2f);
-                    }
-
-                    // Scene tint is 80% and would wash the stroke back out.
-                    borderImage.color = Color.white;
-                    borderImage.useSpriteMesh = false;
-                    borderImage.type = Image.Type.Simple;
-
-                    int textureSize = CircularSpriteTexSize(displaySize);
-                    int discTex = Mathf.Max(8, textureSize - Mathf.RoundToInt(RingEdgeCoverPx) * 2);
-                    AssignOwnedCircularSprite(borderImage, CreateCircularBorderSprite(textureSize, discTex));
-                }
+                borderRect.anchorMin = Vector2.zero;
+                borderRect.anchorMax = Vector2.one;
+                borderRect.pivot = new Vector2(0.5f, 0.5f);
+                borderRect.anchoredPosition = Vector2.zero;
+                borderRect.sizeDelta = new Vector2(coverPx * 2f, coverPx * 2f);
             }
+
+            float borderSize = discSize + coverPx * 2f;
+            // Outer half-alpha is past the background. Inner half-alpha is RingWidthPx inside it.
+            // UV radius is "pixels from center / rect width".
+            float outerPx = discSize * 0.5f + pastPx;
+            float innerPx = Mathf.Max(0f, discSize * 0.5f - RingWidthPx);
+            float outerUv = Mathf.Clamp(outerPx / borderSize, 0.02f, 0.5f);
+            float innerUv = Mathf.Clamp(innerPx / borderSize, 0f, outerUv - 0.001f);
+
+            // Same navy the old texture baked in. The shader reads Image.color.
+            // Scene tint used to multiply the sprite and wash the stroke out, so do not leave it at 0.8.
+            borderImage.color = new Color(0.15f, 0.15f, 0.24f, 0.92f);
+            if (TryApplyMinimapDisc(borderImage, innerUv, outerUv, ref _ringDiscMaterial))
+                return;
+
+            // Shader not imported yet. Keep the previous texture ring so the map is not a white square.
+            borderImage.material = null;
+            borderImage.color = Color.white;
+            borderImage.useSpriteMesh = false;
+            borderImage.type = Image.Type.Simple;
+            int textureSize = CircularSpriteTexSize(displaySize);
+            int discTex = Mathf.Max(8, textureSize - Mathf.RoundToInt(coverPx) * 2);
+            AssignOwnedCircularSprite(borderImage, CreateCircularBorderSprite(textureSize, discTex));
         }
         
         private Sprite CreateCircularBorderSprite(int textureSize, int discTex)
@@ -2195,21 +2365,28 @@ namespace TitanOrbit.UI
             return sprite;
         }
         
+        /// <summary>
+        /// Fills the minimap root with a smooth black disc.
+        /// Collapsed alpha matches the team leaderboard (0.72). Expanded uses <see cref="expandedBackgroundAlpha"/>.
+        /// The circle radius is the rect edge (UV 0.5). The rim rect is larger and paints over that edge.
+        /// </summary>
         private void SetupCircularBackground()
         {
-            // Get or add Image component to the minimap background
             Image bgImage = GetComponent<Image>();
             if (bgImage == null)
-            {
                 bgImage = gameObject.AddComponent<Image>();
-            }
-            
-            // Collapsed disc matches the team leaderboard panel (black at 0.72). Expanded stays near-opaque.
+
             float backgroundAlpha = isExpanded ? expandedBackgroundAlpha : 0.72f;
-            AssignOwnedCircularSprite(bgImage, CreateCircularBackgroundSprite(CircularSpriteTexSize(displaySize), backgroundAlpha));
+            // Black so the disc reads as void glass. Alpha lives here, not in a texture.
+            bgImage.color = new Color(0f, 0f, 0f, backgroundAlpha);
+            if (TryApplyMinimapDisc(bgImage, 0f, 0.5f, ref _filledDiscMaterial))
+                return;
+
+            bgImage.material = null;
             bgImage.type = Image.Type.Simple;
-            // Scene Image may ship with alpha 0.4; use white so sprite alpha is not multiplied down.
+            // Fallback sprite already contains the alpha. White stops the Image tint from darkening it again.
             bgImage.color = Color.white;
+            AssignOwnedCircularSprite(bgImage, CreateCircularBackgroundSprite(CircularSpriteTexSize(displaySize), backgroundAlpha));
         }
         
         private Sprite CreateCircularBackgroundSprite(int size, float alpha)
@@ -2253,28 +2430,34 @@ namespace TitanOrbit.UI
             return sprite;
         }
         
+        /// <summary>
+        /// Clips blips to the same circle as the background.
+        /// [UNITY] Mask writes a stencil from this Image's alpha. The disc shader discards
+        /// pixels outside the circle, so the clip is screen-resolution instead of a stretched texture.
+        /// The mask graphic itself stays hidden; only the stencil is used.
+        /// </summary>
         private void SetupMask()
         {
-            if (minimapContent == null) return;
-            
-            // Add Mask component to minimap content if it doesn't have one
+            if (minimapContent == null)
+                return;
+
             Mask mask = minimapContent.GetComponent<Mask>();
             if (mask == null)
-            {
                 mask = minimapContent.gameObject.AddComponent<Mask>();
-            }
-            mask.showMaskGraphic = false; // Don't show the mask graphic itself
-            
-            // Add Image component for the mask (required by Mask component)
+            mask.showMaskGraphic = false;
+
             Image maskImage = minimapContent.GetComponent<Image>();
             if (maskImage == null)
-            {
                 maskImage = minimapContent.gameObject.AddComponent<Image>();
-            }
-            
-            // Create circular mask sprite
-            AssignOwnedCircularSprite(maskImage, CreateCircularMaskSprite(CircularSpriteTexSize(displaySize)));
+
+            // White so the shader's circle alpha is not multiplied down. The graphic is not shown.
+            maskImage.color = Color.white;
+            if (TryApplyMinimapDisc(maskImage, 0f, 0.5f, ref _filledDiscMaterial))
+                return;
+
+            maskImage.material = null;
             maskImage.type = Image.Type.Simple;
+            AssignOwnedCircularSprite(maskImage, CreateCircularMaskSprite(CircularSpriteTexSize(displaySize)));
         }
         
         private void SetupEdgeMarkerContainer()
@@ -2354,7 +2537,8 @@ namespace TitanOrbit.UI
                     Time.frameCount - _lastCircularSpriteRebuildFrame >= 30)
                 {
                     displaySize = newSize;
-                    // Regenerate circular sprites at the new resolution so the minimap stays crisp when resized/expanded.
+                    // Refresh the rim radii for the new widget size. The circle itself is the shader,
+                    // so this does not allocate a texture.
                     // [TITAN-ORBIT] HUD show after spawn used to change sizeDelta every frame and
                     // rebuild textures (Profiler ~22 ms). Cooldown keeps one rebuild per half-second.
                     _lastCircularSpriteRebuildFrame = Time.frameCount;
@@ -2368,9 +2552,15 @@ namespace TitanOrbit.UI
 
             if (ClientTeamFlowState.PlaySessionGeneration != _playSessionGeneration)
             {
+                // --- New match: drop the previous map's radar marks ---
+                // [TITAN-ORBIT] Leave / join bumps this generation. The world visualizer
+                // already destroys asteroid meshes. Faded "mined rock" diamonds are not
+                // tied to those meshes, so they used to survive until a page refresh.
                 _playSessionGeneration = ClientTeamFlowState.PlaySessionGeneration;
                 playerAnchor = null;
                 playerTransform = null;
+                ClearMinimapForNewMatch();
+                _suppressDeadAsteroidGhostFrames = 2;
             }
 
             // Clear stale reference if player ship was destroyed
@@ -3105,17 +3295,23 @@ namespace TitanOrbit.UI
             blipsToRemove.Clear();
 
             BuildCurrentAsteroidInstanceIdsFromBlips();
-            foreach (var id in lastFrameAsteroidInstanceIds)
+            // A match teardown removes every rock in one frame. Those are not mining kills,
+            // so they must not become permanent faded diamonds on the next map.
+            bool suppressAsteroidGhosts = _suppressDeadAsteroidGhostFrames > 0;
+            if (!suppressAsteroidGhosts)
             {
-                if (currentAsteroidInstanceIds.Contains(id))
-                    continue;
-                if (!asteroidLastWorldPosByInstanceId.TryGetValue(id, out var lastPos))
-                    continue;
-                if (!asteroidBlipPixelSizeByInstanceId.TryGetValue(id, out float pixSize))
-                    pixSize = 8f;
-                AddDeadAsteroidGhost(lastPos, pixSize);
-                asteroidLastWorldPosByInstanceId.Remove(id);
-                asteroidBlipPixelSizeByInstanceId.Remove(id);
+                foreach (var id in lastFrameAsteroidInstanceIds)
+                {
+                    if (currentAsteroidInstanceIds.Contains(id))
+                        continue;
+                    if (!asteroidLastWorldPosByInstanceId.TryGetValue(id, out var lastPos))
+                        continue;
+                    if (!asteroidBlipPixelSizeByInstanceId.TryGetValue(id, out float pixSize))
+                        pixSize = 8f;
+                    AddDeadAsteroidGhost(lastPos, pixSize);
+                    asteroidLastWorldPosByInstanceId.Remove(id);
+                    asteroidBlipPixelSizeByInstanceId.Remove(id);
+                }
             }
 
             blipsToRemove.Clear();
@@ -3164,16 +3360,27 @@ namespace TitanOrbit.UI
             RecomputeTopOfTeamFromCachedShips();
 
             // --- Local player ship (X, or solid triangle while flying a MEGA) ---
+            // Death hides the mark the same frame the HUD knows the hull is dead.
+            // The anchor flag is one presentation frame behind that read.
+            _deadShipBlips.Clear();
             TeamId playerTeam = playerAnchor.Team;
             Color playerColor = playerTeam == TeamId.None ? Color.white : GetTeamColor(playerTeam);
-            // Same pixel size as every remote ship (X or MEGA triangle).
-            EnsureShipBlip(playerTransform, playerColor, ShipBlipSizePx, playerAnchor.IsMega, isPlayer: true);
-            if (blips.TryGetValue(playerTransform, out var playerRt) && playerRt != null)
+            bool localShipDead = playerAnchor.IsDead || HUDController.LocalPlayerDeathHidesHud;
+            if (localShipDead)
             {
-                playerRt.localEulerAngles = Vector3.zero;
-                UpdateBlip(playerTransform, playerColor, ShipBlipSizePx);
-                UpdateShipTroopFill(playerAnchor);
-                UpdateShipRoleDots(playerAnchor);
+                SuppressDeadShipBlip(playerTransform);
+            }
+            else
+            {
+                // Same pixel size as every remote ship (X or MEGA triangle).
+                EnsureShipBlip(playerTransform, playerColor, ShipBlipSizePx, playerAnchor.IsMega, isPlayer: true);
+                if (blips.TryGetValue(playerTransform, out var playerRt) && playerRt != null)
+                {
+                    playerRt.localEulerAngles = Vector3.zero;
+                    UpdateBlip(playerTransform, playerColor, ShipBlipSizePx);
+                    UpdateShipTroopFill(playerAnchor);
+                    UpdateShipRoleDots(playerAnchor);
+                }
             }
 
             // Show all ships (friendly and enemy, including AI) on the minimap
@@ -3185,7 +3392,15 @@ namespace TitanOrbit.UI
                     skippedNullShips++;
                     continue;
                 }
-                if (ship == playerAnchor || ship.IsDead) continue;
+                if (ship == playerAnchor)
+                    continue;
+                // Pull the X off as soon as this hull is dead. Leaving it skipped the
+                // update but kept the last icon until the player respawned.
+                if (ship.IsDead)
+                {
+                    SuppressDeadShipBlip(ship.transform);
+                    continue;
+                }
 
                 // Off-screen roster dots exist for the scoreboard. The corner map does not draw
                 // them, and the expanded map waits until a position packet has arrived.
@@ -3266,7 +3481,21 @@ namespace TitanOrbit.UI
             UpdateCommsPingMarker(playerPos);
             UpdateCommsPathLines(playerPos);
 
-            RebuildLastFrameAsteroidInstanceIds();
+            if (suppressAsteroidGhosts)
+            {
+                _suppressDeadAsteroidGhostFrames--;
+                // Forget the old rocks. Recording them here would ghost the teardown
+                // on the next pass, after this suppression window closes.
+                lastFrameAsteroidInstanceIds.Clear();
+                asteroidLastWorldPosByInstanceId.Clear();
+                asteroidBlipPixelSizeByInstanceId.Clear();
+                ClearDeadAsteroidGhosts();
+            }
+            else
+            {
+                RebuildLastFrameAsteroidInstanceIds();
+            }
+
             UpdateDeadAsteroidGhosts(playerPos);
         }
 
@@ -3329,6 +3558,15 @@ namespace TitanOrbit.UI
             {
                 if (kv.Key == null || kv.Value == null)
                     continue;
+
+                // Dead ships stay hidden even when the death site is still inside the circle.
+                // Respawn drops them from this set and the next pass shows the mark again.
+                if (_deadShipBlips.Contains(kv.Key))
+                {
+                    if (kv.Value.gameObject.activeSelf)
+                        kv.Value.gameObject.SetActive(false);
+                    continue;
+                }
 
                 Vector3 worldPos = kv.Key.position;
                 GetToroidalDelta(playerPos, worldPos, out float dx, out float dz);
@@ -3395,6 +3633,61 @@ namespace TitanOrbit.UI
                     continue;
                 lastFrameAsteroidInstanceIds.Add(kv.Key.GetInstanceID());
             }
+        }
+
+        /// <summary>
+        /// Drops every minimap mark from the match that just ended: live blips, edge arrows,
+        /// and faded asteroid diamonds. The next map's anchors build fresh blips.
+        /// </summary>
+        void ClearMinimapForNewMatch()
+        {
+            foreach (var kv in blips)
+            {
+                if (kv.Value != null)
+                    Destroy(kv.Value.gameObject);
+            }
+
+            blips.Clear();
+            blipImages.Clear();
+            blipTypes.Clear();
+            planetBlipLayoutState.Clear();
+            _shipRoleDotRoots.Clear();
+            _shipRoleDotMask.Clear();
+            _shipTroopFillImages.Clear();
+            _shipCrossImages.Clear();
+
+            foreach (var kv in edgeMarkers)
+            {
+                if (kv.Value != null)
+                    Destroy(kv.Value.gameObject);
+            }
+
+            edgeMarkers.Clear();
+            edgeMarkerImages.Clear();
+            edgeMarkerIsHomePlanet.Clear();
+
+            ClearDeadAsteroidGhosts();
+            lastFrameAsteroidInstanceIds.Clear();
+            currentAsteroidInstanceIds.Clear();
+            asteroidLastWorldPosByInstanceId.Clear();
+            asteroidBlipPixelSizeByInstanceId.Clear();
+            cachedShips = System.Array.Empty<MinimapBlipAnchor>();
+            cachedPlanets = System.Array.Empty<MinimapBlipAnchor>();
+            cachedHomePlanets = System.Array.Empty<MinimapBlipAnchor>();
+            cachedAsteroids = System.Array.Empty<MinimapBlipAnchor>();
+            cachedGemMoons = System.Array.Empty<MinimapBlipAnchor>();
+        }
+
+        /// <summary>Destroys faded mined-asteroid diamonds and forgets their world positions.</summary>
+        void ClearDeadAsteroidGhosts()
+        {
+            for (int i = 0; i < deadAsteroidGhosts.Count; i++)
+            {
+                if (deadAsteroidGhosts[i].rt != null)
+                    Destroy(deadAsteroidGhosts[i].rt.gameObject);
+            }
+
+            deadAsteroidGhosts.Clear();
         }
 
         private void AddDeadAsteroidGhost(Vector3 worldPos, float blipPixelSize)
@@ -3555,6 +3848,21 @@ namespace TitanOrbit.UI
             rt.pivot = new Vector2(0.5f, 0.5f);
 
             return rt;
+        }
+
+        /// <summary>
+        /// Hides one ship's minimap mark (X or MEGA triangle, plus troop hairline and role dots)
+        /// for the rest of this blip pass. The UGUI object stays so respawn can show it again
+        /// without rebuilding the sprite.
+        /// </summary>
+        void SuppressDeadShipBlip(Transform shipTransform)
+        {
+            if (shipTransform == null)
+                return;
+
+            _deadShipBlips.Add(shipTransform);
+            if (blips.TryGetValue(shipTransform, out var rt) && rt != null && rt.gameObject.activeSelf)
+                rt.gameObject.SetActive(false);
         }
 
         /// <summary>

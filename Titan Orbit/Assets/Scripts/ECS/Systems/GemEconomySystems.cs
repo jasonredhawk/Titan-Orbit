@@ -123,18 +123,6 @@ namespace TitanOrbit.ECS
             return math.min(fullChunk, math.max(0f, currentGems));
         }
 
-        /// <summary>
-        /// Max toroidal distance (world units) at which a client still hears another ship's
-        /// gem-deposit metronome. Beyond this the beat is silent — keeps distant moons quiet.
-        /// </summary>
-        public const float GemDepositHearRange = 48f;
-
-        /// <summary>
-        /// Within this toroidal distance deposit beats play at full volume; between this and
-        /// <see cref="GemDepositHearRange"/> volume falls off linearly.
-        /// </summary>
-        public const float GemDepositHearFullVolumeRange = 18f;
-
         /// <summary>Smallest gem chunk worth spawning as an entity.</summary>
         public const float MinGemSpawnValue = 0.25f;
 
@@ -1423,12 +1411,13 @@ namespace TitanOrbit.ECS
 
                 if (canSpawnGems && remaining >= GemEconomyConstants.MinGemSpawnValue)
                 {
-                    // Health actually removed, not the last hit. 0 when the rock was only mined.
+                    // Sum of health actually removed, not the first or last hit.
+                    // 0 when the rock was only mined (no credited shots / rams / burns).
                     int exclusiveClaimNetworkId = 0;
-                    if (em.HasBuffer<AsteroidDamageCreditElement>(entity))
+                    if (em.HasComponent<AsteroidDamageCreditState>(entity))
                     {
                         exclusiveClaimNetworkId = AsteroidDamageCredit.ResolveTop(
-                            em.GetBuffer<AsteroidDamageCreditElement>(entity));
+                            em.GetComponentData<AsteroidDamageCreditState>(entity));
                     }
 
                     if (settings.DestroyClaimExclusiveSeconds <= 0f)

@@ -8,11 +8,12 @@ namespace TitanOrbit.Data
     /// A plate with 6 health at 0.375 gems per health costs about 2 gems from health alone.
     /// The part's sticker is the sum of every stat it actually has.
     /// <para>
-    /// [TITAN-ORBIT] Regular parts are priced after Extra Level, so raising ship level
-    /// raises the stats and the price follows without a second curve. Titan parts use
-    /// this same table on their catalog stats. The gear card, the orbit-tree hull pill,
-    /// and the server debit all read <see cref="StatGemPricing"/>, which multiplies
-    /// by these rates. Edit this asset, do not hard-code a new formula.
+    /// [TITAN-ORBIT] Hull parts are priced after Extra Level, so a higher hull level
+    /// costs more because the numbers got bigger. A gear card uses the same rates on
+    /// the stats at the buy level, then multiplies by that level. Titan parts use this
+    /// table on their catalog stats. The gear card, the orbit-tree hull pill, and the
+    /// server debit all read <see cref="StatGemPricing"/>. Edit this asset, do not
+    /// hard-code a new rate.
     /// </para>
     /// Lives at <c>Assets/Resources/StatGemRates.asset</c> so a dedicated server build
     /// loads the same numbers as the client. Create another via

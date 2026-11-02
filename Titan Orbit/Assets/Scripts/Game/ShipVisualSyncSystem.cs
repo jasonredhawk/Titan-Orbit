@@ -15,11 +15,10 @@ namespace TitanOrbit.Game
 {
     /// <summary>
     /// Publishes NetCode presentation-phase ship poses once per frame for camera, hybrid leftovers,
-    /// and parallax. Remote and AI hulls are OwnerPredicted ghosts in interpolated mode. On a host
-    /// that steps twice per frame, snapshots land about every other sim tick, so that interpolated
-    /// pose still steps beside a gliding local ship. This system coasts those hulls at ghost
-    /// <see cref="ShipKinematics.Velocity"/> and bleeds the leftover error. It does not queue
-    /// snapshots by arrival time — a burst stamped with one clock collapsed onto the newest pose.
+    /// and parallax. Remote and AI hulls are driven by <see cref="ShipRemoteMotorSystem"/> up to
+    /// the estimated server tick. This system copies that pose and adds at most one tick of
+    /// velocity so extra render frames do not freeze the hull. It does not coast them a second
+    /// time toward the interpolated snapshot.
     /// <para>
     /// [TITAN-ORBIT] Local ship wraps onto the canonical chart; camera follows that pose.
     /// A ±map-size jump hard-snaps display (no long lerp / H73 coast across the rectangle).
@@ -30,8 +29,8 @@ namespace TitanOrbit.Game
     /// the hull pose (that coast chased every PhysX bounce and looked jittery). The hull stays
     /// on H73 cruise; <see cref="CameraFollowEcs"/> trails the published pose while
     /// <see cref="ShipDisplayPose.LocalHullContact"/> is set. A held predicted tick glides
-    /// at kinematics speed for at most one simulation step so formation flight does not
-    /// shuffle against interpolated remote and AI ships. Ship-vs-ship separation is the
+        /// at kinematics speed for at most one simulation step so formation flight does not
+        /// shuffle against remote and AI ships on the same server tick. Ship-vs-ship separation is the
     /// simulated pose from the shared tick, not a display offset. Wrap / respawn / 50u
     /// abandon still hard-snap, and that glide is not applied on wrap, death, catch-up,
     /// or overlap. GhostPredictionSmoothing is left off so this system alone
@@ -133,20 +132,10 @@ namespace TitanOrbit.Game
         const int MissingShipClearDelayFrames = 45;
 
         /// <summary>
-        /// Remote display snaps when the coast is this far from the interpolated pose.
-        /// Covers respawn and join. Ordinary 2-tick snapshot steps stay on the bleed.
+        /// Remote display snaps when the motor pose is this far from the last published pose.
+        /// Covers respawn and join. The motor already bled smaller gaps.
         /// </summary>
         const float RemoteSnapDistance = 24f;
-
-        /// <summary>
-        /// How fast a remote display closes leftover error after the velocity coast (1/seconds).
-        /// High enough that a hull flying next to you does not trail, low enough that a
-        /// two-tick snapshot step does not land in one frame.
-        /// </summary>
-        const float RemoteCorrectSharpness = 18f;
-
-        /// <summary>Sit on the snapshot once the coast is this close, so the hull does not shimmer.</summary>
-        const float RemoteSettleDistance = 0.02f;
 
         // --- Local-owner display state (not sim) ---
         float3 _smoothPos;
@@ -176,14 +165,14 @@ namespace TitanOrbit.Game
         /// <summary>False until cruise has sampled a pose, and after snap / overlap / catch-up.</summary>
         bool _cruiseSimSampleValid;
 
-        /// <summary>Per remote hull: last published display pose. Not a snapshot queue.</summary>
-        readonly Dictionary<Entity, RemoteDisplayPose> _remotePoses = new Dictionary<Entity, RemoteDisplayPose>(32);
+        /// <summary>Per remote hull: last published pose, so a wrap or respawn snaps.</summary>
+        readonly Dictionary<Entity, RemotePublishedPose> _remotePublished = new Dictionary<Entity, RemotePublishedPose>(32);
 
         /// <summary>Reused keys for remotes that were not published this frame.</summary>
         readonly List<Entity> _remotePrune = new List<Entity>(32);
 
         /// <summary>
-        /// Each presentation frame: publish the interpolated remote pose, then soft-track
+        /// Each presentation frame: publish the remote motor pose, then soft-track
         /// or raw-follow the local owner. Local pose keeps updating during gem Instantiates
         /// backlog so the camera does not freeze then jump.
         /// </summary>
@@ -245,13 +234,12 @@ namespace TitanOrbit.Game
             // missed deferred Confirm / TeamChoice hold folds. Use the helper API.
             if (!skipShipGathers)
             {
-                // Snapshots arrive about every other sim tick (host steps twice per frame).
-                // Copying that pose makes a hull beside you stutter. Coast at ghost velocity
-                // and bleed the error. Do not queue samples by arrival time.
+                // The motor already bled the hull to the estimated server tick.
+                // Extra render frames only add the fraction of the current tick.
                 int frame = UnityEngine.Time.frameCount;
-                float dt = math.min(math.max(0f, UnityEngine.Time.unscaledDeltaTime), MaxSmoothDeltaTime);
                 float now = UnityEngine.Time.unscaledTime;
                 bool hasMap = ToroidalMapEcs.TryGetMapSize(out float mapW, out float mapH);
+                float tickDt = 1f / TitanOrbitServerTickRateSystem.SimulationHz;
                 foreach (var (lt, entity) in SystemAPI
                              .Query<RefRO<LocalTransform>>()
                              .WithAll<ShipTag>()
@@ -263,15 +251,8 @@ namespace TitanOrbit.Game
                         SystemAPI.IsComponentEnabled<GhostOwnerIsLocal>(entity))
                         continue;
 
-                    float3 vel = float3.zero;
-                    if (EntityManager.HasComponent<ShipKinematics>(entity))
-                    {
-                        vel = EntityManager.GetComponentData<ShipKinematics>(entity).Velocity;
-                        vel.y = 0f;
-                    }
-
-                    LocalTransform display = StepRemoteDisplay(
-                        entity, lt.ValueRO, vel, dt, now, frame, hasMap, mapW, mapH);
+                    LocalTransform display = PublishRemotePose(
+                        entity, lt.ValueRO, now, frame, tickDt, hasMap, mapW, mapH);
                     PublishShip(entity, display);
                     if (EntityManager.HasComponent<LocalToWorld>(entity))
                     {
@@ -431,7 +412,7 @@ namespace TitanOrbit.Game
 
             // --- Publish pose for camera / hybrid / EG LocalToWorld ---
             // Cruise may sit up to one tick ahead of a held sim pose. Remotes stay on the
-            // interpolated snapshot published above.
+            // motor pose published above.
             float3 published = _smoothPos;
             var displayLt = lt;
             displayLt.Position = published;
@@ -471,7 +452,7 @@ namespace TitanOrbit.Game
         /// H73 cruise: snap to the render target when within one tick or the cruise floor;
         /// otherwise coast + capped soft correct (H71). A held predicted pose (same sim
         /// position across extra render frames) aims one step ahead at kinematics velocity
-        /// so the camera matches interpolated remotes. Grind / hull bounce is not filtered
+        /// so the camera matches remote hulls on the server tick. Grind / hull bounce is not filtered
         /// here — the camera trails that pose on its own anchor.
         /// </summary>
         /// <param name="simPos">Predicted / reconciled pose this frame.</param>
@@ -642,131 +623,98 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// One remote hull's display pose. Coast at replicated velocity, then bleed toward
-        /// the interpolated snapshot on the torus. A held snapshot glides at most one tick
-        /// ahead so extra render frames do not freeze the hull. Wrap and respawn snap.
+        /// Copies the remote motor pose. Adds at most one tick of velocity between sim
+        /// steps. Wrap, death, and a 24 unit gap snap to the motor pose with no lead.
         /// </summary>
-        LocalTransform StepRemoteDisplay(
+        LocalTransform PublishRemotePose(
             Entity entity,
             in LocalTransform snapshot,
-            float3 vel,
-            float dt,
             float now,
             int frame,
+            float tickDt,
             bool hasMap,
             float mapW,
             float mapH)
         {
             float3 target = snapshot.Position;
             quaternion targetRot = snapshot.Rotation;
-            _remotePoses.TryGetValue(entity, out RemoteDisplayPose pose);
+            float3 velocity = float3.zero;
+            bool holding = false;
+            bool dead = EntityManager.HasComponent<ShipState>(entity)
+                        && EntityManager.GetComponentData<ShipState>(entity).IsDead;
+            if (EntityManager.HasComponent<ShipRemoteMotorState>(entity))
+            {
+                var motor = EntityManager.GetComponentData<ShipRemoteMotorState>(entity);
+                if (motor.Valid != 0)
+                {
+                    target = motor.DisplayPosition;
+                    targetRot = motor.DisplayRotation;
+                    velocity = motor.Velocity;
+                    velocity.y = 0f;
+                    holding = motor.Holding != 0;
+                    float age = holding
+                        ? 0f
+                        : math.clamp(now - motor.IntegratedUnscaledTime, 0f, tickDt);
+                    if (!dead && age > 0f)
+                    {
+                        target += velocity * age;
+                        if (hasMap)
+                            target = ToroidalMapEcs.Wrap(target, mapW, mapH);
+                        target.y = motor.DisplayPosition.y;
+                    }
+                }
+            }
 
-            float3 gap = TargetOffset(pose.Pos, target, hasMap, mapW, mapH);
+            _remotePublished.TryGetValue(entity, out RemotePublishedPose prev);
+            float3 gap = hasMap
+                ? ToroidalMapEcs.ShortestOffsetXZ(prev.Pos, target, mapW, mapH)
+                : target - prev.Pos;
             float gapLen = math.length(gap);
-            bool wrap = pose.Valid && hasMap && ToroidalMapEcs.IsWrapJump(pose.Pos, target, mapW, mapH);
-            bool snap = !pose.Valid || wrap || gapLen > RemoteSnapDistance;
-
-            float3 publishedPos;
-            quaternion publishedRot;
-            if (snap)
+            bool wrap = prev.Valid && hasMap && ToroidalMapEcs.IsWrapJump(prev.Pos, target, mapW, mapH);
+            if (!prev.Valid || wrap || dead || gapLen > RemoteSnapDistance)
             {
-                publishedPos = target;
-                publishedRot = targetRot;
-                pose.SamplePos = target;
-                pose.SampleTime = now;
-                pose.Valid = true;
-            }
-            else
-            {
-                float tickDt = 1f / TitanOrbitServerTickRateSystem.SimulationHz;
-                bool held = math.distancesq(pose.SamplePos, target) <=
-                            CruiseHeldTickPositionEpsilon * CruiseHeldTickPositionEpsilon;
-                if (!held)
+                if (EntityManager.HasComponent<ShipRemoteMotorState>(entity))
                 {
-                    pose.SamplePos = target;
-                    pose.SampleTime = now;
-                }
-
-                float planarSpeed = math.length(vel.xz);
-                float lead = 0f;
-                if (held && planarSpeed > CruiseHeldTickMinPlanarSpeed)
-                    lead = math.clamp(now - pose.SampleTime, 0f, tickDt);
-
-                float3 renderTarget = target + vel * lead;
-                if (hasMap)
-                    renderTarget = ToroidalMapEcs.Wrap(renderTarget, mapW, mapH);
-                renderTarget.y = target.y;
-
-                float3 coast = pose.Pos + vel * dt;
-                if (hasMap)
-                    coast = ToroidalMapEcs.Wrap(coast, mapW, mapH);
-
-                float3 remain = TargetOffset(coast, renderTarget, hasMap, mapW, mapH);
-                float remainLen = math.length(remain);
-                if (remainLen <= RemoteSettleDistance)
-                {
-                    publishedPos = renderTarget;
-                    publishedRot = targetRot;
-                }
-                else
-                {
-                    float blend = 1f - math.exp(-RemoteCorrectSharpness * math.max(0f, dt));
-                    float3 pull = remain * blend;
-                    float pullLen = math.length(pull);
-                    float cap = math.max(planarSpeed, 12f) * math.max(dt, tickDt);
-                    if (pullLen > cap && pullLen > 1e-6f)
-                        pull *= cap / pullLen;
-
-                    publishedPos = coast + pull;
-                    if (hasMap)
-                        publishedPos = ToroidalMapEcs.Wrap(publishedPos, mapW, mapH);
-                    publishedPos.y = renderTarget.y;
-                    publishedRot = math.slerp(pose.Rot, targetRot, blend);
+                    var motor = EntityManager.GetComponentData<ShipRemoteMotorState>(entity);
+                    if (motor.Valid != 0)
+                    {
+                        target = motor.DisplayPosition;
+                        targetRot = motor.DisplayRotation;
+                    }
                 }
             }
 
-            pose.Pos = publishedPos;
-            pose.Rot = publishedRot;
-            pose.Frame = frame;
-            _remotePoses[entity] = pose;
+            prev.Pos = target;
+            prev.Rot = targetRot;
+            prev.Valid = true;
+            prev.Frame = frame;
+            _remotePublished[entity] = prev;
 
             var display = snapshot;
-            display.Position = publishedPos;
-            display.Rotation = publishedRot;
+            display.Position = target;
+            display.Rotation = targetRot;
             return display;
-        }
-
-        /// <summary>Shortest planar offset from <paramref name="from"/> to <paramref name="to"/>, plus Y.</summary>
-        static float3 TargetOffset(float3 from, float3 to, bool hasMap, float mapW, float mapH)
-        {
-            float3 offset = hasMap
-                ? ToroidalMapEcs.ShortestOffsetXZ(from, to, mapW, mapH)
-                : to - from;
-            offset.y = to.y - from.y;
-            return offset;
         }
 
         /// <summary>Drops display state for hulls that were not published this frame.</summary>
         void PruneRemoteDisplays(int frame)
         {
             _remotePrune.Clear();
-            foreach (var kv in _remotePoses)
+            foreach (var kv in _remotePublished)
             {
                 if (kv.Value.Frame != frame)
                     _remotePrune.Add(kv.Key);
             }
 
             for (int i = 0; i < _remotePrune.Count; i++)
-                _remotePoses.Remove(_remotePrune[i]);
+                _remotePublished.Remove(_remotePrune[i]);
         }
 
-        /// <summary>Last coast pose for one remote or AI hull.</summary>
-        struct RemoteDisplayPose
+        /// <summary>Last published pose for one remote or AI hull.</summary>
+        struct RemotePublishedPose
         {
             public float3 Pos;
             public quaternion Rot;
-            public float3 SamplePos;
-            public float SampleTime;
             public bool Valid;
             public int Frame;
         }

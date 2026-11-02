@@ -806,9 +806,9 @@ namespace TitanOrbit.UI
             {
                 if (TryResolveMegaOccupancy(_storePlanetId, view.BranchIndex, out megaOccupiedBy, out megaUnarmed))
                     megaOccupied = megaOccupiedBy != 0;
-                if (!EcsGameBridge.TryGetPlanetGemMoonStateByPlanetId(_storePlanetId, out var moon)
+                if (!EcsGameBridge.TryGetPlanetStateByPlanetId(_storePlanetId, out var planetBank)
                     || !MegaShipPlanetLogic.IsMegaPurchaseUnlocked(
-                        StorePlanetLevel, moon.CurrentMoonGems, moon.MaxMoonGems))
+                        planetBank.PlanetLevel, planetBank.CurrentGems))
                     megaUnlockBlocked = true;
             }
 
@@ -887,8 +887,8 @@ namespace TitanOrbit.UI
                 view.SetPrice("NO WEAPONS");
             else if (megaUnlockBlocked)
             {
-                // Moon must still be full before the buy goes through. The pill
-                // shows this Titan's part total instead of "MOON FULL".
+                // Planet gem bank must be full before the buy goes through. The pill
+                // shows this Titan's part total.
                 view.SetPrice($"{titanGemCost}g");
             }
             else if (isCurrent)
