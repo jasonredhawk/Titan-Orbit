@@ -7,32 +7,20 @@ using UnityEngine;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Turns moon-dock store component purchases into per-part-type visual scale factors.
-    /// When you buy a cockpit or engine (often from another ship family at a captured moon),
-    /// this helper compares that part's evaluated stats to the chassis primary of the same
-    /// type and grows your existing matching meshes — it does not spawn the purchased mesh
-    /// and it does not rewrite combat numbers (those stay on Extra Level merge).
+    /// Orbit-menu GEAR purchases change combat stats and may swap the winning mesh
+    /// (<see cref="ShipComponentVisualSwapLogic"/>). They do <b>not</b> resize the
+    /// ship's existing parts. <see cref="Compute"/> and <see cref="ComputeForShip"/>
+    /// always return <see cref="Identity"/> so a bought wing, engine, or cockpit stays
+    /// at the hull's authored size (attribute upgrades still scale through
+    /// <see cref="ShipComponentAttributeScaleLogic"/>).
     /// <para>
-    /// A same-family purchase that wins its pool is omitted. That part replaces the hull
-    /// mesh (<see cref="ShipComponentVisualSwapLogic"/>) at the hardpoint's authored
-    /// scale. Cross-family winners and extras that lost the pool still grow.
-    /// </para>
-    /// <para>
-    /// [TITAN-ORBIT] Scale amount is a <b>stat-increase ratio</b>, not prefab
-    /// <c>localScale</c>. Weaker extras never shrink (grow-only). Several extras of one
-    /// type take the <b>max</b> factor. MEGA hulls return identity (no family part groups).
-    /// Paired with <see cref="ShipComponentAttributeScaleLogic"/> (meshes + collider bake)
-    /// and <see cref="Game.ShipComponentAttributeScaleApplier"/> (hybrid proxy).
+    /// This type still owns the equipment-buffer helpers those other systems need:
+    /// catalog id collection, source-family lookup, and the dirty key for mesh-swap
+    /// and hull rebakes.
     /// </para>
     /// </summary>
     public static class ShipComponentStoreVisualScaleLogic
     {
-        /// <summary>
-        /// Ignore category magnitudes below this so a zero Health cockpit cannot divide
-        /// into a huge ratio.
-        /// </summary>
-        const float MagnitudeEpsilon = 0.0001f;
-
         /// <summary>
         /// Treat ratios this close to 1 as "no grow" so float noise does not dirty collider bakes.
         /// </summary>
@@ -43,14 +31,6 @@ namespace TitanOrbit.ECS
         /// the mesh (playtest clamp — not a combat stat cap).
         /// </summary>
         public const float MaxGroupScale = 3f;
-
-        /// <summary>Hull-plus-purchase ids while picking same-family primaries. Not re-entrant.</summary>
-        static readonly List<string> SameFamilyIdScratch = new List<string>(32);
-        static readonly List<ShipComponentAbilityStats> SameFamilyStatScratch =
-            new List<ShipComponentAbilityStats>(32);
-        static readonly List<ShipFamilySpecialBonuses> SameFamilyFleetScratch =
-            new List<ShipFamilySpecialBonuses>(32);
-        static readonly List<string> SameFamilyWinnerScratch = new List<string>(4);
 
         /// <summary>
         /// Per attribute-scale group multipliers. Default (all zeros) means "unset" —
@@ -164,112 +144,36 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Reads the ship's equipment buffer and chassis, then returns per-group grow factors.
-        /// MEGA hulls and missing chassis return <see cref="Identity"/>.
+        /// Per-part scale from equipped GEAR. Always <see cref="Identity"/> — a purchase
+        /// must not grow wings, weapons, engines, or any other hull part.
         /// </summary>
-        /// <param name="em">Server or client EntityManager (ghost buffer is replicated).</param>
-        /// <param name="shipEntity">Ship ghost.</param>
+        /// <param name="em">Unused. Kept so hull sync and the hybrid applier keep one call site.</param>
+        /// <param name="shipEntity">Unused. See <paramref name="em"/>.</param>
         public static StoreVisualScaleFactors ComputeForShip(EntityManager em, Entity shipEntity)
         {
-            if (shipEntity == Entity.Null || !em.Exists(shipEntity))
-                return Identity;
-
-            // [TITAN-ORBIT] MEGA parts are unique catalog modules, not family Cockpit/Engine groups.
-            if (em.HasComponent<MegaShipState>(shipEntity)
-                && em.GetComponentData<MegaShipState>(shipEntity).IsMega)
-                return Identity;
-
-            if (!em.HasComponent<ShipState>(shipEntity))
-                return Identity;
-
-            var ship = em.GetComponentData<ShipState>(shipEntity);
-            if (!ShipStatApplyLogic.TryResolveChassisId(
-                    em,
-                    shipEntity,
-                    ship.Team,
-                    ship.ShipLevel,
-                    ship.BranchIndex,
-                    out string chassisId,
-                    allowFallback: true)
-                || string.IsNullOrEmpty(chassisId))
-                return Identity;
-
-            CollectExtraComponents(em, shipEntity, out List<string> extraIds, out List<int> extraFamilies);
-            if (extraIds == null || extraIds.Count == 0)
-                return Identity;
-
-            return Compute(chassisId, ship.ShipLevel, extraIds, extraFamilies);
+            _ = em;
+            _ = shipEntity;
+            return Identity;
         }
 
         /// <summary>
-        /// Core formula: for each extra component id, grow the matching part-type group by
-        /// the average shared-category stat ratio versus the chassis primary of that type.
+        /// Per-part scale from a list of purchased component ids. Always <see cref="Identity"/>.
         /// </summary>
-        /// <param name="chassisId">Current hull id (e.g. AstroEagle_01) — baseline comes from this prefab.</param>
-        /// <param name="shipLevel">Live ship level used for Extra Level evaluation on both sides.</param>
-        /// <param name="extraComponentIds">Moon-store equipped catalog ids (may be another family).</param>
-        /// <param name="extraFamilyConfigIndices">
-        /// Parallel to <paramref name="extraComponentIds"/>. Purchase fleet stamps so the
-        /// same-family skip uses the same pool winner as the mesh swap. Null treats every
-        /// extra as the hull fleet.
-        /// </param>
+        /// <param name="chassisId">Unused. Signature kept for callers and tests.</param>
+        /// <param name="shipLevel">Unused. See <paramref name="chassisId"/>.</param>
+        /// <param name="extraComponentIds">Unused. See <paramref name="chassisId"/>.</param>
+        /// <param name="extraFamilyConfigIndices">Unused. See <paramref name="chassisId"/>.</param>
         public static StoreVisualScaleFactors Compute(
             string chassisId,
             int shipLevel,
             IReadOnlyList<string> extraComponentIds,
             IReadOnlyList<int> extraFamilyConfigIndices = null)
         {
-            var factors = Identity;
-            if (string.IsNullOrWhiteSpace(chassisId)
-                || extraComponentIds == null
-                || extraComponentIds.Count == 0)
-                return factors;
-
-            if (!TryGetChassisRawParts(chassisId, out ShipFamilyStatsCalculator.SumResult chassisParts)
-                || chassisParts.MatchedComponentIds == null
-                || chassisParts.MatchedComponentIds.Count == 0)
-                return factors;
-
-            // Same-family pool winners swap their mesh onto the hardpoint's scale.
-            List<string> sameFamilyPrimaries = CollectSameFamilyReplacingPrimaries(
-                chassisId, chassisParts, extraComponentIds, extraFamilyConfigIndices);
-
-            int level = Mathf.Max(1, shipLevel);
-            for (int i = 0; i < extraComponentIds.Count; i++)
-            {
-                string extraId = extraComponentIds[i];
-                if (string.IsNullOrWhiteSpace(extraId))
-                    continue;
-                if (ContainsId(sameFamilyPrimaries, extraId))
-                    continue;
-
-                // --- Source family catalog (not the ship's suffix remap) ---
-                if (!TryFindSourceComponent(extraId, out ShipFamilyComponentEntry entry) || entry == null)
-                    continue;
-
-                string partType = NormalizePartType(entry.componentId);
-                if (string.IsNullOrEmpty(partType)
-                    || string.Equals(partType, ShipFamilyPartTypes.Ignore, StringComparison.OrdinalIgnoreCase)
-                    || string.Equals(partType, ShipFamilyPartTypes.Unmapped, StringComparison.OrdinalIgnoreCase))
-                    continue;
-
-                if (!TryGetChassisPrimaryForPartType(
-                        chassisParts, partType, out string baselineId, out ShipComponentAbilityStats baselineRaw))
-                    continue;
-
-                ShipComponentAbilityStats purchased = ShipComponentStoreData.GetEffectiveStatsAtShipLevel(
-                    entry.stats, level, entry.componentId);
-                ShipComponentAbilityStats baseline = ShipComponentStoreData.GetEffectiveStatsAtShipLevel(
-                    baselineRaw, level, baselineId);
-
-                float ratio = ComputeSharedCategoryRatio(entry, purchased, baselineId, baseline);
-                if (ratio <= 1f + GrowEpsilon)
-                    continue;
-
-                ApplyRatioToGroup(ref factors, partType, ratio);
-            }
-
-            return Resolve(factors);
+            _ = chassisId;
+            _ = shipLevel;
+            _ = extraComponentIds;
+            _ = extraFamilyConfigIndices;
+            return Identity;
         }
 
         /// <summary>
@@ -357,314 +261,7 @@ namespace TitanOrbit.ECS
                 && entry != null;
         }
 
-        /// <summary>
-        /// Average of purchased/baseline magnitudes for categories both parts author.
-        /// Returns 1 when there is no shared category or no positive baseline.
-        /// </summary>
-        static float ComputeSharedCategoryRatio(
-            ShipFamilyComponentEntry purchasedEntry,
-            in ShipComponentAbilityStats purchasedStats,
-            string baselineComponentId,
-            in ShipComponentAbilityStats baselineStats)
-        {
-            purchasedEntry.EnsureStatCategories();
-            IReadOnlyList<ShipComponentStatCategory> purchasedCats = purchasedEntry.statCategories;
-            if (purchasedCats == null || purchasedCats.Count == 0)
-                purchasedCats = ShipFamilyComponentPartKey.InferDefaultStatCategories(purchasedEntry.componentId);
-
-            List<ShipComponentStatCategory> baselineCats =
-                ShipFamilyComponentPartKey.InferDefaultStatCategories(baselineComponentId);
-
-            float sum = 0f;
-            int n = 0;
-            for (int i = 0; i < purchasedCats.Count; i++)
-            {
-                ShipComponentStatCategory category = purchasedCats[i];
-                if (!ContainsCategory(baselineCats, category))
-                    continue;
-
-                float bought = SumCategoryMagnitude(purchasedStats, category, purchasedEntry.componentId);
-                float mine = SumCategoryMagnitude(baselineStats, category, baselineComponentId);
-                if (mine <= MagnitudeEpsilon)
-                    continue;
-
-                sum += bought / mine;
-                n++;
-            }
-
-            if (n <= 0)
-                return 1f;
-            return sum / n;
-        }
-
-        /// <summary>
-        /// Sums the authored fields for one stat category after Extra Level evaluation
-        /// (base fields only — PerExtra is already baked in).
-        /// </summary>
-        static float SumCategoryMagnitude(
-            in ShipComponentAbilityStats stats,
-            ShipComponentStatCategory category,
-            string componentId)
-        {
-            ShipComponentAbilityStats kept = ShipComponentAbilityStats.KeepOnlyAuthoringFields(
-                stats, category, componentId);
-            switch (category)
-            {
-                case ShipComponentStatCategory.Offense:
-                    return kept.firePower + kept.bulletSpeed + kept.bulletRange
-                        + kept.fireRate + kept.rammingPower;
-                case ShipComponentStatCategory.Health:
-                    return kept.healthCap + kept.healthRegen;
-                case ShipComponentStatCategory.Energy:
-                    return kept.energyCap + kept.energyRegen;
-                case ShipComponentStatCategory.Movement:
-                    return kept.moveSpeed + kept.accelerationCap + kept.turnSpeed;
-                case ShipComponentStatCategory.Capacity:
-                    return kept.maxGems + kept.maxPeople
-                        + kept.tractorBeamDistance + kept.tractorBeamPower;
-                default:
-                    return 0f;
-            }
-        }
-
-        /// <summary>
-        /// Highest-valued chassis part of the same visual scale group as <paramref name="partType"/>.
-        /// Engines do not pick a thruster (and vice versa) even though they share a combat pool.
-        /// Weapons of any subtype share one group.
-        /// </summary>
-        static bool TryGetChassisPrimaryForPartType(
-            in ShipFamilyStatsCalculator.SumResult chassisParts,
-            string partType,
-            out string baselineId,
-            out ShipComponentAbilityStats baselineStats)
-        {
-            baselineId = null;
-            baselineStats = default;
-            if (chassisParts.MatchedComponentIds == null || chassisParts.PerComponentStats == null)
-                return false;
-
-            int count = Mathf.Min(
-                chassisParts.MatchedComponentIds.Count,
-                chassisParts.PerComponentStats.Count);
-            var members = new List<int>(4);
-            for (int i = 0; i < count; i++)
-            {
-                string id = chassisParts.MatchedComponentIds[i];
-                if (string.IsNullOrWhiteSpace(id))
-                    continue;
-                if (ShipFamilyPartCalcProfileSet.IsCosmeticPartName(id))
-                    continue;
-                if (!IsSameScaleGroup(partType, NormalizePartType(id)))
-                    continue;
-                members.Add(i);
-            }
-
-            if (members.Count == 0)
-                return false;
-
-            // Generic score (not the shared Propulsion pool) so Engine ≠ Thruster.
-            int local = ShipComponentStackAggregation.PickPrimaryLocalIndex(
-                partType, members, chassisParts.PerComponentStats);
-            int global = members[local];
-            baselineId = chassisParts.MatchedComponentIds[global];
-            baselineStats = chassisParts.PerComponentStats[global];
-            return !string.IsNullOrWhiteSpace(baselineId);
-        }
-
-        /// <summary>
-        /// Chassis prefab parts at authored scale, no store extras and no Extra Level yet.
-        /// </summary>
-        static bool TryGetChassisRawParts(string chassisId, out ShipFamilyStatsCalculator.SumResult parts)
-        {
-            parts = default;
-            var config = PlanetShipFamilyConfig.LoadDefault();
-            if (config == null || string.IsNullOrEmpty(chassisId))
-                return false;
-
-            var tier = config.GetTierEntryForChassisId(chassisId);
-            if (tier?.prefab == null)
-                return false;
-            if (!ShipStatApplyLogic.TryResolveFamilyForChassisId(chassisId, out ShipFamilyDefinition family)
-                || family == null)
-                return false;
-
-            parts = ShipFamilyStatsCalculator.SumFromPrefabHierarchy(
-                tier.prefab, family, shipLevel: 1, applyPropulsionAndWeaponRules: false);
-            return parts.MatchedComponentIds != null && parts.MatchedComponentIds.Count > 0;
-        }
-
-        /// <summary>Writes the ratio onto the attribute-scale group for this part type (max-stack).</summary>
-        static void ApplyRatioToGroup(ref StoreVisualScaleFactors factors, string partType, float ratio)
-        {
-            float clamped = ClampGroup(ratio);
-            if (string.Equals(partType, ShipFamilyPartTypes.Cockpit, StringComparison.OrdinalIgnoreCase))
-                factors.Cockpit = Mathf.Max(factors.Cockpit, clamped);
-            else if (string.Equals(partType, ShipFamilyPartTypes.Wing, StringComparison.OrdinalIgnoreCase))
-                factors.Wing = Mathf.Max(factors.Wing, clamped);
-            else if (ShipFamilyPartTypes.IsWeapon(partType))
-                factors.Weapon = Mathf.Max(factors.Weapon, clamped);
-            else if (ShipFamilyPartTypes.IsEngineProfile(partType))
-                factors.Engine = Mathf.Max(factors.Engine, clamped);
-            else if (ShipFamilyPartTypes.IsThrusterProfile(partType))
-                factors.Thruster = Mathf.Max(factors.Thruster, clamped);
-            else if (ShipFamilyPartTypes.IsTurn(partType))
-                factors.Tail = Mathf.Max(factors.Tail, clamped);
-            else
-                factors.Part = Mathf.Max(factors.Part, clamped);
-        }
-
-        /// <summary>Canonical Part Profile id from a component / prefab name.</summary>
-        static string NormalizePartType(string componentId)
-        {
-            string raw = ShipComponentAbilityStats.ResolvePartTypeForSuggestedStats(componentId);
-            return ShipFamilyPartTypes.Normalize(raw, componentId);
-        }
-
-        /// <summary>
-        /// True when two part types share one visual scale group.
-        /// Weapon subtypes share Weapons; Engine and Thruster stay separate.
-        /// </summary>
-        static bool IsSameScaleGroup(string a, string b)
-        {
-            if (string.IsNullOrEmpty(a) || string.IsNullOrEmpty(b))
-                return false;
-            if (ShipFamilyPartTypes.IsWeapon(a) && ShipFamilyPartTypes.IsWeapon(b))
-                return true;
-            return string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
-        }
-
-        static bool ContainsCategory(
-            IReadOnlyList<ShipComponentStatCategory> list,
-            ShipComponentStatCategory category)
-        {
-            if (list == null)
-                return false;
-            for (int i = 0; i < list.Count; i++)
-            {
-                if (list[i] == category)
-                    return true;
-            }
-
-            return false;
-        }
-
         static float ClampGroup(float value) =>
             Mathf.Clamp(value, 1f, MaxGroupScale);
-
-        /// <summary>
-        /// Same-family store ids that beat the hull and every other owned part of that
-        /// type. Those rows replace the mesh, so the stat-ratio grow must skip them.
-        /// Cross-family winners stay out of this list and still scale. Returns null
-        /// when nothing same-family won a pool.
-        /// </summary>
-        static List<string> CollectSameFamilyReplacingPrimaries(
-            string chassisId,
-            in ShipFamilyStatsCalculator.SumResult chassisParts,
-            IReadOnlyList<string> extraComponentIds,
-            IReadOnlyList<int> extraFamilyConfigIndices)
-        {
-            if (!ShipStatApplyLogic.TryResolveFamilyForChassisId(chassisId, out ShipFamilyDefinition family)
-                || family == null
-                || string.IsNullOrWhiteSpace(family.familyId))
-                return null;
-            if (chassisParts.MatchedComponentIds == null || chassisParts.PerComponentStats == null)
-                return null;
-            if (!HasSameFamilyExtra(family.familyId, extraComponentIds))
-                return null;
-
-            int storeStart = Mathf.Min(
-                chassisParts.MatchedComponentIds.Count,
-                chassisParts.PerComponentStats.Count);
-            if (storeStart <= 0)
-                return null;
-
-            // Reused scratch — ComputeForShip runs while territory scale is easing.
-            SameFamilyIdScratch.Clear();
-            SameFamilyStatScratch.Clear();
-            SameFamilyFleetScratch.Clear();
-            SameFamilyWinnerScratch.Clear();
-
-            ShipFamilySpecialBonuses hullFleet = family.ResolveSpecialBonuses();
-            for (int i = 0; i < storeStart; i++)
-            {
-                SameFamilyIdScratch.Add(chassisParts.MatchedComponentIds[i]);
-                SameFamilyStatScratch.Add(chassisParts.PerComponentStats[i]);
-                SameFamilyFleetScratch.Add(hullFleet);
-            }
-
-            // Same split the mesh swap uses: hull rows, then raw catalog stats for buys.
-            if (extraComponentIds != null)
-            {
-                for (int i = 0; i < extraComponentIds.Count; i++)
-                {
-                    string componentId = extraComponentIds[i];
-                    if (string.IsNullOrWhiteSpace(componentId))
-                        continue;
-                    if (!ShipFamilyStatsCalculator.TryResolveComponentStats(
-                            family, componentId, out ShipComponentAbilityStats raw))
-                        continue;
-
-                    SameFamilyIdScratch.Add(componentId);
-                    SameFamilyStatScratch.Add(raw);
-                    int familyIndex = extraFamilyConfigIndices != null && i < extraFamilyConfigIndices.Count
-                        ? extraFamilyConfigIndices[i]
-                        : -1;
-                    SameFamilyFleetScratch.Add(familyIndex >= 0
-                        ? MegaShipStatsCalculator.ResolveFleetBonuses(familyIndex)
-                        : hullFleet);
-                }
-            }
-
-            if (SameFamilyIdScratch.Count <= storeStart)
-                return null;
-
-            ShipComponentStackAggregation.CollectStoreExtrasThatOwnPoolBase(
-                SameFamilyIdScratch,
-                SameFamilyStatScratch,
-                storeStart,
-                SameFamilyWinnerScratch,
-                SameFamilyFleetScratch);
-
-            string prefix = family.familyId.Trim() + "_";
-            for (int i = SameFamilyWinnerScratch.Count - 1; i >= 0; i--)
-            {
-                string winner = SameFamilyWinnerScratch[i];
-                if (string.IsNullOrEmpty(winner)
-                    || !winner.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-                    SameFamilyWinnerScratch.RemoveAt(i);
-            }
-
-            return SameFamilyWinnerScratch.Count > 0 ? SameFamilyWinnerScratch : null;
-        }
-
-        static bool HasSameFamilyExtra(string familyId, IReadOnlyList<string> extraComponentIds)
-        {
-            if (string.IsNullOrWhiteSpace(familyId) || extraComponentIds == null)
-                return false;
-
-            string prefix = familyId.Trim() + "_";
-            for (int i = 0; i < extraComponentIds.Count; i++)
-            {
-                string id = extraComponentIds[i];
-                if (!string.IsNullOrWhiteSpace(id)
-                    && id.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-                    return true;
-            }
-
-            return false;
-        }
-
-        static bool ContainsId(List<string> ids, string id)
-        {
-            if (ids == null || string.IsNullOrEmpty(id))
-                return false;
-            for (int i = 0; i < ids.Count; i++)
-            {
-                if (string.Equals(ids[i], id, StringComparison.OrdinalIgnoreCase))
-                    return true;
-            }
-
-            return false;
-        }
     }
 }

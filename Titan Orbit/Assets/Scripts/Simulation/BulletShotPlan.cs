@@ -60,7 +60,8 @@ namespace TitanOrbit.Simulation
         /// <paramref name="sniperVisual"/> divides fire power by 50.
         /// <paramref name="missileVisual"/> lerps the live store-rocket size curve from
         /// this shot's fire power, then multiplies by <paramref name="authoredBulletScale"/>
-        /// (MEGA Weapon Missile bank scale, 1 = the curve unchanged).
+        /// and <see cref="BulletVisualScale.TitanMissileHullRatio"/>
+        /// (MEGA Weapon Missile bank scale 1 = that corrected size).
         /// </summary>
         public static BulletShotPlan Build(
             float3 fireOrigin,
@@ -95,7 +96,8 @@ namespace TitanOrbit.Simulation
             // Guns: fire power ÷ the bullet bank asset reference
             // (Bullet Reference Fire Power, live value 4).
             // A sniper divides by 50. A missile lerps the store-rocket size curve
-            // from this shot's fire power (50 → 1.1). The gun divisor is not used.
+            // from this shot's fire power (50 → 1.1), then × TitanMissileHullRatio
+            // so it keeps a fighter rocket's fraction of a Titan hull. The gun divisor is not used.
             // Lasers never reach this builder.
             _ = categoryUpgradeScale;
             _ = referenceDamage;

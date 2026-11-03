@@ -408,7 +408,7 @@ namespace TitanOrbit.Data
         [BulletVfxBankCategory(true, "Default (Rockets)")]
         public int weaponMissileBankIndex = InheritTypeTableBankIndex;
 
-        [Tooltip("Multiplier on the store-rocket size curve. 1 = the curve for this launcher's fire power (50 → 1.1). 0 uses 1. Does not change damage.")]
+        [Tooltip("Multiplier on the Titan missile size (store-rocket curve × hull ratio). 1 = a fire-power-40 missile at the same fraction of the hull as a level-1 store rocket. 0 uses 1. Does not change damage.")]
         [Min(0.05f)]
         public float weaponMissileBankScale = DefaultWeaponBankScale;
 
