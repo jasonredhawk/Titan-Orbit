@@ -267,14 +267,14 @@ namespace TitanOrbit.UI
             if (!hasGear)
                 return catalog.GetPowerBreakdown(megaIndex);
 
-            if (!MegaShipStatsCalculator.TrySumForCatalogIndex(megaIndex, out ShipComponentAbilityStats stats))
+            if (!MegaShipStatsCalculator.TrySumForCatalogIndex(
+                    megaIndex, extraComponentIds: null, shipLevel, out ShipComponentAbilityStats stats))
                 return catalog.GetPowerBreakdown(megaIndex);
 
             // Hull stays the catalog sum the bar already showed. Each bought part
             // adds its own PerExtra × Titan level, with that part's purchase-moon roll.
             MegaShipStatsCalculator.AddEquippedStoreComponents(
                 ref stats, extraIds, shipLevel, extraFamilies);
-            stats.maxGems = 0f;
 
             // Bought weapons unlock a bullet type. They do not add Titan DPS.
             float dps = catalog.GetPowerBreakdown(megaIndex).GetDisplayDps();

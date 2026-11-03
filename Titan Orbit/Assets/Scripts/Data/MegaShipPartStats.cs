@@ -33,6 +33,15 @@ namespace TitanOrbit.Data
         [InspectorName("Troop Cap")]
         public float maxPeople;
 
+        /// <summary>
+        /// Gem-cargo base for one cockpit, wing, or cargo copy.
+        /// Live hold is this base plus 2 × ship level (<see cref="MegaShipStatsCalculator.GemCapPerHoldCopy"/>).
+        /// 0 on a hold part means the regular starter base of 8. Guns and engines stay 0 and add no cargo.
+        /// </summary>
+        [InspectorName("Gem Cap")]
+        [Tooltip("Gem base for one cockpit, wing, or cargo copy. Live hold is this + 2 × ship level. 0 uses the starter base of 8.")]
+        public float maxGems;
+
         /// <summary>Copies into the shared ship-stat struct with every PerExtraLevel left at 0.</summary>
         public ShipComponentAbilityStats ToAbilityStats()
         {
@@ -51,6 +60,7 @@ namespace TitanOrbit.Data
                 accelerationCap = accelerationCap,
                 turnSpeed = turnSpeed,
                 maxPeople = maxPeople,
+                maxGems = maxGems,
             };
         }
 
@@ -77,7 +87,34 @@ namespace TitanOrbit.Data
                 // One fast turret should not be averaged away by unarmed parts.
                 weaponRotationSpeed = Mathf.Max(a.weaponRotationSpeed, b.weaponRotationSpeed),
                 maxPeople = a.maxPeople + b.maxPeople,
+                maxGems = a.maxGems + b.maxGems,
             };
+        }
+
+        /// <summary>
+        /// Multiplies only the health and energy pools, plus their regen.
+        /// A family with more plates would otherwise stack a much larger hull
+        /// and battery from the same per-part numbers. Guns, ramming, cruise,
+        /// turn, troops, and gems stay on the catalog values — the family knob
+        /// is not an offensive buff. A scale of 1, or an unset 0, returns
+        /// <paramref name="stats"/> unchanged.
+        /// </summary>
+        /// <param name="stats">One component block, or a hull sum of those blocks.</param>
+        /// <param name="scale">Family stat scale from <see cref="MegaShipCatalog.GetStatScaleForFamily"/>.</param>
+        public static MegaShipPartStats ApplyFamilyStatScale(in MegaShipPartStats stats, float scale)
+        {
+            // --- Identity ---
+            // [TITAN-ORBIT] 1 is the authored catalog. Skipping the multiply keeps
+            // older assets (scale still 0, read as 1) on the numbers designers already tuned.
+            if (scale <= 0.001f || Mathf.Abs(scale - 1f) <= 0.0001f)
+                return stats;
+
+            var scaled = stats;
+            scaled.healthCap *= scale;
+            scaled.healthRegen *= scale;
+            scaled.energyCap *= scale;
+            scaled.energyRegen *= scale;
+            return scaled;
         }
 
         /// <summary>
@@ -129,6 +166,9 @@ namespace TitanOrbit.Data
                 weaponRotationSpeed = Resolve(
                     raw.weaponRotationSpeed, defaults.weaponRotationSpeed, minimums.weaponRotationSpeed),
                 maxPeople = Resolve(raw.maxPeople, defaults.maxPeople, minimums.maxPeople),
+                // Gem cap is per hold part, not a hull-wide default. A 0 here must stay 0
+                // so runtime defaults cannot invent cargo on a gun-only sum.
+                maxGems = raw.maxGems,
             };
         }
 

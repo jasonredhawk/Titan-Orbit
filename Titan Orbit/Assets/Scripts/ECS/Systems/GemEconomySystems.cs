@@ -243,7 +243,6 @@ namespace TitanOrbit.ECS
             }
 
             var asteroidLookup = SystemAPI.GetComponentLookup<AsteroidState>(false);
-            var megaLookup = SystemAPI.GetComponentLookup<MegaShipState>(true);
             var turretLookup = SystemAPI.GetComponentLookup<ShipTurretControlState>(true);
             var ghostLookup = SystemAPI.GetComponentLookup<GhostOwner>(true);
 
@@ -276,8 +275,8 @@ namespace TitanOrbit.ECS
             {
                 if (shipState.ValueRO.IsDead || shipState.ValueRO.AwaitingTeamSelection)
                     continue;
-                if (megaLookup.HasComponent(shipEntity) && megaLookup[shipEntity].IsMega)
-                    continue;
+                // Titans mine on hull contact the same way other ships do. A full hold
+                // stops the take later, when capacityLeft is computed.
                 if (turretLookup.HasComponent(shipEntity) && turretLookup[shipEntity].IsControlling)
                     continue;
 

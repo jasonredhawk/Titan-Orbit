@@ -189,9 +189,6 @@ namespace TitanOrbit.Data
         /// <summary>Minimum health after summing a hull so a MEGA is never a glass cannon.</summary>
         public const float MinHullHealth = 800f;
 
-        /// <summary>Minimum energy cap — several multi-gun salvos, not a 3000 tank.</summary>
-        public const float MinHullEnergy = 800f;
-
         /// <summary>Default energy cap when the catalog sum is still 0.</summary>
         public const float DefaultHullEnergy = 1400f;
 
@@ -335,6 +332,33 @@ namespace TitanOrbit.Data
         [Min(0.05f)]
         public float galacticOkamotoScale;
 
+        [Header("Component stat scale")]
+        [Tooltip(
+            "Multiplier on Craizan Star health, health regen, energy, and energy regen. " +
+            "1 = each part contributes its catalog number. Higher compensates for fewer plates. " +
+            "Fire power and the other offensive stats stay as authored. 0 uses 1.")]
+        [Min(0.05f)]
+        public float craizanStarStatScale;
+
+        [Tooltip(
+            "Multiplier on Galactic Leopard health, health regen, energy, and energy regen. " +
+            "1 = catalog numbers. Lower pulls back a family whose hulls bolt on more plates. " +
+            "Fire power is not scaled. 0 uses 1.")]
+        [Min(0.05f)]
+        public float galacticLeopardStatScale;
+
+        [Tooltip(
+            "Multiplier on Galactic Okamoto health, health regen, energy, and energy regen. " +
+            "1 = catalog numbers. Fire power is not scaled. 0 uses 1.")]
+        [Min(0.05f)]
+        public float galacticOkamotoStatScale;
+
+        /// <summary>
+        /// Family stat scale when the catalog field is still 0. Unlike presentation
+        /// scale, an unset stat scale must not shrink the ship — 1 keeps today's numbers.
+        /// </summary>
+        public const float DefaultFamilyStatScale = 1f;
+
         /// <summary>
         /// Legacy whole-hull scale for every MEGA. Kept as fallback when a family scale is 0
         /// so existing catalog assets that never serialized the per-family fields stay the same size.
@@ -408,7 +432,7 @@ namespace TitanOrbit.Data
         [BulletVfxBankCategory(true, "Default (Rockets)")]
         public int weaponMissileBankIndex = InheritTypeTableBankIndex;
 
-        [Tooltip("Multiplier on the Titan missile size (store-rocket curve × hull ratio). 1 = a fire-power-40 missile at the same fraction of the hull as a level-1 store rocket. 0 uses 1. Does not change damage.")]
+        [Tooltip("Multiplier on the store-rocket size for this missile's fire power. 1 = the same size as a store rocket that does that damage. 0 uses 1. Does not change damage.")]
         [Min(0.05f)]
         public float weaponMissileBankScale = DefaultWeaponBankScale;
 
@@ -420,10 +444,10 @@ namespace TitanOrbit.Data
         [Min(0.05f)]
         public float weaponSniperBankScale = DefaultWeaponBankScale;
 
-        [Tooltip("Cockpit / bridge — troop cap lives here.")]
+        [Tooltip("Cockpit / bridge — troop cap and gem cargo base live here.")]
         public MegaShipPartStats cockpitStats;
 
-        [Tooltip("Wings — extra troops, no gems.")]
+        [Tooltip("Wings — extra troops and gem cargo.")]
         public MegaShipPartStats wingStats;
 
         [Tooltip("Engines — slow cruise + energy pool.")]
@@ -895,7 +919,7 @@ namespace TitanOrbit.Data
 
         /// <summary>
         /// Static power-bar breakdown for a MEGA hull: sum the catalogued component stats
-        /// (or walk the prefab with the type table if the list is empty), then force gem cap to 0.
+        /// (or walk the prefab with the type table if the list is empty), including gem cargo.
         /// <para>
         /// [TITAN-ORBIT] Catalog <c>summedStats.fireRate</c> is the sum of every gun's
         /// rate. Slot 0 of the power bar is DPS (<c>firePower × fireRate</c>), so a summed
@@ -909,7 +933,6 @@ namespace TitanOrbit.Data
                 return default;
 
             MegaShipStatsCalculator.SumFromEntry(entry, this, out ShipComponentAbilityStats summed);
-            summed.maxGems = 0f;
             ShipFamilyPowerScoreBreakdown breakdown = ShipFamilyPowerScoreBreakdown.FromSummedShipStats(summed);
 
             // --- All-gun DPS (each unique part × copy count) ---
@@ -953,6 +976,7 @@ namespace TitanOrbit.Data
                     stats.firePower, stats.fireRate);
             }
 
+            // Family stat scale is health and energy only. Shot damage stays catalog.
             return dps;
         }
 
@@ -1117,6 +1141,37 @@ namespace TitanOrbit.Data
             return entry != null ? GetScaleForFamily(entry.visualFamily) : GetGlobalScale();
         }
 
+        /// <summary>
+        /// How much health and energy count for one Titan visual line.
+        /// Craizan Star hulls have fewer plates than Galactic Leopard, so the same
+        /// per-part health would make Leopard much tougher. This multiplier runs
+        /// on health, health regen, energy, and energy regen only. Guns and the
+        /// other offensive stats stay on the catalog numbers.
+        /// An unset field (0) uses <see cref="DefaultFamilyStatScale"/> (1).
+        /// </summary>
+        /// <param name="family">Craizan Star, Galactic Leopard, or Galactic Okamoto.</param>
+        /// <returns>Multiplier greater than 0. 1 leaves catalog component numbers as authored.</returns>
+        public float GetStatScaleForFamily(MegaShipVisualFamily family)
+        {
+            float authored = family switch
+            {
+                MegaShipVisualFamily.CraizanStar => craizanStarStatScale,
+                MegaShipVisualFamily.GalacticLeopard => galacticLeopardStatScale,
+                MegaShipVisualFamily.GalacticOkamoto => galacticOkamotoStatScale,
+                _ => 0f,
+            };
+            return authored > 0.001f ? authored : DefaultFamilyStatScale;
+        }
+
+        /// <summary>
+        /// <see cref="GetStatScaleForFamily"/> for one hull row.
+        /// A missing row uses 1 so a caller with no prefab does not invent a buff.
+        /// </summary>
+        public float GetStatScaleForEntry(MegaShipCatalogEntry entry)
+        {
+            return entry != null ? GetStatScaleForFamily(entry.visualFamily) : DefaultFamilyStatScale;
+        }
+
         /// <summary>Extra cruise fraction (0.05 = 5% of every Move contributor past the fastest).</summary>
         public float GetExtraEngineSpeedPercent()
         {
@@ -1172,11 +1227,11 @@ namespace TitanOrbit.Data
             MegaShipPartStats mins = IsUnsetRuntimeBlock(runtimeMinimumStats)
                 ? CreateBuiltInRuntimeMinimums()
                 : runtimeMinimumStats;
-            // Existing catalog assets may have seeded health/move defaults with traverse still 0.
+            // A zero hull sum still needs a battery. A real part total uses the
+            // authored runtimeMinimumStats.energyCap. Do not raise that floor to 800 —
+            // the inspector minimum is the one the hull is allowed to sit on.
             if (defaults.energyCap < DefaultHullEnergy)
                 defaults.energyCap = DefaultHullEnergy;
-            if (mins.energyCap < MinHullEnergy)
-                mins.energyCap = MinHullEnergy;
             // Troop cap and energy regen stay on the catalog: runtimeDefaultStats /
             // runtimeMinimumStats plus the raw hull sum. Do not raise authored people
             // mins to a hardcoded 400 — that flattened every Titan whose cockpit+wings
@@ -1205,7 +1260,7 @@ namespace TitanOrbit.Data
         {
             return CreateStatic(
                 firePower: 0f, bulletSpeed: 8f, bulletRange: 10f, fireRate: 0.25f, ramming: 2f,
-                health: MinHullHealth, healthRegen: 0.5f, energy: MinHullEnergy, energyRegen: MinHullEnergyRegen,
+                health: MinHullHealth, healthRegen: 0.5f, energy: 0f, energyRegen: MinHullEnergyRegen,
                 move: MinHullMoveSpeed, accel: MinHullAcceleration, turn: 3f, gems: 0f, people: MinHullPeople,
                 weaponRotationSpeed: MinWeaponRotationSpeed);
         }
@@ -1319,7 +1374,7 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Fills designer-default static MEGA stats (slow, tanky, no gems, high people)
+        /// Fills designer-default static MEGA stats (slow, tanky, gem hold on cockpit / wing / cargo, high people)
         /// and seeds <see cref="runtimeDefaultStats"/> / <see cref="runtimeMinimumStats"/>.
         /// After clicking this in the inspector, run Refresh Unique Components so stored
         /// hull <c>summedStats</c> stay raw (zeros are not baked in).
@@ -1366,12 +1421,12 @@ namespace TitanOrbit.Data
             cockpitStats = CreateStatic(
                 firePower: 0f, bulletSpeed: 0f, bulletRange: 0f, fireRate: 0f, ramming: 4f,
                 health: 220f, healthRegen: 3.5f, energy: 600f, energyRegen: 18f,
-                move: 0f, accel: 0f, turn: 0f, gems: 0f, people: 400f);
+                move: 0f, accel: 0f, turn: 0f, gems: MegaShipStatsCalculator.HoldGemBase, people: 400f);
 
             wingStats = CreateStatic(
                 firePower: 0f, bulletSpeed: 0f, bulletRange: 0f, fireRate: 0f, ramming: 0f,
                 health: 36f, healthRegen: 0.4f, energy: 0f, energyRegen: 0f,
-                move: 0f, accel: 0f, turn: 0.4f, gems: 0f, people: 50f);
+                move: 0f, accel: 0f, turn: 0.4f, gems: MegaShipStatsCalculator.HoldGemBase, people: 50f);
 
             engineStats = CreateStatic(
                 firePower: 0f, bulletSpeed: 0f, bulletRange: 0f, fireRate: 0f, ramming: 0f,
@@ -1396,7 +1451,7 @@ namespace TitanOrbit.Data
             cargoStats = CreateStatic(
                 firePower: 0f, bulletSpeed: 0f, bulletRange: 0f, fireRate: 0f, ramming: 1.2f,
                 health: 40f, healthRegen: 2f, energy: 20f, energyRegen: 0.4f,
-                move: 0f, accel: 0f, turn: 0f, gems: 0f, people: 0f);
+                move: 0f, accel: 0f, turn: 0f, gems: MegaShipStatsCalculator.HoldGemBase, people: 0f);
 
             runtimeDefaultStats = CreateBuiltInRuntimeDefaults();
             runtimeMinimumStats = CreateBuiltInRuntimeMinimums();
@@ -1518,6 +1573,11 @@ namespace TitanOrbit.Data
                     stats.energyRegen = table.energyRegen;
                 if (table.maxPeople > 0.5f)
                     stats.maxPeople = table.maxPeople;
+                bool hold = string.Equals(row.partType, ShipFamilyPartTypes.Cockpit, StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(row.partType, ShipFamilyPartTypes.Wing, StringComparison.OrdinalIgnoreCase)
+                            || ShipFamilyPartTypes.IsCargoProfile(row.partType);
+                if (hold && table.maxGems > 0.5f)
+                    stats.maxGems = table.maxGems;
                 row.stats = stats;
             }
         }
@@ -1551,7 +1611,6 @@ namespace TitanOrbit.Data
             float move, float accel, float turn, float gems, float people,
             float weaponRotationSpeed = 0f)
         {
-            _ = gems;
             return new MegaShipPartStats
             {
                 firePower = firePower,
@@ -1568,6 +1627,7 @@ namespace TitanOrbit.Data
                 turnSpeed = turn,
                 weaponRotationSpeed = weaponRotationSpeed,
                 maxPeople = people,
+                maxGems = gems,
             };
         }
 

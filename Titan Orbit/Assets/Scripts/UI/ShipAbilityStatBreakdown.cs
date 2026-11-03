@@ -293,7 +293,11 @@ namespace TitanOrbit.UI
                     BulletBankHudCopy.AppendFullSection(sb, in live, in attrs);
                     break;
                 case 1:
-                    AppendTenPercentPipeline(sb, parts, live, attrs, StatField.BulletSpeed, "Bullet Speed", lv, live.EffectiveStats.bulletSpeed);
+                    if (live.SelectedBulletReplacesHull)
+                        AppendSelectedWeaponBulletGrid(sb, in live, chipVal, lv);
+                    else
+                        AppendTenPercentPipeline(sb, parts, live, attrs, StatField.BulletSpeed, "Bullet Speed", lv, live.EffectiveStats.bulletSpeed);
+                    AppendBulletTypeSpeedClose(sb, in live, chipVal);
                     // Bullet range has no bottom-HUD ability — abilityLv forced to 0.
                     AppendTenPercentPipeline(sb, parts, live, attrs, StatField.BulletRange, "Range", 0, live.EffectiveStats.bulletRange);
                     BulletBankHudCopy.AppendFullSection(sb, in live, in attrs);
@@ -663,9 +667,26 @@ namespace TitanOrbit.UI
         /// </summary>
         const int GridFleetW = 11;
 
+        /// <summary>
+        /// Width of the ADD / TOTAL column. Wider than the other numbers so the
+        /// computed result is not cut off. The cell still grows if the real
+        /// value needs more digits — it is never clipped.
+        /// </summary>
+        const int GridAddW = 10;
+
         /// <summary>PART ROLE BASE PERX xLV SCALE BONUS ADD, in monospace characters.</summary>
         const int PartsGridColumns =
-            GridNameW + GridRoleW + GridNumW + GridNumW + GridLvW + GridScaleW + GridFleetW + GridNumW;
+            GridNameW + GridRoleW + GridNumW + GridNumW + GridLvW + GridScaleW + GridFleetW + GridAddW;
+
+        /// <summary>
+        /// Titan PART column. PERX and xLV are omitted, and those characters
+        /// move here so the part name (after the visual-line prefix) fits.
+        /// </summary>
+        const int MegaGridNameW = GridNameW + GridNumW + GridLvW;
+
+        /// <summary>Titan grid: PART ROLE BASE SCALE BONUS ADD. No PERX or xLV.</summary>
+        const int MegaPartsGridColumns =
+            MegaGridNameW + GridRoleW + GridNumW + GridScaleW + GridFleetW + GridAddW;
 
         /// <summary>Mass-tax grid: SOURCE QTY RATE MASS. No level, scale, or bonus columns.</summary>
         const int MassGridColumns = GridNameW + GridRoleW + GridNumW + GridNumW;
@@ -755,7 +776,7 @@ namespace TitanOrbit.UI
                     abilityLv);
                 AppendGridCell(sb, HexScale, FormatScaleColumn(scale), GridScaleW, right: true);
                 AppendFleetBonusCell(sb, p.FleetMul > 0.0001f ? p.FleetMul : 1f);
-                AppendGridCell(sb, HexResult, FGrid(addDisp), GridNumW, right: true);
+                AppendGridCell(sb, HexResult, FActual(addDisp), GridAddW, right: true, clip: false);
                 sb.AppendLine();
             }
 
@@ -904,12 +925,18 @@ namespace TitanOrbit.UI
             sb.AppendLine();
         }
 
-        static void AppendGridCell(StringBuilder sb, string hex, string text, int width, bool right)
+        /// <param name="clip">
+        /// False on the ADD and TOTAL cells. Those must show the real number.
+        /// Other cells stay clipped so a long name cannot shove the columns.
+        /// </param>
+        static void AppendGridCell(StringBuilder sb, string hex, string text, int width, bool right, bool clip = true)
         {
             string raw = text ?? string.Empty;
-            if (raw.Length > width)
+            if (clip && raw.Length > width)
                 raw = raw.Substring(0, width);
-            string padded = right ? raw.PadLeft(width) : raw.PadRight(width);
+            string padded = raw.Length >= width
+                ? raw
+                : (right ? raw.PadLeft(width) : raw.PadRight(width));
             sb.Append("<color=#").Append(hex).Append('>')
                 .Append(GridMspace).Append(padded).Append(GridMspaceEnd)
                 .Append("</color>");
@@ -918,18 +945,23 @@ namespace TitanOrbit.UI
         /// <summary>
         /// Parts-grid total. Blank cells keep the number under ADD, including SCALE and BONUS.
         /// Mass tax uses <see cref="AppendMassGridTotal"/> so its four columns stay put.
+        /// <paramref name="megaColumns"/> matches a Titan header that has no PERX or xLV.
         /// </summary>
-        static void AppendGridTotal(StringBuilder sb, float total, string unitLabel)
+        static void AppendGridTotal(StringBuilder sb, float total, string unitLabel, bool megaColumns = false)
         {
-            AppendGridCell(sb, HexMute, "TOTAL", GridNameW, right: false);
+            AppendGridCell(sb, HexMute, "TOTAL", megaColumns ? MegaGridNameW : GridNameW, right: false);
             AppendGridCell(sb, HexMute, "", GridRoleW, right: true);
             AppendGridCell(sb, HexMute, "", GridNumW, right: true);
-            AppendGridCell(sb, HexMute, "", GridNumW, right: true);
-            AppendGridCell(sb, HexMute, "", GridLvW, right: true);
+            if (!megaColumns)
+            {
+                AppendGridCell(sb, HexMute, "", GridNumW, right: true);
+                AppendGridCell(sb, HexMute, "", GridLvW, right: true);
+            }
+
             // Blank SCALE and BONUS cells keep the total under ADD.
             AppendGridCell(sb, HexMute, "", GridScaleW, right: true);
             AppendGridCell(sb, HexMute, "", GridFleetW, right: true);
-            AppendGridCell(sb, HexResult, FGrid(total), GridNumW, right: true);
+            AppendGridCell(sb, HexResult, FActual(total), GridAddW, right: true, clip: false);
             if (!string.IsNullOrEmpty(unitLabel))
             {
                 sb.Append(" ");
@@ -1005,20 +1037,33 @@ namespace TitanOrbit.UI
             v.ToString("0.##", CultureInfo.InvariantCulture);
 
         /// <summary>
+        /// ADD and TOTAL text. Keeps the computed number (up to 4 decimals)
+        /// so the last column is the real product, not a clipped or rounded stand-in.
+        /// </summary>
+        static string FActual(float v) =>
+            v.ToString("0.####", CultureInfo.InvariantCulture);
+
+        /// <summary>
         /// Parts-grid header: PART ROLE BASE PERX xLV SCALE BONUS ADD.
         /// SCALE is the prefab multiplier for that row. BONUS is the match roll
         /// for this stat. Mass-tax tables keep their own header.
+        /// <paramref name="megaColumns"/> drops PERX and xLV. Titans do not buy
+        /// those levels, and the freed width stays on the part name.
         /// </summary>
-        static void AppendPartsCalcHeader(StringBuilder sb)
+        static void AppendPartsCalcHeader(StringBuilder sb, bool megaColumns = false)
         {
-            AppendGridCell(sb, HexMute, "PART", GridNameW, right: false);
+            AppendGridCell(sb, HexMute, "PART", megaColumns ? MegaGridNameW : GridNameW, right: false);
             AppendGridCell(sb, HexMute, "ROLE", GridRoleW, right: true);
             AppendGridCell(sb, HexMute, "BASE", GridNumW, right: true);
-            AppendGridCell(sb, HexMute, "PERX", GridNumW, right: true);
-            AppendGridCell(sb, HexMute, "xLV", GridLvW, right: true);
+            if (!megaColumns)
+            {
+                AppendGridCell(sb, HexMute, "PERX", GridNumW, right: true);
+                AppendGridCell(sb, HexMute, "xLV", GridLvW, right: true);
+            }
+
             AppendGridCell(sb, HexMute, "SCALE", GridScaleW, right: true);
             AppendGridCell(sb, HexMute, "BONUS", GridFleetW, right: true);
-            AppendGridCell(sb, HexMute, "ADD", GridNumW, right: true);
+            AppendGridCell(sb, HexMute, "ADD", GridAddW, right: true);
             sb.AppendLine();
         }
 
@@ -2104,6 +2149,9 @@ namespace TitanOrbit.UI
                 bankRate = BulletBankCombatLogic.SafeMul(profile.statModifiers.fireRateMultiplier);
             }
 
+            // Family stat scale is health and energy only. Catalog shot damage
+            // stays the unique-component fire power. A B-key family weapon uses
+            // that weapon's level-7 number instead of the Titan part.
             for (int i = 0; i < entry.componentCounts.Count; i++)
             {
                 MegaShipComponentCount count = entry.componentCounts[i];
@@ -2113,8 +2161,12 @@ namespace TitanOrbit.UI
                     || unique == null)
                     continue;
 
-                MegaShipPartStats stats = catalog.ResolveRuntimeStats(unique.stats);
-                if (stats.firePower <= 0.01f)
+                // Fire power stays the catalog number. Runtime resolve fills a missing
+                // rate only — it must not invent a second damage value. The family
+                // stat scale does not touch this shot.
+                MegaShipPartStats raw = unique.stats;
+                MegaShipPartStats stats = catalog.ResolveRuntimeStats(raw);
+                if (raw.firePower <= 0.01f)
                     continue;
 
                 bool cycledGun = IsBulletGunPart(unique);
@@ -2130,12 +2182,14 @@ namespace TitanOrbit.UI
                 }
                 else if (cycledGun)
                 {
-                    shot = stats.firePower * firePowerMul * bankFp;
+                    shot = raw.firePower * firePowerMul * bankFp;
                     rate = Mathf.Max(0f, stats.fireRate) * fireRateMul * bankRate;
                 }
                 else
                 {
-                    shot = stats.firePower * firePowerMul;
+                    // Cannons, lasers, missiles, snipers: no bullet-type scalar.
+                    // Copy count is applied below, same as each SCALE row's ADD.
+                    shot = raw.firePower * firePowerMul;
                     rate = Mathf.Max(0f, stats.fireRate) * fireRateMul;
                 }
 
@@ -2318,7 +2372,7 @@ namespace TitanOrbit.UI
             if (!string.IsNullOrEmpty(unit))
                 AppendTint(sb, HexMute, unit);
             sb.AppendLine();
-                AppendTint(sb, HexMute, "Titan hull - static catalog; gear is PerExtra only");
+            AppendTint(sb, HexMute, "Titan hull - static catalog; gear is PerExtra only");
             sb.AppendLine();
 
             StatField field = abilityIndex switch
@@ -2336,28 +2390,34 @@ namespace TitanOrbit.UI
                 _ => StatField.FirePower
             };
 
-            if (abilityIndex == 8)
-            {
-                // Gem cap is forced to 0 on every MEGA (MegaShipStatsCalculator).
-                ShipStatTooltipChrome.AppendSectionBanner(sb, "CATALOG", HexMute);
-                AppendTint(sb, HexMute, "Titan hulls cannot carry gems.");
-                sb.AppendLine();
-                AppendTotalLine(sb, 0f, unit);
-                return;
-            }
-
             if (abilityIndex == 6)
             {
                 AppendMegaMoveCard(sb, in parts, in live, chipVal);
                 return;
             }
 
-            if (field == StatField.FirePower)
+            if (abilityIndex == 8)
+            {
+                AppendTint(sb, HexMute, "Each cockpit, wing, and cargo: base + 2 x ship level");
+                sb.AppendLine();
+            }
+
+            // Bullet speed follows the weapon this B-key bank fires. The last
+            // number on that grid is the shot, after the bullet-type speed.
+            if (field == StatField.BulletSpeed)
+                AppendMegaBulletSpeedGrid(sb, in live, chipVal);
+            else if (field == StatField.FirePower)
                 AppendMegaGunFirepowerGrid(sb, in live);
             else
                 AppendMegaCatalogParts(sb, in live, field, unit);
-            AppendMegaGearParts(sb, in parts, in live, field, unit);
-            AppendTotalLine(sb, chipVal, unit);
+
+            if (field != StatField.BulletSpeed)
+                AppendMegaGearParts(sb, in parts, in live, field, unit);
+
+            // Fire Power's own grid already ends on its shot total. Bullet speed
+            // ends on the fired speed. Every other chip ends on the live value.
+            if (field != StatField.FirePower && field != StatField.BulletSpeed)
+                AppendGridTotal(sb, chipVal, unit, megaColumns: true);
 
             if (abilityIndex == 0)
             {
@@ -2396,13 +2456,17 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Fire Power parts grid for Titan guns. Same columns as a regular ship
-        /// (PART, ROLE, BASE, PERX, ×LV, SCALE, BONUS, ADD). Each copy is its own row.
-        /// The default Titan bank lists each gun part at its catalog firepower times the
-        /// purchase planet's fire-power roll. A family or gear bank lists that weapon at
-        /// maxed level 7 (ship 7 + ability 7) and prints ×1 in BONUS — that shot
-        /// replaces catalog damage, so the planet roll stays on the Titan's own guns.
-        /// Lasers, missiles, and snipers stay off this grid and show the roll on their own line.
+        /// Fire Power parts grid for Titan guns. Columns are PART, ROLE, BASE,
+        /// SCALE, BONUS, ADD — no PERX or xLV. One row per weapon name.
+        /// ROLE is the copy count and ADD is that many shots. The part name
+        /// drops the visual-line prefix so the leftover fits.
+        /// The default Titan bank lists each gun at catalog firepower × the purchase
+        /// planet's fire-power roll. That product is the shot the DPS block multiplies
+        /// by rate. The family stat scale is health and energy only, so SCALE on these
+        /// rows is 1. A family or gear bank lists that weapon at maxed level 7
+        /// (ship 7 + ability 7) and prints ×1 in SCALE and BONUS — that shot replaces
+        /// catalog damage, so the planet roll stays on the Titan's own cannons,
+        /// lasers, missiles, and snipers.
         /// Rebuilds when the selected bullet bank changes.
         /// </summary>
         static void AppendMegaGunFirepowerGrid(
@@ -2421,25 +2485,32 @@ namespace TitanOrbit.UI
                 && catalog.TryGetEntry(live.MegaCatalogIndex, out entry)
                 && entry?.componentCounts != null;
 
+            // Family stat scale does not change shot damage. SCALE stays 1 so the
+            // grid ADD matches the DPS volley, which also leaves catalog fire power alone.
+            const float statScale = 1f;
+
             bool familyGun = TryReadSelectedFamilyGun(
                 in live, out string familyName, out float familyBase, out float familyPer, out _, out _);
+            bool haveBulletGuns = haveEntry && CatalogHasBulletGun(catalog, entry);
+            bool haveOwnGuns = haveEntry && CatalogHasOwnFirepower(catalog, entry);
 
             ShipStatTooltipChrome.AppendSectionBanner(sb, "PARTS", "5B9BD5");
-            sb.AppendLine(DescribeFormula(StatField.FirePower, false));
+            AppendTint(sb, HexMute, "ROLE is the copy count. ADD = Base × scale × fleet × count.");
+            sb.AppendLine();
 
             bool wroteGun = false;
             float running = 0f;
-            if (familyGun || (haveEntry && CatalogHasBulletGun(catalog, entry)))
+            if (familyGun || haveBulletGuns || haveOwnGuns)
             {
-                AppendPartsCalcHeader(sb);
-                ShipStatTooltipChrome.AppendGridRule(sb, PartsGridColumns);
+                AppendPartsCalcHeader(sb, megaColumns: true);
+                ShipStatTooltipChrome.AppendGridRule(sb, MegaPartsGridColumns);
                 if (familyGun)
                 {
-                    // This bank's damage is the family weapon, not catalog × fleet.
-                    // The column still prints ×1 so the multiply is visible as identity.
+                    // This bank's damage is the family weapon, not catalog × scale × fleet.
+                    // The columns still print ×1 so the multiply is visible as identity.
                     AppendTint(sb, HexMute, "Family weapon keeps its own damage. Fleet fire power stays on the Titan gun.");
                     sb.AppendLine();
-                    int copies = haveEntry ? CountBulletGuns(catalog, entry) : 1;
+                    int copies = haveBulletGuns ? CountBulletGuns(catalog, entry) : 1;
                     WriteMegaGunCopies(
                         sb,
                         ref wroteGun,
@@ -2454,46 +2525,75 @@ namespace TitanOrbit.UI
                         1f,
                         copies);
                 }
-                else
+                else if (haveBulletGuns)
                 {
-                    for (int i = 0; i < entry.componentCounts.Count; i++)
-                    {
-                        MegaShipComponentCount count = entry.componentCounts[i];
-                        if (count == null || count.count <= 0 || string.IsNullOrEmpty(count.displayName))
-                            continue;
-                        if (!catalog.TryGetUniqueComponent(count.displayName, out MegaShipComponentEntry unique)
-                            || !IsBulletGunPart(unique))
-                            continue;
-                        float each = unique.stats.firePower;
-                        if (each <= 0.0001f)
-                            continue;
+                    WriteMegaCatalogGunRows(
+                        sb, catalog, entry, fleet, statScale, bulletGuns: true, ref wroteGun, ref running);
+                }
 
-                        WriteMegaGunCopies(
-                            sb,
-                            ref wroteGun,
-                            ref running,
-                            count.displayName,
-                            each,
-                            0f,
-                            useLevels: false,
-                            0,
-                            0,
-                            1f,
-                            fleet,
-                            count.count);
-                    }
+                // Cannons, lasers, missiles, and snipers never take the B-key shot.
+                // Their ADD is the same fire power the DPS volley adds for that barrel.
+                if (haveOwnGuns)
+                {
+                    WriteMegaCatalogGunRows(
+                        sb, catalog, entry, fleet, statScale, bulletGuns: false, ref wroteGun, ref running);
                 }
 
                 if (wroteGun)
                 {
-                    ShipStatTooltipChrome.AppendGridRule(sb, PartsGridColumns);
-                    AppendGridTotal(sb, running, "Fire");
+                    ShipStatTooltipChrome.AppendGridRule(sb, MegaPartsGridColumns);
+                    AppendGridTotal(sb, running, "Fire", megaColumns: true);
                 }
             }
 
-            bool wroteOther = haveEntry && AppendMegaNonGunFirepowerLines(sb, catalog, entry, fleet);
-            if (!wroteGun && !wroteOther)
+            if (!wroteGun)
                 sb.AppendLine("<color=#5B7A94>No contributing parts.</color>");
+        }
+
+        /// <summary>
+        /// One grid row per barrel of each catalog weapon.
+        /// <paramref name="bulletGuns"/> selects the B-key guns; otherwise the Titan's
+        /// own cannons, lasers, missiles, and snipers. SCALE stays 1 — the family
+        /// stat scale does not change fire power, so ADD matches
+        /// <see cref="CollectMegaDpsGuns"/> for that barrel.
+        /// </summary>
+        static void WriteMegaCatalogGunRows(
+            StringBuilder sb,
+            MegaShipCatalog catalog,
+            MegaShipCatalogEntry entry,
+            float fleet,
+            float statScale,
+            bool bulletGuns,
+            ref bool wroteGun,
+            ref float running)
+        {
+            for (int i = 0; i < entry.componentCounts.Count; i++)
+            {
+                MegaShipComponentCount count = entry.componentCounts[i];
+                if (count == null || count.count <= 0 || string.IsNullOrEmpty(count.displayName))
+                    continue;
+                if (!catalog.TryGetUniqueComponent(count.displayName, out MegaShipComponentEntry unique)
+                    || unique == null
+                    || IsBulletGunPart(unique) != bulletGuns)
+                    continue;
+                float each = unique.stats.firePower;
+                if (each <= 0.0001f)
+                    continue;
+
+                WriteMegaGunCopies(
+                    sb,
+                    ref wroteGun,
+                    ref running,
+                    count.displayName,
+                    each,
+                    0f,
+                    useLevels: false,
+                    0,
+                    0,
+                    statScale,
+                    fleet,
+                    count.count);
+            }
         }
 
         /// <summary>
@@ -2555,6 +2655,30 @@ namespace TitanOrbit.UI
             return CountBulletGuns(catalog, entry) > 0;
         }
 
+        /// <summary>
+        /// True when a cannon, laser, missile, or sniper still has catalog fire power.
+        /// Those barrels keep their own shot when the B-key swaps the bullet guns.
+        /// </summary>
+        static bool CatalogHasOwnFirepower(MegaShipCatalog catalog, MegaShipCatalogEntry entry)
+        {
+            if (catalog == null || entry?.componentCounts == null)
+                return false;
+            for (int i = 0; i < entry.componentCounts.Count; i++)
+            {
+                MegaShipComponentCount count = entry.componentCounts[i];
+                if (count == null || count.count <= 0 || string.IsNullOrEmpty(count.displayName))
+                    continue;
+                if (!catalog.TryGetUniqueComponent(count.displayName, out MegaShipComponentEntry unique)
+                    || unique == null
+                    || IsBulletGunPart(unique)
+                    || unique.stats.firePower <= 0.0001f)
+                    continue;
+                return true;
+            }
+
+            return false;
+        }
+
         static int CountBulletGuns(MegaShipCatalog catalog, MegaShipCatalogEntry entry)
         {
             if (catalog == null || entry?.componentCounts == null)
@@ -2576,10 +2700,14 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// One barrel, same columns as <see cref="AppendStatCalcGrid"/>.
-        /// The first barrel is PRI; every further copy is GUN. ADD is one shot.
+        /// One parts-grid row. ADD is <c>(Base + PerExtra × levels) × scale × fleet</c>
+        /// and is printed in full — that cell is the real contribution.
+        /// <paramref name="abilityOnly"/> prints the green ability level alone
+        /// (weapon bullet speed does not add ship level).
+        /// <paramref name="groupCount"/> above 0 prints that count in ROLE (<c>5x</c>)
+        /// and, when <paramref name="stackGroup"/> is true, multiplies ADD by it.
         /// </summary>
-        static float AppendGunCalcRow(
+        static float AppendCalcRow(
             StringBuilder sb,
             string name,
             float catalogBase,
@@ -2589,28 +2717,133 @@ namespace TitanOrbit.UI
             int abilityLv,
             float scale,
             float fleet,
-            bool primary)
+            string role,
+            bool abilityOnly,
+            int groupCount = 0,
+            bool stackGroup = true,
+            bool megaColumns = false)
         {
             float scaleMul = scale > 0.0001f ? scale : 1f;
             float fleetMul = fleet > 0.0001f ? fleet : 1f;
-            float levels = useLevels ? shipSteps + abilityLv : 0f;
-            float add = (catalogBase + catalogPer * levels) * scaleMul * fleetMul;
-            string role = primary ? "PRI" : "GUN";
-            string roleHex = primary ? HexPrimary : HexCount;
+            float levels = useLevels ? (abilityOnly ? abilityLv : shipSteps + abilityLv) : 0f;
+            // groupCount > 0 is one Titan part name, not one row per copy.
+            // ROLE prints "5x". ADD multiplies by that count when the stat sums.
+            // Range, bullet speed, and cruise pass stackGroup false: extra copies
+            // do not add, so ADD stays one copy and the count is only the label.
+            bool grouped = groupCount > 0;
+            int copies = grouped ? groupCount : 1;
+            float one = (catalogBase + catalogPer * levels) * scaleMul * fleetMul;
+            float add = !grouped || stackGroup ? one * copies : one;
+            bool primary = string.Equals(role, "PRI", StringComparison.Ordinal);
+            string roleText = grouped
+                ? copies.ToString(CultureInfo.InvariantCulture) + "x"
+                : role;
+            string roleHex = grouped || !primary ? HexCount : HexPrimary;
+            string nameHex = grouped ? HexPrimary : roleHex;
+            // Titans skip PERX and xLV. The name drops the visual-line prefix
+            // (GalacticLeopard_, CraizanStar_, …) and uses the width those columns freed.
+            string shownName = megaColumns ? FormatMegaPartLabel(name) : name;
 
-            AppendGridRowOpen(
-                sb, name, roleHex, role, roleHex,
-                FGrid(catalogBase), HexPrimary,
-                useLevels ? FGrid(catalogPer) : "-", useLevels ? HexPerExtra : HexMute);
-            if (useLevels)
-                AppendGridLevelsCell(sb, false, shipSteps, abilityLv);
-            else
-                AppendGridCell(sb, HexMute, "-", GridLvW, right: true);
+            AppendGridCell(sb, nameHex, shownName, megaColumns ? MegaGridNameW : GridNameW, right: false);
+            AppendGridCell(sb, roleHex, roleText, GridRoleW, right: true);
+            AppendGridCell(sb, HexPrimary, FGrid(catalogBase), GridNumW, right: true);
+            if (!megaColumns)
+            {
+                AppendGridCell(
+                    sb,
+                    useLevels ? HexPerExtra : HexMute,
+                    useLevels ? FGrid(catalogPer) : "-",
+                    GridNumW,
+                    right: true);
+                if (useLevels)
+                    AppendGridLevelsCell(sb, abilityOnly, shipSteps, abilityLv);
+                else
+                    AppendGridCell(sb, HexMute, "-", GridLvW, right: true);
+            }
             AppendGridCell(sb, HexScale, FormatScaleColumn(scaleMul), GridScaleW, right: true);
             AppendFleetBonusCell(sb, fleetMul);
-            AppendGridCell(sb, HexResult, FGrid(add), GridNumW, right: true);
+            AppendGridCell(sb, HexResult, FActual(add), GridAddW, right: true, clip: false);
             sb.AppendLine();
             return add;
+        }
+
+        /// <summary>
+        /// Titan grid label. Drops the visual-line prefix
+        /// (<c>GalacticLeopard</c>, <c>GalacticOkamoto</c>, <c>CraizanStar</c>)
+        /// and the underscore after it, then shows the leftover part
+        /// (<c>Parts Gun</c>, <c>Cockpit</c>, <c>TurretBarrel</c>).
+        /// A name that is not one of those lines is unchanged.
+        /// </summary>
+        static string FormatMegaPartLabel(string raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+                return string.Empty;
+
+            string name = raw.Trim();
+            // Longest token first so a shorter prefix cannot eat a longer one.
+            if (!TryStripMegaFamilyPrefix(name, "GalacticLeopard", out name)
+                && !TryStripMegaFamilyPrefix(name, "GalacticOkamoto", out name))
+                TryStripMegaFamilyPrefix(name, "CraizanStar", out name);
+
+            name = name.Replace('_', ' ').Trim();
+            return string.IsNullOrEmpty(name) ? raw.Trim() : name;
+        }
+
+        /// <summary>
+        /// True when <paramref name="name"/> starts with a Titan visual line.
+        /// Also accepts the spaced form (<c>Galactic Leopard</c>).
+        /// The prefix and one following separator are removed.
+        /// </summary>
+        static bool TryStripMegaFamilyPrefix(string name, string compactPrefix, out string rest)
+        {
+            rest = name;
+            if (string.IsNullOrEmpty(name) || string.IsNullOrEmpty(compactPrefix))
+                return false;
+
+            if (StartsWithFamilyToken(name, compactPrefix))
+            {
+                rest = TrimFamilySeparator(name.Substring(compactPrefix.Length));
+                return true;
+            }
+
+            // "GalacticLeopard" spoken as "Galactic Leopard".
+            string spaced = SplitFamilyToken(compactPrefix);
+            if (!string.Equals(spaced, compactPrefix, StringComparison.Ordinal)
+                && StartsWithFamilyToken(name, spaced))
+            {
+                rest = TrimFamilySeparator(name.Substring(spaced.Length));
+                return true;
+            }
+
+            return false;
+        }
+
+        static bool StartsWithFamilyToken(string name, string token)
+        {
+            return name.Length > token.Length
+                   && name.StartsWith(token, StringComparison.OrdinalIgnoreCase);
+        }
+
+        static string TrimFamilySeparator(string rest)
+        {
+            return string.IsNullOrEmpty(rest) ? string.Empty : rest.TrimStart('_', ' ', '-');
+        }
+
+        /// <summary>Inserts a space before each capital after the first, so GalacticLeopard reads Galactic Leopard.</summary>
+        static string SplitFamilyToken(string compact)
+        {
+            if (string.IsNullOrEmpty(compact))
+                return string.Empty;
+            var sb = new StringBuilder(compact.Length + 4);
+            for (int i = 0; i < compact.Length; i++)
+            {
+                char c = compact[i];
+                if (i > 0 && char.IsUpper(c) && char.IsLower(compact[i - 1]))
+                    sb.Append(' ');
+                sb.Append(c);
+            }
+
+            return sb.ToString();
         }
 
         static void WriteMegaGunCopies(
@@ -2628,29 +2861,369 @@ namespace TitanOrbit.UI
             int copies)
         {
             int n = copies > 0 ? copies : 1;
-            for (int c = 0; c < n; c++)
-            {
-                bool primary = !wroteGun && c == 0;
-                running += AppendGunCalcRow(
-                    sb, name, catalogBase, catalogPer, useLevels, shipSteps, abilityLv, scale, fleet, primary);
-                wroteGun = true;
-            }
+            // One row for every copy of this barrel. ROLE is "5x" and ADD is
+            // that many shots, so the fire-power total still matches the volley.
+            running += AppendCalcRow(
+                sb, name, catalogBase, catalogPer, useLevels, shipSteps, abilityLv,
+                scale, fleet, wroteGun ? "+X" : "PRI", abilityOnly: false,
+                groupCount: n, stackGroup: true, megaColumns: true);
+            wroteGun = true;
         }
 
         /// <summary>
-        /// Lasers and other non-gun weapons that still have firepower.
-        /// Copy count is not a multiplier here — each part keeps its own shot.
-        /// <paramref name="fleetMul"/> is the purchase planet's fire-power roll.
-        /// Those barrels keep the catalog shot times that roll (the family-weapon
-        /// override does not replace them).
+        /// Writes the muzzle speed of the bullet bank that is selected right now
+        /// onto <see cref="ShipSpeedometerStatTooltips.LiveContext.EffectiveStats"/>.
+        /// Call this before <see cref="BulletBankHudCopy.ApplyLiveCombatMuls"/> so the
+        /// type multiplier scales the weapon, not a stale hull sum.
+        /// Titans use the family or gear gun when that bank replaces the catalog
+        /// bullets, and the fastest catalog bullet gun otherwise. Regular ships
+        /// keep the hull guns on their own bank, and switch to a purchased weapon's
+        /// bullet speed when that weapon's bank is selected.
         /// </summary>
-        static bool AppendMegaNonGunFirepowerLines(
-            StringBuilder sb,
-            MegaShipCatalog catalog,
-            MegaShipCatalogEntry entry,
-            float fleetMul)
+        /// <param name="live">Chip snapshot. Bullet speed is replaced in place.</param>
+        /// <param name="bulletSpeedAbilityLevel">Bottom-HUD Bullet Speed purchases. Titans ignore this for a family gun (that shot is maxed).</param>
+        public static void ApplySelectedWeaponBulletSpeed(
+            ref ShipSpeedometerStatTooltips.LiveContext live,
+            int bulletSpeedAbilityLevel)
         {
+            // Hull number, still before the bullet-type multiplier.
+            live.WeaponBulletSpeed = live.EffectiveStats.bulletSpeed;
+            live.SelectedBulletWeaponName = null;
+            live.SelectedBulletReplacesHull = false;
+
+            if (!TryResolveBulletWeapon(
+                    in live, bulletSpeedAbilityLevel,
+                    out string name, out float speed, out _, out float perExtra, out _, out _))
+                return;
+
+            if (speed <= 0.0001f)
+                return;
+
+            // --- Selected weapon, not the hull sum ---
+            // [TITAN-ORBIT] Combat shoots this speed, then ApplyFireModifiers
+            // multiplies the bullet type. The chip has to start from the same speed
+            // or a B-key swap leaves the old hull number on screen.
+            // Per-extra follows that weapon too, so the green + is not the old hull.
+            var stats = live.EffectiveStats;
+            stats.bulletSpeed = speed;
+            stats.bulletSpeedPerExtraLevel = perExtra;
+            live.EffectiveStats = stats;
+            live.WeaponBulletSpeed = speed;
+            live.SelectedBulletWeaponName = name;
+            live.SelectedBulletReplacesHull = true;
+        }
+
+        /// <summary>
+        /// One weapon row for a regular ship that selected a purchased bullet.
+        /// ADD is that weapon's bullet speed. The type multiplier and the live
+        /// total are printed by <see cref="AppendBulletTypeSpeedClose"/>.
+        /// </summary>
+        static void AppendSelectedWeaponBulletGrid(
+            StringBuilder sb,
+            in ShipSpeedometerStatTooltips.LiveContext live,
+            float chipVal,
+            int bulletSpeedAbilityLevel)
+        {
+            _ = chipVal;
+            ShipStatTooltipChrome.AppendSectionBanner(sb, "PARTS", "5B9BD5");
+            if (!TryResolveBulletWeapon(
+                    in live,
+                    bulletSpeedAbilityLevel,
+                    out string name,
+                    out float speed,
+                    out float catalogBase,
+                    out float per,
+                    out int abilityLv,
+                    out _))
+            {
+                AppendTint(sb, HexMute, "Selected weapon speed  ");
+                AppendTint(sb, HexResult, FActual(live.WeaponBulletSpeed));
+                sb.AppendLine();
+                return;
+            }
+
+            AppendTint(sb, HexMute, "ADD = Base + PerExtra × ability. This is the selected weapon, before the bullet type.");
+            sb.AppendLine();
+            AppendPartsCalcHeader(sb);
+            ShipStatTooltipChrome.AppendGridRule(sb, PartsGridColumns);
+            string rowName = string.IsNullOrEmpty(name) ? "Weapon" : name;
+            float formula = ShipComponentExtraLevelMath.EvaluateWeaponBulletSpeed(catalogBase, per, abilityLv);
+            if (Mathf.Abs(formula - speed) <= 0.05f)
+            {
+                AppendCalcRow(
+                    sb, rowName, catalogBase, per, useLevels: true, 0, abilityLv,
+                    1f, 1f, "PRI", abilityOnly: true);
+            }
+            else
+            {
+                // The fired speed is not Base + PerExtra × ability. Show that
+                // speed itself so the last column is still the real number.
+                AppendCalcRow(
+                    sb, rowName, speed, 0f, useLevels: false, 0, 0,
+                    1f, 1f, "PRI", abilityOnly: true);
+            }
+
+            ShipStatTooltipChrome.AppendGridRule(sb, PartsGridColumns);
+        }
+
+        /// <summary>
+        /// Explains the bullet-type speed multiplier. When the parts grid was the
+        /// hull, TOTAL above is already the shot. When a weapon replaced the hull,
+        /// this prints the shot as the last number.
+        /// </summary>
+        static void AppendBulletTypeSpeedClose(
+            StringBuilder sb,
+            in ShipSpeedometerStatTooltips.LiveContext live,
+            float actual)
+        {
+            float pre = live.WeaponBulletSpeed > 0.0001f ? live.WeaponBulletSpeed : actual;
+            float mul = ReadBankTravelMul(live.FireBankIndex, speed: true);
+            if (Mathf.Abs(mul - 1f) > 0.0005f)
+            {
+                AppendTint(sb, HexMute, "Bullet type  ");
+                AppendTint(sb, HexResult, FActual(pre));
+                AppendTint(sb, HexMute, "  × speed ");
+                AppendTint(sb, HexScale, FActual(mul));
+                AppendTint(sb, HexMute, "  = ");
+                AppendTint(sb, HexResult, FActual(actual));
+                sb.AppendLine();
+            }
+            else if (live.SelectedBulletReplacesHull)
+            {
+                AppendTint(sb, HexMute, "Bullet type speed is ×1, so ADD is the shot.");
+                sb.AppendLine();
+            }
+
+            if (live.SelectedBulletReplacesHull)
+                AppendGridTotal(sb, actual, "Bullet");
+        }
+
+        /// <summary>
+        /// Titan bullet-speed grid. One family or gear weapon, or one row per
+        /// catalog bullet gun. The last number is the live shot
+        /// (weapon speed × bullet-type speed).
+        /// </summary>
+        static void AppendMegaBulletSpeedGrid(
+            StringBuilder sb,
+            in ShipSpeedometerStatTooltips.LiveContext live,
+            float chipVal)
+        {
+            ShipStatTooltipChrome.AppendSectionBanner(sb, "PARTS", "5B9BD5");
+            bool family = TryResolveBulletWeapon(
+                in live, 0, out string name, out float speed, out float catalogBase, out float per, out int abilityLv, out bool familyRow)
+                && familyRow;
+
+            if (family)
+            {
+                AppendTint(sb, HexMute, "ADD is this weapon's speed. The last number is this bullet.");
+                sb.AppendLine();
+                AppendPartsCalcHeader(sb, megaColumns: true);
+                ShipStatTooltipChrome.AppendGridRule(sb, MegaPartsGridColumns);
+                float formula = ShipComponentExtraLevelMath.EvaluateWeaponBulletSpeed(catalogBase, per, abilityLv);
+                if (Mathf.Abs(formula - speed) <= 0.05f)
+                {
+                    AppendCalcRow(
+                        sb, string.IsNullOrEmpty(name) ? "Weapon" : name,
+                        catalogBase, per, useLevels: true, 0, abilityLv,
+                        1f, 1f, "PRI", abilityOnly: true, megaColumns: true);
+                }
+                else
+                {
+                    AppendCalcRow(
+                        sb, string.IsNullOrEmpty(name) ? "Weapon" : name,
+                        speed, 0f, useLevels: false, 0, 0,
+                        1f, 1f, "PRI", abilityOnly: true, megaColumns: true);
+                }
+
+                ShipStatTooltipChrome.AppendGridRule(sb, MegaPartsGridColumns);
+                AppendBulletTypeProduct(sb, speed, ReadBankTravelMul(live.FireBankIndex, speed: true), "speed");
+                AppendGridTotal(sb, chipVal, "Bullet", megaColumns: true);
+                return;
+            }
+
+            AppendTint(sb, HexMute, "ROLE is the copy count. ADD is one gun × fleet. The fastest ADD is kept.");
+            sb.AppendLine();
+
+            var catalog = MegaShipCatalog.Load();
+            MegaShipCatalogEntry entry = null;
+            bool have = catalog != null
+                && catalog.TryGetEntry(live.MegaCatalogIndex, out entry)
+                && entry?.componentCounts != null;
+            float fleet = ReadMegaFleetMul(in live, StatField.BulletSpeed);
             bool wrote = false;
+            float best = 0f;
+            if (have)
+            {
+                for (int i = 0; i < entry.componentCounts.Count; i++)
+                {
+                    MegaShipComponentCount count = entry.componentCounts[i];
+                    if (count == null || count.count <= 0 || string.IsNullOrEmpty(count.displayName))
+                        continue;
+                    if (!catalog.TryGetUniqueComponent(count.displayName, out MegaShipComponentEntry unique)
+                        || unique == null
+                        || !IsBulletGunPart(unique))
+                        continue;
+                    float each = unique.stats.bulletSpeed;
+                    if (each <= 0.0001f)
+                        continue;
+
+                    if (!wrote)
+                    {
+                        AppendPartsCalcHeader(sb, megaColumns: true);
+                        ShipStatTooltipChrome.AppendGridRule(sb, MegaPartsGridColumns);
+                    }
+
+                    int copies = count.count > 0 ? count.count : 1;
+                    // Extra barrels do not raise muzzle speed. One row, ADD is one gun.
+                    float add = AppendCalcRow(
+                        sb, count.displayName, each, 0f, useLevels: false, 0, 0,
+                        1f, fleet, wrote ? "+X" : "PRI", abilityOnly: false,
+                        groupCount: copies, stackGroup: false, megaColumns: true);
+                    if (add > best)
+                        best = add;
+                    wrote = true;
+                }
+            }
+
+            if (!wrote)
+            {
+                AppendTint(sb, HexMute, "No cycled bullet guns.");
+                sb.AppendLine();
+            }
+            else
+            {
+                ShipStatTooltipChrome.AppendGridRule(sb, MegaPartsGridColumns);
+                AppendBulletTypeProduct(sb, best, ReadBankTravelMul(live.FireBankIndex, speed: true), "speed");
+            }
+
+            AppendGridTotal(sb, chipVal, "Bullet", megaColumns: true);
+        }
+
+        /// <summary>
+        /// One line so a bullet-type multiplier is visible before the live total.
+        /// Skipped when the type does not change the speed.
+        /// </summary>
+        static void AppendBulletTypeProduct(StringBuilder sb, float weaponSpeed, float typeMul, string kind)
+        {
+            if (Mathf.Abs(typeMul - 1f) <= 0.0005f)
+                return;
+            AppendTint(sb, HexMute, "Bullet type  ");
+            AppendTint(sb, HexResult, FActual(weaponSpeed));
+            AppendTint(sb, HexMute, "  × " + kind + " ");
+            AppendTint(sb, HexScale, FActual(typeMul));
+            AppendTint(sb, HexMute, "  = ");
+            AppendTint(sb, HexResult, FActual(weaponSpeed * typeMul));
+            sb.AppendLine();
+        }
+
+        /// <summary>
+        /// Bullet-type speed or range multiplier. Unset or 0 is 1, same as combat.
+        /// </summary>
+        static float ReadBankTravelMul(int bankIndex, bool speed)
+        {
+            if (!BulletBankCombatLogic.TryGetProfile(bankIndex, out BulletBankProfile profile) || profile == null)
+                return 1f;
+            float authored = speed
+                ? profile.statModifiers.bulletSpeedMultiplier
+                : profile.statModifiers.bulletRangeMultiplier;
+            return authored > 0f ? authored : 1f;
+        }
+
+        /// <summary>
+        /// The bullet speed combat uses for the selected bank, before the type multiplier.
+        /// <paramref name="familyRow"/> is true for one family or gear weapon.
+        /// False means Titan catalog bullet guns (the caller lists each copy).
+        /// </summary>
+        static bool TryResolveBulletWeapon(
+            in ShipSpeedometerStatTooltips.LiveContext live,
+            int bulletSpeedAbilityLevel,
+            out string name,
+            out float speed,
+            out float catalogBase,
+            out float perExtra,
+            out int abilityLevel,
+            out bool familyRow)
+        {
+            name = null;
+            speed = 0f;
+            catalogBase = 0f;
+            perExtra = 0f;
+            abilityLevel = 0;
+            familyRow = false;
+
+            World world = EcsGameBridge.GetLocalPlayerShipWorld();
+            if (world == null || !world.IsCreated)
+                return false;
+            EntityManager em = world.EntityManager;
+            if (!LocalShipEntitySeed.TryGetSeededShip(em, out Entity ship)
+                || ship == Entity.Null
+                || !em.Exists(ship))
+                return false;
+
+            var bank = BulletBankCombatLogic.Bank;
+            if (bank != null)
+                name = bank.GetCategoryName(live.FireBankIndex);
+
+            // Family or gear gun. Regular ships never take this path — the
+            // resolver returns false unless the hull is a Titan.
+            if (MegaShipStatApplyLogic.TryResolveTitanFamilyWeaponFirepower(
+                    em, ship, live.FireBankIndex,
+                    out _, out _, out _, out _, out float familySpeed, out _))
+            {
+                if (BulletBankOwnership.TryGetFamilyWeaponCatalogStats(
+                        em, ship, live.FireBankIndex, out ShipComponentAbilityStats raw))
+                {
+                    catalogBase = raw.bulletSpeed;
+                    perExtra = raw.bulletSpeedPerExtraLevel;
+                }
+
+                abilityLevel = MegaShipStatApplyLogic.TitanFamilyWeaponAbilityLevel;
+                speed = familySpeed > 0.01f
+                    ? familySpeed
+                    : ShipComponentExtraLevelMath.EvaluateWeaponBulletSpeed(catalogBase, perExtra, abilityLevel);
+                familyRow = speed > 0.01f;
+                return familyRow;
+            }
+
+            // Purchased weapon on a regular hull. The ship's own bank keeps the
+            // aggregated guns. A different bank is that part's bullet speed.
+            if (!live.IsMega)
+            {
+                int hullBank = BulletBankOwnership.ResolveHullDefaultBank(em, ship);
+                if (live.FireBankIndex == hullBank)
+                    return false;
+                if (!BulletBankOwnership.TryGetFamilyWeaponCatalogStats(
+                        em, ship, live.FireBankIndex, out ShipComponentAbilityStats bought))
+                    return false;
+                catalogBase = bought.bulletSpeed;
+                perExtra = bought.bulletSpeedPerExtraLevel;
+                abilityLevel = Mathf.Max(0, bulletSpeedAbilityLevel);
+                speed = ShipComponentExtraLevelMath.EvaluateWeaponBulletSpeed(catalogBase, perExtra, abilityLevel);
+                familyRow = speed > 0.01f;
+                return familyRow;
+            }
+
+            // Titan still on its own bullets. Fastest cycled gun, after the
+            // purchase planet's bullet-speed roll. Snipers and missiles do not
+            // take this bank, so they must not freeze the chip.
+            speed = MaxCycledGunBulletSpeed(in live);
+            familyRow = false;
+            return speed > 0.01f;
+        }
+
+        /// <summary>
+        /// Fastest catalog bullet-gun muzzle on this Titan, times the purchase
+        /// planet's bullet-speed roll. 0 when the hull has no cycled guns.
+        /// </summary>
+        static float MaxCycledGunBulletSpeed(in ShipSpeedometerStatTooltips.LiveContext live)
+        {
+            var catalog = MegaShipCatalog.Load();
+            if (catalog == null
+                || !catalog.TryGetEntry(live.MegaCatalogIndex, out MegaShipCatalogEntry entry)
+                || entry?.componentCounts == null)
+                return 0f;
+
+            float best = 0f;
             for (int i = 0; i < entry.componentCounts.Count; i++)
             {
                 MegaShipComponentCount count = entry.componentCounts[i];
@@ -2658,40 +3231,26 @@ namespace TitanOrbit.UI
                     continue;
                 if (!catalog.TryGetUniqueComponent(count.displayName, out MegaShipComponentEntry unique)
                     || unique == null
-                    || IsBulletGunPart(unique))
+                    || !IsBulletGunPart(unique))
                     continue;
-
-                float each = unique.stats.firePower;
-                if (each <= 0.0001f)
-                    continue;
-
-                if (!wrote)
-                {
-                    AppendTint(sb, HexMute, "Other weapons keep their own shot");
-                    sb.AppendLine();
-                }
-
-                wrote = true;
-                sb.Append(count.displayName).Append("  ");
-                AppendTint(sb, HexResult, FDetail(each));
-                // One shot, then the planet roll. Copies are not a second multiply.
-                AppendMegaFleetProduct(sb, each, 1, fleetMul);
-                sb.Append(" ");
-                AppendTint(sb, HexMute, "Fire");
-                sb.AppendLine();
+                if (unique.stats.bulletSpeed > best)
+                    best = unique.stats.bulletSpeed;
             }
 
-            return wrote;
+            if (best <= 0.0001f)
+                return 0f;
+            return best * ReadMegaFleetMul(in live, StatField.BulletSpeed);
         }
 
         /// <summary>
-        /// Lists unique MEGA parts that contribute <paramref name="field"/>, grouped by name.
-        /// The first number is the catalog value. The fleet percent beside it is the
-        /// purchase planet's roll for this stat, and the arrow is catalog × copies × that roll.
-        /// Bullet speed and range keep the fastest part (copies do not add). Hull
-        /// defaults/minimums still apply only to the TOTAL, after this list.
+        /// Titan parts grid for one chip. Same columns as Fire Power.
+        /// One row per part name. ROLE is the copy count. ADD is
+        /// <c>(Base + PerExtra × levels) × scale × fleet × count</c> when the stat sums.
+        /// Health and energy use the family stat scale. Gems use Base + 2 × ship level.
+        /// Bullet range keeps the fastest single copy. The caller prints the live total.
         /// </summary>
-        static void AppendMegaCatalogParts(
+        /// <returns>Sum of ADD, or the fastest ADD for range.</returns>
+        static float AppendMegaCatalogParts(
             StringBuilder sb,
             in ShipSpeedometerStatTooltips.LiveContext live,
             StatField field,
@@ -2704,14 +3263,22 @@ namespace TitanOrbit.UI
                 || entry?.componentCounts == null)
             {
                 sb.AppendLine("<color=#5B7A94>No catalog parts.</color>");
-                return;
+                return 0f;
             }
 
-            // Same roll on every row. Summing the arrows equals sum(parts) × fleet.
-            // Speed and range take the fastest arrow instead — copies of one gun do not add.
+            // One row per part name. ROLE is the copy count ("5x").
+            // ADD is that many copies when the stat sums. Range keeps the fastest
+            // single copy. Health and energy also multiply the family stat scale.
             float fleetMul = ReadMegaFleetMul(in live, field);
-            bool fastestWins = field is StatField.BulletSpeed or StatField.BulletRange;
+            float statScale = MegaHullScale(catalog, entry, field);
+            bool fastestWins = field == StatField.BulletRange;
+            int shipLevel = Mathf.Max(1, live.Ship.ShipLevel);
             bool wrote = false;
+            bool first = true;
+            float running = 0f;
+            float best = 0f;
+            AppendMegaColumnCaption(sb, field, fastestWins);
+
             for (int i = 0; i < entry.componentCounts.Count; i++)
             {
                 MegaShipComponentCount count = entry.componentCounts[i];
@@ -2721,63 +3288,144 @@ namespace TitanOrbit.UI
                     || unique == null)
                     continue;
 
-                float each = ReadMegaField(unique.stats, field);
-                if (each <= 0.0001f)
+                float catalogBase;
+                float per = 0f;
+                bool useLevels = false;
+                if (field == StatField.MaxGems)
+                {
+                    string partType = !string.IsNullOrWhiteSpace(unique.partType)
+                        ? unique.partType
+                        : MegaShipPartClassifier.ResolvePartType(count.displayName);
+                    if (!MegaShipStatsCalculator.IsHoldPartType(partType))
+                        continue;
+                    float authored = catalog.GetStatsForPartType(partType).maxGems;
+                    catalogBase = authored > 0.01f ? authored : MegaShipStatsCalculator.HoldGemBase;
+                    per = MegaShipStatsCalculator.HoldGemPerShipLevel;
+                    useLevels = true;
+                }
+                else
+                {
+                    catalogBase = ReadMegaField(unique.stats, field);
+                }
+
+                if (catalogBase <= 0.0001f && per <= 0.0001f)
                     continue;
 
-                wrote = true;
-                AppendTint(sb, HexCount, count.count.ToString(CultureInfo.InvariantCulture) + "x");
-                sb.Append(" ").Append(count.displayName).Append("  ");
-                AppendTint(sb, HexResult, FDetail(each));
-                if (!string.IsNullOrEmpty(unitLabel))
+                if (!wrote)
                 {
-                    sb.Append(" ");
-                    AppendTint(sb, HexMute, unitLabel);
+                    AppendPartsCalcHeader(sb, megaColumns: true);
+                    ShipStatTooltipChrome.AppendGridRule(sb, MegaPartsGridColumns);
+                    wrote = true;
                 }
 
-                if (fastestWins && count.count > 1)
-                {
-                    sb.Append(" ");
-                    AppendTint(sb, HexMute, "fastest");
-                }
-
-                AppendMegaFleetProduct(sb, each, fastestWins ? 1 : count.count, fleetMul);
-                sb.AppendLine();
+                int copies = count.count > 0 ? count.count : 1;
+                // Range does not add across copies. Every other stat does,
+                // so five wings show as one row whose ADD is five times one wing.
+                float add = AppendCalcRow(
+                    sb,
+                    count.displayName,
+                    catalogBase,
+                    per,
+                    useLevels,
+                    shipLevel,
+                    0,
+                    statScale,
+                    fleetMul,
+                    first ? "PRI" : "+X",
+                    abilityOnly: false,
+                    groupCount: copies,
+                    stackGroup: !fastestWins,
+                    megaColumns: true);
+                first = false;
+                running += add;
+                if (add > best)
+                    best = add;
             }
 
             if (!wrote)
+            {
                 sb.AppendLine("<color=#5B7A94>No contributing parts.</color>");
+                return 0f;
+            }
+
+            ShipStatTooltipChrome.AppendGridRule(sb, MegaPartsGridColumns);
+            float kept = fastestWins ? best : running;
+            // Range is a side section. Its last number is the live range
+            // (fastest part, fleet, and the bullet type's range multiplier).
+            if (field == StatField.BulletRange)
+            {
+                float liveRange = live.EffectiveStats.bulletRange > 0.01f
+                    ? live.EffectiveStats.bulletRange
+                    : kept;
+                float rangeMul = ReadBankTravelMul(live.FireBankIndex, speed: false);
+                AppendBulletTypeProduct(sb, kept, rangeMul, "range");
+                AppendGridTotal(sb, liveRange, unitLabel, megaColumns: true);
+            }
+
+            return kept;
         }
 
         /// <summary>
-        /// Lists equipped moon-store ship components that contribute
-        /// <paramref name="field"/> after PerExtra × Titan tier (no Base), then the
-        /// purchase planet's fleet roll. Hidden when the Titan has no LOADOUT gear
-        /// for this chip. Each store row is one copy — the arrow is that copy × fleet.
+        /// One sentence above a Titan parts grid. Names the multiply the columns do.
         /// </summary>
-        static void AppendMegaGearParts(
+        static void AppendMegaColumnCaption(StringBuilder sb, StatField field, bool fastestWins)
+        {
+            string text;
+            if (field == StatField.MaxGems)
+                text = "ROLE is the copy count. ADD = (Base + PerExtra × ship) × fleet × count.";
+            else if (field is StatField.HealthCap or StatField.HealthRegen or StatField.EnergyCap or StatField.EnergyRegen)
+                text = "ROLE is the copy count. ADD = Base × scale × fleet × count. Scale is the family hull knob.";
+            else if (fastestWins)
+                text = "ROLE is the copy count. ADD is one copy × fleet. The fastest ADD is kept.";
+            else
+                text = "ROLE is the copy count. ADD = Base × fleet × count.";
+            AppendTint(sb, HexMute, text);
+            sb.AppendLine();
+        }
+
+        /// <summary>
+        /// Family stat scale for health and energy only. Guns, cruise, turn,
+        /// troops, and gems stay at 1 — the same split the hull sum uses.
+        /// </summary>
+        static float MegaHullScale(MegaShipCatalog catalog, MegaShipCatalogEntry entry, StatField field)
+        {
+            if (field is not (StatField.HealthCap or StatField.HealthRegen
+                or StatField.EnergyCap or StatField.EnergyRegen))
+                return 1f;
+            if (catalog == null)
+                return 1f;
+            float scale = catalog.GetStatScaleForEntry(entry);
+            return scale > 0.0001f ? scale : 1f;
+        }
+
+        /// <summary>
+        /// Equipped moon-store parts on the same columns as the hull.
+        /// BASE is 0. ADD is <c>PerExtra × ship level × that part's fleet</c>.
+        /// A purchase stamp uses the moon it was bought at. Otherwise the Titan's roll.
+        /// Hidden when this chip has no LOADOUT gear.
+        /// </summary>
+        /// <returns>Sum of gear ADD cells. 0 when this chip has no gear.</returns>
+        static float AppendMegaGearParts(
             StringBuilder sb,
             in ShipSpeedometerStatTooltips.PartCache parts,
             in ShipSpeedometerStatTooltips.LiveContext live,
             StatField field,
             string unitLabel)
         {
+            _ = unitLabel;
             if (!parts.Valid
                 || parts.Ids == null
                 || parts.Stats == null
-                || parts.StoreExtraStartIndex == int.MaxValue
-                || field == StatField.MaxGems)
-                return;
+                || parts.StoreExtraStartIndex == int.MaxValue)
+                return 0f;
 
             int start = parts.StoreExtraStartIndex;
             if (start < 0 || start >= parts.Ids.Count)
-                return;
+                return 0f;
 
             int level = Mathf.Max(1, live.Ship.ShipLevel);
-            // Gear is folded into the hull sum, then the whole hull is rolled.
-            // Showing the roll on this line keeps it in the same multiply as catalog parts.
-            float fleetMul = ReadMegaFleetMul(in live, field);
             bool wroteHeader = false;
+            float running = 0f;
             int n = Mathf.Min(parts.Ids.Count, parts.Stats.Count);
             for (int i = start; i < n; i++)
             {
@@ -2790,7 +3438,8 @@ namespace TitanOrbit.UI
 
                 ShipComponentAbilityStats extra = MegaShipStatsCalculator.EvaluateLoadoutExtra(
                     parts.Stats[i], id, level);
-                extra.maxGems = 0f;
+                if (!MegaShipStatsCalculator.IsHoldComponent(id))
+                    extra.maxGems = 0f;
                 float value = ReadField(extra, field);
                 if (value <= 0.0001f)
                     continue;
@@ -2798,8 +3447,10 @@ namespace TitanOrbit.UI
                 if (!wroteHeader)
                 {
                     ShipStatTooltipChrome.AppendSectionBanner(sb, "GEAR", "FFAA66");
-                    AppendTint(sb, HexMute, "LOADOUT extras add PerExtra x Titan tier (no Base), then fleet");
+                    AppendTint(sb, HexMute, "ADD = PerExtra × ship × fleet. Gear has no Base. Scale stays ×1.");
                     sb.AppendLine();
+                    AppendPartsCalcHeader(sb, megaColumns: true);
+                    ShipStatTooltipChrome.AppendGridRule(sb, MegaPartsGridColumns);
                     wroteHeader = true;
                 }
 
@@ -2808,18 +3459,53 @@ namespace TitanOrbit.UI
                     && entry != null)
                     label = ShipComponentStoreData.GetDisplayName(entry);
 
-                AppendTint(sb, HexCount, "1x");
-                sb.Append(" ").Append(label).Append("  ");
-                AppendTint(sb, HexResult, FDetail(value));
-                if (!string.IsNullOrEmpty(unitLabel))
+                // Show PerExtra and the ship level when that product is the gear
+                // value. Otherwise the evaluated number sits in BASE so ADD is still real.
+                float per = 0f;
+                bool useLevels = false;
+                float shownBase = value;
+                if (ShipFamilyStatsCalculator.TryResolveComponentStats(null, id, out ShipComponentAbilityStats raw))
                 {
-                    sb.Append(" ");
-                    AppendTint(sb, HexMute, unitLabel);
+                    per = ReadPerExtraLevel(raw, field);
+                    if (per > 0.0001f && Mathf.Abs(per * level - value) <= 0.05f)
+                    {
+                        shownBase = 0f;
+                        useLevels = true;
+                    }
                 }
 
-                AppendMegaFleetProduct(sb, value, 1, fleetMul);
-                sb.AppendLine();
+                float fleetMul = GearFleetMul(in parts, in live, field, i);
+                float add = AppendCalcRow(
+                    sb, label, shownBase, per, useLevels, level, 0,
+                    1f, fleetMul, "+X", abilityOnly: false, megaColumns: true);
+                running += add;
             }
+
+            if (wroteHeader)
+                ShipStatTooltipChrome.AppendGridRule(sb, MegaPartsGridColumns);
+            return running;
+        }
+
+        /// <summary>
+        /// Fleet roll on one LOADOUT row. A stamped moon wins. An unstamped part
+        /// uses the Titan's purchase planet, same as the hull rows.
+        /// </summary>
+        static float GearFleetMul(
+            in ShipSpeedometerStatTooltips.PartCache parts,
+            in ShipSpeedometerStatTooltips.LiveContext live,
+            StatField field,
+            int index)
+        {
+            if (parts.ComponentFleetFamilyIndex != null
+                && index >= 0
+                && index < parts.ComponentFleetFamilyIndex.Count)
+            {
+                int stamped = parts.ComponentFleetFamilyIndex[index];
+                if (stamped >= 0)
+                    return ReadBonusFieldMul(MegaShipStatsCalculator.ResolveFleetBonuses(stamped), field);
+            }
+
+            return ReadMegaFleetMul(in live, field);
         }
 
         /// <summary>
@@ -2843,14 +3529,20 @@ namespace TitanOrbit.UI
                 || entry?.componentCounts == null)
             {
                 sb.AppendLine("<color=#5B7A94>No catalog parts.</color>");
-                AppendTotalLine(sb, chipVal, "Move");
+                AppendGridTotal(sb, chipVal, "Move", megaColumns: true);
                 return;
             }
 
             // One roll for every Move part. Home Titans stay ×1.
+            // ADD is one copy after that roll. Cruise reads those ADD cells.
             float moveFleet = ReadMegaFleetMul(in live, StatField.MoveSpeed);
             float extraPercent = catalog.GetExtraEngineSpeedPercent();
             var moves = new List<float>(8);
+            AppendTint(sb, HexMute, "ROLE is the copy count. ADD is one copy × fleet. Cruise reads every copy.");
+            sb.AppendLine();
+            AppendPartsCalcHeader(sb, megaColumns: true);
+            ShipStatTooltipChrome.AppendGridRule(sb, MegaPartsGridColumns);
+            bool wroteMove = false;
             for (int i = 0; i < entry.componentCounts.Count; i++)
             {
                 MegaShipComponentCount count = entry.componentCounts[i];
@@ -2861,26 +3553,21 @@ namespace TitanOrbit.UI
                     || !MegaShipComponentInventory.ContributesCruiseMove(unique.stats))
                     continue;
 
-                float rawMove = unique.stats.moveSpeed;
-                float afterFleet = rawMove * moveFleet;
-                for (int n = 0; n < count.count; n++)
-                    moves.Add(afterFleet);
-
-                AppendTint(sb, HexCount, count.count.ToString(CultureInfo.InvariantCulture) + "x");
-                sb.Append(" ").Append(count.displayName).Append("  ");
-                AppendTint(sb, HexResult, FDetail(rawMove));
-                sb.Append(" ");
-                AppendTint(sb, HexMute, unique.partType);
-                if (count.count > 1)
-                {
-                    sb.Append(" ");
-                    AppendTint(sb, HexMute, "each");
-                }
-
-                // Arrow is one copy after the roll. Copies stay separate inputs to cruise.
-                AppendMegaFleetProduct(sb, rawMove, 1, moveFleet);
-                sb.AppendLine();
+                int copies = count.count > 0 ? count.count : 1;
+                // Cruise still sees every engine. The grid shows them as one
+                // "5x" row, and ADD stays one copy so it matches that formula.
+                float add = AppendCalcRow(
+                    sb, count.displayName, unique.stats.moveSpeed, 0f,
+                    useLevels: false, 0, 0, 1f, moveFleet,
+                    wroteMove ? "+X" : "PRI", abilityOnly: false,
+                    groupCount: copies, stackGroup: false, megaColumns: true);
+                for (int n = 0; n < copies; n++)
+                    moves.Add(add);
+                wroteMove = true;
             }
+
+            if (wroteMove)
+                ShipStatTooltipChrome.AppendGridRule(sb, MegaPartsGridColumns);
 
             ShipStatTooltipChrome.AppendSectionBanner(sb, "CRUISE", "7DFFB2");
             AppendTint(sb, HexMute, "fastest + ");
@@ -2893,7 +3580,7 @@ namespace TitanOrbit.UI
             if (combined > 0.0001f)
             {
                 AppendTint(sb, HexMute, "cruise  ");
-                AppendTint(sb, HexResult, FResult(combined));
+                AppendTint(sb, HexResult, FActual(combined));
                 sb.AppendLine();
             }
 
@@ -2901,7 +3588,7 @@ namespace TitanOrbit.UI
             AppendMegaGearParts(sb, in parts, in live, StatField.MoveSpeed, "Move");
             AppendMegaGearParts(sb, in parts, in live, StatField.AccelerationCap, "Accel");
             AppendTurnMassTax(sb, live);
-            AppendTotalLine(sb, chipVal, "Move");
+            AppendGridTotal(sb, chipVal, "Move", megaColumns: true);
         }
 
         /// <summary>Reads one HUD field from a raw MEGA unique-component block.</summary>
@@ -2916,7 +3603,7 @@ namespace TitanOrbit.UI
                 StatField.EnergyRegen => s.energyRegen,
                 StatField.MoveSpeed => s.moveSpeed,
                 StatField.TurnSpeed => s.turnSpeed,
-                StatField.MaxGems => 0f,
+                StatField.MaxGems => s.maxGems,
                 StatField.MaxPeople => s.maxPeople,
                 StatField.AccelerationCap => s.accelerationCap,
                 StatField.BulletRange => s.bulletRange,

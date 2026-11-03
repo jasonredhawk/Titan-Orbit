@@ -84,9 +84,18 @@ namespace TitanOrbit
         /// <summary>
         /// When true, Titan projectile mounts auto-aim and fire on living asteroids (damage mode
         /// only, after ships / pads / moon shields). Published from GameManager on the Editor
-        /// host and on the dedicated server. Cannon lasers acquire rocks even when this is false.
+        /// host and on the dedicated server. Ignored unless <see cref="MegaShipProjectileAutoAim"/>
+        /// is also on. Cannon lasers acquire rocks even when this is false.
         /// </summary>
         public static bool MegaShipsAutoFireAsteroids;
+
+        /// <summary>
+        /// When true, Titan gun, missile, and sniper mounts auto-aim while Fire is held.
+        /// When false, those barrels stay on the nose and shots leave along the hull.
+        /// Cannon lasers always auto-aim. Shift mouse-aim is unchanged.
+        /// Written by GameManager (<c>Mega Ships — Guns</c>). Honored on the dedicated server.
+        /// </summary>
+        public static bool MegaShipProjectileAutoAim;
 
         /// <summary>
         /// When true, <c>MegaShipAutoFireSystem</c> returns immediately (no auto-aim / MEGA

@@ -19,10 +19,9 @@ namespace TitanOrbit.Simulation
         /// Fallback ship-bullet tracer reference when <see cref="BulletVfxBank"/> is missing.
         /// The live value is <see cref="BulletVfxBank.BulletReferenceFirePower"/> on
         /// Resources/BulletVfxBank (default 4). Guns divide by it.
-        /// Snipers use <see cref="SniperVisualReferenceFirePower"/>. Missiles follow the
-        /// store-rocket size curve times <see cref="TitanMissileHullRatio"/>
-        /// (<see cref="ComputeMissileShotScale"/>). Lasers, turrets,
-        /// and ramming do not use it.
+        /// Snipers use <see cref="SniperVisualReferenceFirePower"/>. Missiles use the
+        /// store-rocket fire-power curve (<see cref="ComputeMissileShotScale"/>).
+        /// Lasers, turrets, and ramming do not use it.
         /// </summary>
         public const float FixedBulletReferenceDamage = 4f;
 
@@ -46,26 +45,17 @@ namespace TitanOrbit.Simulation
         public const float SniperVisualReferenceFirePower = 50f;
 
         /// <summary>
-        /// Titan hulls are longer than the fighters the store-rocket curve is tuned for.
-        /// A level-1 rocket body is about 17% of a starter hull (~2 units). The curve
-        /// alone is about 6% of a Titan (Craizan ~6, Leopard ~8). 4× puts a
-        /// fire-power-40 missile on that same fraction of the longer hulls.
-        /// The gun divisor (fire power ÷ 4) is about 10× this curve and reads as half the hull.
-        /// </summary>
-        public const float TitanMissileHullRatio = 4f;
-
-        /// <summary>
         /// Rocket mesh scale before the bank global multiply.
         /// <paramref name="curveScale"/> is the store-rocket size for this fire power
-        /// (1.1 at fire power 50). <paramref name="authoredBankScale"/> is the MEGA
-        /// Weapon Missile bank scale (1 = the curve × <see cref="TitanMissileHullRatio"/>).
+        /// (1 at 40, 1.2 at 60, 2 at 240). <paramref name="authoredBankScale"/> is the
+        /// MEGA Weapon Missile bank scale (1 = that store-rocket size).
         /// </summary>
         [BurstCompile]
         public static float ComputeMissileShotScale(float curveScale, float authoredBankScale)
         {
             float curve = curveScale > 0.01f ? curveScale : 1f;
             float authored = authoredBankScale > 0.01f ? authoredBankScale : 1f;
-            return curve * authored * TitanMissileHullRatio;
+            return curve * authored;
         }
 
         /// <summary>

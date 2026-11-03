@@ -940,9 +940,8 @@ namespace TitanOrbit.ECS
                 : weaponCfg.BulletLifetime;
 
             // Guns: fire power ÷ the Bullet VFX Bank reference. Snipers divide by 50.
-            // Missiles lerp the live store-rocket size curve from this shot's fire power
-            // (50 sits halfway from 40 to 60, so curve size 1.1), then × TitanMissileHullRatio.
-            // Damage is unchanged.
+            // Missiles use the store-rocket size for this shot's fire power
+            // (40 → 1, 60 → 1.2). Damage is unchanged.
             bool sniperVisual = mount.WeaponKind == ShipWeaponKind.Sniper;
             bool missileVisual = mount.WeaponKind == ShipWeaponKind.Missile;
             float authoredScale = missileVisual

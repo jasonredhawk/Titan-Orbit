@@ -1349,7 +1349,8 @@ namespace TitanOrbit.UI
                     ShipComponentStoreVisualScaleLogic.CollectExtraComponents(
                         em, shipEntity, out var extraIds, out var gearFamilies);
                     if (MegaShipCatalog.TryParseCatalogIndex(chassisId, out ushort megaIdx))
-                        MegaShipStatsCalculator.TrySumForCatalogIndex(megaIdx, out effectiveStats);
+                        MegaShipStatsCalculator.TrySumForCatalogIndex(
+                            megaIdx, extraComponentIds: null, ship.ShipLevel, out effectiveStats);
                     else
                         ShipStatApplyLogic.TryGetBaseStatsForChassis(
                             chassisId, ship.ShipLevel, out effectiveStats);
@@ -1983,6 +1984,8 @@ namespace TitanOrbit.UI
                         : (ushort)0,
                 };
                 BulletBankHudCopy.ApplyLoadout(ref _liveTooltipContext);
+                ShipAbilityStatBreakdown.ApplySelectedWeaponBulletSpeed(
+                    ref _liveTooltipContext, _statsCacheAttrs.BulletSpeed);
                 BulletBankHudCopy.ApplyLiveCombatMuls(ref _liveTooltipContext);
             }
 

@@ -56,6 +56,9 @@ namespace TitanOrbit.Core
     /// nose (<see cref="RegularShipWeaponAim.Forward"/>) or track the cursor only while
     /// that cursor is in front of the ship (<see cref="RegularShipWeaponAim.Point"/>).
     /// Either way a regular ship only shoots forward of its nose. MEGA hulls ignore it.
+    /// <see cref="MegaShipProjectileAutoAim"/> (default off) is the switch that brings
+    /// sticky auto-aim back on Titan gun, missile, and sniper mounts. Cannon lasers
+    /// always auto-aim. Shift still points every Titan barrel at the cursor.
     /// <see cref="ShowJoinGameClosesIn"/>
     /// hides the Join Game "closes in…" countdown (default off); flip it to show empty-lobby
     /// idle-kill time again. <see cref="EnableBetaFeedback"/> (default off) treats the
@@ -187,10 +190,17 @@ namespace TitanOrbit.Core
 
         // [TITAN-ORBIT] Regular-ship guns. Forward is the nose (shots leave along the hull).
         // Point tracks the cursor only in the forward half — never behind the ship.
-        // MEGA hulls keep their own Shift / auto-aim and ignore this.
+        // MEGA hulls ignore this. Their projectile auto-aim is the checkbox below.
         [Header("Regular Ships — Guns")]
         [Tooltip("Forward: regular-ship guns stay on the nose and every shot leaves along the ship. Point: guns and shots aim at the cursor, but only while that cursor is in front of the ship. A cursor behind the nose keeps the guns and the shot forward. MEGA hulls are unchanged.")]
         [SerializeField] RegularShipWeaponAim regularShipWeaponAim = RegularShipWeaponAim.Forward;
+
+        // [TITAN-ORBIT] Titan projectile mounts. Lasers always acquire a target.
+        // This switch only brings back sticky auto-aim on gun, missile, and sniper.
+        // Shift still points every barrel at the cursor either way.
+        [Header("Mega Ships — Guns")]
+        [Tooltip("ON: gun, missile, and sniper mounts auto-aim the nearest valid target while Fire is held. OFF: those mounts stay on the nose and fire forward. Shift still aims every barrel at the cursor. Cannon lasers always auto-aim. Honored on the dedicated server.")]
+        [SerializeField] bool megaShipProjectileAutoAim;
 
         /// <summary>
         /// Play Mode: fired when any Your Ship camera checkbox changes so the card
@@ -250,7 +260,7 @@ namespace TitanOrbit.Core
         [SerializeField] bool debugSelfHarmRocketsAndMines;
 
         [Header("Debug — Titan Ships")]
-        [Tooltip("When enabled, Titan projectile guns (gun, missile, sniper) auto-aim living asteroids in damage mode — only when no enemy ship, turret, or moon shield is in that muzzle's range. A closer rock never wins, and a rock lock drops as soon as an enemy enters range. Heal mode is unchanged. Honored on the dedicated server (WebGL clients do not run this aim locally). Cannon lasers always acquire rocks under the same order.")]
+        [Tooltip("When enabled, Titan projectile guns (gun, missile, sniper) auto-aim living asteroids in damage mode — only when Mega Ships — Guns auto-aim is also ON, and only when no enemy ship, turret, or moon shield is in that muzzle's range. A closer rock never wins, and a rock lock drops as soon as an enemy enters range. Heal mode is unchanged. Honored on the dedicated server (WebGL clients do not run this aim locally). Cannon lasers always acquire rocks under the same order.")]
         [SerializeField] bool debugMegaShipsAutoFireAsteroids;
 
         [Tooltip("Temporary isolate: skip MegaShipAutoFireSystem (no Titan auto-aim / turret slew). Leave OFF for normal play. Shift+Fire still aims at the mouse in BulletSimulationSystem. Honored on dedicated after rebuild.")]
@@ -344,6 +354,13 @@ namespace TitanOrbit.Core
 
         /// <summary>True when regular-ship guns should track a cursor that is in front of the nose.</summary>
         public bool RegularShipGunsPoint => regularShipWeaponAim == RegularShipWeaponAim.Point;
+
+        /// <summary>
+        /// True when Titan gun, missile, and sniper mounts auto-aim while Fire is held.
+        /// Off keeps those barrels on the nose. Cannon lasers always auto-aim.
+        /// Shift still aims every barrel at the cursor.
+        /// </summary>
+        public bool MegaShipProjectileAutoAim => megaShipProjectileAutoAim;
 
         /// <summary>
         /// True when the card is showing moon, stars, and nearby hulls.
@@ -630,6 +647,7 @@ namespace TitanOrbit.Core
                 TitanOrbitDebugFlags.InfiniteMines = false;
                 TitanOrbitDebugFlags.SelfHarmRocketsAndMines = false;
                 TitanOrbitDebugFlags.MegaShipsAutoFireAsteroids = false;
+                TitanOrbitDebugFlags.MegaShipProjectileAutoAim = false;
                 TitanOrbitDebugFlags.DisableMegaShipAutoFire = false;
                 TitanOrbitDebugFlags.LogAsteroidDestroyPerf = false;
                 TitanOrbitDebugFlags.InstructionImageCaptureEnabled = false;
@@ -685,6 +703,10 @@ namespace TitanOrbit.Core
             // [TITAN-ORBIT] Regular-ship gun aim is match rules. The dedicated server
             // publishes the scene value so shots and client meshes use the same mode.
             TitanOrbitDebugFlags.RegularShipGunsPoint = regularShipWeaponAim == RegularShipWeaponAim.Point;
+            // [TITAN-ORBIT] Titan projectile auto-aim is match rules. Lasers always
+            // acquire. WebGL never runs MegaShipAutoFireSystem — the dedicated server
+            // publishes this so barrels and shots stay on the nose together.
+            TitanOrbitDebugFlags.MegaShipProjectileAutoAim = megaShipProjectileAutoAim;
             // [TITAN-ORBIT] AI ships are match simulation. WebGL never runs the brain —
             // the dedicated server must publish the same toggle the Editor host uses.
             TitanOrbitDebugFlags.AiShips = debugAiShips;

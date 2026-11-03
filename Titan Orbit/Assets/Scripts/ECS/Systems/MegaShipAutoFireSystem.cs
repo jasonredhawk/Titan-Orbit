@@ -26,8 +26,11 @@ namespace TitanOrbit.ECS
     /// dropped as soon as any enemy enters range. Heal mode aims at the nearest
     /// friendly ship. Cannon lasers also acquire asteroids (lowest priority) so a
     /// destroyed rock does not leave the beam stuck. Projectile guns auto-aim
-    /// rocks when <see cref="TitanOrbitDebugFlags.MegaShipsAutoFireAsteroids"/> is on.
-    /// That flag is published on the dedicated server (WebGL does not aim locally).
+    /// only when <see cref="TitanOrbitDebugFlags.MegaShipProjectileAutoAim"/> is on
+    /// (GameManager → Mega Ships — Guns, default off). While it is off they stay
+    /// on the nose and fire forward. Rocks are a further subset, and only when
+    /// <see cref="TitanOrbitDebugFlags.MegaShipsAutoFireAsteroids"/> is also on.
+    /// Both flags are published on the dedicated server (WebGL does not aim locally).
     /// Gun, cannon, missile, and sniper mounts on every Titan hull share this order.
     /// <para>
     /// Each gun searches from its own muzzle when Fire is pressed. A projectile
@@ -161,6 +164,7 @@ namespace TitanOrbit.ECS
             bool planetsLoaded = false;
 
             bool debugAsteroids = TitanOrbitDebugFlags.MegaShipsAutoFireAsteroids;
+            bool projectileAutoAim = TitanOrbitDebugFlags.MegaShipProjectileAutoAim;
             NativeArray<Entity> asteroidEntities = default;
             NativeArray<AsteroidState> asteroidStates = default;
             NativeArray<LocalTransform> asteroidXfs = default;
@@ -273,7 +277,7 @@ namespace TitanOrbit.ECS
                     }
                 }
 
-                if (!heal && (debugAsteroids || cannonsWantAsteroids) && !asteroidsLoaded)
+                if (!heal && ((debugAsteroids && projectileAutoAim) || cannonsWantAsteroids) && !asteroidsLoaded)
                 {
                     asteroidEntities = _asteroidQuery.ToEntityArray(Allocator.Temp);
                     asteroidStates = _asteroidQuery.ToComponentDataArray<AsteroidState>(Allocator.Temp);
@@ -377,6 +381,19 @@ namespace TitanOrbit.ECS
                             aims[m] = cannonAim;
                         }
 
+                        continue;
+                    }
+
+                    // Projectile auto-aim is optional. Off parks the barrel on the
+                    // nose (Target = this hull) so the slew below snaps it forward.
+                    // Lasers already continued above. Shift mouse-aim never reaches here.
+                    if (!projectileAutoAim)
+                    {
+                        aims[m] = new MegaShipAutoAimSlotElement
+                        {
+                            Target = mega,
+                            AimPoint = default,
+                        };
                         continue;
                     }
 

@@ -23,7 +23,7 @@ namespace TitanOrbit.Data
     /// <item><b>Global Visual Scale Multiplier</b> (bank) — shrink/grow every bullet VFX.</item>
             /// <item><b>Upgrade Visual Scale Multiplier</b> — not applied. Gun tracer size is
             /// fire power ÷ <b>Bullet Reference Fire Power</b> (default 4), then the global scale.
-            /// Missiles lerp the store-rocket size curve from fire power, then the Titan hull ratio.</item>
+            /// Missiles use the store-rocket size for that fire power.</item>
             /// <item><b>Per-category</b> multipliers are not applied to tracer size.</item>
             /// </list>
             /// Drawn gun size is that fire-power ratio times <b>Global Visual Scale Multiplier</b>.
@@ -70,7 +70,7 @@ namespace TitanOrbit.Data
         [Tooltip("Not applied. Tracer size is fire power ÷ Bullet Reference Fire Power, then Global Visual Scale.")]
         [SerializeField] float upgradeVisualScaleMultiplier = 0.5f;
 
-        [Tooltip("Gun tracer size is this shot's fire power divided by this number. Snipers divide by 50. Missiles lerp the store-rocket size curve, then the Titan hull ratio. Lasers, turrets, and ramming do not use it.")]
+        [Tooltip("Gun tracer size is this shot's fire power divided by this number. Snipers divide by 50. Missiles use the store-rocket size for that fire power. Lasers, turrets, and ramming do not use it.")]
         [Min(0.01f)]
         [SerializeField] float bulletReferenceFirePower = 4f;
 

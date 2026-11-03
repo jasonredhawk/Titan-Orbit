@@ -1666,6 +1666,9 @@ namespace TitanOrbit.UI
                 if (ramAst <= 0.0001f && megaStats.rammingPower > 0.01f)
                     live.RamRating = megaStats.rammingPower;
 
+                // Selected weapon's muzzle, then the bullet-type multiplier.
+                // Titans and a purchased regular-ship bank both land here.
+                ShipAbilityStatBreakdown.ApplySelectedWeaponBulletSpeed(ref live, attrs.BulletSpeed);
                 BulletBankHudCopy.ApplyLiveCombatMuls(ref live);
                 return true;
             }
@@ -1795,7 +1798,9 @@ namespace TitanOrbit.UI
             ApplyLocalTerritoryToCruise(ref live);
 
             // [TITAN-ORBIT] SnapshotKey already includes the B-key bank so chips rebuild.
-            // Apply the same fire-time muls combat uses or FP / speed / range stay hull-only.
+            // Swap in the selected weapon's bullet speed first, then the same
+            // fire-time muls combat uses, or speed stays on the previous weapon.
+            ShipAbilityStatBreakdown.ApplySelectedWeaponBulletSpeed(ref live, attrs.BulletSpeed);
             BulletBankHudCopy.ApplyLiveCombatMuls(ref live);
             return true;
         }
@@ -1909,7 +1914,8 @@ namespace TitanOrbit.UI
             var extraIds = new List<string>(4);
             var gearFamilies = new List<int>(4);
             CollectLocalStoreComponents(extraIds, gearFamilies);
-            if (!MegaShipStatsCalculator.TrySumForCatalogIndex(megaIndex, out megaStats))
+            if (!MegaShipStatsCalculator.TrySumForCatalogIndex(
+                    megaIndex, extraComponentIds: null, shipLevel, out megaStats))
                 return false;
 
             // Titan roll on the catalog hull only. Each purchased part adds its own.

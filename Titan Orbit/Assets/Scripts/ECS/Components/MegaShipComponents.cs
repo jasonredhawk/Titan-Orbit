@@ -29,7 +29,7 @@ namespace TitanOrbit.ECS
 
     /// <summary>
     /// Ghosted MEGA identity on a ship. When <see cref="IsMega"/> is true the hull is a static
-    /// endgame ship: no attribute upgrades, no gems, auto-fire guns, unique occupancy.
+    /// endgame ship: no attribute upgrades, gem cargo from cockpit / wing / cargo, auto-fire guns, unique occupancy.
     /// Previous L6 family/level/branch are stored so death can restore that chassis.
     /// The ten ability purchases from that hull live on <see cref="PreTitanAttributeSnapshot"/>
     /// (server only) and come back with the chassis.
