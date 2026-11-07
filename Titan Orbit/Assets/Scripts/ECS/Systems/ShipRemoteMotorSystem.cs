@@ -58,19 +58,51 @@ namespace TitanOrbit.ECS
                         HoldUntilElapsed = -1.0,
                     },
                 });
+                SeedHistory(em, missing[i]);
             }
 
+            // Hulls that already have a motor still need the ring after a script reload.
+            missing.Clear();
+            foreach (var (_, entity) in SystemAPI
+                         .Query<RefRO<ShipRemoteFlightSample>>()
+                         .WithAll<ShipTag, ShipRemoteMotorState>()
+                         .WithNone<ShipRemoteMotorHistoryElement, Prefab>()
+                         .WithEntityAccess())
+            {
+                if (em.HasComponent<LocalPlayerShipTag>(entity))
+                    continue;
+                if (em.HasComponent<GhostOwnerIsLocal>(entity) &&
+                    em.IsComponentEnabled<GhostOwnerIsLocal>(entity))
+                    continue;
+                missing.Add(entity);
+            }
+
+            for (int i = 0; i < missing.Length; i++)
+                SeedHistory(em, missing[i]);
+
             missing.Dispose();
+        }
+
+        /// <summary>Empty 16-tick ring. Kept inline so a snapshot correction does not allocate.</summary>
+        static void SeedHistory(EntityManager em, Entity entity)
+        {
+            var history = em.AddBuffer<ShipRemoteMotorHistoryElement>(entity);
+            history.ResizeUninitialized(ShipRemoteMotorHistoryElement.Capacity);
+            for (int i = 0; i < history.Length; i++)
+                history[i] = default;
         }
     }
 
     /// <summary>
-    /// Client-only forward integration for remote and AI hulls. Starts from the latest
-    /// <see cref="ShipRemoteFlightSample"/> and steps <see cref="ShipPhysicsDriveLogic"/>
-    /// toward the estimated server tick. Does not enable <see cref="Simulate"/> or
-    /// <see cref="PredictedGhost"/> — those hulls stay out of prediction rollback.
-    /// Runs once on the newest predicting tick, before the local drive, so a bump sees
-    /// the live pose. Map size comes from <see cref="MapStateSingleton"/> /
+    /// Client-only forward integration for remote and AI hulls. Steps
+    /// <see cref="ShipPhysicsDriveLogic"/> one tick at a time from the pose it already
+    /// has. A new <see cref="ShipRemoteFlightSample"/> measures how far that pose was
+    /// from the server at the sample tick and folds the error in. It does not rewind
+    /// to the sample and replay the whole gap: that replay used only the newest input,
+    /// so a late snapshot (common once many hulls share a send chunk) yanked every
+    /// ship in the tile on the same frame. Does not enable <see cref="Simulate"/> or
+    /// <see cref="PredictedGhost"/>. Runs once on the newest predicting tick, before
+    /// the local drive. Map size comes from <see cref="MapStateSingleton"/> /
     /// <see cref="ToroidalMapEcs"/>.
     /// </summary>
     [UpdateInGroup(typeof(PredictedFixedStepSimulationSystemGroup), OrderFirst = true)]
@@ -78,11 +110,24 @@ namespace TitanOrbit.ECS
     [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation)]
     public partial struct ShipRemoteMotorSystem : ISystem
     {
-        /// <summary>Do not invent more than this many 60 Hz steps past the sample (~250 ms).</summary>
+        /// <summary>Do not invent more than this many 60 Hz steps past a brand-new sample (~250 ms).</summary>
         public const int MaxReplayTicks = 15;
+
+        /// <summary>
+        /// Ticks a live hull may catch up in one call. This system already runs once per
+        /// predicting tick, so steady state is 1. Two absorbs a skipped tick without
+        /// replaying a stale gap for every ship in the tile.
+        /// </summary>
+        public const int MaxCatchUpSteps = 2;
 
         /// <summary>How fast the displayed hull closes a wrong guess (1/seconds).</summary>
         public const float CorrectSharpness = 18f;
+
+        /// <summary>
+        /// Cap on that blend, in world units per second. The exponential spends about a
+        /// quarter of a large error in one tick; a crowd correction then reads as a hitch.
+        /// </summary>
+        public const float MaxDisplayCorrectSpeed = 36f;
 
         /// <summary>Gaps larger than this snap. Matches the old remote presentation snap.</summary>
         public const float SnapDistance = 24f;
@@ -94,9 +139,9 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Steps each remote at most <see cref="MaxReplayTicks"/> from its sample, then
-        /// writes the bled pose onto <see cref="LocalTransform"/> and the motor velocity
-        /// onto <see cref="ShipKinematics"/>.
+        /// Steps each live remote at most <see cref="MaxCatchUpSteps"/> from its own
+        /// integrated tick, then writes the bled pose onto <see cref="LocalTransform"/>
+        /// and the motor velocity onto <see cref="ShipKinematics"/>.
         /// </summary>
         public void OnUpdate(ref SystemState state)
         {
@@ -139,8 +184,6 @@ namespace TitanOrbit.ECS
 
             float now = UnityEngine.Time.unscaledTime;
 
-            var em = state.EntityManager;
-
             // Same gather as owner prediction. Full ToEntityArray Crash!!! under quarantine.
             var planets = ClientJoinSettleCache.TransformQuarantine || ClientJoinSettleCache.Settling
                 ? PlanetMotorSnapshotCollection.CollectFromClientRegistry(ref state, Allocator.Temp)
@@ -154,116 +197,129 @@ namespace TitanOrbit.ECS
             ShipCargoMobilitySettings mobility = ShipCargoMobilitySettingsCache.ResolveOrDefault();
             bool pointGuns = TitanOrbitDebugFlags.RegularShipGunsPoint;
             var colliders = SystemAPI.GetComponentLookup<PhysicsCollider>(true);
+            var moons = SystemAPI.GetComponentLookup<ShipMoonDockState>(true);
+            var orbits = SystemAPI.GetComponentLookup<ShipOrbitState>(true);
+            var shocks = SystemAPI.GetComponentLookup<ShipElectricShockState>(true);
+            var turrets = SystemAPI.GetComponentLookup<ShipTurretControlState>(true);
+            var motorConfigs = SystemAPI.GetComponentLookup<ShipMotorConfig>(true);
+            var megas = SystemAPI.GetComponentLookup<MegaShipState>(true);
+            var localPlayers = SystemAPI.GetComponentLookup<LocalPlayerShipTag>(true);
+            var localOwners = SystemAPI.GetComponentLookup<GhostOwnerIsLocal>(true);
+            var kinematics = SystemAPI.GetComponentLookup<ShipKinematics>(false);
 
             try
             {
-            foreach (var (sample, transform, motorState, shipState, entity) in SystemAPI
-                         .Query<RefRO<ShipRemoteFlightSample>, RefRW<LocalTransform>, RefRW<ShipRemoteMotorState>, RefRO<ShipState>>()
+            foreach (var (sample, transform, motorState, shipState, history, entity) in SystemAPI
+                         .Query<RefRO<ShipRemoteFlightSample>, RefRW<LocalTransform>, RefRW<ShipRemoteMotorState>, RefRO<ShipState>, DynamicBuffer<ShipRemoteMotorHistoryElement>>()
                          .WithAll<ShipTag>()
                          .WithNone<Prefab>()
                          .WithEntityAccess())
             {
-                if (IsLocalOwner(em, entity))
+                if (IsLocalOwner(localPlayers, localOwners, entity))
                     continue;
                 if (!sample.ValueRO.HasSample)
                     continue;
 
+                var flight = sample.ValueRO;
                 var motor = motorState.ValueRO;
-                var moon = em.HasComponent<ShipMoonDockState>(entity)
-                    ? em.GetComponentData<ShipMoonDockState>(entity)
-                    : default;
-                var orbit = em.HasComponent<ShipOrbitState>(entity)
-                    ? em.GetComponentData<ShipOrbitState>(entity)
-                    : default;
-                var shock = em.HasComponent<ShipElectricShockState>(entity)
-                    ? em.GetComponentData<ShipElectricShockState>(entity)
-                    : default;
-                var turret = em.HasComponent<ShipTurretControlState>(entity)
-                    ? em.GetComponentData<ShipTurretControlState>(entity)
-                    : default;
-                var motorConfig = em.HasComponent<ShipMotorConfig>(entity)
-                    ? em.GetComponentData<ShipMotorConfig>(entity)
-                    : default;
-                bool isMega = em.HasComponent<MegaShipState>(entity) && em.GetComponentData<MegaShipState>(entity).IsMega;
+                var moon = moons.HasComponent(entity) ? moons[entity] : default;
+                var orbit = orbits.HasComponent(entity) ? orbits[entity] : default;
+                var shock = shocks.HasComponent(entity) ? shocks[entity] : default;
+                var turret = turrets.HasComponent(entity) ? turrets[entity] : default;
+                var motorConfig = motorConfigs.HasComponent(entity) ? motorConfigs[entity] : default;
+                bool isMega = megas.HasComponent(entity) && megas[entity].IsMega;
                 float scale = transform.ValueRO.Scale;
                 float radius = colliders.HasComponent(entity)
                     ? ShipPhysicsDriveLogic.MeasurePhysicsHullRadiusXZ(colliders[entity], transform.ValueRO)
                     : -1f;
 
-                int gap = networkTime.ServerTick.TicksSince(new NetworkTick(sample.ValueRO.Tick));
-                bool hardSnap = motor.Valid == 0 || shipState.ValueRO.IsDead || shipState.ValueRO.AwaitingTeamSelection;
+                int gap = networkTime.ServerTick.TicksSince(new NetworkTick(flight.Tick));
+                bool dead = shipState.ValueRO.IsDead || shipState.ValueRO.AwaitingTeamSelection;
+                bool acquire = motor.Valid == 0;
+                bool newSample = acquire || motor.SampleTick != flight.Tick;
+                int steps = 0;
 
-                if (gap < 0 || gap > MaxReplayTicks)
+                if (acquire || dead)
                 {
-                    // Sample is too far ahead or too stale to replay. Sit on it.
-                    if (motor.Valid == 0 || motor.SampleTick != sample.ValueRO.Tick)
-                    {
-                        motor.SampleTick = sample.ValueRO.Tick;
-                        motor.Position = sample.ValueRO.Position;
-                        motor.Rotation = sample.ValueRO.Rotation;
-                        motor.Velocity = sample.ValueRO.Velocity;
-                        motor.IntegratedTick = sample.ValueRO.Tick;
-                        motor.Ship = shipState.ValueRO;
-                        motor.MoonDock = moon;
-                        motor.Orbit = orbit;
-                    }
-
-                    motor.Holding = 1;
-                    motor.IntegratedUnscaledTime = now;
-                    PublishDisplay(ref motor, motor.Position, motor.Rotation, dt, mapW, mapH, hardSnap);
-                    motor.Valid = 1;
-                    var held = transform.ValueRO;
-                    ApplyPose(ref held, ref motor, em, entity);
-                    transform.ValueRW = held;
-                    motorState.ValueRW = motor;
-                    continue;
-                }
-
-                bool newSample = motor.Valid == 0 || motor.SampleTick != sample.ValueRO.Tick;
-                int steps;
-                if (newSample)
-                {
-                    motor.SampleTick = sample.ValueRO.Tick;
-                    motor.Position = sample.ValueRO.Position;
-                    motor.Rotation = sample.ValueRO.Rotation;
-                    motor.Velocity = sample.ValueRO.Velocity;
-                    motor.Ship = shipState.ValueRO;
-                    motor.MoonDock = moon;
-                    motor.Orbit = orbit;
-                    motor.IntegratedTick = sample.ValueRO.Tick;
-                    steps = gap;
+                    // First sample, or a wreck: sit on the snapshot. A live hull must
+                    // not take this path or a late sample rewinds the whole tile.
+                    AssignSamplePose(ref motor, in flight, shipState.ValueRO, in moon, in orbit);
+                    ClearHistory(history);
+                    if (acquire && !dead && gap > 0)
+                        steps = math.min(gap, MaxReplayTicks);
                 }
                 else
                 {
-                    steps = networkTime.ServerTick.TicksSince(new NetworkTick(motor.IntegratedTick));
-                    if (steps < 0)
-                        steps = 0;
-                    if (steps > MaxReplayTicks)
-                        steps = MaxReplayTicks;
+                    int behind = networkTime.ServerTick.TicksSince(new NetworkTick(motor.IntegratedTick));
+                    if (behind < 0)
+                        behind = 0;
+                    steps = math.min(behind, MaxCatchUpSteps);
+
+                    // A sample ahead of the estimated server tick is not scorable yet.
+                    // Leave SampleTick alone so the correction still runs once we catch up.
+                    if (newSample && gap >= 0)
+                    {
+                        motor.SampleTick = flight.Tick;
+                        motor.Ship = shipState.ValueRO;
+                        motor.MoonDock = moon;
+                        motor.Orbit = orbit;
+
+                        if (TryHistory(history, flight.Tick, out var hist))
+                        {
+                            // Error at the sample tick, added to today's pose. A respawn
+                            // is a large error and still lands on the spawn, not on the wreck.
+                            float3 histPos = new float3(hist.X, 0f, hist.Z);
+                            float3 err = ToroidalMapEcs.ShortestOffsetXZ(histPos, flight.Position, mapW, mapH);
+                            err.y = 0f;
+                            float yawErr = DeltaYaw(hist.Yaw, flight.Yaw);
+                            float3 velErr = flight.Velocity - new float3(hist.VX, 0f, hist.VZ);
+                            velErr.y = 0f;
+                            ApplySampleError(ref motor, history, err, yawErr, velErr, flight.Tick, mapW, mapH);
+                        }
+                        else
+                        {
+                            // No ring entry (sample older than 16 ticks). Keep flying unless
+                            // the constant-velocity guess is a respawn-sized miss.
+                            float3 expected = flight.Position;
+                            if (gap > 0)
+                                expected = ToroidalMapEcs.Wrap(flight.Position + flight.Velocity * (gap * dt), mapW, mapH);
+                            float3 miss = ToroidalMapEcs.ShortestOffsetXZ(motor.Position, expected, mapW, mapH);
+                            if (math.length(miss) > SnapDistance)
+                            {
+                                AssignSamplePose(ref motor, in flight, shipState.ValueRO, in moon, in orbit);
+                                motor.Position = expected;
+                                motor.IntegratedTick = networkTime.ServerTick.TickIndexForValidTick;
+                                ClearHistory(history);
+                                steps = 0;
+                            }
+                        }
+                    }
                 }
 
-                var input = sample.ValueRO.ToFlightInput();
+                // The pose at IntegratedTick has to be in the ring before we step,
+                // or the next sample for this tick has nothing to score against.
+                if (!dead)
+                    RecordHistory(history, in motor);
+
+                var input = flight.ToFlightInput();
                 for (int s = 0; s < steps; s++)
                 {
                     Advance(
                         ref motor, in input, in motorConfig, in shock, in turret,
                         planets.AsArray(), territory, homeLevels, mobility,
                         dt, mapW, mapH, elapsed, scale, radius, isMega, pointGuns);
-                }
-
-                if (steps > 0)
-                {
                     var integrated = new NetworkTick(motor.IntegratedTick);
-                    integrated.Add((uint)steps);
+                    integrated.Add(1);
                     motor.IntegratedTick = integrated.TickIndexForValidTick;
+                    RecordHistory(history, in motor);
                 }
 
-                motor.Holding = 0;
+                motor.Holding = (byte)(dead ? 1 : 0);
                 motor.IntegratedUnscaledTime = now;
-                PublishDisplay(ref motor, motor.Position, motor.Rotation, dt, mapW, mapH, hardSnap);
+                PublishDisplay(ref motor, motor.Position, motor.Rotation, dt, mapW, mapH, dead || acquire);
                 motor.Valid = 1;
                 var posed = transform.ValueRO;
-                ApplyPose(ref posed, ref motor, em, entity);
+                ApplyPose(ref posed, ref motor, ref kinematics, entity);
                 transform.ValueRW = posed;
                 motorState.ValueRW = motor;
             }
@@ -276,12 +332,133 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>True for the connection-owned hull. That ship is already predicted.</summary>
-        static bool IsLocalOwner(EntityManager em, Entity entity)
+        static bool IsLocalOwner(
+            ComponentLookup<LocalPlayerShipTag> localPlayers,
+            ComponentLookup<GhostOwnerIsLocal> localOwners,
+            Entity entity)
         {
-            if (em.HasComponent<LocalPlayerShipTag>(entity))
+            if (localPlayers.HasComponent(entity))
                 return true;
-            return em.HasComponent<GhostOwnerIsLocal>(entity)
-                   && em.IsComponentEnabled<GhostOwnerIsLocal>(entity);
+            return localOwners.HasComponent(entity) && localOwners.IsComponentEnabled(entity);
+        }
+
+        /// <summary>Copies one server snapshot onto the motor. Used for acquire, death, and a 24u miss.</summary>
+        static void AssignSamplePose(
+            ref ShipRemoteMotorState motor,
+            in ShipRemoteFlightSample sample,
+            in ShipState ship,
+            in ShipMoonDockState moon,
+            in ShipOrbitState orbit)
+        {
+            motor.SampleTick = sample.Tick;
+            motor.Position = sample.Position;
+            motor.Rotation = sample.Rotation;
+            motor.Velocity = sample.Velocity;
+            motor.IntegratedTick = sample.Tick;
+            motor.Ship = ship;
+            motor.MoonDock = moon;
+            motor.Orbit = orbit;
+        }
+
+        /// <summary>
+        /// Adds the measured sample error to the live pose and to every history entry
+        /// from that tick forward, so the next sample does not apply the same offset again.
+        /// </summary>
+        static void ApplySampleError(
+            ref ShipRemoteMotorState motor,
+            DynamicBuffer<ShipRemoteMotorHistoryElement> history,
+            float3 error,
+            float yawError,
+            float3 velError,
+            uint sampleTick,
+            float mapW,
+            float mapH)
+        {
+            float3 pos = motor.Position + error;
+            motor.Position = ToroidalMapEcs.Wrap(pos, mapW, mapH);
+            motor.Velocity += velError;
+            motor.Velocity.y = 0f;
+            float yaw = ShipRemoteFlightSample.YawFromRotation(motor.Rotation) + yawError;
+            motor.Rotation = quaternion.RotateY(yaw);
+
+            for (int i = 0; i < history.Length; i++)
+            {
+                var entry = history[i];
+                if (entry.Valid == 0)
+                    continue;
+                int age = new NetworkTick(entry.Tick).TicksSince(new NetworkTick(sampleTick));
+                if (age < 0 || age >= ShipRemoteMotorHistoryElement.Capacity)
+                    continue;
+                float3 shifted = ToroidalMapEcs.Wrap(new float3(entry.X, 0f, entry.Z) + error, mapW, mapH);
+                entry.X = shifted.x;
+                entry.Z = shifted.z;
+                entry.Yaw = WrapYaw(entry.Yaw + yawError);
+                entry.VX += velError.x;
+                entry.VZ += velError.z;
+                history[i] = entry;
+            }
+        }
+
+        /// <summary>Signed shortest yaw delta, radians.</summary>
+        static float DeltaYaw(float from, float to)
+        {
+            return WrapYaw(to - from);
+        }
+
+        /// <summary>Wraps a yaw into (-pi, pi].</summary>
+        static float WrapYaw(float yaw)
+        {
+            const float TwoPi = math.PI * 2f;
+            yaw %= TwoPi;
+            if (yaw > math.PI)
+                yaw -= TwoPi;
+            else if (yaw <= -math.PI)
+                yaw += TwoPi;
+            return yaw;
+        }
+
+        /// <summary>True when this ring slot still holds <paramref name="tick"/>.</summary>
+        static bool TryHistory(
+            DynamicBuffer<ShipRemoteMotorHistoryElement> history,
+            uint tick,
+            out ShipRemoteMotorHistoryElement entry)
+        {
+            entry = default;
+            int capacity = ShipRemoteMotorHistoryElement.Capacity;
+            if (history.Length != capacity)
+                return false;
+            entry = history[(int)(tick % (uint)capacity)];
+            return entry.Valid != 0 && entry.Tick == tick;
+        }
+
+        /// <summary>Writes the integrated pose into the slot for its tick.</summary>
+        static void RecordHistory(DynamicBuffer<ShipRemoteMotorHistoryElement> history, in ShipRemoteMotorState motor)
+        {
+            int capacity = ShipRemoteMotorHistoryElement.Capacity;
+            if (history.Length != capacity)
+            {
+                history.ResizeUninitialized(capacity);
+                for (int i = 0; i < capacity; i++)
+                    history[i] = default;
+            }
+
+            history[(int)(motor.IntegratedTick % (uint)capacity)] = new ShipRemoteMotorHistoryElement
+            {
+                Valid = 1,
+                Tick = motor.IntegratedTick,
+                X = motor.Position.x,
+                Z = motor.Position.z,
+                Yaw = ShipRemoteFlightSample.YawFromRotation(motor.Rotation),
+                VX = motor.Velocity.x,
+                VZ = motor.Velocity.z,
+            };
+        }
+
+        /// <summary>Drops the ring after a snap so a stale slot cannot correct the new pose.</summary>
+        static void ClearHistory(DynamicBuffer<ShipRemoteMotorHistoryElement> history)
+        {
+            for (int i = 0; i < history.Length; i++)
+                history[i] = default;
         }
 
         /// <summary>One shared motor step plus planar integration. Moon dock pins its own position.</summary>
@@ -401,7 +578,12 @@ namespace TitanOrbit.ECS
             }
 
             float blend = 1f - math.exp(-CorrectSharpness * math.max(0f, dt));
-            float3 pos = motor.DisplayPosition + gap * blend;
+            float3 delta = gap * blend;
+            float deltaLen = math.length(delta);
+            float maxStep = MaxDisplayCorrectSpeed * math.max(0f, dt);
+            if (deltaLen > maxStep && maxStep > 0f)
+                delta *= maxStep / deltaLen;
+            float3 pos = motor.DisplayPosition + delta;
             pos = ToroidalMapEcs.Wrap(pos, mapW, mapH);
             pos.y = targetPos.y;
             motor.DisplayPosition = pos;
@@ -409,17 +591,53 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>Writes the bled pose and the integrated velocity. Does not add PhysicsVelocity.</summary>
-        static void ApplyPose(ref LocalTransform transform, ref ShipRemoteMotorState motor, EntityManager em, Entity entity)
+        static void ApplyPose(
+            ref LocalTransform transform,
+            ref ShipRemoteMotorState motor,
+            ref ComponentLookup<ShipKinematics> kinematics,
+            Entity entity)
         {
             transform.Position = motor.DisplayPosition;
             transform.Rotation = motor.DisplayRotation;
 
-            if (!em.HasComponent<ShipKinematics>(entity))
+            if (!kinematics.HasComponent(entity))
                 return;
-            var kin = em.GetComponentData<ShipKinematics>(entity);
+            var kin = kinematics[entity];
             kin.Velocity = motor.Velocity;
-            em.SetComponentData(entity, kin);
+            kinematics[entity] = kin;
         }
+    }
+
+    /// <summary>
+    /// One predicted pose in the remote motor's ring. Client-only, not ghosted.
+    /// Slot is <c>Tick % Capacity</c>. <see cref="Valid"/> is 0 until that slot is written.
+    /// </summary>
+    [InternalBufferCapacity(ShipRemoteMotorHistoryElement.Capacity)]
+    public struct ShipRemoteMotorHistoryElement : IBufferElementData
+    {
+        /// <summary>Ticks kept. Matches the old replay window so a sample inside it can still be scored.</summary>
+        public const int Capacity = 16;
+
+        /// <summary>1 after <see cref="Tick"/> was written.</summary>
+        public byte Valid;
+
+        /// <summary>Integrated server tick this pose belongs to.</summary>
+        public uint Tick;
+
+        /// <summary>Canonical X at <see cref="Tick"/>.</summary>
+        public float X;
+
+        /// <summary>Canonical Z at <see cref="Tick"/>.</summary>
+        public float Z;
+
+        /// <summary>Planar yaw in radians at <see cref="Tick"/>.</summary>
+        public float Yaw;
+
+        /// <summary>Planar velocity X at <see cref="Tick"/>.</summary>
+        public float VX;
+
+        /// <summary>Planar velocity Z at <see cref="Tick"/>.</summary>
+        public float VZ;
     }
 
     /// <summary>
@@ -429,7 +647,7 @@ namespace TitanOrbit.ECS
     /// </summary>
     public struct ShipRemoteMotorState : IComponentData
     {
-        /// <summary>Sample tick this state was last reset from.</summary>
+        /// <summary>Server tick of the last flight sample this motor has already scored.</summary>
         public uint SampleTick;
 
         /// <summary>Server tick the integrated pose corresponds to.</summary>
@@ -465,7 +683,7 @@ namespace TitanOrbit.ECS
         /// <summary>Territory latch rebuilt by the motor. Not ghosted.</summary>
         public ShipTerritoryBoostLatch Territory;
 
-        /// <summary>1 while the newest sample is outside the replay window.</summary>
+        /// <summary>1 while the hull is dead or waiting on a team, so presentation does not coast the wreck.</summary>
         public byte Holding;
 
         /// <summary>1 after the first sample has been applied.</summary>

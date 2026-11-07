@@ -109,6 +109,8 @@ namespace TitanOrbit.Game
             public LocalTransform Transform;
             public float3 Velocity;
             public float3 Heading;
+            public float3 Origin;
+            public byte CenterSeeded;
             public float ExtentX;
             public float ExtentZ;
         }
@@ -483,8 +485,10 @@ namespace TitanOrbit.Game
             {
                 if (f.SeatId != 255)
                 {
+                    float3 slotCenter = PeopleTransportMath.ResolveFormationCenter(
+                        frame.Transform.Position, frame.Origin, frame.CenterSeeded, mapW, mapH);
                     slot = PeopleTransportMath.EvaluateEscortSwarmPose(
-                        frame.Transform.Position,
+                        slotCenter,
                         frame.Transform.Rotation,
                         frame.ExtentX,
                         frame.ExtentZ,
@@ -499,8 +503,8 @@ namespace TitanOrbit.Game
                 }
                 else
                 {
-                    slot = frame.Transform.Position;
-                    slot.y = 0f;
+                    slot = PeopleTransportMath.ResolveFormationCenter(
+                        frame.Transform.Position, frame.Origin, frame.CenterSeeded, mapW, mapH);
                     hasSlot = true;
                 }
             }
@@ -596,6 +600,8 @@ namespace TitanOrbit.Game
                 out frame.Transform,
                 out frame.Velocity,
                 out frame.Heading,
+                out frame.Origin,
+                out frame.CenterSeeded,
                 out frame.ExtentX,
                 out frame.ExtentZ);
             _shipFrames[networkId] = frame;

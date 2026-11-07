@@ -39,7 +39,8 @@ namespace TitanOrbit.ECS
     /// put while the mouse moves) so guns can fire at the cursor. Regular hulls
     /// keep turning toward the cursor and still burst. Their guns follow
     /// Game Manager → Regular Ships — Guns: Forward stays on the nose, Point
-    /// ghosts the mouse point only while it is in front of the hull.
+    /// ghosts the mouse point while the move button is released and that point
+    /// is in front of the hull, including a glide with the brakes off.
     /// Live subtractive mass tax (<see cref="ShipMobilityResolution"/>) converts untaxed motor
     /// baselines into MaxSpeed / accel / turn from current gems/people + ComponentSize.
     /// While <see cref="ShipAsteroidContactState"/> reports contact from the previous physics
@@ -119,8 +120,10 @@ namespace TitanOrbit.ECS
         /// </param>
         /// <param name="shipPhysicsRadius">Live PhysX covering radius for moon-dock attach only.</param>
         /// <param name="pointGuns">
-        /// True when Game Manager regular-ship guns are Point. Forward clears the
-        /// ghosted mouse point so barrels stay on the nose.
+        /// True when Game Manager regular-ship guns are Point. Holding the move
+        /// button still clears the ghosted aim point so barrels stay on the nose.
+        /// Releasing it writes the aim point so each muzzle can converge on the
+        /// cursor or bot target, including while the hull is still gliding.
         /// </param>
         public static void Step(
             in ShipInput input,
@@ -295,20 +298,13 @@ namespace TitanOrbit.ECS
 
             // --- Yaw: dt-capped slerp toward aim (never snap to mouse in one frame) ---
             // [TITAN-ORBIT] MEGA + Shift: lock heading. Regular hulls always yaw
-            // toward the cursor. Gun meshes follow Regular Ships — Guns, not this yaw.
+            // toward the cursor. Gun meshes stay on that nose while moving, and
+            // converge on the aim point only after the hull stops.
             if (!(isMegaShip && input.Overdrive))
             {
                 AimWorldPoint(in transform.Position, in transform.Rotation, in input.AimPlanarDir, out float2 aimWorldXz);
                 TryRotateTowardAim(ref transform, in aimWorldXz, rotationSpeed, dt);
             }
-
-            if (isMegaShip || !pointGuns)
-                ClearManualAim(ref shipState);
-            else if (MegaShipWeaponAim.TryGetOwnerMouseAimPoint(in transform, in input, out float3 mousePoint)
-                     && MegaShipWeaponAim.IsInFrontOfHull(in transform, mousePoint, mapW, mapH))
-                WriteManualAim(ref shipState, in transform, in input);
-            else
-                ClearManualAim(ref shipState);
 
             // --- Orbit ring detection (toroidal) ---
             // [TITAN-ORBIT] PeopleTransportDispatchSystem dwells on InOrbitRing; without this write,
@@ -504,6 +500,18 @@ namespace TitanOrbit.ECS
             // Keep the bounced linear; only the motor delta above changed it.
             physicsVelocity.Linear = vel;
             physicsVelocity.Angular = float3.zero;
+
+            // Nose while the move button is held. Releasing it ghosts the aim point
+            // (cursor, or the bot's target) even while the hull is still gliding, so
+            // wide barrels can meet on a small asteroid. mapW/mapH come from the drive tick.
+            if (isMegaShip || !pointGuns
+                || !MegaShipWeaponAim.AllowsPointWeaponAim(input.Thrust))
+                ClearManualAim(ref shipState);
+            else if (MegaShipWeaponAim.TryGetOwnerMouseAimPoint(in transform, in input, out float3 mousePoint)
+                     && MegaShipWeaponAim.IsInFrontOfHull(in transform, mousePoint, mapW, mapH))
+                WriteManualAim(ref shipState, in transform, in input);
+            else
+                ClearManualAim(ref shipState);
 
             // [PHYSICS] Motor owns cruise feel — clear package damping so it cannot fight our curves.
             physicsDamping = default;

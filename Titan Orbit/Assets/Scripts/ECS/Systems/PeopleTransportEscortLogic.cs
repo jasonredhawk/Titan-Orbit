@@ -347,7 +347,8 @@ namespace TitanOrbit.ECS
                     continue;
 
                 float3 pose = PeopleTransportMath.EvaluateEscortSwarmPose(
-                    shipTransform.Position, shipTransform.Rotation, extX, extZ,
+                    FormationCenter(em, ship, shipTransform.Position, mapW, mapH),
+                    shipTransform.Rotation, extX, extZ,
                     vital.SeatId, vital.Amount, shipNetworkId,
                     timeSeconds, mapW, mapH, heading);
                 float dist = ToroidalMapEcs.ToroidalDistance(pose, approachPos, mapW, mapH);
@@ -561,6 +562,29 @@ namespace TitanOrbit.ECS
             }
         }
 
+        /// <summary>
+        /// Lagged planar center for parked troops and equipment drones.
+        /// Map size is the caller's <c>MapStateSingleton</c> (0 → euclidean).
+        /// </summary>
+        public static float3 FormationCenter(
+            EntityManager em,
+            Entity ship,
+            float3 shipPos,
+            float mapW,
+            float mapH)
+        {
+            float3 origin = float3.zero;
+            byte seeded = 0;
+            if (ship != Entity.Null && em.Exists(ship) && em.HasComponent<ShipKinematics>(ship))
+            {
+                var kin = em.GetComponentData<ShipKinematics>(ship);
+                origin = kin.FormationOrigin;
+                seeded = kin.FormationCenterSeeded;
+            }
+
+            return PeopleTransportMath.ResolveFormationCenter(shipPos, origin, seeded, mapW, mapH);
+        }
+
         /// <summary>Parked-seat world pose (same function client visuals use).</summary>
         public static float3 EvaluateParkedPose(
             EntityManager em,
@@ -575,7 +599,8 @@ namespace TitanOrbit.ECS
         {
             GetEscortHullExtents(em, ship, transform.Scale, out float extX, out float extZ);
             return PeopleTransportMath.EvaluateEscortSwarmPose(
-                transform.Position, transform.Rotation, extX, extZ,
+                FormationCenter(em, ship, transform.Position, mapW, mapH),
+                transform.Rotation, extX, extZ,
                 vital.SeatId, vital.Amount, shipNetworkId,
                 timeSeconds, mapW, mapH, formationHeading);
         }
@@ -628,7 +653,8 @@ namespace TitanOrbit.ECS
             // Same pose the parked presenter draws, so joining and rejoining
             // land on the orb the player already sees.
             slot = PeopleTransportMath.EvaluateEscortSwarmPose(
-                transform.Position, transform.Rotation, extX, extZ,
+                FormationCenter(em, ship, transform.Position, mapW, mapH),
+                transform.Rotation, extX, extZ,
                 seatId, amount, shipNetworkId, timeSeconds, mapW, mapH, heading);
             return true;
         }

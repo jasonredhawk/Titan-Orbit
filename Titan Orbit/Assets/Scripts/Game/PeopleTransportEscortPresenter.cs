@@ -249,13 +249,25 @@ namespace TitanOrbit.Game
 
             PeopleTransportEscortLogic.GetEscortHullExtents(em, ship, scale, out float extX, out float extZ);
             float3 heading = float3.zero;
+            float3 formationOrigin = float3.zero;
+            byte centerSeeded = 0;
             if (em.HasComponent<ShipKinematics>(ship))
-                heading = em.GetComponentData<ShipKinematics>(ship).FormationHeading;
+            {
+                var kin = em.GetComponentData<ShipKinematics>(ship);
+                heading = kin.FormationHeading;
+                formationOrigin = kin.FormationOrigin;
+                centerSeeded = kin.FormationCenterSeeded;
+            }
 
             if (group.LayoutFingerprint != fingerprint)
                 SyncVisuals(group, seats, fingerprint, team, heading, rot);
 
-            float3 shipPos = new float3(pos.x, 0f, pos.z);
+            float3 presentPlanar = new float3(pos.x, 0f, pos.z);
+            float3 simPos = presentPlanar;
+            if (em.HasComponent<LocalTransform>(ship))
+                simPos = em.GetComponentData<LocalTransform>(ship).Position;
+            float3 center = PeopleTransportMath.ApplyFormationLag(
+                presentPlanar, simPos, formationOrigin, centerSeeded, mapW, mapH);
             quaternion shipRot = rot;
             for (int i = 0; i < group.Visuals.Count; i++)
             {
@@ -268,10 +280,10 @@ namespace TitanOrbit.Game
                 // display-tile unwrap, and never flatten to world Y=0.28 (that parks orbs inside
                 // the planet while the camera is on the moon).
                 float3 home = PeopleTransportMath.EvaluateEscortSwarmPose(
-                    shipPos, shipRot, extX, extZ, vis.SeatId, vis.Amount, netId,
+                    center, shipRot, extX, extZ, vis.SeatId, vis.Amount, netId,
                     timeSeconds, mapW, mapH, heading);
                 Vector3 offset = DroneSwarmLogic.ToroidalOffsetXZ(
-                    new Vector3(shipPos.x, 0f, shipPos.z),
+                    new Vector3(presentPlanar.x, 0f, presentPlanar.z),
                     new Vector3(home.x, 0f, home.z),
                     mapW, mapH);
                 Vector3 display = pos + offset;

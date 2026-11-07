@@ -707,7 +707,10 @@ namespace TitanOrbit.Game
             }
 
             for (int i = 0; i < _remotePrune.Count; i++)
+            {
                 _remotePublished.Remove(_remotePrune[i]);
+                GhostPresentationTransformCache.ForgetShip(_remotePrune[i]);
+            }
         }
 
         /// <summary>Last published pose for one remote or AI hull.</summary>

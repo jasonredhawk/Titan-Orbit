@@ -108,8 +108,9 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Regular-ship weapon components are tracking the owner's aim point.
-        /// On only while Game Manager guns are Point and that point is in front of
-        /// the nose. Forward, and a cursor behind the ship, leave this false.
+        /// On only while Game Manager guns are Point, the move button is released,
+        /// and that point is in front of the nose. A glide with the brakes off still
+        /// counts. Forward, thrust, and a cursor behind the ship leave this false.
         /// MEGA hulls leave this false and use gunner slots.
         /// Ghosted so remote clients can yaw the weapon meshes; <see cref="ShipInput"/>
         /// is not on other players' snapshots.
@@ -478,6 +479,21 @@ namespace TitanOrbit.ECS
         /// </summary>
         [GhostField(Quantization = 1000)]
         public float3 FormationHeading;
+
+        /// <summary>
+        /// Planar formation center shared by parked troops and equipment drones.
+        /// Ghosted so a move lags the same on every peer.
+        /// </summary>
+        [GhostField(Quantization = 1000)]
+        public float3 FormationOrigin;
+
+        /// <summary>
+        /// 1 after <see cref="FormationOrigin"/> has been placed on the hull.
+        /// 0 snaps the pack onto the ship (spawn, death, turret stow) instead of
+        /// easing in from the world origin.
+        /// </summary>
+        [GhostField]
+        public byte FormationCenterSeeded;
     }
 
     /// <summary>[ECS/DOTS] Marker — entity is a player or AI starship (used in queries across all ship systems).</summary>

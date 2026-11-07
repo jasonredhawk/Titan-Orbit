@@ -189,6 +189,14 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
+        /// True when regular-ship guns may leave the nose. The move button is
+        /// <see cref="ShipInput.Thrust"/>. Holding it keeps every barrel forward.
+        /// Releasing it tracks the cursor or bot target even while the hull is
+        /// still gliding, including with space brakes off. Speed does not decide this.
+        /// </summary>
+        public static bool AllowsPointWeaponAim(bool thrustHeld) => !thrustHeld;
+
+        /// <summary>
         /// True when <paramref name="aimPoint"/> is in the forward half-plane of the hull.
         /// Dot of hull forward and the toroidal offset is at least 0, so a barrel can
         /// aim up to straight off the beam and no further. A missing map size uses a

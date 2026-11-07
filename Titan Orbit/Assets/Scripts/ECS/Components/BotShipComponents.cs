@@ -108,6 +108,12 @@ namespace TitanOrbit.ECS
         public int GoalNetworkId;
         /// <summary>1 after this landing already bought one attribute. Cleared on takeoff.</summary>
         public byte AttributeBoughtWhileLanded;
+        /// <summary>
+        /// 1 after a hull purchase at the home moon failed because the bank could not pay
+        /// and the cargo hold was already empty. Cleared when another deposit starts, so a
+        /// short bank does not pull the ship off a rock every decision.
+        /// </summary>
+        public byte LevelBuyBlocked;
         /// <summary>1 while this hull is gathering or delivering troops to capture a planet.</summary>
         public byte SeekTroops;
         /// <summary>Planet <see cref="SeekTroops"/> is trying to take. 0 when capture is not the task.</summary>

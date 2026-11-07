@@ -6,17 +6,17 @@ namespace TitanOrbit.Core
 {
     /// <summary>
     /// Where a regular ship's guns and shots aim. MEGA hulls ignore this.
-    /// Both values only fire forward of the nose — a cursor behind the ship
-    /// does not flip the barrels around.
+    /// A cursor or bot target behind the ship does not flip the barrels around.
     /// </summary>
     public enum RegularShipWeaponAim
     {
-        /// <summary>Guns stay on the authored nose. Shots leave along the ship.</summary>
+        /// <summary>Guns stay on the authored nose, whether the move button is held or released.</summary>
         Forward = 0,
 
         /// <summary>
-        /// Guns and shots aim at the cursor while it is in the forward half of the ship.
-        /// Behind the nose, they stay on Forward.
+        /// Guns stay on the nose while the move button is held. When it is released, guns and
+        /// shots aim at the cursor (or an AI ship's target) while that point is in front
+        /// of the nose, including while the hull is still gliding. Behind the nose, they stay on Forward.
         /// </summary>
         Point = 1,
     }
@@ -53,9 +53,10 @@ namespace TitanOrbit.Core
     /// <see cref="ParkLandedWeapons"/> (default on) keeps guns facing forward while a hull
     /// is fully landed, including in that card.
     /// <see cref="RegularShipGuns"/> chooses whether a regular hull's guns stay on the
-    /// nose (<see cref="RegularShipWeaponAim.Forward"/>) or track the cursor only while
-    /// that cursor is in front of the ship (<see cref="RegularShipWeaponAim.Point"/>).
-    /// Either way a regular ship only shoots forward of its nose. MEGA hulls ignore it.
+    /// nose (<see cref="RegularShipWeaponAim.Forward"/>) or, while the move button is
+    /// released, track the cursor or an AI ship's target in front of the nose
+    /// (<see cref="RegularShipWeaponAim.Point"/>), including a glide with the brakes off.
+    /// Holding the move button always shoots along the nose. MEGA hulls ignore it.
     /// <see cref="MegaShipProjectileAutoAim"/> (default off) is the switch that brings
     /// sticky auto-aim back on Titan gun, missile, and sniper mounts. Cannon lasers
     /// always auto-aim. Shift still points every Titan barrel at the cursor.
@@ -188,12 +189,14 @@ namespace TitanOrbit.Core
         [Tooltip("ON: while a ship is fully landed on a gem moon, its guns stay facing forward, including in the Your Ship card. OFF: those guns keep tracking the cursor while parked. Flight aim is unchanged either way.")]
         [SerializeField] bool parkLandedWeapons = true;
 
-        // [TITAN-ORBIT] Regular-ship guns. Forward is the nose (shots leave along the hull).
-        // Point tracks the cursor only in the forward half — never behind the ship.
-        // MEGA hulls ignore this. Their projectile auto-aim is the checkbox below.
+        // [TITAN-ORBIT] Regular-ship guns. Forward is always the nose.
+        // Point keeps the nose while the move button is held, then aims at the
+        // cursor or bot target once it is released — including a glide — and
+        // only in the forward half. MEGA hulls ignore this. Their projectile
+        // auto-aim is the checkbox below.
         [Header("Regular Ships — Guns")]
-        [Tooltip("Forward: regular-ship guns stay on the nose and every shot leaves along the ship. Point: guns and shots aim at the cursor, but only while that cursor is in front of the ship. A cursor behind the nose keeps the guns and the shot forward. MEGA hulls are unchanged.")]
-        [SerializeField] RegularShipWeaponAim regularShipWeaponAim = RegularShipWeaponAim.Forward;
+        [Tooltip("Forward: regular-ship guns stay on the nose and every shot leaves along the ship. Point: while the move button is held, guns stay on the nose. When it is released, guns and shots aim at the cursor (or an AI ship's target) if that point is in front of the ship, even while the hull is still gliding with the brakes off. A point behind the nose keeps the guns and the shot forward. MEGA hulls are unchanged.")]
+        [SerializeField] RegularShipWeaponAim regularShipWeaponAim = RegularShipWeaponAim.Point;
 
         // [TITAN-ORBIT] Titan projectile mounts. Lasers always acquire a target.
         // This switch only brings back sticky auto-aim on gun, missile, and sniper.
@@ -267,7 +270,7 @@ namespace TitanOrbit.Core
         [SerializeField] bool debugDisableMegaShipAutoFire;
 
         [Header("Debug — AI Ships")]
-        [Tooltip("ON: the server spawns AI ships for each team that already has a home planet. They stay parked until a real player has a ship, then mine, deposit, and level. An enemy ship that comes close is shot, and they do not leave the asteroid or the moon to chase it. They haul troops, and a Comms Matrix order retasks them and copies that player's ship skin. Dedicated server and WebGL use this same switch.")]
+        [Tooltip("ON: the server spawns AI ships for each team that already has a home planet. They stay parked until a real player has a ship, then mine asteroids and deposit on that home planet until the hull is the highest level the planet can sell. After that they capture nearby planets. An enemy ship that comes close is shot, and they do not leave the asteroid or the moon to chase it. A Comms Matrix order retasks them and copies that player's ship skin. Dedicated server and WebGL use this same switch.")]
         [SerializeField] bool debugAiShips;
 
         [Tooltip("AI ships per team while Debug AI Ships is on. Clamped to 1–12. Humans on that team take slots first, so a count of 11 beside one player fills a 12-player team. A new player removes one bot; a player who leaves frees the slot and a bot returns.")]
@@ -348,11 +351,15 @@ namespace TitanOrbit.Core
         /// <summary>
         /// Regular-ship gun aim from the Inspector. <see cref="RegularShipWeaponAim.Forward"/>
         /// keeps barrels on the nose. <see cref="RegularShipWeaponAim.Point"/> tracks the
-        /// cursor only while it is in front of the ship.
+        /// cursor or bot target while the move button is released and that point is in front,
+        /// including while the hull is still gliding.
         /// </summary>
         public RegularShipWeaponAim RegularShipGuns => regularShipWeaponAim;
 
-        /// <summary>True when regular-ship guns should track a cursor that is in front of the nose.</summary>
+        /// <summary>
+        /// True when a regular ship with the move button released should track an aim
+        /// point in front of the nose. Holding the move button stays on the nose either way.
+        /// </summary>
         public bool RegularShipGunsPoint => regularShipWeaponAim == RegularShipWeaponAim.Point;
 
         /// <summary>

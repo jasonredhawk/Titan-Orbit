@@ -159,12 +159,13 @@ namespace TitanOrbit
         public static bool ShowMapSeamLines = true;
 
         /// <summary>
-        /// When true, regular-ship guns and shots aim at the cursor while that cursor
-        /// is in front of the nose. When false, guns stay on the nose and shots leave
-        /// along the ship. A cursor behind the hull never flips the barrels.
-        /// Written by GameManager (<c>Regular Ships — Guns</c>). Honored on the
-        /// dedicated server so client meshes and server shots use the same mode.
-        /// MEGA hulls ignore this.
+        /// When true, a regular ship with the move button released aims guns and shots
+        /// at the cursor or bot target while that point is in front of the nose,
+        /// including while the hull is still gliding. When false, guns stay on
+        /// the nose. Holding the move button stays on the nose either way, and a
+        /// point behind the hull never flips the barrels. Written by GameManager
+        /// (<c>Regular Ships — Guns</c>). Honored on the dedicated server so client
+        /// meshes and server shots use the same mode. MEGA hulls ignore this.
         /// </summary>
         public static bool RegularShipGunsPoint;
 

@@ -62,8 +62,10 @@ namespace TitanOrbit.ECS
         public byte SkipBots;
 
         /// <summary>
-        /// 1 when Game Manager regular-ship guns are Point. 0 keeps barrels on the nose.
-        /// Copied on the main thread — this Burst job cannot read GameManager.
+        /// 1 when Game Manager regular-ship guns are Point. Releasing the move button
+        /// may then converge on the aim point, including a glide. 0 keeps barrels on
+        /// the nose. Holding the move button stays on the nose either way. Copied on
+        /// the main thread — this Burst job cannot read GameManager.
         /// </summary>
         public byte PointGuns;
 

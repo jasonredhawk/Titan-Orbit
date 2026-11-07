@@ -13,8 +13,11 @@ namespace TitanOrbit.ECS
     /// <summary>
     /// Server brain for AI ships. Decides a task about twice a second, then writes
     /// <see cref="ShipInput"/> every tick so the existing motor, guns, moon dock,
-    /// deposit, and troop systems do the work. Asteroids, deposits, and level-ups
-    /// stay the goal until a nearby planet can be captured. Loot from a rock that
+    /// deposit, and troop systems do the work. Home-planet mining stays the goal until
+    /// this hull matches the highest level that planet can sell right now (its planet
+    /// level, and never past <see cref="MaxShipLevel"/>). Gems deposited there fill the
+    /// bank that buys the next hull. A nearby capture starts only after that hull is
+    /// reached. A Comms Matrix order still retasks immediately. Loot from a rock that
     /// just broke is followed every tick so the hull does not sit out the scan
     /// while the gems coast away. An enemy inside
     /// <see cref="SecondaryShotRange"/> is only a gun target while mining; during a
@@ -96,6 +99,11 @@ namespace TitanOrbit.ECS
         const float CaptureNearbyRange = 180f;
         const float FollowDistance = 8f;
         const float HoldDistance = 6f;
+        /// <summary>
+        /// Highest regular hull a planet can sell. Planet level caps the next purchase
+        /// at the home world's current level, and planets themselves stop at 6, so a
+        /// ship at this level has nothing left to buy from the planet it spawned at.
+        /// </summary>
         const int MaxShipLevel = 6;
         /// <summary>Server-only coin flip for the next hull. Not ghosted.</summary>
         static uint _upgradeRoll = 0xC001D00Du;
@@ -349,7 +357,16 @@ namespace TitanOrbit.ECS
                 BotTeamOrder liveOrder = haveOrders ? orders.Get(ship.Team) : default;
                 bool orderNow = liveOrder.IsActive(now) && liveOrder.Includes(networkId)
                                 && OrderNeedsRetask(liveOrder, brain);
-                if (brain.NextDecisionTime <= now || orderNow)
+                // A hull still short of the level its home planet sells should not finish
+                // a capture that started before the level check. Transport orders are
+                // the exception.
+                bool originGrind = HullBelowOriginCap(ship, planets.AsArray(), out _);
+                bool captureTask = brain.Task == BotTaskKind.LoadTroops ||
+                                   brain.Task == BotTaskKind.UnloadTroops;
+                bool transportOrder = liveOrder.IsActive(now) && liveOrder.Includes(networkId) &&
+                                      liveOrder.Task == BotTaskKind.Transport;
+                if (brain.NextDecisionTime <= now || orderNow ||
+                    (originGrind && captureTask && !transportOrder))
                 {
                     BotTeamOrder order = liveOrder.IsActive(now) && liveOrder.Includes(networkId)
                         ? liveOrder
@@ -363,7 +380,14 @@ namespace TitanOrbit.ECS
                         in lootGems, _nearbyRocks, _nearbySeen,
                         mapW, mapH, em, now, claimNow);
                     if (landed && (brain.Task == BotTaskKind.Deposit || brain.Task == BotTaskKind.Upgrade))
-                        TryBuy(em, shipEntity, ref ship, ref brain);
+                    {
+                        // Hull buys adopt the moon they are purchased on. Only the home
+                        // moon sells the tree this ship spawned with.
+                        bool originDock = dockedPlanetId != 0 &&
+                                          TryHome(planets.AsArray(), ship.Team, out PlanetSnap buyHome) &&
+                                          buyHome.PlanetId == dockedPlanetId;
+                        TryBuy(em, shipEntity, ref ship, ref brain, originDock);
+                    }
                     if (!orderNow)
                         brain.NextDecisionTime = now + DecisionInterval;
                     // A new goal starts from thrust-on. The latch then coasts once
@@ -527,7 +551,7 @@ namespace TitanOrbit.ECS
                 docked.Ownership == ship.Team)
             {
                 ClearCapture(ref brain);
-                SetPlanet(ref brain, BotTaskKind.Deposit, docked);
+                SetDeposit(ref brain, docked);
                 NoteTask(ref brain, ship.CurrentPeople, now);
                 return;
             }
@@ -541,9 +565,12 @@ namespace TitanOrbit.ECS
                 return;
             }
 
-            // A planet this hold can actually take beats mining. Gathering is the
-            // trip there: AdvanceTroops leaves the friendly ring once the load is enough.
-            if (AdvanceTroops(ref brain, ship, pos, planets, mapW, mapH, inbound, false, 0))
+            // The home planet sells hulls up to its own level, and never past
+            // MaxShipLevel. Until this ship is there, it mines and buys. Captures
+            // wait, including one already picked.
+            bool grinding = HullBelowOriginCap(ship, planets, out PlanetSnap origin);
+            if (!grinding &&
+                AdvanceTroops(ref brain, ship, pos, planets, mapW, mapH, inbound, false, 0))
             {
                 NoteTask(ref brain, ship.CurrentPeople, now);
                 return;
@@ -551,10 +578,19 @@ namespace TitanOrbit.ECS
 
             ClearCapture(ref brain);
 
+            if (grinding &&
+                ContinueOriginGrind(
+                    ref brain, ship, networkId, pos, in origin, rocks, in gems, nearby, seen,
+                    mapW, mapH, em, claimNow))
+            {
+                NoteTask(ref brain, ship.CurrentPeople, now);
+                return;
+            }
+
             bool nearFull = ship.GemCapacity > 1f && ship.CurrentGems >= ship.GemCapacity * DepositFill;
             if (nearFull && TryNearestFriendly(planets, pos, ship.Team, mapW, mapH, out PlanetSnap depositMoon))
             {
-                SetPlanet(ref brain, BotTaskKind.Deposit, depositMoon);
+                SetDeposit(ref brain, depositMoon);
                 NoteTask(ref brain, ship.CurrentPeople, now);
                 return;
             }
@@ -597,6 +633,22 @@ namespace TitanOrbit.ECS
             NoteTask(ref brain, ship.CurrentPeople, now);
         }
 
+        /// <summary>
+        /// True while <paramref name="ship"/> can still buy a higher hull from its
+        /// team's home planet. That moon sells up to its current level, and planets
+        /// stop at <see cref="MaxShipLevel"/>, so a matching hull is done.
+        /// </summary>
+        static bool HullBelowOriginCap(in ShipState ship, NativeArray<PlanetSnap> planets, out PlanetSnap origin)
+        {
+            origin = default;
+            if (ship.ShipLevel >= MaxShipLevel)
+                return false;
+            if (!TryHome(planets, ship.Team, out origin))
+                return false;
+            int cap = math.min(MaxShipLevel, math.max(1, origin.Level));
+            return ship.ShipLevel < cap;
+        }
+
         static void NoteTask(ref BotShipBrain brain, int people, float now)
         {
             if (brain.TaskClock <= 0f || people != brain.PeopleSnapshot)
@@ -604,6 +656,69 @@ namespace TitanOrbit.ECS
                 brain.TaskClock = now;
                 brain.PeopleSnapshot = people;
             }
+        }
+
+        /// <summary>
+        /// Mine asteroids and bring the gems home until <paramref name="ship"/> can buy
+        /// the next hull <paramref name="origin"/> already sells. A deposit fills the
+        /// bank that purchase spends. When that hull is unlocked and the last landing
+        /// did not refuse it, the ship goes home before it starts another rock.
+        /// </summary>
+        static bool ContinueOriginGrind(
+            ref BotShipBrain brain,
+            in ShipState ship,
+            int networkId,
+            float3 pos,
+            in PlanetSnap origin,
+            NativeArray<RockSnap> rocks,
+            in GemSpatialHash gems,
+            NativeList<int> nearby,
+            NativeHashSet<int> seen,
+            float mapW,
+            float mapH,
+            EntityManager em,
+            float claimNow)
+        {
+            if (ship.ShipLevel < origin.Level && brain.LevelBuyBlocked == 0)
+            {
+                if (ship.CurrentGems > 0.05f)
+                    SetDeposit(ref brain, origin);
+                else
+                    SetPlanet(ref brain, BotTaskKind.Upgrade, origin);
+                return true;
+            }
+
+            bool nearFull = ship.GemCapacity > 1f && ship.CurrentGems >= ship.GemCapacity * DepositFill;
+            if (nearFull)
+            {
+                SetDeposit(ref brain, origin);
+                return true;
+            }
+
+            if (TryKeepMineRock(ref brain, rocks, mapW, mapH))
+                return true;
+
+            if (TryCollectBurst(ref brain, ship, networkId, pos, gems, nearby, seen, mapW, mapH, em, claimNow))
+                return true;
+
+            if (TryNearestRock(rocks, pos, networkId, mapW, mapH, out RockSnap rock))
+            {
+                SetMine(ref brain, rock);
+                return true;
+            }
+
+            // No rock left. A partial hold still belongs on the home moon, where it
+            // becomes the bank the next hull is bought with.
+            if (ship.CurrentGems > 0.05f)
+            {
+                SetDeposit(ref brain, origin);
+                return true;
+            }
+
+            // Nothing left to shoot. Sit on the home moon so a planet that levels up
+            // under this ship can be bought without wandering into a capture.
+            SetPlanet(ref brain, BotTaskKind.Hold, origin);
+            return true;
         }
 
         static void ApplyOrder(
@@ -650,7 +765,7 @@ namespace TitanOrbit.ECS
                     return;
                 case BotTaskKind.Deposit:
                     if (TryNearestFriendly(planets, pos, ship.Team, mapW, mapH, out PlanetSnap moon))
-                        SetPlanet(ref brain, BotTaskKind.Deposit, moon);
+                        SetDeposit(ref brain, moon);
                     return;
                 case BotTaskKind.Transport:
                     if (!AdvanceTroops(
@@ -736,7 +851,12 @@ namespace TitanOrbit.ECS
             }
         }
 
-        static void TryBuy(EntityManager em, Entity shipEntity, ref ShipState ship, ref BotShipBrain brain)
+        static void TryBuy(
+            EntityManager em,
+            Entity shipEntity,
+            ref ShipState ship,
+            ref BotShipBrain brain,
+            bool allowHullUpgrade)
         {
             if (!em.HasComponent<ShipMoonDockState>(shipEntity))
                 return;
@@ -745,7 +865,8 @@ namespace TitanOrbit.ECS
                 return;
 
             int nextLevel = ship.ShipLevel + 1;
-            if (nextLevel <= MaxShipLevel &&
+            if (allowHullUpgrade &&
+                nextLevel <= MaxShipLevel &&
                 TryRollUpgradeBranch(ship.ShipLevel, ship.BranchIndex, out int branch) &&
                 UpgradeTree.IsValidUpgradeStep(ship.ShipLevel, ship.BranchIndex, nextLevel, branch))
             {
@@ -755,10 +876,20 @@ namespace TitanOrbit.ECS
                         storePlanetId,
                         nextLevel,
                         branch,
-                        out _))
+                        out FixedString128Bytes message))
                 {
                     ship = em.GetComponentData<ShipState>(shipEntity);
                     brain.AttributeBoughtWhileLanded = 0;
+                    brain.LevelBuyBlocked = 0;
+                }
+                else if (ship.CurrentGems <= 0.05f &&
+                         message.ToString() != "Planet level too low.")
+                {
+                    // The hold is already in the bank and this moon still will not
+                    // sell the next hull. Leave and mine. A planet-level rejection
+                    // does not set this: the next scan buys as soon as a deposit
+                    // raises the home world.
+                    brain.LevelBuyBlocked = 1;
                 }
             }
 
@@ -1106,7 +1237,11 @@ namespace TitanOrbit.ECS
                                   new float2(offset.x / len, offset.z / len),
                                   new float2(toRock.x / rockDist, toRock.z / rockDist)) > 0.8f;
                 // Guns use the same aim the hull is facing. A dodge or a brake-out
-                // points elsewhere, so those ticks do not shoot.
+                // points elsewhere, so those ticks do not shoot. While thrust is
+                // held those barrels stay parallel to the nose. Once the move
+                // button is released they converge on this rock, including while
+                // the hull is still gliding, so a small asteroid between the
+                // muzzles can be hit.
                 fire = facing && rockDist <= stop + MineShotReach;
             }
 
@@ -1299,6 +1434,16 @@ namespace TitanOrbit.ECS
             brain.GoalRadius = 0f;
             brain.GoalPlanetId = planet.PlanetId;
             brain.GoalNetworkId = 0;
+        }
+
+        /// <summary>
+        /// Deposit, and allow another hull purchase. The gems about to land in the bank
+        /// are why the previous buy was refused.
+        /// </summary>
+        static void SetDeposit(ref BotShipBrain brain, in PlanetSnap planet)
+        {
+            brain.LevelBuyBlocked = 0;
+            SetPlanet(ref brain, BotTaskKind.Deposit, planet);
         }
 
         static bool OrderNeedsRetask(in BotTeamOrder order, in BotShipBrain brain)

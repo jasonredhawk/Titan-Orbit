@@ -1256,6 +1256,7 @@ namespace TitanOrbit.ECS
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     [UpdateAfter(typeof(PredictedFixedStepSimulationSystemGroup))]
     [UpdateAfter(typeof(BulletSimulationSystem))]
+    [UpdateAfter(typeof(CannonLaserCombatSystem))]
     [UpdateAfter(typeof(MiningSystem))]
     public partial struct AsteroidDestructionSystem : ISystem
     {
@@ -1384,7 +1385,8 @@ namespace TitanOrbit.ECS
                 // [TITAN-ORBIT] Extra yellow crystals Instantiates only when the last miner/shooter
                 // owns this rock (mask bit). Enemy-tinted asteroids must not dump bonus yield on
                 // kill. Red, yellow, and blue bursts share one first-dibs window: the ship that
-                // removed the most health may pull them immediately; everyone else waits.
+                // removed the most health (running total, not the first or last hit) may pull
+                // them immediately; everyone else waits.
                 byte territoryMask = PlanetConnectionGraphCache.ResolveAsteroidTerritoryMask(
                     dead.TerritoryTeamsMask, dead.TerritoryTeam, pos, mapW, mapH);
                 if (dead.LastInteractTeam != TeamId.None &&
@@ -1408,20 +1410,17 @@ namespace TitanOrbit.ECS
                     minerExtra = TeamCommandRoleRules.GemBonusValue(remaining, true);
                 }
 
+                // Sum of health actually removed, not the first or last hit.
+                // 0 when the rock was only mined (no credited shots / rams / burns).
+                // Ledger, not the asteroid component — combat writes were keeping only
+                // the first ship's opening hit. Always drop the row, even with no burst.
+                int exclusiveClaimNetworkId = AsteroidDamageCredit.ResolveTop(em, entity);
+                AsteroidDamageCredit.Forget(em, entity);
+                if (settings.DestroyClaimExclusiveSeconds <= 0f)
+                    exclusiveClaimNetworkId = 0;
+
                 if (canSpawnGems && remaining >= GemEconomyConstants.MinGemSpawnValue)
                 {
-                    // Sum of health actually removed, not the first or last hit.
-                    // 0 when the rock was only mined (no credited shots / rams / burns).
-                    int exclusiveClaimNetworkId = 0;
-                    if (em.HasComponent<AsteroidDamageCreditState>(entity))
-                    {
-                        exclusiveClaimNetworkId = AsteroidDamageCredit.ResolveTop(
-                            em.GetComponentData<AsteroidDamageCreditState>(entity));
-                    }
-
-                    if (settings.DestroyClaimExclusiveSeconds <= 0f)
-                        exclusiveClaimNetworkId = 0;
-
                     // Deterministic seed so client immediate burst can match count/feel closely.
                     uint seed = math.hash(new uint2((uint)entity.Index, math.hash(pos)));
                     SpawnAsteroidDestructionGems(

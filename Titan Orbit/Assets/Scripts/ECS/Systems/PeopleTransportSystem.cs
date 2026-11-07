@@ -532,7 +532,8 @@ namespace TitanOrbit.ECS
             // Keep the seat's size. Clamping to the unload chunk replaced a damaged
             // escort with a smaller sphere whose max HP made the old damage look like full health.
             int amount = peeled;
-            float3 shipPos = shipTransform.Position;
+            float3 shipPos = PeopleTransportEscortLogic.FormationCenter(
+                state.EntityManager, shipEntity, shipTransform.Position, mapW, mapH);
             PeopleTransportEscortLogic.GetEscortHullExtents(
                 state.EntityManager, shipEntity, shipTransform.Scale, out float extX, out float extZ);
             float3 heading = float3.zero;

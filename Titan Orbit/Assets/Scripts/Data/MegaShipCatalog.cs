@@ -287,10 +287,11 @@ namespace TitanOrbit.Data
         [Header("Titan bullet visual")]
         [Tooltip(
             "One switch for every Titan. On: each real cannon or gun mesh under a turret fires one shell " +
-            "at the full shot size (fire power ÷ Bullet Reference Fire Power), times that mesh's own scale. " +
-            "Empty objects named gun, cannon, or bullet are skipped. Cannon count does not divide the size, " +
-            "and fire power does not add extra shells. Still one round — damage and the hit stay on the " +
-            "single server bullet. Off: one bullet sized by the full fire power. Missiles and lasers are unchanged.")]
+            "at the full shot size (fire power ÷ Bullet Reference Fire Power), then times this hull's " +
+            "family scale so the shell shrinks with the ship. Empty objects named gun, cannon, or bullet " +
+            "are skipped. Cannon count does not divide the size, and fire power does not add extra shells. " +
+            "Still one round — damage and the hit stay on the single server bullet. Off: one bullet at that " +
+            "same size. Missiles and lasers are unchanged.")]
         public bool splitShotBulletVisual = true;
 
         [Header("Unique components")]

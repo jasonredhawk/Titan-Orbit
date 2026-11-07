@@ -268,14 +268,14 @@ MonoBehaviour:
       extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 0
       turnSpeedPerExtraLevel: 0
-      maxGems: 8
+      maxGems: 16
       maxGemsPerExtraLevel: 4
       tractorBeamDistance: 0
       tractorBeamDistancePerExtraLevel: 0
       tractorBeamPower: 0
       tractorBeamPowerPerExtraLevel: 0
-      maxPeople: 10
-      maxPeoplePerExtraLevel: 2
+      maxPeople: 20
+      maxPeoplePerExtraLevel: 4
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: ddc9338fc5889f84cbdbfcc4bad1a2db, type: 3}
     theatricalMenuPreviewSprite: {fileID: 21300000, guid: ddc9338fc5889f84cbdbfcc4bad1a2db, type: 3}
@@ -813,7 +813,7 @@ MonoBehaviour:
       tractorBeamDistancePerExtraLevel: 0.75
       tractorBeamPower: 4
       tractorBeamPowerPerExtraLevel: 1
-      maxPeople: 4
+      maxPeople: 6
       maxPeoplePerExtraLevel: 1
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: e26fb7fedca5cb04183ee1b2ffaadf81, type: 3}
@@ -891,14 +891,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 4e10b450f6abb8d47af4384a0e86a7fc, type: 3}
     minHomePlanetLevel: 1
-    powerScore: 227.18552
-    powerScoreAtMaxLevel: 315.5716
+    powerScore: 247.9855
+    powerScoreAtMaxLevel: 338.3716
     powerScoreBreakdown:
       offense: 21.95
       defense: 45.191883
       energy: 94.7295
       mobility: 27.21412
-      capacity: 40.1
+      capacity: 60.9
       firePower: 3.4499998
       bulletSpeed: 12
       fireRate: 3
@@ -910,14 +910,14 @@ MonoBehaviour:
       energyRegen: 18.699118
       moveSpeed: 10.814121
       turnSpeed: 14
-      gemCap: 22.1
-      peopleCap: 18
+      gemCap: 28.900002
+      peopleCap: 32
     powerScoreBreakdownAtShipLevel:
       offense: 21.95
       defense: 45.191883
       energy: 94.7295
       mobility: 27.21412
-      capacity: 40.1
+      capacity: 60.9
       firePower: 3.4499998
       bulletSpeed: 12
       fireRate: 3
@@ -929,89 +929,89 @@ MonoBehaviour:
       energyRegen: 18.699118
       moveSpeed: 10.814121
       turnSpeed: 14
-      gemCap: 22.1
-      peopleCap: 18
+      gemCap: 28.900002
+      peopleCap: 32
     componentMass: 11.275827
     lockedInUpgradeTree: 0
-  - chassisId: StarForce_04
-    upgradeTreeShipName: Star Force 6
-    prefab: {fileID: 1605869618707233800, guid: 31827804ad114de4abcc915ff2ad260f, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 214d6704c09bfea41930cad15395b529, type: 3}
+  - chassisId: StarForce_02
+    upgradeTreeShipName: Star Force 17
+    prefab: {fileID: 1845889154025737743, guid: cef9f84da4e843c42b63fd28a4ca2ad1, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: e79de1430a34f1a4fbf95449ee8bfd31, type: 3}
     teamMenuPreviewSprites:
     - variantName: Red
       team: 1
-      sprite: {fileID: 21300000, guid: 214d6704c09bfea41930cad15395b529, type: 3}
+      sprite: {fileID: 21300000, guid: e79de1430a34f1a4fbf95449ee8bfd31, type: 3}
     - variantName: Blue
       team: 2
-      sprite: {fileID: 21300000, guid: 1438e3d5077f90041a5333043ef78c86, type: 3}
+      sprite: {fileID: 21300000, guid: caa3a70c9a8ad8542b3c549eb2e1f122, type: 3}
     - variantName: Green
       team: 3
-      sprite: {fileID: 21300000, guid: 0407cad1e9aba7c468b53811b2d791fd, type: 3}
+      sprite: {fileID: 21300000, guid: 3d5d395ecd30f604a9ecfb0c608bc729, type: 3}
     - variantName: Yellow
       team: 4
-      sprite: {fileID: 21300000, guid: 3a3edc4dab55a4549991ab847ea573f1, type: 3}
+      sprite: {fileID: 21300000, guid: 4e97ad4971554dc4db54e926d2fe0aa3, type: 3}
     - variantName: Purple
       team: 5
-      sprite: {fileID: 21300000, guid: 3c1db1482ca0a8940b737a577ab014f7, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 214d6704c09bfea41930cad15395b529, type: 3}
+      sprite: {fileID: 21300000, guid: 41ecaed0cb7f4d04c8263fb120d01b68, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: e79de1430a34f1a4fbf95449ee8bfd31, type: 3}
     teamTheatricalMenuPreviewSprites:
     - variantName: Red
       team: 1
-      sprite: {fileID: 21300000, guid: 214d6704c09bfea41930cad15395b529, type: 3}
+      sprite: {fileID: 21300000, guid: e79de1430a34f1a4fbf95449ee8bfd31, type: 3}
     - variantName: Blue
       team: 2
-      sprite: {fileID: 21300000, guid: 1438e3d5077f90041a5333043ef78c86, type: 3}
+      sprite: {fileID: 21300000, guid: caa3a70c9a8ad8542b3c549eb2e1f122, type: 3}
     - variantName: Green
       team: 3
-      sprite: {fileID: 21300000, guid: 0407cad1e9aba7c468b53811b2d791fd, type: 3}
+      sprite: {fileID: 21300000, guid: 3d5d395ecd30f604a9ecfb0c608bc729, type: 3}
     - variantName: Yellow
       team: 4
-      sprite: {fileID: 21300000, guid: 3a3edc4dab55a4549991ab847ea573f1, type: 3}
+      sprite: {fileID: 21300000, guid: 4e97ad4971554dc4db54e926d2fe0aa3, type: 3}
     - variantName: Purple
       team: 5
-      sprite: {fileID: 21300000, guid: 3c1db1482ca0a8940b737a577ab014f7, type: 3}
+      sprite: {fileID: 21300000, guid: 41ecaed0cb7f4d04c8263fb120d01b68, type: 3}
     minHomePlanetLevel: 2
-    powerScore: 249.1623
-    powerScoreAtMaxLevel: 516.7143
+    powerScore: 307.40875
+    powerScoreAtMaxLevel: 606.2607
     powerScoreBreakdown:
-      offense: 21.95
-      defense: 55.43395
-      energy: 43.194218
-      mobility: 97.189865
-      capacity: 42.090416
-      firePower: 3.4499998
-      bulletSpeed: 12
-      fireRate: 3
-      sustainedDps: 0
+      offense: 50.125
+      defense: 47.897625
+      energy: 138.58994
+      mobility: 26.546204
+      capacity: 60.9
+      firePower: 8.625
+      bulletSpeed: 10
+      fireRate: 6
+      sustainedDps: 25.875
       rammingPower: 3.5
-      healthCap: 53.522434
-      healthRegen: 1.9115156
-      energyCap: 34.658066
-      energyRegen: 8.536153
-      moveSpeed: 5.054301
-      turnSpeed: 81.0394
-      gemCap: 23.331537
-      peopleCap: 18.758879
+      healthCap: 46.245983
+      healthRegen: 1.6516423
+      energyCap: 123.88682
+      energyRegen: 14.703118
+      moveSpeed: 10.146204
+      turnSpeed: 14
+      gemCap: 28.900002
+      peopleCap: 32
     powerScoreBreakdownAtShipLevel:
-      offense: 22.45
-      defense: 91.08242
-      energy: 64.56669
-      mobility: 117.25402
-      capacity: 55.3114
-      firePower: 3.4499998
-      bulletSpeed: 12
-      fireRate: 3
-      sustainedDps: 0
+      offense: 54.35
+      defense: 77.65438
+      energy: 189.47897
+      mobility: 26.876036
+      capacity: 73.7
+      firePower: 10.349999
+      bulletSpeed: 10
+      fireRate: 6
+      sustainedDps: 31.05
       rammingPower: 4
-      healthCap: 87.94165
-      healthRegen: 3.1407728
-      energyCap: 51.987095
-      energyRegen: 12.579594
-      moveSpeed: 5.2949815
-      turnSpeed: 99.74079
-      gemCap: 31.655863
-      peopleCap: 23.65554
-    componentMass: 12.70307
+      healthCap: 74.97665
+      healthRegen: 2.6777372
+      energyCap: 169.23468
+      energyRegen: 20.24429
+      moveSpeed: 10.476035
+      turnSpeed: 14
+      gemCap: 35.7
+      peopleCap: 38
+    componentMass: 10.725639
     lockedInUpgradeTree: 0
   - chassisId: StarForce_08
     upgradeTreeShipName: Star Force 10
@@ -1051,14 +1051,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 855d5d0a2669dc741aa56882a778c450, type: 3}
     minHomePlanetLevel: 2
-    powerScore: 227.40474
-    powerScoreAtMaxLevel: 489.51718
+    powerScore: 247.81647
+    powerScoreAtMaxLevel: 515.9289
     powerScoreBreakdown:
       offense: 21.95
       defense: 63.90447
       energy: 29.496677
       mobility: 87.172935
-      capacity: 36.624893
+      capacity: 57.036613
       firePower: 3.4499998
       bulletSpeed: 12
       fireRate: 3
@@ -1070,14 +1070,14 @@ MonoBehaviour:
       energyRegen: 5.79399
       moveSpeed: 3.0098643
       turnSpeed: 73.612015
-      gemCap: 19.789734
-      peopleCap: 16.835161
+      gemCap: 26.589735
+      peopleCap: 30.44688
     powerScoreBreakdownAtShipLevel:
       offense: 22.45
       defense: 111.83104
       energy: 46.201427
       mobility: 100.365845
-      capacity: 46.37654
+      capacity: 68.78825
       firePower: 3.4499998
       bulletSpeed: 12
       fireRate: 3
@@ -1089,169 +1089,89 @@ MonoBehaviour:
       energyRegen: 8.954349
       moveSpeed: 3.1979814
       turnSpeed: 85.880684
-      gemCap: 25.929659
-      peopleCap: 20.44688
+      gemCap: 32.729656
+      peopleCap: 36.0586
     componentMass: 15.841888
     lockedInUpgradeTree: 0
-  - chassisId: StarForce_02
-    upgradeTreeShipName: Star Force 17
-    prefab: {fileID: 1845889154025737743, guid: cef9f84da4e843c42b63fd28a4ca2ad1, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: e79de1430a34f1a4fbf95449ee8bfd31, type: 3}
+  - chassisId: StarForce_04
+    upgradeTreeShipName: Star Force 6
+    prefab: {fileID: 1605869618707233800, guid: 31827804ad114de4abcc915ff2ad260f, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 214d6704c09bfea41930cad15395b529, type: 3}
     teamMenuPreviewSprites:
     - variantName: Red
       team: 1
-      sprite: {fileID: 21300000, guid: e79de1430a34f1a4fbf95449ee8bfd31, type: 3}
+      sprite: {fileID: 21300000, guid: 214d6704c09bfea41930cad15395b529, type: 3}
     - variantName: Blue
       team: 2
-      sprite: {fileID: 21300000, guid: caa3a70c9a8ad8542b3c549eb2e1f122, type: 3}
+      sprite: {fileID: 21300000, guid: 1438e3d5077f90041a5333043ef78c86, type: 3}
     - variantName: Green
       team: 3
-      sprite: {fileID: 21300000, guid: 3d5d395ecd30f604a9ecfb0c608bc729, type: 3}
+      sprite: {fileID: 21300000, guid: 0407cad1e9aba7c468b53811b2d791fd, type: 3}
     - variantName: Yellow
       team: 4
-      sprite: {fileID: 21300000, guid: 4e97ad4971554dc4db54e926d2fe0aa3, type: 3}
+      sprite: {fileID: 21300000, guid: 3a3edc4dab55a4549991ab847ea573f1, type: 3}
     - variantName: Purple
       team: 5
-      sprite: {fileID: 21300000, guid: 41ecaed0cb7f4d04c8263fb120d01b68, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: e79de1430a34f1a4fbf95449ee8bfd31, type: 3}
+      sprite: {fileID: 21300000, guid: 3c1db1482ca0a8940b737a577ab014f7, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 214d6704c09bfea41930cad15395b529, type: 3}
     teamTheatricalMenuPreviewSprites:
     - variantName: Red
       team: 1
-      sprite: {fileID: 21300000, guid: e79de1430a34f1a4fbf95449ee8bfd31, type: 3}
+      sprite: {fileID: 21300000, guid: 214d6704c09bfea41930cad15395b529, type: 3}
     - variantName: Blue
       team: 2
-      sprite: {fileID: 21300000, guid: caa3a70c9a8ad8542b3c549eb2e1f122, type: 3}
+      sprite: {fileID: 21300000, guid: 1438e3d5077f90041a5333043ef78c86, type: 3}
     - variantName: Green
       team: 3
-      sprite: {fileID: 21300000, guid: 3d5d395ecd30f604a9ecfb0c608bc729, type: 3}
+      sprite: {fileID: 21300000, guid: 0407cad1e9aba7c468b53811b2d791fd, type: 3}
     - variantName: Yellow
       team: 4
-      sprite: {fileID: 21300000, guid: 4e97ad4971554dc4db54e926d2fe0aa3, type: 3}
+      sprite: {fileID: 21300000, guid: 3a3edc4dab55a4549991ab847ea573f1, type: 3}
     - variantName: Purple
       team: 5
-      sprite: {fileID: 21300000, guid: 41ecaed0cb7f4d04c8263fb120d01b68, type: 3}
+      sprite: {fileID: 21300000, guid: 3c1db1482ca0a8940b737a577ab014f7, type: 3}
     minHomePlanetLevel: 3
-    powerScore: 286.60876
-    powerScoreAtMaxLevel: 774.36194
+    powerScore: 269.89337
+    powerScoreAtMaxLevel: 725.81335
     powerScoreBreakdown:
-      offense: 50.125
-      defense: 47.897625
-      energy: 138.58994
-      mobility: 26.546204
-      capacity: 40.1
-      firePower: 8.625
-      bulletSpeed: 10
-      fireRate: 6
-      sustainedDps: 25.875
+      offense: 21.95
+      defense: 55.43395
+      energy: 43.194218
+      mobility: 97.189865
+      capacity: 62.82152
+      firePower: 3.4499998
+      bulletSpeed: 12
+      fireRate: 3
+      sustainedDps: 0
       rammingPower: 3.5
-      healthCap: 46.245983
-      healthRegen: 1.6516423
-      energyCap: 123.88682
-      energyRegen: 14.703118
-      moveSpeed: 10.146204
-      turnSpeed: 14
-      gemCap: 22.1
-      peopleCap: 18
+      healthCap: 53.522434
+      healthRegen: 1.9115156
+      energyCap: 34.658066
+      energyRegen: 8.536153
+      moveSpeed: 5.054301
+      turnSpeed: 81.0394
+      gemCap: 30.131535
+      peopleCap: 32.689987
     powerScoreBreakdownAtShipLevel:
-      offense: 58.575
-      defense: 107.41113
-      energy: 240.36806
-      mobility: 27.205868
-      capacity: 61.7
-      firePower: 12.075
-      bulletSpeed: 10
-      fireRate: 6
-      sustainedDps: 36.225
+      offense: 22.95
+      defense: 126.73089
+      energy: 85.93916
+      mobility: 137.31819
+      capacity: 93.2635
+      firePower: 3.4499998
+      bulletSpeed: 12
+      fireRate: 3
+      sustainedDps: 0
       rammingPower: 4.5
-      healthCap: 103.7073
-      healthRegen: 3.703832
-      energyCap: 214.5826
-      energyRegen: 25.78546
-      moveSpeed: 10.805867
-      turnSpeed: 14
-      gemCap: 35.7
-      peopleCap: 26
-    componentMass: 10.725639
-    lockedInUpgradeTree: 0
-  - chassisId: StarForce_09
-    upgradeTreeShipName: Star Force 1
-    prefab: {fileID: 8365838326503892194, guid: e1379034dd2eeb742ada6c38bfff7e2b, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 56f8f8ea643b92e45bd79a18a7df4a7c, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: 56f8f8ea643b92e45bd79a18a7df4a7c, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: a5ad667c00950ab438a0e0b85b522d37, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: ab0afa9eed03c0f4b95eea907022a1d7, type: 3}
-    - variantName: Yellow
-      team: 4
-      sprite: {fileID: 21300000, guid: bf7c4b11b3238744c8f39d7ad01d3cd1, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: c1315984b9cbd8541b9e51f03b87d81a, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 56f8f8ea643b92e45bd79a18a7df4a7c, type: 3}
-    teamTheatricalMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: 56f8f8ea643b92e45bd79a18a7df4a7c, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: a5ad667c00950ab438a0e0b85b522d37, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: ab0afa9eed03c0f4b95eea907022a1d7, type: 3}
-    - variantName: Yellow
-      team: 4
-      sprite: {fileID: 21300000, guid: bf7c4b11b3238744c8f39d7ad01d3cd1, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: c1315984b9cbd8541b9e51f03b87d81a, type: 3}
-    minHomePlanetLevel: 3
-    powerScore: 311.2834
-    powerScoreAtMaxLevel: 949.64325
-    powerScoreBreakdown:
-      offense: 49.7919
-      defense: 51.591908
-      energy: 133.87216
-      mobility: 61.992996
-      capacity: 34.695137
-      firePower: 7.836167
-      bulletSpeed: 10
-      fireRate: 6.6039944
-      sustainedDps: 25.875002
-      rammingPower: 3.3517401
-      healthCap: 49.812878
-      healthRegen: 1.7790313
-      energyCap: 120.350395
-      energyRegen: 13.521759
-      moveSpeed: 6.471533
-      turnSpeed: 48.777653
-      gemCap: 18.637987
-      peopleCap: 16.057152
-    powerScoreBreakdownAtShipLevel:
-      offense: 57.884007
-      defense: 125.3779
-      energy: 260.81647
-      mobility: 85.4211
-      capacity: 55.603447
-      firePower: 10.9706335
-      bulletSpeed: 10
-      fireRate: 6.6039944
-      sustainedDps: 36.225002
-      rammingPower: 4.30938
-      healthCap: 121.05452
-      healthRegen: 4.3233757
-      energyCap: 231.45119
-      energyRegen: 29.365276
-      moveSpeed: 7.4146004
-      turnSpeed: 69.98995
-      gemCap: 31.802479
-      peopleCap: 23.80097
-    componentMass: 9.558767
+      healthCap: 122.360855
+      healthRegen: 4.3700304
+      energyCap: 69.31613
+      energyRegen: 16.623035
+      moveSpeed: 5.5356636
+      turnSpeed: 118.44219
+      gemCap: 46.780186
+      peopleCap: 46.48331
+    componentMass: 12.70307
     lockedInUpgradeTree: 0
   - chassisId: StarForce_13
     upgradeTreeShipName: Star Force 5
@@ -1291,14 +1211,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: a0677317087b6c842b5e57c90fb6a6bb, type: 3}
     minHomePlanetLevel: 3
-    powerScore: 283.07733
-    powerScoreAtMaxLevel: 910.4861
+    powerScore: 303.43848
+    powerScoreAtMaxLevel: 940.8472
     powerScoreBreakdown:
       offense: 21.95
       defense: 72.73741
       energy: 90.35574
       mobility: 68.39133
-      capacity: 36.172226
+      capacity: 56.53337
       firePower: 3.4499998
       bulletSpeed: 12
       fireRate: 3
@@ -1310,14 +1230,14 @@ MonoBehaviour:
       energyRegen: 17.28905
       moveSpeed: 9.591817
       turnSpeed: 51.870148
-      gemCap: 19.4888
-      peopleCap: 16.683428
+      gemCap: 26.288801
+      peopleCap: 30.244572
     powerScoreBreakdownAtShipLevel:
       offense: 22.95
       defense: 186.58658
       energy: 179.67068
       mobility: 98.6044
-      capacity: 55.402405
+      capacity: 79.76354
       firePower: 3.4499998
       bulletSpeed: 12
       fireRate: 3
@@ -1329,89 +1249,89 @@ MonoBehaviour:
       energyRegen: 34.575916
       moveSpeed: 10.763747
       turnSpeed: 79.267456
-      gemCap: 31.596687
-      peopleCap: 23.805716
+      gemCap: 38.396687
+      peopleCap: 41.366856
     componentMass: 9.2887125
     lockedInUpgradeTree: 0
-  - chassisId: StarForce_14
-    upgradeTreeShipName: Star Force 12
-    prefab: {fileID: 4709615200273077077, guid: 1ac057b59d97e31448ccf5343fdc5f4a, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 7ecf3c9f4ce39c24192cf2aab2190033, type: 3}
+  - chassisId: StarForce_09
+    upgradeTreeShipName: Star Force 1
+    prefab: {fileID: 8365838326503892194, guid: e1379034dd2eeb742ada6c38bfff7e2b, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 56f8f8ea643b92e45bd79a18a7df4a7c, type: 3}
     teamMenuPreviewSprites:
     - variantName: Red
       team: 1
-      sprite: {fileID: 21300000, guid: 7ecf3c9f4ce39c24192cf2aab2190033, type: 3}
+      sprite: {fileID: 21300000, guid: 56f8f8ea643b92e45bd79a18a7df4a7c, type: 3}
     - variantName: Blue
       team: 2
-      sprite: {fileID: 21300000, guid: 4acfbda03dfc0804dbd95791f76c8ffd, type: 3}
+      sprite: {fileID: 21300000, guid: a5ad667c00950ab438a0e0b85b522d37, type: 3}
     - variantName: Green
       team: 3
-      sprite: {fileID: 21300000, guid: 94aafc53e1c9f2a42ab08bb2dc75ed8f, type: 3}
+      sprite: {fileID: 21300000, guid: ab0afa9eed03c0f4b95eea907022a1d7, type: 3}
     - variantName: Yellow
       team: 4
-      sprite: {fileID: 21300000, guid: 71c2aa1ef3bc1dd49801728eb1df5553, type: 3}
+      sprite: {fileID: 21300000, guid: bf7c4b11b3238744c8f39d7ad01d3cd1, type: 3}
     - variantName: Purple
       team: 5
-      sprite: {fileID: 21300000, guid: aba5010cb2454d544966cc65bf3611d0, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 7ecf3c9f4ce39c24192cf2aab2190033, type: 3}
+      sprite: {fileID: 21300000, guid: c1315984b9cbd8541b9e51f03b87d81a, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 56f8f8ea643b92e45bd79a18a7df4a7c, type: 3}
     teamTheatricalMenuPreviewSprites:
     - variantName: Red
       team: 1
-      sprite: {fileID: 21300000, guid: 7ecf3c9f4ce39c24192cf2aab2190033, type: 3}
+      sprite: {fileID: 21300000, guid: 56f8f8ea643b92e45bd79a18a7df4a7c, type: 3}
     - variantName: Blue
       team: 2
-      sprite: {fileID: 21300000, guid: 4acfbda03dfc0804dbd95791f76c8ffd, type: 3}
+      sprite: {fileID: 21300000, guid: a5ad667c00950ab438a0e0b85b522d37, type: 3}
     - variantName: Green
       team: 3
-      sprite: {fileID: 21300000, guid: 94aafc53e1c9f2a42ab08bb2dc75ed8f, type: 3}
+      sprite: {fileID: 21300000, guid: ab0afa9eed03c0f4b95eea907022a1d7, type: 3}
     - variantName: Yellow
       team: 4
-      sprite: {fileID: 21300000, guid: 71c2aa1ef3bc1dd49801728eb1df5553, type: 3}
+      sprite: {fileID: 21300000, guid: bf7c4b11b3238744c8f39d7ad01d3cd1, type: 3}
     - variantName: Purple
       team: 5
-      sprite: {fileID: 21300000, guid: aba5010cb2454d544966cc65bf3611d0, type: 3}
-    minHomePlanetLevel: 4
-    powerScore: 286.04562
-    powerScoreAtMaxLevel: 1357.6093
+      sprite: {fileID: 21300000, guid: c1315984b9cbd8541b9e51f03b87d81a, type: 3}
+    minHomePlanetLevel: 3
+    powerScore: 330.59143
+    powerScoreAtMaxLevel: 978.5277
     powerScoreBreakdown:
-      offense: 21.95
-      defense: 63.33584
-      energy: 105.503815
-      mobility: 67.34546
-      capacity: 34.534073
-      firePower: 3.4499998
-      bulletSpeed: 12
-      fireRate: 3
-      sustainedDps: 0
-      rammingPower: 3.5
-      healthCap: 61.151844
-      healthRegen: 2.1839952
-      energyCap: 85.089584
-      energyRegen: 20.414234
-      moveSpeed: 6.881799
-      turnSpeed: 53.4401
-      gemCap: 18.3539
-      peopleCap: 16.180174
+      offense: 49.7919
+      defense: 51.591908
+      energy: 133.87216
+      mobility: 61.992996
+      capacity: 54.00319
+      firePower: 7.836167
+      bulletSpeed: 10
+      fireRate: 6.6039944
+      sustainedDps: 25.875002
+      rammingPower: 3.3517401
+      healthCap: 49.812878
+      healthRegen: 1.7790313
+      energyCap: 120.350395
+      energyRegen: 13.521759
+      moveSpeed: 6.471533
+      turnSpeed: 48.777653
+      gemCap: 25.149939
+      peopleCap: 28.853252
     powerScoreBreakdownAtShipLevel:
-      offense: 23.45
-      defense: 209.12155
-      energy: 340.41525
-      mobility: 118.545006
-      capacity: 64.62726
-      firePower: 3.4499998
-      bulletSpeed: 12
-      fireRate: 3
-      sustainedDps: 0
-      rammingPower: 5
-      healthCap: 201.91046
-      healthRegen: 7.2110896
-      energyCap: 275.55832
-      energyRegen: 64.85693
-      moveSpeed: 9.527198
-      turnSpeed: 99.2459
-      gemCap: 37.301464
-      peopleCap: 27.325796
-    componentMass: 9.39875
+      offense: 57.884007
+      defense: 125.3779
+      energy: 260.81647
+      mobility: 85.4211
+      capacity: 78.742065
+      firePower: 10.9706335
+      bulletSpeed: 10
+      fireRate: 6.6039944
+      sustainedDps: 36.225002
+      rammingPower: 4.30938
+      healthCap: 121.05452
+      healthRegen: 4.3233757
+      energyCap: 231.45119
+      energyRegen: 29.365276
+      moveSpeed: 7.4146004
+      turnSpeed: 69.98995
+      gemCap: 38.31443
+      peopleCap: 40.42763
+    componentMass: 9.558767
     lockedInUpgradeTree: 0
   - chassisId: StarForce_12
     upgradeTreeShipName: Star Force 4
@@ -1451,14 +1371,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: b23cd4388510f034ea6cca28ad75f419, type: 3}
     minHomePlanetLevel: 4
-    powerScore: 369.18378
-    powerScoreAtMaxLevel: 1230.3143
+    powerScore: 389.4825
+    powerScoreAtMaxLevel: 1264.613
     powerScoreBreakdown:
       offense: 50.125
       defense: 70.56612
       energy: 110.20961
       mobility: 135.7813
-      capacity: 37.91493
+      capacity: 58.213654
       firePower: 8.625
       bulletSpeed: 10
       fireRate: 6
@@ -1470,14 +1390,14 @@ MonoBehaviour:
       energyRegen: 9.0496
       moveSpeed: 6.2619996
       turnSpeed: 112.536514
-      gemCap: 20.566402
-      peopleCap: 17.348526
+      gemCap: 27.366405
+      peopleCap: 30.847246
     powerScoreBreakdownAtShipLevel:
       offense: 62.8
       defense: 235.43678
       energy: 228.82242
       mobility: 168.9206
-      capacity: 73.1587
+      capacity: 99.45742
       firePower: 13.799999
       bulletSpeed: 10
       fireRate: 6
@@ -1489,89 +1409,9 @@ MonoBehaviour:
       energyRegen: 19.2304
       moveSpeed: 6.8679996
       turnSpeed: 143.2283
-      gemCap: 42.756927
-      peopleCap: 30.401773
+      gemCap: 49.556927
+      peopleCap: 49.900494
     componentMass: 18.417202
-    lockedInUpgradeTree: 0
-  - chassisId: StarForce_15
-    upgradeTreeShipName: Star Force 13
-    prefab: {fileID: 4182920390229914433, guid: 05d56b71a79e6104b8ca1cd4b18d5e2a, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 6b0219e284078714e8b4b8385ebb145e, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: 6b0219e284078714e8b4b8385ebb145e, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: 1b09f21dd80b2ef41af3e8a85865c582, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: d2c97d15b2fc5654a826ccd8afbfdc27, type: 3}
-    - variantName: Yellow
-      team: 4
-      sprite: {fileID: 21300000, guid: d4c19d253f464bc47b3b72815df35d52, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: f195966cf60cebb47ab6f9534455f851, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 6b0219e284078714e8b4b8385ebb145e, type: 3}
-    teamTheatricalMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: 6b0219e284078714e8b4b8385ebb145e, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: 1b09f21dd80b2ef41af3e8a85865c582, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: d2c97d15b2fc5654a826ccd8afbfdc27, type: 3}
-    - variantName: Yellow
-      team: 4
-      sprite: {fileID: 21300000, guid: d4c19d253f464bc47b3b72815df35d52, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: f195966cf60cebb47ab6f9534455f851, type: 3}
-    minHomePlanetLevel: 4
-    powerScore: 363.85858
-    powerScoreAtMaxLevel: 1405.7402
-    powerScoreBreakdown:
-      offense: 50.125
-      defense: 62.581055
-      energy: 170.67741
-      mobility: 70.39938
-      capacity: 31.255074
-      firePower: 8.625
-      bulletSpeed: 10
-      fireRate: 6
-      sustainedDps: 25.875
-      rammingPower: 3.5
-      healthCap: 60.423088
-      healthRegen: 2.1579678
-      energyCap: 150.4102
-      energyRegen: 20.267218
-      moveSpeed: 11.599879
-      turnSpeed: 51.870148
-      gemCap: 16.219852
-      peopleCap: 15.03522
-    powerScoreBreakdownAtShipLevel:
-      offense: 62.8
-      defense: 208.3407
-      energy: 386.70267
-      mobility: 115.96656
-      capacity: 55.650166
-      firePower: 13.799999
-      bulletSpeed: 10
-      fireRate: 6
-      sustainedDps: 41.399998
-      rammingPower: 5
-      healthCap: 201.15654
-      healthRegen: 7.184163
-      energyCap: 337.1162
-      energyRegen: 49.586464
-      moveSpeed: 13.605342
-      turnSpeed: 92.9661
-      gemCap: 31.579727
-      peopleCap: 24.070438
-    componentMass: 10.12263
     lockedInUpgradeTree: 0
   - chassisId: StarForce_10
     upgradeTreeShipName: Star Force 7
@@ -1611,14 +1451,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 267ecdc8006170c44a0287679041e410, type: 3}
     minHomePlanetLevel: 4
-    powerScore: 289.80164
-    powerScoreAtMaxLevel: 1083.2021
+    powerScore: 309.5657
+    powerScoreAtMaxLevel: 1116.9662
     powerScoreBreakdown:
       offense: 54.301018
       defense: 69.46484
       energy: 109.76
       mobility: 54.52512
-      capacity: 30.828167
+      capacity: 50.59221
       firePower: 15.451922
       bulletSpeed: 10
       fireRate: 3.3490973
@@ -1630,14 +1470,14 @@ MonoBehaviour:
       energyRegen: 8.96
       moveSpeed: 6.2
       turnSpeed: 41.98865
-      gemCap: 15.936045
-      peopleCap: 14.892123
+      gemCap: 22.736044
+      peopleCap: 27.856165
     powerScoreBreakdownAtShipLevel:
       offense: 71.072174
       defense: 236.2649
       energy: 227.84
       mobility: 67.26366
-      capacity: 54.8369
+      capacity: 80.60094
       firePower: 24.723076
       bulletSpeed: 10
       fireRate: 3.3490973
@@ -1649,8 +1489,8 @@ MonoBehaviour:
       energyRegen: 19.04
       moveSpeed: 6.8
       turnSpeed: 53.4401
-      gemCap: 31.052652
-      peopleCap: 23.784246
+      gemCap: 37.852654
+      peopleCap: 42.748287
     componentMass: 14.928128
     lockedInUpgradeTree: 0
   - chassisId: StarForce_11
@@ -1690,15 +1530,15 @@ MonoBehaviour:
     - variantName: Purple
       team: 5
       sprite: {fileID: 21300000, guid: 9447607cba7ed5041b53991dd1adf073, type: 3}
-    minHomePlanetLevel: 5
-    powerScore: 416.82428
-    powerScoreAtMaxLevel: 1743.3318
+    minHomePlanetLevel: 4
+    powerScore: 437.6243
+    powerScoreAtMaxLevel: 1486.9028
     powerScoreBreakdown:
       offense: 64.360855
       defense: 56.310417
       energy: 196.90921
       mobility: 83.73343
-      capacity: 43.508495
+      capacity: 64.308495
       firePower: 13.31813
       bulletSpeed: 10
       fireRate: 15.542723
@@ -1710,108 +1550,188 @@ MonoBehaviour:
       energyRegen: 13.324255
       moveSpeed: 8.157408
       turnSpeed: 65.66637
-      gemCap: 24.24609
-      peopleCap: 19.262405
+      gemCap: 31.04609
+      peopleCap: 33.262405
     powerScoreBreakdownAtShipLevel:
-      offense: 85.01536
-      defense: 212.5735
-      energy: 497.5515
-      mobility: 110.48449
-      capacity: 100.342476
-      firePower: 23.972633
+      offense: 79.85173
+      defense: 173.50772
+      energy: 422.39096
+      mobility: 103.79673
+      capacity: 112.933975
+      firePower: 21.309008
       bulletSpeed: 10
       fireRate: 15.542723
-      sustainedDps: 93.15
-      rammingPower: 5.5
-      healthCap: 205.24338
-      healthRegen: 7.33012
-      energyCap: 460.04086
-      energyRegen: 37.510635
-      moveSpeed: 9.597073
-      turnSpeed: 89.545044
-      gemCap: 60.03045
-      peopleCap: 40.312027
+      sustainedDps: 82.799995
+      rammingPower: 5
+      healthCap: 167.5247
+      healthRegen: 5.9830246
+      energyCap: 390.9269
+      energyRegen: 31.464039
+      moveSpeed: 9.237156
+      turnSpeed: 83.57538
+      gemCap: 57.884357
+      peopleCap: 55.04962
     componentMass: 14.6764965
     lockedInUpgradeTree: 0
-  - chassisId: StarForce_07
-    upgradeTreeShipName: Star Force 19
-    prefab: {fileID: 1513925704109281903, guid: 6cef86234debb2c479eb2358c05e8611, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: f36c7d711702e074ab3fb224da8416ef, type: 3}
+  - chassisId: StarForce_14
+    upgradeTreeShipName: Star Force 12
+    prefab: {fileID: 4709615200273077077, guid: 1ac057b59d97e31448ccf5343fdc5f4a, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 7ecf3c9f4ce39c24192cf2aab2190033, type: 3}
     teamMenuPreviewSprites:
     - variantName: Red
       team: 1
-      sprite: {fileID: 21300000, guid: f36c7d711702e074ab3fb224da8416ef, type: 3}
+      sprite: {fileID: 21300000, guid: 7ecf3c9f4ce39c24192cf2aab2190033, type: 3}
     - variantName: Blue
       team: 2
-      sprite: {fileID: 21300000, guid: 0192c39560a94784082e9e8ad556f61d, type: 3}
+      sprite: {fileID: 21300000, guid: 4acfbda03dfc0804dbd95791f76c8ffd, type: 3}
     - variantName: Green
       team: 3
-      sprite: {fileID: 21300000, guid: 7827c59047d958541a93d1d7c9e169c8, type: 3}
+      sprite: {fileID: 21300000, guid: 94aafc53e1c9f2a42ab08bb2dc75ed8f, type: 3}
     - variantName: Yellow
       team: 4
-      sprite: {fileID: 21300000, guid: bfc1ce5eded204042a300315da0498ea, type: 3}
+      sprite: {fileID: 21300000, guid: 71c2aa1ef3bc1dd49801728eb1df5553, type: 3}
     - variantName: Purple
       team: 5
-      sprite: {fileID: 21300000, guid: 815f0823da0e42241b7d6b8eae728eea, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: f36c7d711702e074ab3fb224da8416ef, type: 3}
+      sprite: {fileID: 21300000, guid: aba5010cb2454d544966cc65bf3611d0, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 7ecf3c9f4ce39c24192cf2aab2190033, type: 3}
     teamTheatricalMenuPreviewSprites:
     - variantName: Red
       team: 1
-      sprite: {fileID: 21300000, guid: f36c7d711702e074ab3fb224da8416ef, type: 3}
+      sprite: {fileID: 21300000, guid: 7ecf3c9f4ce39c24192cf2aab2190033, type: 3}
     - variantName: Blue
       team: 2
-      sprite: {fileID: 21300000, guid: 0192c39560a94784082e9e8ad556f61d, type: 3}
+      sprite: {fileID: 21300000, guid: 4acfbda03dfc0804dbd95791f76c8ffd, type: 3}
     - variantName: Green
       team: 3
-      sprite: {fileID: 21300000, guid: 7827c59047d958541a93d1d7c9e169c8, type: 3}
+      sprite: {fileID: 21300000, guid: 94aafc53e1c9f2a42ab08bb2dc75ed8f, type: 3}
     - variantName: Yellow
       team: 4
-      sprite: {fileID: 21300000, guid: bfc1ce5eded204042a300315da0498ea, type: 3}
+      sprite: {fileID: 21300000, guid: 71c2aa1ef3bc1dd49801728eb1df5553, type: 3}
     - variantName: Purple
       team: 5
-      sprite: {fileID: 21300000, guid: 815f0823da0e42241b7d6b8eae728eea, type: 3}
-    minHomePlanetLevel: 5
-    powerScore: 413.58356
-    powerScoreAtMaxLevel: 1740.6511
+      sprite: {fileID: 21300000, guid: aba5010cb2454d544966cc65bf3611d0, type: 3}
+    minHomePlanetLevel: 4
+    powerScore: 306.0781
+    powerScoreAtMaxLevel: 1391.6417
     powerScoreBreakdown:
-      offense: 64.75
-      defense: 55.956024
-      energy: 211.53114
-      mobility: 58.538963
-      capacity: 42.800003
-      firePower: 17.25
-      bulletSpeed: 10
-      fireRate: 12
-      sustainedDps: 51.75
+      offense: 21.95
+      defense: 63.33584
+      energy: 105.503815
+      mobility: 67.34546
+      capacity: 54.56656
+      firePower: 3.4499998
+      bulletSpeed: 12
+      fireRate: 3
+      sustainedDps: 0
       rammingPower: 3.5
-      healthCap: 54.026505
-      healthRegen: 1.9295181
-      energyCap: 195.22308
-      energyRegen: 16.308056
-      moveSpeed: 11.049334
-      turnSpeed: 41.536118
-      gemCap: 23.800001
-      peopleCap: 19
+      healthCap: 61.151844
+      healthRegen: 2.1839952
+      energyCap: 85.089584
+      energyRegen: 20.414234
+      moveSpeed: 6.881799
+      turnSpeed: 53.4401
+      gemCap: 25.153902
+      peopleCap: 29.412655
     powerScoreBreakdownAtShipLevel:
-      offense: 88.55
-      defense: 207.01807
-      energy: 518.54626
-      mobility: 89.40259
-      capacity: 96.8
-      firePower: 31.05
+      offense: 23.45
+      defense: 209.12155
+      energy: 340.41525
+      mobility: 118.545006
+      capacity: 90.659744
+      firePower: 3.4499998
+      bulletSpeed: 12
+      fireRate: 3
+      sustainedDps: 0
+      rammingPower: 5
+      healthCap: 201.91046
+      healthRegen: 7.2110896
+      energyCap: 275.55832
+      energyRegen: 64.85693
+      moveSpeed: 9.527198
+      turnSpeed: 99.2459
+      gemCap: 44.101463
+      peopleCap: 46.558277
+    componentMass: 9.39875
+    lockedInUpgradeTree: 0
+  - chassisId: StarForce_15
+    upgradeTreeShipName: Star Force 13
+    prefab: {fileID: 4182920390229914433, guid: 05d56b71a79e6104b8ca1cd4b18d5e2a, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 6b0219e284078714e8b4b8385ebb145e, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 6b0219e284078714e8b4b8385ebb145e, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 1b09f21dd80b2ef41af3e8a85865c582, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: d2c97d15b2fc5654a826ccd8afbfdc27, type: 3}
+    - variantName: Yellow
+      team: 4
+      sprite: {fileID: 21300000, guid: d4c19d253f464bc47b3b72815df35d52, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: f195966cf60cebb47ab6f9534455f851, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 6b0219e284078714e8b4b8385ebb145e, type: 3}
+    teamTheatricalMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 6b0219e284078714e8b4b8385ebb145e, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 1b09f21dd80b2ef41af3e8a85865c582, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: d2c97d15b2fc5654a826ccd8afbfdc27, type: 3}
+    - variantName: Yellow
+      team: 4
+      sprite: {fileID: 21300000, guid: d4c19d253f464bc47b3b72815df35d52, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: f195966cf60cebb47ab6f9534455f851, type: 3}
+    minHomePlanetLevel: 5
+    powerScore: 383.67032
+    powerScoreAtMaxLevel: 1741.0894
+    powerScoreBreakdown:
+      offense: 50.125
+      defense: 62.581055
+      energy: 170.67741
+      mobility: 70.39938
+      capacity: 51.06681
+      firePower: 8.625
       bulletSpeed: 10
-      fireRate: 12
-      sustainedDps: 93.15
+      fireRate: 6
+      sustainedDps: 25.875
+      rammingPower: 3.5
+      healthCap: 60.423088
+      healthRegen: 2.1579678
+      energyCap: 150.4102
+      energyRegen: 20.267218
+      moveSpeed: 11.599879
+      turnSpeed: 51.870148
+      gemCap: 23.019852
+      peopleCap: 28.04696
+    powerScoreBreakdownAtShipLevel:
+      offense: 67.025
+      defense: 256.92725
+      energy: 458.71115
+      mobility: 131.15561
+      capacity: 91.59361
+      firePower: 15.525
+      bulletSpeed: 10
+      fireRate: 6
+      sustainedDps: 46.575
       rammingPower: 5.5
-      healthCap: 199.87952
-      healthRegen: 7.1385536
-      energyCap: 476.84616
-      energyRegen: 41.700108
-      moveSpeed: 12.560764
-      turnSpeed: 69.22687
-      gemCap: 57.800003
-      peopleCap: 39
-    componentMass: 16.38861
+      healthCap: 248.06767
+      healthRegen: 8.859562
+      energyCap: 399.3516
+      energyRegen: 59.359547
+      moveSpeed: 14.273831
+      turnSpeed: 106.66475
+      gemCap: 43.499687
+      peopleCap: 48.09392
+    componentMass: 10.12263
     lockedInUpgradeTree: 0
   - chassisId: StarForce_05
     upgradeTreeShipName: Star Force 11
@@ -1851,14 +1771,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: e3faa86b5ad8fc1469281f21a1b5bb5a, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 380.53024
-    powerScoreAtMaxLevel: 1706.0284
+    powerScore: 400.58536
+    powerScoreAtMaxLevel: 1744.0836
     powerScoreBreakdown:
       offense: 79.26299
       defense: 53.432816
       energy: 228.65385
       mobility: 20.153831
-      capacity: 36.202602
+      capacity: 56.25772
       firePower: 20.901476
       bulletSpeed: 10
       fireRate: 22.861515
@@ -1870,14 +1790,14 @@ MonoBehaviour:
       energyRegen: 6.749047
       moveSpeed: 3.7538304
       turnSpeed: 14
-      gemCap: 19.411583
-      peopleCap: 16.79102
+      gemCap: 26.211584
+      peopleCap: 30.046139
     powerScoreBreakdownAtShipLevel:
       offense: 105.98418
       defense: 207.9062
       energy: 560.5088
       mobility: 20.972017
-      capacity: 82.43503
+      capacity: 110.49014
       firePower: 37.622658
       bulletSpeed: 10
       fireRate: 22.861515
@@ -1889,89 +1809,89 @@ MonoBehaviour:
       energyRegen: 20.494574
       moveSpeed: 4.572017
       turnSpeed: 14
-      gemCap: 48.52089
-      peopleCap: 33.91414
+      gemCap: 55.32089
+      peopleCap: 55.169254
     componentMass: 13.749235
     lockedInUpgradeTree: 0
-  - chassisId: StarForce_06
-    upgradeTreeShipName: Star Force 16
-    prefab: {fileID: 2570618785341778727, guid: a6bf04d28a94f1e4cb787ba1af11a9e4, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 65e201415a528af49bb74ffdb092a291, type: 3}
+  - chassisId: StarForce_07
+    upgradeTreeShipName: Star Force 19
+    prefab: {fileID: 1513925704109281903, guid: 6cef86234debb2c479eb2358c05e8611, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: f36c7d711702e074ab3fb224da8416ef, type: 3}
     teamMenuPreviewSprites:
     - variantName: Red
       team: 1
-      sprite: {fileID: 21300000, guid: 65e201415a528af49bb74ffdb092a291, type: 3}
+      sprite: {fileID: 21300000, guid: f36c7d711702e074ab3fb224da8416ef, type: 3}
     - variantName: Blue
       team: 2
-      sprite: {fileID: 21300000, guid: 690f8fa2f4647c84d9a4c0ff48ce9290, type: 3}
+      sprite: {fileID: 21300000, guid: 0192c39560a94784082e9e8ad556f61d, type: 3}
     - variantName: Green
       team: 3
-      sprite: {fileID: 21300000, guid: a27c102f36622b04fb9698b3fb03052b, type: 3}
+      sprite: {fileID: 21300000, guid: 7827c59047d958541a93d1d7c9e169c8, type: 3}
     - variantName: Yellow
       team: 4
-      sprite: {fileID: 21300000, guid: efe72ab29fd0fbc419a3bdb2bbbf33cb, type: 3}
+      sprite: {fileID: 21300000, guid: bfc1ce5eded204042a300315da0498ea, type: 3}
     - variantName: Purple
       team: 5
-      sprite: {fileID: 21300000, guid: 54b297408c1e94a4e8781b251f7cbcce, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 65e201415a528af49bb74ffdb092a291, type: 3}
+      sprite: {fileID: 21300000, guid: 815f0823da0e42241b7d6b8eae728eea, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: f36c7d711702e074ab3fb224da8416ef, type: 3}
     teamTheatricalMenuPreviewSprites:
     - variantName: Red
       team: 1
-      sprite: {fileID: 21300000, guid: 65e201415a528af49bb74ffdb092a291, type: 3}
+      sprite: {fileID: 21300000, guid: f36c7d711702e074ab3fb224da8416ef, type: 3}
     - variantName: Blue
       team: 2
-      sprite: {fileID: 21300000, guid: 690f8fa2f4647c84d9a4c0ff48ce9290, type: 3}
+      sprite: {fileID: 21300000, guid: 0192c39560a94784082e9e8ad556f61d, type: 3}
     - variantName: Green
       team: 3
-      sprite: {fileID: 21300000, guid: a27c102f36622b04fb9698b3fb03052b, type: 3}
+      sprite: {fileID: 21300000, guid: 7827c59047d958541a93d1d7c9e169c8, type: 3}
     - variantName: Yellow
       team: 4
-      sprite: {fileID: 21300000, guid: efe72ab29fd0fbc419a3bdb2bbbf33cb, type: 3}
+      sprite: {fileID: 21300000, guid: bfc1ce5eded204042a300315da0498ea, type: 3}
     - variantName: Purple
       team: 5
-      sprite: {fileID: 21300000, guid: 54b297408c1e94a4e8781b251f7cbcce, type: 3}
+      sprite: {fileID: 21300000, guid: 815f0823da0e42241b7d6b8eae728eea, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 438.12674
-    powerScoreAtMaxLevel: 2004.1417
+    powerScore: 434.38354
+    powerScoreAtMaxLevel: 1779.4512
     powerScoreBreakdown:
-      offense: 64.55153
-      defense: 52.602036
-      energy: 216.27907
-      mobility: 91.21281
-      capacity: 35.668007
-      firePower: 15.308017
+      offense: 64.75
+      defense: 55.956024
+      energy: 211.53114
+      mobility: 58.538963
+      capacity: 63.6
+      firePower: 17.25
       bulletSpeed: 10
-      fireRate: 13.743508
+      fireRate: 12
       sustainedDps: 51.75
       rammingPower: 3.5
-      healthCap: 50.788174
-      healthRegen: 1.8138635
-      energyCap: 199.25282
-      energyRegen: 17.02624
-      moveSpeed: 8.844799
-      turnSpeed: 72.8
-      gemCap: 19.043798
-      peopleCap: 16.624208
+      healthCap: 54.026505
+      healthRegen: 1.9295181
+      energyCap: 195.22308
+      energyRegen: 16.308056
+      moveSpeed: 11.049334
+      turnSpeed: 41.536118
+      gemCap: 30.6
+      peopleCap: 33
     powerScoreBreakdownAtShipLevel:
-      offense: 86.79794
-      defense: 199.48677
-      energy: 585.4336
-      mobility: 181.61601
-      capacity: 82.23874
-      firePower: 27.554432
+      offense: 88.55
+      defense: 207.01807
+      energy: 518.54626
+      mobility: 89.40259
+      capacity: 125.6
+      firePower: 31.05
       bulletSpeed: 10
-      fireRate: 13.743508
+      fireRate: 12
       sustainedDps: 93.15
       rammingPower: 5.5
-      healthCap: 192.60791
-      healthRegen: 6.878854
-      energyCap: 531.2592
-      energyRegen: 54.174397
-      moveSpeed: 11.056
-      turnSpeed: 156.00002
-      gemCap: 48.366116
-      peopleCap: 33.872627
-    componentMass: 20.25368
+      healthCap: 199.87952
+      healthRegen: 7.1385536
+      energyCap: 476.84616
+      energyRegen: 41.700108
+      moveSpeed: 12.560764
+      turnSpeed: 69.22687
+      gemCap: 64.6
+      peopleCap: 61
+    componentMass: 16.38861
     lockedInUpgradeTree: 0
   - chassisId: StarForce_19
     upgradeTreeShipName: Star Force 9
@@ -2011,14 +1931,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 45c84d9b7da99d6459927df0166d45ad, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 384.57187
-    powerScoreAtMaxLevel: 1835.5638
+    powerScore: 404.9733
+    powerScoreAtMaxLevel: 1873.9652
     powerScoreBreakdown:
       offense: 50.125
       defense: 70.99549
       energy: 174.23508
       mobility: 70.85965
-      capacity: 39.53601
+      capacity: 59.937447
       firePower: 8.625
       bulletSpeed: 10
       fireRate: 6
@@ -2030,14 +1950,14 @@ MonoBehaviour:
       energyRegen: 20.94983
       moveSpeed: 12.060139
       turnSpeed: 51.870148
-      gemCap: 21.619421
-      peopleCap: 17.916588
+      gemCap: 28.419422
+      peopleCap: 31.518026
     powerScoreBreakdownAtShipLevel:
       offense: 67.025
       defense: 291.2001
       energy: 467.54135
       mobility: 131.69153
-      capacity: 90.44406
+      capacity: 118.845505
       firePower: 15.525
       bulletSpeed: 10
       fireRate: 6
@@ -2049,8 +1969,8 @@ MonoBehaviour:
       energyRegen: 61.077847
       moveSpeed: 14.80975
       turnSpeed: 106.66475
-      gemCap: 53.672638
-      peopleCap: 36.77142
+      gemCap: 60.47264
+      peopleCap: 58.37286
     componentMass: 10.810431
     lockedInUpgradeTree: 0
   - chassisId: StarForce_03
@@ -2090,15 +2010,15 @@ MonoBehaviour:
     - variantName: Purple
       team: 5
       sprite: {fileID: 21300000, guid: dbb84e5d500870a4f89d32fc82ede2b7, type: 3}
-    minHomePlanetLevel: 6
-    powerScore: 396.62994
-    powerScoreAtMaxLevel: 1987.8984
+    minHomePlanetLevel: 5
+    powerScore: 418.81757
+    powerScoreAtMaxLevel: 1756.8555
     powerScoreBreakdown:
       offense: 79.875
       defense: 47.99821
       energy: 240.25922
       mobility: 22.724
-      capacity: 40.01931
+      capacity: 62.20694
       firePower: 25.875
       bulletSpeed: 10
       fireRate: 18
@@ -2110,28 +2030,108 @@ MonoBehaviour:
       energyRegen: 9.1392
       moveSpeed: 6.3240004
       turnSpeed: 14
-      gemCap: 21.856413
-      peopleCap: 18.162899
+      gemCap: 28.656412
+      peopleCap: 33.55053
     powerScoreBreakdownAtShipLevel:
-      offense: 120.75
-      defense: 213.42976
-      energy: 654.8352
-      mobility: 23.744
-      capacity: 112.75235
-      firePower: 51.75
+      offense: 112.575
+      defense: 180.34344
+      energy: 571.92004
+      mobility: 23.54
+      capacity: 136.39337
+      firePower: 46.575
       bulletSpeed: 10
       fireRate: 18
-      sustainedDps: 155.25
-      rammingPower: 9
-      healthCap: 206.07011
-      healthRegen: 7.3596463
-      energyCap: 628.56
-      energyRegen: 26.2752
-      moveSpeed: 7.344
+      sustainedDps: 139.72499
+      rammingPower: 8
+      healthCap: 174.12471
+      healthRegen: 6.218739
+      energyCap: 549.072
+      energyRegen: 22.848
+      moveSpeed: 7.1400003
       turnSpeed: 14
-      gemCap: 67.65129
-      peopleCap: 45.10106
+      gemCap: 65.29232
+      peopleCap: 71.10106
     componentMass: 14.267958
+    lockedInUpgradeTree: 0
+  - chassisId: StarForce_06
+    upgradeTreeShipName: Star Force 16
+    prefab: {fileID: 2570618785341778727, guid: a6bf04d28a94f1e4cb787ba1af11a9e4, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 65e201415a528af49bb74ffdb092a291, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 65e201415a528af49bb74ffdb092a291, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 690f8fa2f4647c84d9a4c0ff48ce9290, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: a27c102f36622b04fb9698b3fb03052b, type: 3}
+    - variantName: Yellow
+      team: 4
+      sprite: {fileID: 21300000, guid: efe72ab29fd0fbc419a3bdb2bbbf33cb, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 54b297408c1e94a4e8781b251f7cbcce, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 65e201415a528af49bb74ffdb092a291, type: 3}
+    teamTheatricalMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 65e201415a528af49bb74ffdb092a291, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 690f8fa2f4647c84d9a4c0ff48ce9290, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: a27c102f36622b04fb9698b3fb03052b, type: 3}
+    - variantName: Yellow
+      team: 4
+      sprite: {fileID: 21300000, guid: efe72ab29fd0fbc419a3bdb2bbbf33cb, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 54b297408c1e94a4e8781b251f7cbcce, type: 3}
+    minHomePlanetLevel: 6
+    powerScore: 458.0828
+    powerScoreAtMaxLevel: 2391.8083
+    powerScoreBreakdown:
+      offense: 64.55153
+      defense: 52.602036
+      energy: 216.27907
+      mobility: 91.21281
+      capacity: 55.62406
+      firePower: 15.308017
+      bulletSpeed: 10
+      fireRate: 13.743508
+      sustainedDps: 51.75
+      rammingPower: 3.5
+      healthCap: 50.788174
+      healthRegen: 1.8138635
+      energyCap: 199.25282
+      energyRegen: 17.02624
+      moveSpeed: 8.844799
+      turnSpeed: 72.8
+      gemCap: 25.8438
+      peopleCap: 29.78026
+    powerScoreBreakdownAtShipLevel:
+      offense: 92.35954
+      defense: 236.20795
+      energy: 677.7222
+      mobility: 204.2168
+      capacity: 123.83747
+      firePower: 30.616034
+      bulletSpeed: 10
+      fireRate: 13.743508
+      sustainedDps: 103.5
+      rammingPower: 6
+      healthCap: 228.06285
+      healthRegen: 8.145102
+      energyCap: 614.2608
+      energyRegen: 63.461437
+      moveSpeed: 11.608799
+      turnSpeed: 176.8
+      gemCap: 62.49669
+      peopleCap: 61.340782
+    componentMass: 20.25368
     lockedInUpgradeTree: 0
   - chassisId: StarForce_16
     upgradeTreeShipName: Star Force 3
@@ -2171,14 +2171,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: d34db99de7811e247ab34a4008b95d8a, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 387.0546
-    powerScoreAtMaxLevel: 2167.851
+    powerScore: 408.72522
+    powerScoreAtMaxLevel: 2211.5217
     powerScoreBreakdown:
       offense: 50.012054
       defense: 88.643524
       energy: 129.902
       mobility: 83.53503
-      capacity: 57.933357
+      capacity: 79.60399
       firePower: 6.3073764
       bulletSpeed: 10
       fireRate: 8.2046795
@@ -2190,14 +2190,14 @@ MonoBehaviour:
       energyRegen: 12.974064
       moveSpeed: 8.97759
       turnSpeed: 65.723114
-      gemCap: 33.6025
-      peopleCap: 24.330858
+      gemCap: 40.402496
+      peopleCap: 39.201492
     powerScoreBreakdownAtShipLevel:
       offense: 68.819435
       defense: 431.43573
       energy: 366.48425
       mobility: 174.09584
-      capacity: 173.89285
+      capacity: 205.56348
       firePower: 12.614753
       bulletSpeed: 10
       fireRate: 8.2046795
@@ -2209,89 +2209,9 @@ MonoBehaviour:
       energyRegen: 37.300434
       moveSpeed: 10.425588
       turnSpeed: 149.79181
-      gemCap: 106.61403
-      peopleCap: 67.27882
+      gemCap: 113.41403
+      peopleCap: 92.14945
     componentMass: 20.570522
-    lockedInUpgradeTree: 0
-  - chassisId: StarForce_20
-    upgradeTreeShipName: Star Force 14
-    prefab: {fileID: 85410636861698820, guid: 8e09d86ab2a12f343ac4291a87779b04, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 408b9a6e3e016b74bb406a56a1c81d01, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: 408b9a6e3e016b74bb406a56a1c81d01, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: 0190c1826704a984582de2b2c0e5571c, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: 9c862a0ae75f24442ac97a729412110c, type: 3}
-    - variantName: Yellow
-      team: 4
-      sprite: {fileID: 21300000, guid: 8fe82e1d02a51764a880b94b372e90a9, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: 512830cea482320448f6378d2d732d9f, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 408b9a6e3e016b74bb406a56a1c81d01, type: 3}
-    teamTheatricalMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: 408b9a6e3e016b74bb406a56a1c81d01, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: 0190c1826704a984582de2b2c0e5571c, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: 9c862a0ae75f24442ac97a729412110c, type: 3}
-    - variantName: Yellow
-      team: 4
-      sprite: {fileID: 21300000, guid: 8fe82e1d02a51764a880b94b372e90a9, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: 512830cea482320448f6378d2d732d9f, type: 3}
-    minHomePlanetLevel: 6
-    powerScore: 461.1485
-    powerScoreAtMaxLevel: 3192.0977
-    powerScoreBreakdown:
-      offense: 50.04666
-      defense: 98.49863
-      energy: 216.31787
-      mobility: 85.119865
-      capacity: 33.088436
-      firePower: 8.346332
-      bulletSpeed: 10
-      fireRate: 6.200329
-      sustainedDps: 25.875002
-      rammingPower: 3.5
-      healthCap: 95.10212
-      healthRegen: 3.3965054
-      energyCap: 187.19829
-      energyRegen: 29.11959
-      moveSpeed: 11.79979
-      turnSpeed: 65.568794
-      gemCap: 17.388483
-      peopleCap: 15.699953
-    powerScoreBreakdownAtShipLevel:
-      offense: 70.89299
-      defense: 520.14935
-      energy: 815.5121
-      mobility: 236.82547
-      capacity: 81.495316
-      firePower: 16.692663
-      bulletSpeed: 10
-      fireRate: 6.200329
-      sustainedDps: 51.750004
-      rammingPower: 6
-      healthCap: 502.2132
-      healthRegen: 17.936176
-      energyCap: 691.19366
-      energyRegen: 124.31845
-      moveSpeed: 18.29971
-      turnSpeed: 202.5553
-      gemCap: 47.86689
-      peopleCap: 33.62843
-    componentMass: 15.426006
     lockedInUpgradeTree: 0
   - chassisId: StarForce_18
     upgradeTreeShipName: Star Force 8
@@ -2331,14 +2251,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 623588b7aa9539b4fbafa424d6a56817, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 415.1364
-    powerScoreAtMaxLevel: 3138.3005
+    powerScore: 435.22174
+    powerScoreAtMaxLevel: 3180.3857
     powerScoreBreakdown:
       offense: 21.95
       defense: 112.734955
       energy: 157.93744
       mobility: 85.750755
-      capacity: 44.114555
+      capacity: 64.199875
       firePower: 3.4499998
       bulletSpeed: 12
       fireRate: 3
@@ -2350,14 +2270,14 @@ MonoBehaviour:
       energyRegen: 30.35923
       moveSpeed: 12.43068
       turnSpeed: 65.568794
-      gemCap: 24.402685
-      peopleCap: 19.71187
+      gemCap: 31.20269
+      peopleCap: 32.99718
     powerScoreBreakdownAtShipLevel:
       offense: 24.45
       defense: 601.84534
       energy: 666.48663
       mobility: 237.7054
-      capacity: 140.52136
+      capacity: 170.60666
       firePower: 3.4499998
       bulletSpeed: 12
       fireRate: 3
@@ -2369,9 +2289,89 @@ MonoBehaviour:
       energyRegen: 128.9671
       moveSpeed: 19.179632
       turnSpeed: 202.5553
-      gemCap: 85.10327
-      peopleCap: 55.418095
+      gemCap: 91.90327
+      peopleCap: 78.7034
     componentMass: 14.976198
+    lockedInUpgradeTree: 0
+  - chassisId: StarForce_20
+    upgradeTreeShipName: Star Force 14
+    prefab: {fileID: 85410636861698820, guid: 8e09d86ab2a12f343ac4291a87779b04, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 408b9a6e3e016b74bb406a56a1c81d01, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 408b9a6e3e016b74bb406a56a1c81d01, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 0190c1826704a984582de2b2c0e5571c, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 9c862a0ae75f24442ac97a729412110c, type: 3}
+    - variantName: Yellow
+      team: 4
+      sprite: {fileID: 21300000, guid: 8fe82e1d02a51764a880b94b372e90a9, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 512830cea482320448f6378d2d732d9f, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 408b9a6e3e016b74bb406a56a1c81d01, type: 3}
+    teamTheatricalMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 408b9a6e3e016b74bb406a56a1c81d01, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 0190c1826704a984582de2b2c0e5571c, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 9c862a0ae75f24442ac97a729412110c, type: 3}
+    - variantName: Yellow
+      team: 4
+      sprite: {fileID: 21300000, guid: 8fe82e1d02a51764a880b94b372e90a9, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 512830cea482320448f6378d2d732d9f, type: 3}
+    minHomePlanetLevel: 6
+    powerScore: 481.00565
+    powerScoreAtMaxLevel: 3233.9548
+    powerScoreBreakdown:
+      offense: 50.04666
+      defense: 98.49863
+      energy: 216.31787
+      mobility: 85.119865
+      capacity: 52.945568
+      firePower: 8.346332
+      bulletSpeed: 10
+      fireRate: 6.200329
+      sustainedDps: 25.875002
+      rammingPower: 3.5
+      healthCap: 95.10212
+      healthRegen: 3.3965054
+      energyCap: 187.19829
+      energyRegen: 29.11959
+      moveSpeed: 11.79979
+      turnSpeed: 65.568794
+      gemCap: 24.188484
+      peopleCap: 28.757084
+    powerScoreBreakdownAtShipLevel:
+      offense: 70.89299
+      defense: 520.14935
+      energy: 815.5121
+      mobility: 236.82547
+      capacity: 111.352455
+      firePower: 16.692663
+      bulletSpeed: 10
+      fireRate: 6.200329
+      sustainedDps: 51.750004
+      rammingPower: 6
+      healthCap: 502.2132
+      healthRegen: 17.936176
+      energyCap: 691.19366
+      energyRegen: 124.31845
+      moveSpeed: 18.29971
+      turnSpeed: 202.5553
+      gemCap: 54.666893
+      peopleCap: 56.685562
+    componentMass: 15.426006
     lockedInUpgradeTree: 0
   - chassisId: StarForce_17
     upgradeTreeShipName: Star Force 2
@@ -2411,14 +2411,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 8557b5dbff333e14f8cd5cb85c760ea7, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 546.4048
-    powerScoreAtMaxLevel: 3599.0444
+    powerScore: 567.9544
+    powerScoreAtMaxLevel: 3642.5942
     powerScoreBreakdown:
       offense: 64.75
       defense: 115.8193
       energy: 243.22667
       mobility: 81.39607
-      capacity: 54.23335
+      capacity: 75.78299
       firePower: 17.25
       bulletSpeed: 10
       fireRate: 12
@@ -2430,14 +2430,14 @@ MonoBehaviour:
       energyRegen: 21.802668
       moveSpeed: 8.076
       turnSpeed: 65.568794
-      gemCap: 31.234774
-      peopleCap: 22.998575
+      gemCap: 38.034775
+      peopleCap: 37.748215
     powerScoreBreakdownAtShipLevel:
       offense: 94.5
       defense: 599.85974
       energy: 847.984
       mobility: 231.63177
-      capacity: 155.47371
+      capacity: 187.02336
       firePower: 34.5
       bulletSpeed: 10
       fireRate: 12
@@ -2449,8 +2449,8 @@ MonoBehaviour:
       energyRegen: 96.88
       moveSpeed: 13.106002
       turnSpeed: 202.5553
-      gemCap: 94.97871
-      peopleCap: 60.495007
+      gemCap: 101.77871
+      peopleCap: 85.24465
     componentMass: 16.347391
     lockedInUpgradeTree: 0
   teamMaterials:

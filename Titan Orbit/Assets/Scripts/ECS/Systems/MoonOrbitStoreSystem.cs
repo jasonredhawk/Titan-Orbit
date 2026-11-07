@@ -585,7 +585,6 @@ namespace TitanOrbit.ECS
                         prevFamily = existingMega.PreviousFamilyIndex;
                         prevLevel = math.max(1, existingMega.PreviousLevel);
                         prevBranch = math.max(0, existingMega.PreviousBranch);
-                        MegaShipPlanetLogic.FreeSlot(em, existingMega.StorePlanetId, existingMega.MegaSlotIndex);
                     }
                     else
                     {
@@ -606,6 +605,18 @@ namespace TitanOrbit.ECS
                         PreviousBranch = prevBranch,
                     });
                 }
+
+                // --- Release every Titan this player is not flying now ---
+                // [TITAN-ORBIT] TryOccupySlot above claimed the new card. The old card
+                // used to stay "in service" when this hull's MegaShipState was not the
+                // ghost that owned the previous bay (newer ship, or IsMega was still
+                // false). One player, one bay: clear every other slot with this id,
+                // including the bay stored on an older hull.
+                // Runs after the claim so the new bay is the one we keep.
+                MegaShipPlanetLogic.FreeSlotsOccupiedByExcept(
+                    em, networkId, storePlanetId, targetBranchIndex);
+                MegaShipPlanetLogic.ClearSiblingMegaHulls(
+                    em, networkId, shipEntity, storePlanetId, targetBranchIndex);
             }
             else
             {

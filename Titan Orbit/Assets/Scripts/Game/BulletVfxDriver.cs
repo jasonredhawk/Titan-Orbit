@@ -13,6 +13,7 @@ using TitanOrbit.Simulation;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
+using Unity.Transforms;
 using UnityEngine;
 
 namespace TitanOrbit.Game
@@ -139,7 +140,7 @@ namespace TitanOrbit.Game
             /// <summary>How many visuals this shot draws, including <see cref="Go"/>. 1 = single bullet.</summary>
             public int SplitVisualCount;
             /// <summary>
-            /// Root scale for every shell before that cannon's hierarchy scale.
+            /// Root scale for every shell before the Titan hull shrink.
             /// Always the full shot size (fire power ÷ the bank reference). Cannon count does not divide it.
             /// </summary>
             public float SplitVisualScale;
@@ -149,10 +150,12 @@ namespace TitanOrbit.Game
             /// </summary>
             public Vector3[] SplitLocalOffsets;
             /// <summary>
-            /// Local-scale chain of each turret mesh, from that mesh up to the ship root.
-            /// Null keeps 1, the same size a regular ship bullet uses.
+            /// Titan gun / projectile-cannon shrink. Same ratio as the hull:
+            /// <c>LocalTransform.Scale ÷ tier-7</c> (catalog family scale, often 0.2).
+            /// 1 on regular ships, missiles, and snipers. Tracers are not children of the
+            /// ship, so this is applied by hand or the shell stays full world size.
             /// </summary>
-            public float[] SplitMeshScales;
+            public float HullFamilyScale;
         }
 
         /// <summary>
@@ -965,6 +968,8 @@ namespace TitanOrbit.Game
                     var team = (TeamId)hit.OwnerTeam;
                     int bankIndex = math.max(0, hit.BankIndex);
                     float scaleMul = hit.ScaleMultiplier > 0f ? hit.ScaleMultiplier : 1f;
+                    scaleMul *= ResolveTitanGunFamilyScale(
+                        hit.OwnerNetworkId, hit.MountIndex, bankIndex, 0);
                     BulletImpactAttach.PlayAtLogicalPoint(
                         hit.HitPosition, _bank, bankIndex, team, hit.Damage, scaleMul);
                 }
@@ -1361,10 +1366,12 @@ namespace TitanOrbit.Game
                 : Quaternion.identity;
 
             // Full shot size on every shell. Extra shells exist only when this turret has more cannons.
+            // Family scale shrinks Titan guns with the hull. It is not the cannon mesh's localScale.
+            float familyScale = ResolveTitanGunFamilyScale(
+                req.OwnerNetworkId, req.MountIndex, bankIndex, req.Homing);
             float drawScale = scaleMul;
             int splitCount = 1;
             Vector3[] muzzleLocalOffsets = null;
-            float[] muzzleMeshScales = null;
             if (TryResolveTurretMuzzles(
                     in req, spawnDisplay, rot, scaleMul,
                     out int turretCount, out float turretScale, out Vector3[] turretOffsets))
@@ -1372,14 +1379,14 @@ namespace TitanOrbit.Game
                 drawScale = turretScale;
                 splitCount = turretCount;
                 muzzleLocalOffsets = turretOffsets;
-                muzzleMeshScales = s_TurretShellScales;
-                s_TurretShellScales = null;
             }
+
+            float presentedScale = drawScale * familyScale;
 
             // --- Muzzle flash at fire origin ---
             // Every shot plays it, including nose-touch. Skipping when a 0.5u probe
             // hit nearby geometry dropped the flash on a lot of barrels.
-            float cameraScale = ResolveMegaCameraVisualScale();
+            // Same presented size as the shell. Camera height does not grow it.
             float pianoLive = req.FirePowerLive > 0.01f ? req.FirePowerLive : req.Damage;
             BulletVisualFactory.PlayMuzzleVfx(
                 spawnDisplay,
@@ -1387,7 +1394,7 @@ namespace TitanOrbit.Game
                 _bank,
                 bankIndex,
                 team,
-                drawScale * cameraScale,
+                presentedScale,
                 pianoLive,
                 req.FirePowerBase,
                 req.FirePowerPerExtra);
@@ -1432,8 +1439,7 @@ namespace TitanOrbit.Game
             GameObject visual = go.transform.childCount > 0
                 ? go.transform.GetChild(0).gameObject
                 : go;
-            float visualScale = BulletVisualFactory.GetBulletVisualScale(_bank, drawScale, bankIndex)
-                                * cameraScale;
+            float visualScale = BulletVisualFactory.GetBulletVisualScale(_bank, presentedScale, bankIndex);
             if (projectilePrefab == null)
                 BulletVisualFactory.ApplyColorToVisual(visual, BulletVisualFactory.GetTeamBulletColor(team));
             // Root scale is this shell's share of fire power. Bullet type does not change it.
@@ -1490,10 +1496,11 @@ namespace TitanOrbit.Game
                 Trail = go.GetComponentInChildren<TrailRenderer>(true),
                 SplitExtras = splitExtras,
                 SplitVisualCount = splitCount,
-                // Hit sweep keeps ScaleMultiplier (the full shot). Each shell draws that same size.
+                // Hit sweep keeps ScaleMultiplier (the full shot). Each shell draws that size
+                // times HullFamilyScale. Cannon count does not divide it.
                 SplitVisualScale = drawScale,
                 SplitLocalOffsets = muzzleLocalOffsets,
-                SplitMeshScales = muzzleMeshScales,
+                HullFamilyScale = familyScale,
             };
 
             if (splitCount > 1 || muzzleLocalOffsets != null)
@@ -1579,8 +1586,9 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Root scale is this shell's share of fire power. A single bullet uses the full shot.
-        /// Bullet type does not change it. Split siblings share that same scale.
+        /// Root scale is this shell's fire power, times the Titan family shrink when this
+        /// shot is a Titan gun. A single bullet uses the full shot. Bullet type does not
+        /// change it. Split siblings share that same scale. Camera zoom does not.
         /// </summary>
         void ApplyTracerRootScale(in Tracer t)
         {
@@ -1589,53 +1597,26 @@ namespace TitanOrbit.Game
             float scaleMul = t.SplitVisualScale > 0f
                 ? t.SplitVisualScale
                 : (t.ScaleMultiplier > 0f ? t.ScaleMultiplier : 1f);
+            float family = t.HullFamilyScale > 0.01f ? t.HullFamilyScale : 1f;
             int bankIndex = math.max(0, t.BankIndex);
-            float visual = BulletVisualFactory.GetBulletVisualScale(_bank, scaleMul, bankIndex)
-                * ResolveMegaCameraVisualScale();
-            ApplyShellScale(t.Go, visual, MeshScaleAt(in t, 0));
+            float visual = BulletVisualFactory.GetBulletVisualScale(_bank, scaleMul * family, bankIndex);
+            ApplyShellScale(t.Go, visual);
             if (t.SplitExtras == null)
                 return;
             for (int i = 0; i < t.SplitExtras.Length; i++)
             {
                 if (t.SplitExtras[i] != null)
-                    ApplyShellScale(t.SplitExtras[i], visual, MeshScaleAt(in t, i + 1));
+                    ApplyShellScale(t.SplitExtras[i], visual);
             }
         }
 
-        /// <summary>
-        /// Regular bullets use 1. A turret shell multiplies by the firing mesh's local-scale
-        /// chain up to the ship root — the presentation scale on the root is already in the
-        /// world position, so it is not applied again here.
-        /// </summary>
-        static float MeshScaleAt(in Tracer t, int index)
-        {
-            if (t.SplitMeshScales == null || index < 0 || index >= t.SplitMeshScales.Length)
-                return 1f;
-            float scale = t.SplitMeshScales[index];
-            return scale > 0.01f ? scale : 1f;
-        }
-
-        static void ApplyShellScale(GameObject shell, float visual, float meshScale)
+        static void ApplyShellScale(GameObject shell, float visual)
         {
             if (shell == null)
                 return;
-            Vector3 target = Vector3.one * math.max(0.05f, visual * meshScale);
+            Vector3 target = Vector3.one * math.max(0.05f, visual);
             if ((shell.transform.localScale - target).sqrMagnitude > 0.0001f)
                 shell.transform.localScale = target;
-        }
-
-        /// <summary>
-        /// Grow tracers with MEGA camera height so they stay readable when the lens pulls back.
-        /// Regular L7 height (~43) stays near 1×; taller MEGA framing scales up to 4×.
-        /// </summary>
-        static float ResolveMegaCameraVisualScale()
-        {
-            var follow = CameraFollowEcs.Instance;
-            if (follow == null || follow.MegaHullTopDisplayY <= 0.01f)
-                return 1f;
-            float height = follow.CurrentHeight;
-            const float referenceHeight = 25f;
-            return math.clamp(height / referenceHeight, 1f, 4f);
         }
 
         /// <summary>
@@ -1919,7 +1900,8 @@ namespace TitanOrbit.Game
 
             var team = (TeamId)t.OwnerTeam;
             int bankIndex = math.max(0, t.BankIndex);
-            float scaleMul = t.ScaleMultiplier > 0f ? t.ScaleMultiplier : 1f;
+            float family = t.HullFamilyScale > 0.01f ? t.HullFamilyScale : 1f;
+            float scaleMul = (t.ScaleMultiplier > 0f ? t.ScaleMultiplier : 1f) * family;
 
             // --- Surface + follow parent (same tile as the drawn body) ---
             Transform attachParent = null;
@@ -2131,13 +2113,13 @@ namespace TitanOrbit.Game
         }
 
         static readonly List<Vector3> s_TurretMuzzleScratch = new List<Vector3>(8);
-        static readonly List<float> s_TurretMuzzleScales = new List<float>(8);
         static readonly List<Transform> s_CannonScratch = new List<Transform>(8);
 
         /// <summary>
         /// One shell per real cannon mesh under this turret. Named gun / cannon / bullet
-        /// objects are containers; the shell sits on one mesh inside and keeps the full
-        /// shot size times that mesh's hierarchy scale. Still one server bullet.
+        /// objects are containers; the shell sits on one mesh inside. Size is the shot's
+        /// fire power times the hull family scale, not this mesh's localScale.
+        /// Still one server bullet.
         /// </summary>
         static bool TryResolveTurretMuzzles(
             in BulletVfxBridge.SpawnRequest req,
@@ -2160,7 +2142,7 @@ namespace TitanOrbit.Game
                 return false;
             if (!IsTitanShooter(req.OwnerNetworkId))
                 return false;
-            if (!TryCollectTurretMuzzlePositions(req.OwnerNetworkId, req.MountIndex, s_TurretMuzzleScratch, s_TurretMuzzleScales))
+            if (!TryCollectTurretMuzzlePositions(req.OwnerNetworkId, req.MountIndex, s_TurretMuzzleScratch))
                 return false;
 
             int count = s_TurretMuzzleScratch.Count;
@@ -2185,20 +2167,12 @@ namespace TitanOrbit.Game
                 Vector3 swapPoint = s_TurretMuzzleScratch[0];
                 s_TurretMuzzleScratch[0] = s_TurretMuzzleScratch[lead];
                 s_TurretMuzzleScratch[lead] = swapPoint;
-                float swapScale = s_TurretMuzzleScales[0];
-                s_TurretMuzzleScales[0] = s_TurretMuzzleScales[lead];
-                s_TurretMuzzleScales[lead] = swapScale;
             }
 
             localOffsets = new Vector3[count];
-            // Every cannon draws the full shot. Its own hierarchy scale is applied later.
-            s_TurretShellScales = new float[count];
             Quaternion inv = Quaternion.Inverse(shotRotation);
             for (int i = 0; i < count; i++)
-            {
                 localOffsets[i] = inv * (s_TurretMuzzleScratch[i] - spawnDisplay);
-                s_TurretShellScales[i] = s_TurretMuzzleScales[i];
-            }
 
             spawnCount = count;
             eachScale = fullScale;
@@ -2254,7 +2228,7 @@ namespace TitanOrbit.Game
                 forward.Normalize();
 
             var best = new MeshPick();
-            WalkMeshes(turret, proxy.transform, 0, turret.position, forward, ref best);
+            WalkMeshes(turret, 0, turret.position, forward, ref best);
             if (!best.Found)
                 return false;
 
@@ -2263,16 +2237,12 @@ namespace TitanOrbit.Game
             return true;
         }
 
-        /// <summary>Per-shell world scale captured with the muzzle list. Read once in CreateTracer.</summary>
-        static float[] s_TurretShellScales;
-
         /// <summary>
-        /// One world point and world scale per cannon. Empty named objects are skipped.
+        /// One world point per cannon. Empty named objects are skipped.
         /// </summary>
-        static bool TryCollectTurretMuzzlePositions(int ownerNetworkId, int mountIndex, List<Vector3> into, List<float> scales)
+        static bool TryCollectTurretMuzzlePositions(int ownerNetworkId, int mountIndex, List<Vector3> into)
         {
             into.Clear();
-            scales.Clear();
             var world = EcsGameBridge.ClientWorld;
             if (world == null || !world.IsCreated)
                 return false;
@@ -2300,7 +2270,7 @@ namespace TitanOrbit.Game
             if (turret == null)
                 return false;
 
-            EmitCannonMuzzles(turret, proxy.transform, into, scales);
+            EmitCannonMuzzles(turret, into);
             return into.Count > 0;
         }
 
@@ -2339,16 +2309,15 @@ namespace TitanOrbit.Game
         /// the walk keeps going, and the shell is placed on a single mesh inside that cannon.
         /// Four mesh parts on one cannon still produce one shell.
         /// </summary>
-        static void EmitCannonMuzzles(Transform turret, Transform hull, List<Vector3> into, List<float> scales)
+        static void EmitCannonMuzzles(Transform turret, List<Vector3> into)
         {
             s_CannonScratch.Clear();
             CollectLeafCannons(turret, true, s_CannonScratch);
             for (int i = 0; i < s_CannonScratch.Count; i++)
             {
-                if (!TryPickFiringMesh(s_CannonScratch[i], hull, out Vector3 point, out float meshScale))
+                if (!TryPickFiringMesh(s_CannonScratch[i], out Vector3 point))
                     continue;
                 into.Add(point);
-                scales.Add(meshScale);
             }
         }
 
@@ -2382,14 +2351,12 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// One mesh under <paramref name="cannon"/>. Empty transforms are ignored.
-        /// A mesh ends the walk. Several meshes under one cannon still yield one shell:
-        /// the one furthest along the cannon forward.
-        /// Scale is the local-scale chain from that mesh up to the ship root.
+        /// Several meshes under one cannon still yield one shell: the one furthest
+        /// along the cannon forward. The mesh's own scale does not size the shell.
         /// </summary>
-        static bool TryPickFiringMesh(Transform cannon, Transform hull, out Vector3 point, out float meshScale)
+        static bool TryPickFiringMesh(Transform cannon, out Vector3 point)
         {
             point = default;
-            meshScale = 1f;
             if (cannon == null)
                 return false;
 
@@ -2401,12 +2368,11 @@ namespace TitanOrbit.Game
                 forward.Normalize();
 
             var best = new MeshPick();
-            WalkMeshes(cannon, hull, 0, cannon.position, forward, ref best);
+            WalkMeshes(cannon, 0, cannon.position, forward, ref best);
             if (!best.Found)
                 return false;
 
             point = best.Point;
-            meshScale = best.Scale;
             return true;
         }
 
@@ -2414,20 +2380,18 @@ namespace TitanOrbit.Game
         {
             public bool Found;
             public Vector3 Point;
-            public float Scale;
-            public int Depth;
             public float Forward;
         }
 
         static void WalkMeshes(
-            Transform node, Transform hull, int depth, Vector3 origin, Vector3 forward, ref MeshPick best)
+            Transform node, int depth, Vector3 origin, Vector3 forward, ref MeshPick best)
         {
             if (node == null || !node.gameObject.activeInHierarchy)
                 return;
             if (depth > 0 && node.name == ShipFamilyPartMatch.OriginalStashName)
                 return;
 
-            if (TryReadMesh(node, hull, forward, out Vector3 point, out float scale))
+            if (TryReadMesh(node, forward, out Vector3 point))
             {
                 float ahead = Vector3.Dot(point - origin, forward);
                 // One shell per cannon. Nested meshes still count — the base housing must
@@ -2437,25 +2401,22 @@ namespace TitanOrbit.Game
                 {
                     best.Found = true;
                     best.Point = point;
-                    best.Scale = scale;
-                    best.Depth = depth;
                     best.Forward = ahead;
                 }
             }
 
             int childCount = node.childCount;
             for (int i = 0; i < childCount; i++)
-                WalkMeshes(node.GetChild(i), hull, depth + 1, origin, forward, ref best);
+                WalkMeshes(node.GetChild(i), depth + 1, origin, forward, ref best);
         }
 
         /// <summary>
         /// True when this object has a real mesh. The point is the mesh corner furthest
         /// along <paramref name="forward"/> — the cannon tip, not the pivot or the bounds center.
         /// </summary>
-        static bool TryReadMesh(Transform node, Transform hull, Vector3 forward, out Vector3 point, out float meshScale)
+        static bool TryReadMesh(Transform node, Vector3 forward, out Vector3 point)
         {
             point = default;
-            meshScale = 1f;
             if (node == null)
                 return false;
 
@@ -2470,7 +2431,6 @@ namespace TitanOrbit.Game
             if (!TryMeshCornerAlong(node, mesh, forward, out point))
                 point = node.position;
 
-            meshScale = LocalScaleUntil(node, hull);
             return true;
         }
 
@@ -2503,25 +2463,6 @@ namespace TitanOrbit.Game
             return true;
         }
 
-        /// <summary>
-        /// Product of local scales from <paramref name="node"/> up to, but not including, the ship root.
-        /// Regular muzzle placement already bakes the root presentation scale into the world position
-        /// (the bounds center used here). Multiplying the shell by that root scale again would shrink it.
-        /// </summary>
-        static float LocalScaleUntil(Transform node, Transform stopExclusive)
-        {
-            float mul = 1f;
-            Transform walk = node;
-            while (walk != null && walk != stopExclusive)
-            {
-                Vector3 s = walk.localScale;
-                mul *= (math.abs(s.x) + math.abs(s.y) + math.abs(s.z)) / 3f;
-                walk = walk.parent;
-            }
-
-            return math.max(0.01f, mul);
-        }
-
         /// <summary>Cannon, bullet, or gun. No other words count as a muzzle.</summary>
         static bool IsMuzzleKeyword(string name)
         {
@@ -2534,6 +2475,59 @@ namespace TitanOrbit.Game
         {
             return !string.IsNullOrEmpty(name)
                 && name.IndexOf(keyword, System.StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        /// <summary>
+        /// Titan gun shell shrink. 1 for a regular ship, a missile, a sniper, or a cannon laser.
+        /// </summary>
+        /// <remarks>
+        /// A Titan hull's <c>LocalTransform.Scale</c> is tier 7 times the catalog family
+        /// scale (often 0.2). Tracers are not parented to that hull, so a shell at the
+        /// raw fire-power size looks huge next to the shrunken ship. Dividing Scale by
+        /// the tier-7 baseline leaves only the family shrink. Camera zoom and the
+        /// cannon mesh's localScale are not part of this number.
+        /// </remarks>
+        static float ResolveTitanGunFamilyScale(int ownerNetworkId, int mountIndex, int bankIndex, byte homing)
+        {
+            if (homing != 0 || RocketHomingFire.IsRocketBank(bankIndex) || mountIndex < 0)
+                return 1f;
+
+            var world = EcsGameBridge.ClientWorld;
+            if (world == null || !world.IsCreated)
+                return 1f;
+
+            EntityManager em = world.EntityManager;
+            if (!BulletMuzzlePresentation.TryResolveShooterHull(
+                    em, ownerNetworkId, mountIndex, out Entity hull, out int resolvedMount))
+                return 1f;
+
+            if (!em.HasComponent<MegaShipState>(hull)
+                || !em.GetComponentData<MegaShipState>(hull).IsMega
+                || !em.HasComponent<LocalTransform>(hull))
+                return 1f;
+
+            // Weapon class lives on the ghosted gunner slot. The mount buffer's
+            // copy is not replicated, so a client would otherwise see every barrel as a gun.
+            int index = resolvedMount >= 0 ? resolvedMount : mountIndex;
+            if (em.HasBuffer<MegaShipGunnerSlotElement>(hull))
+            {
+                DynamicBuffer<MegaShipGunnerSlotElement> gunners = em.GetBuffer<MegaShipGunnerSlotElement>(hull);
+                if (index >= 0 && index < gunners.Length)
+                {
+                    byte kind = gunners[index].WeaponKind;
+                    if (kind == ShipWeaponKind.Cannon
+                        || kind == ShipWeaponKind.Missile
+                        || kind == ShipWeaponKind.Sniper)
+                        return 1f;
+                }
+            }
+
+            float tier7 = BodyCollisionMath.GetShipTierScale(7);
+            float family = em.GetComponentData<LocalTransform>(hull).Scale / math.max(0.05f, tier7);
+            // Above 1 means the hull scale is not the Titan stamp yet. Do not enlarge the shell.
+            if (family > 1f)
+                family = 1f;
+            return math.max(0.05f, family);
         }
 
         /// <summary>True when this NetworkId is a live Titan hull. No extra network field.</summary>

@@ -1035,8 +1035,46 @@ namespace TitanOrbit.UI
             if (occupiedBy == 0)
                 TryResolveOccupancyFromLocalMega(storePlanetId, branchIndex, megaIndex, requireCatalogMatch: true, out occupiedBy);
 
+            // --- Stale "you" after a Titan swap ---
+            // [TITAN-ORBIT] The ship ghost can already name the new hull while this
+            // planet card still has our id. That card is a different Titan. Do not
+            // keep painting our name on it. A second planet that rolled the same
+            // hull stays taken — that catalog row is still unique to us.
+            if (occupiedBy != 0)
+                ForgetStaleLocalTitanOwnership(storePlanetId, branchIndex, megaIndex, ref occupiedBy);
+
             occupiedByNetworkId = occupiedBy;
             return true;
+        }
+
+        /// <summary>
+        /// Clears a local "you" label on a Titan card this client is not flying.
+        /// Same-catalog cards stay owned (one hull per match). A different hull
+        /// that still shows this client is the bay a swap already left.
+        /// </summary>
+        /// <param name="storePlanetId">Planet whose card is being painted.</param>
+        /// <param name="branchIndex">L7 branch on that planet.</param>
+        /// <param name="catalogIndex">Rolled hull on that card.</param>
+        /// <param name="occupiedByNetworkId">Owner id about to be drawn. Set to 0 when it is a stale self.</param>
+        static void ForgetStaleLocalTitanOwnership(
+            int storePlanetId,
+            int branchIndex,
+            ushort catalogIndex,
+            ref int occupiedByNetworkId)
+        {
+            if (!EcsGameBridge.TryGetLocalMegaShipState(out MegaShipState live) || !live.IsMega)
+                return;
+
+            int localId = EcsGameBridge.GetLocalNetworkId();
+            if (localId <= 0 || occupiedByNetworkId != localId)
+                return;
+
+            bool liveBay = live.StorePlanetId == storePlanetId && live.MegaSlotIndex == branchIndex;
+            bool liveHull = live.CatalogIndex == catalogIndex;
+            if (liveBay || liveHull)
+                return;
+
+            occupiedByNetworkId = 0;
         }
 
         /// <summary>

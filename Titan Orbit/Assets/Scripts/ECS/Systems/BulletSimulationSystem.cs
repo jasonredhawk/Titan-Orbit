@@ -477,10 +477,13 @@ namespace TitanOrbit.ECS
                                      shipState.ValueRO.Team, ghostOwner.ValueRO.NetworkId);
 
                 // --- Spawn each planned barrel with that mount’s own damage ---
-                // Forward leaves the baked nose pose. Point yaws a spawn copy at the
-                // cursor only while that cursor, and the resulting barrel, sit in
-                // front of the nose. The mount buffer keeps its rest pose either way.
-                bool pointGuns = TitanOrbitDebugFlags.RegularShipGunsPoint;
+                // Holding the move button leaves the baked nose pose so wide barrels
+                // stay parallel. Releasing it yaws a spawn copy at the aim point
+                // (cursor, or the bot target) even while the hull is still gliding,
+                // and only while that point and the barrel sit in front of the nose.
+                // The mount buffer keeps its rest pose either way.
+                bool pointGuns = TitanOrbitDebugFlags.RegularShipGunsPoint
+                                 && MegaShipWeaponAim.AllowsPointWeaponAim(input.ValueRO.Thrust);
                 for (int shot = 0; shot < shotCount; shot++)
                 {
                     var planned = s_ShotScratch[shot];

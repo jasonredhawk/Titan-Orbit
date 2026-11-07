@@ -30,8 +30,9 @@ namespace TitanOrbit.ECS
         /// [TITAN-ORBIT] Shift held (does <b>not</b> require thrust).
         /// Regular ships: OVERDRIVE intent only. The hull still yaws toward the
         /// cursor. Burst speed/drain still require Thrust and energy. Weapon
-        /// aim is Game Manager Forward (nose) or Point (this mouse point, and
-        /// only while it is in front of the hull). This bit does not change that.
+        /// aim is Game Manager Forward (nose) or Point (this mouse point while
+        /// <see cref="Thrust"/> is released and the point is in front of the hull,
+        /// including a glide). This bit does not change that.
         /// MEGA hulls: no overdrive. This bit locks heading and aims all MEGA
         /// guns at the mouse world point (<see cref="AimPlanarDir"/> ×
         /// <see cref="AimDistance"/>). Fire is still required to shoot.

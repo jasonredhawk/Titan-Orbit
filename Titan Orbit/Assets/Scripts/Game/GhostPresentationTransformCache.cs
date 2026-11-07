@@ -75,6 +75,13 @@ namespace TitanOrbit.Game
             LastPeopleTransportSnapshots.Remove(entity);
         }
 
+        /// <summary>Drops last-known pose when a hull despawns (stops unbounded Last* growth).</summary>
+        internal static void ForgetShip(Entity entity)
+        {
+            Ships.Remove(entity);
+            LastShipSnapshots.Remove(entity);
+        }
+
         /// <summary>
         /// Lookup ship presentation pose by entity. Returns false if not published this frame.
         /// </summary>

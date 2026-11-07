@@ -11,20 +11,22 @@ using UnityEngine;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// Yaws regular-ship weapon meshes onto the owner's aim point every frame
-    /// when Game Manager → Regular Ships — Guns is Point and that point is in
-    /// front of the nose. Forward, a cursor behind the ship, and
-    /// <see cref="GameManager.ParkLandedWeapons"/> while fully landed all restore
-    /// the authored forward pose. Boosters stay parented to the hull.
-    /// MEGA hulls keep <see cref="MegaShipWeaponVisualSync"/>.
+    /// Yaws regular-ship weapon meshes onto the owner's aim point when Game Manager
+    /// → Regular Ships — Guns is Point, the move button is released, and that point
+    /// is in front of the nose. A gliding hull still tracks. Holding the move button,
+    /// a cursor behind the ship, and <see cref="GameManager.ParkLandedWeapons"/> while
+    /// fully landed all restore the authored forward pose. Boosters stay parented to
+    /// the hull. MEGA hulls keep <see cref="MegaShipWeaponVisualSync"/>.
     /// </summary>
     public static class ShipWeaponManualAimVisual
     {
         /// <summary>
         /// True when this regular hull's weapon meshes should point at the aim point.
-        /// Local owners read <see cref="ShipInput"/>. Remotes read ghosted
-        /// <see cref="ShipState.ManualAimActive"/>. Forward mode and a cursor behind
-        /// the nose return false so tracers leave along the ship.
+        /// Local owners read <see cref="ShipInput"/> and only while the move button
+        /// is released, including while the hull is still gliding. Remotes read ghosted
+        /// <see cref="ShipState.ManualAimActive"/>, which the server sets on that same
+        /// release. Forward mode, thrust, and a cursor behind the nose return false so
+        /// tracers leave along the ship.
         /// </summary>
         public static bool IsMouseTracking(EntityManager em, Entity shipEntity)
         {
@@ -33,8 +35,8 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Aims each live weapon assembly at the cursor. Restores authored local
-        /// rotation when the hull is a MEGA, guns are Forward, the cursor is
-        /// behind the nose, or the aim sample is missing.
+        /// rotation when the hull is a MEGA, guns are Forward, the move button is
+        /// held, the cursor is behind the nose, or the aim sample is missing.
         /// </summary>
         public static void Apply(EntityManager em, Entity shipEntity, GameObject proxy)
         {
@@ -73,8 +75,8 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Owner or ghosted aim point, and only when guns are Point and that point
-        /// is in front of the nose.
+        /// Owner or ghosted aim point, and only when guns are Point, the move
+        /// button is released, and that point is in front of the nose.
         /// </summary>
         static bool TryGetTrackedAimPoint(EntityManager em, Entity shipEntity, out float3 aimPoint)
         {
@@ -85,6 +87,19 @@ namespace TitanOrbit.Game
                 return false;
             if (!em.HasComponent<LocalTransform>(shipEntity))
                 return false;
+
+            // The local owner reads the live cursor every frame. Holding the move
+            // button keeps the meshes on the nose even if the hull is still gliding.
+            // Remotes follow ManualAimActive, already cleared by the server while
+            // thrust is held.
+            if (em.HasComponent<LocalPlayerShipTag>(shipEntity))
+            {
+                if (!em.HasComponent<ShipInput>(shipEntity))
+                    return false;
+                var input = em.GetComponentData<ShipInput>(shipEntity);
+                if (!MegaShipWeaponAim.AllowsPointWeaponAim(input.Thrust))
+                    return false;
+            }
 
             var hull = em.GetComponentData<LocalTransform>(shipEntity);
             ToroidalMapEcs.TryGetMapSize(out float mapW, out float mapH);

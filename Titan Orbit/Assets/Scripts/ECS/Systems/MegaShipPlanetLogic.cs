@@ -246,6 +246,29 @@ namespace TitanOrbit.ECS
             return true;
         }
 
+        /// <summary>
+        /// Clears one bay only when <paramref name="networkId"/> is the player in it.
+        /// A stale ghost must not kick someone who bought that Titan after this hull
+        /// stopped being the owner.
+        /// </summary>
+        /// <param name="em">Server entity manager.</param>
+        /// <param name="planetId">Planet that sells the bay.</param>
+        /// <param name="branchIndex">L7 branch 0 / 1 / 2.</param>
+        /// <param name="networkId">GhostOwner id that is allowed to release it.</param>
+        public static void FreeSlotIfOccupiedBy(EntityManager em, int planetId, int branchIndex, int networkId)
+        {
+            if (networkId <= 0)
+                return;
+            // TryGetSlot wants the planet entity. PlanetId is the stable match id.
+            if (!TryFindPlanetById(em, planetId, out Entity planetEntity))
+                return;
+            if (!TryGetSlot(em, planetEntity, branchIndex, out PlanetMegaShipSlotElement slot))
+                return;
+            if (slot.OccupiedByNetworkId != networkId)
+                return;
+            FreeSlot(em, planetId, branchIndex);
+        }
+
         /// <summary>Clears occupancy for one planet slot (MEGA destroyed or owner left).</summary>
         public static void FreeSlot(EntityManager em, int planetId, int branchIndex)
         {
@@ -266,24 +289,113 @@ namespace TitanOrbit.ECS
         /// <summary>Clears any slot occupied by this network id (disconnect / abandon).</summary>
         public static void FreeSlotsOccupiedBy(EntityManager em, int networkId)
         {
+            // keepBranchIndex -1 matches no real L7 branch, so every bay this player holds is cleared.
+            FreeSlotsOccupiedByExcept(em, networkId, keepPlanetId: 0, keepBranchIndex: -1);
+        }
+
+        /// <summary>
+        /// Drops every Titan bay this player still holds except the one they just claimed.
+        /// A player may fly only one Titan. The purchase writes the new bay first, then
+        /// calls this so the previous card goes back on sale.
+        /// </summary>
+        /// <param name="em">Server entity manager. Client gathers during join are skipped.</param>
+        /// <param name="networkId">GhostOwner id of the player who just took a Titan.</param>
+        /// <param name="keepPlanetId">Planet whose bay must stay occupied.</param>
+        /// <param name="keepBranchIndex">L7 branch 0 / 1 / 2 on that planet.</param>
+        public static void FreeSlotsOccupiedByExcept(
+            EntityManager em,
+            int networkId,
+            int keepPlanetId,
+            int keepBranchIndex)
+        {
             if (networkId <= 0)
                 return;
             if (ShouldRefuseClientGathers(em))
                 return;
 
+            // --- Every planet's three Titan cards ---
+            // [TITAN-ORBIT] Occupancy lives on the selling planet, not on the ship.
+            // The ship we are updating may not be the ghost that originally claimed
+            // the old bay (a newer hull, or a purchase that never stored IsMega).
+            // Scanning by owner id releases that bay anyway.
+            // PlanetTag + the Titan buffer, same set disconnect cleanup already walks.
+            // Planet id is read per entity so a bay can be spared without dropping
+            // a planet that has the buffer but a different chunk layout.
             using var query = em.CreateEntityQuery(typeof(PlanetTag), typeof(PlanetMegaShipSlotElement));
             using var entities = query.ToEntityArray(Allocator.Temp);
             for (int i = 0; i < entities.Length; i++)
             {
+                int planetId = 0;
+                if (em.HasComponent<PlanetState>(entities[i]))
+                    planetId = em.GetComponentData<PlanetState>(entities[i]).PlanetId;
                 var buffer = em.GetBuffer<PlanetMegaShipSlotElement>(entities[i]);
                 for (int s = 0; s < buffer.Length; s++)
                 {
                     var slot = buffer[s];
                     if (slot.OccupiedByNetworkId != networkId)
                         continue;
+                    // The bay we just claimed stays taken. Every other card with this
+                    // player's id is the Titan they are leaving.
+                    if (planetId == keepPlanetId && s == keepBranchIndex)
+                        continue;
                     slot.OccupiedByNetworkId = 0;
                     buffer[s] = slot;
                 }
+            }
+        }
+
+        /// <summary>
+        /// After a Titan swap, clears <see cref="MegaShipState.IsMega"/> on any older
+        /// hull that still says it is a Titan. The live hull
+        /// (<paramref name="keepShip"/>) is left alone — it is the ship that just
+        /// took the new bay. A leftover ghost used to keep the old card "in service"
+        /// after the menu had already moved the player onto the new hull.
+        /// </summary>
+        /// <param name="em">Server entity manager.</param>
+        /// <param name="networkId">Owner whose extra hulls should drop the Titan flag.</param>
+        /// <param name="keepShip">The hull that should stay a Titan.</param>
+        /// <param name="keepPlanetId">Planet of the bay that hull just claimed.</param>
+        /// <param name="keepBranchIndex">Branch of that bay.</param>
+        public static void ClearSiblingMegaHulls(
+            EntityManager em,
+            int networkId,
+            Entity keepShip,
+            int keepPlanetId,
+            int keepBranchIndex)
+        {
+            if (networkId <= 0)
+                return;
+            if (ShouldRefuseClientGathers(em))
+                return;
+
+            using var query = em.CreateEntityQuery(
+                typeof(ShipTag), typeof(GhostOwner), typeof(MegaShipState));
+            using var entities = query.ToEntityArray(Allocator.Temp);
+            using var owners = query.ToComponentDataArray<GhostOwner>(Allocator.Temp);
+            for (int i = 0; i < entities.Length; i++)
+            {
+                if (owners[i].NetworkId != networkId)
+                    continue;
+                Entity ship = entities[i];
+                if (ship == keepShip)
+                    continue;
+
+                var mega = em.GetComponentData<MegaShipState>(ship);
+                if (!mega.IsMega)
+                    continue;
+
+                // A sibling that still points at the bay we just kept must not
+                // clear it. Any other recorded bay is the Titan they left.
+                bool sameBay = mega.StorePlanetId == keepPlanetId
+                    && mega.MegaSlotIndex == keepBranchIndex;
+                if (!sameBay)
+                    FreeSlotIfOccupiedBy(em, mega.StorePlanetId, mega.MegaSlotIndex, networkId);
+
+                mega.IsMega = false;
+                mega.CatalogIndex = 0;
+                mega.StorePlanetId = 0;
+                mega.MegaSlotIndex = 0;
+                em.SetComponentData(ship, mega);
             }
         }
 
