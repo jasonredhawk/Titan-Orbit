@@ -26,8 +26,8 @@ namespace TitanOrbit.Game
         /// <summary>0–1 graphics slice for the loading bar.</summary>
         static float s_Progress;
 
-        /// <summary>In-bar status, e.g. "Warming graphics  12 / 40".</summary>
-        static string s_Status = "Warming graphics";
+        /// <summary>In-bar status, e.g. "Warming up graphics..".</summary>
+        static string s_Status = "Warming up graphics..";
 
         /// <summary>
         /// True when Join Team may appear: dedicated / headless skip, or the worker finished
@@ -49,7 +49,7 @@ namespace TitanOrbit.Game
 
         /// <summary>Loading-bar caption while materials and VFX Instantiates under the overlay.</summary>
         public static string StatusLabel =>
-            string.IsNullOrEmpty(s_Status) ? "Warming graphics" : s_Status;
+            string.IsNullOrEmpty(s_Status) ? "Warming up graphics.." : s_Status;
 
         /// <summary>
         /// Called by <see cref="PresentationJoinWarmup"/> after each tick so the loading bar
@@ -62,7 +62,7 @@ namespace TitanOrbit.Game
         {
             s_PublishedComplete = completeOrNotNeeded;
             s_Progress = Mathf.Clamp01(progress);
-            s_Status = status ?? "Warming graphics";
+            s_Status = status ?? "Warming up graphics..";
         }
 
         /// <summary>
@@ -94,7 +94,7 @@ namespace TitanOrbit.Game
 
             s_PublishedComplete = false;
             s_Progress = 0f;
-            s_Status = "Warming graphics";
+            s_Status = "Warming up graphics..";
         }
 
 #if UNITY_EDITOR
@@ -104,7 +104,7 @@ namespace TitanOrbit.Game
         {
             s_PublishedComplete = false;
             s_Progress = 0f;
-            s_Status = "Warming graphics";
+            s_Status = "Warming up graphics..";
         }
 #endif
     }

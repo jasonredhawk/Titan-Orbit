@@ -70,19 +70,27 @@ namespace SpaceGraphicsToolkit
 
 		static SgtCamera()
 		{
+			// [TITAN-ORBIT] URP fires Camera.onPreCull AND beginCameraRendering for the same
+			// camera. Both used to invoke OnCameraDraw, so every SgtPlanet Graphics.DrawMesh
+			// (planets, asteroids, atmospheres) was submitted twice per camera per frame.
+			// Editor Local Host was ~36 ms/frame with a ~5 ms server tick. Built-in stays
+			// on the Camera.* events; SRP uses begin/endCameraRendering only.
 			Camera.onPreCull += (camera) =>
 				{
+					if (CwHelper.IsSRP == true) return;
 					if (OnCameraPreCull != null) OnCameraPreCull(camera);
 					if (OnCameraDraw != null) OnCameraDraw(camera);
 				};
 
 			Camera.onPreRender += (camera) =>
 				{
+					if (CwHelper.IsSRP == true) return;
 					if (OnCameraPreRender != null) OnCameraPreRender(camera);
 				};
 
 			Camera.onPostRender += (camera) =>
 				{
+					if (CwHelper.IsSRP == true) return;
 					if (OnCameraPostRender != null) OnCameraPostRender(camera);
 				};
 			

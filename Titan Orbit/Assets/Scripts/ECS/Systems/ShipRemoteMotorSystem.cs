@@ -100,10 +100,13 @@ namespace TitanOrbit.ECS
     /// from the server at the sample tick and folds the error in. It does not rewind
     /// to the sample and replay the whole gap: that replay used only the newest input,
     /// so a late snapshot (common once many hulls share a send chunk) yanked every
-    /// ship in the tile on the same frame. Does not enable <see cref="Simulate"/> or
-    /// <see cref="PredictedGhost"/>. Runs once on the newest predicting tick, before
-    /// the local drive. Map size comes from <see cref="MapStateSingleton"/> /
-    /// <see cref="ToroidalMapEcs"/>.
+    /// ship in the tile on the same frame. A collision-sized sample (velocity jump or
+    /// a several-unit miss) adopts the server pose instead of that constant offset,
+    /// because a bounce is not a drift. The deterministic tick then bounces the
+    /// integrated pose off ships, asteroids, planets, and moons. Does not enable
+    /// <see cref="Simulate"/> or <see cref="PredictedGhost"/>. Runs once on the newest
+    /// predicting tick, before the local drive. Map size comes from
+    /// <see cref="MapStateSingleton"/> / <see cref="ToroidalMapEcs"/>.
     /// </summary>
     [UpdateInGroup(typeof(PredictedFixedStepSimulationSystemGroup), OrderFirst = true)]
     [UpdateBefore(typeof(ShipClientPredictedPhysicsDriveSystem))]
@@ -131,6 +134,17 @@ namespace TitanOrbit.ECS
 
         /// <summary>Gaps larger than this snap. Matches the old remote presentation snap.</summary>
         public const float SnapDistance = 24f;
+
+        /// <summary>
+        /// Velocity change above this, between the predicted pose and the server sample,
+        /// is a bounce. Thrust over a short gap stays under it.
+        /// </summary>
+        public const float CollisionVelocityDelta = 8f;
+
+        /// <summary>
+        /// Position miss above this is a wall correction. Cruise drift over a few ticks stays under it.
+        /// </summary>
+        public const float CollisionPositionDelta = 6f;
 
         /// <summary>Require a flight sample before scheduling.</summary>
         public void OnCreate(ref SystemState state)
@@ -206,6 +220,7 @@ namespace TitanOrbit.ECS
             var localPlayers = SystemAPI.GetComponentLookup<LocalPlayerShipTag>(true);
             var localOwners = SystemAPI.GetComponentLookup<GhostOwnerIsLocal>(true);
             var kinematics = SystemAPI.GetComponentLookup<ShipKinematics>(false);
+            var asteroidContacts = SystemAPI.GetComponentLookup<ShipAsteroidContactState>(true);
 
             try
             {
@@ -238,6 +253,13 @@ namespace TitanOrbit.ECS
                 bool acquire = motor.Valid == 0;
                 bool newSample = acquire || motor.SampleTick != flight.Tick;
                 int steps = 0;
+                bool collisionSnap = false;
+                var asteroid = asteroidContacts.HasComponent(entity)
+                    ? asteroidContacts[entity]
+                    : default;
+                // Punch-through keeps the remaining into-rock speed. Contact stick would cancel it.
+                if (asteroid.PunchThrough != 0)
+                    asteroid.InContact = 0;
 
                 if (acquire || dead)
                 {
@@ -272,25 +294,51 @@ namespace TitanOrbit.ECS
                             float3 err = ToroidalMapEcs.ShortestOffsetXZ(histPos, flight.Position, mapW, mapH);
                             err.y = 0f;
                             float yawErr = DeltaYaw(hist.Yaw, flight.Yaw);
-                            float3 velErr = flight.Velocity - new float3(hist.VX, 0f, hist.VZ);
+                            float3 histVel = new float3(hist.VX, 0f, hist.VZ);
+                            float3 velErr = flight.Velocity - histVel;
                             velErr.y = 0f;
-                            ApplySampleError(ref motor, history, err, yawErr, velErr, flight.Tick, mapW, mapH);
+                            // A bounce is not a constant offset. The hull has already
+                            // tunneled past the wall, so fold in the post-hit sample
+                            // extrapolated to this tick and show that pose immediately.
+                            if (IsCollisionCorrection(histVel, flight.Velocity, math.length(err)))
+                            {
+                                float lead = math.max(0, gap) * dt;
+                                float3 extrapolated = ToroidalMapEcs.Wrap(
+                                    flight.Position + flight.Velocity * lead, mapW, mapH);
+                                float3 adopt = ToroidalMapEcs.ShortestOffsetXZ(
+                                    motor.Position, extrapolated, mapW, mapH);
+                                adopt.y = 0f;
+                                float3 adoptVel = flight.Velocity - motor.Velocity;
+                                adoptVel.y = 0f;
+                                float adoptYaw = DeltaYaw(
+                                    ShipRemoteFlightSample.YawFromRotation(motor.Rotation), flight.Yaw);
+                                ApplySampleError(
+                                    ref motor, history, adopt, adoptYaw, adoptVel, flight.Tick, mapW, mapH);
+                                collisionSnap = true;
+                            }
+                            else
+                            {
+                                ApplySampleError(ref motor, history, err, yawErr, velErr, flight.Tick, mapW, mapH);
+                            }
                         }
                         else
                         {
                             // No ring entry (sample older than 16 ticks). Keep flying unless
-                            // the constant-velocity guess is a respawn-sized miss.
+                            // the constant-velocity guess is a respawn-sized miss or a bounce.
                             float3 expected = flight.Position;
                             if (gap > 0)
                                 expected = ToroidalMapEcs.Wrap(flight.Position + flight.Velocity * (gap * dt), mapW, mapH);
                             float3 miss = ToroidalMapEcs.ShortestOffsetXZ(motor.Position, expected, mapW, mapH);
-                            if (math.length(miss) > SnapDistance)
+                            float missLen = math.length(miss);
+                            bool collision = IsCollisionCorrection(motor.Velocity, flight.Velocity, missLen);
+                            if (missLen > SnapDistance || collision)
                             {
                                 AssignSamplePose(ref motor, in flight, shipState.ValueRO, in moon, in orbit);
                                 motor.Position = expected;
                                 motor.IntegratedTick = networkTime.ServerTick.TickIndexForValidTick;
                                 ClearHistory(history);
                                 steps = 0;
+                                collisionSnap = collision;
                             }
                         }
                     }
@@ -307,7 +355,7 @@ namespace TitanOrbit.ECS
                     Advance(
                         ref motor, in input, in motorConfig, in shock, in turret,
                         planets.AsArray(), territory, homeLevels, mobility,
-                        dt, mapW, mapH, elapsed, scale, radius, isMega, pointGuns);
+                        dt, mapW, mapH, elapsed, scale, radius, isMega, pointGuns, in asteroid);
                     var integrated = new NetworkTick(motor.IntegratedTick);
                     integrated.Add(1);
                     motor.IntegratedTick = integrated.TickIndexForValidTick;
@@ -316,7 +364,7 @@ namespace TitanOrbit.ECS
 
                 motor.Holding = (byte)(dead ? 1 : 0);
                 motor.IntegratedUnscaledTime = now;
-                PublishDisplay(ref motor, motor.Position, motor.Rotation, dt, mapW, mapH, dead || acquire);
+                PublishDisplay(ref motor, motor.Position, motor.Rotation, dt, mapW, mapH, dead || acquire || collisionSnap);
                 motor.Valid = 1;
                 var posed = transform.ValueRO;
                 ApplyPose(ref posed, ref motor, ref kinematics, entity);
@@ -405,6 +453,18 @@ namespace TitanOrbit.ECS
             return WrapYaw(to - from);
         }
 
+        /// <summary>
+        /// True when the server sample disagrees like a wall hit rather than thrust drift.
+        /// </summary>
+        static bool IsCollisionCorrection(float3 fromVelocity, float3 toVelocity, float positionError)
+        {
+            if (positionError > CollisionPositionDelta)
+                return true;
+            float3 delta = toVelocity - fromVelocity;
+            delta.y = 0f;
+            return math.length(delta) > CollisionVelocityDelta;
+        }
+
         /// <summary>Wraps a yaw into (-pi, pi].</summary>
         static float WrapYaw(float yaw)
         {
@@ -479,7 +539,8 @@ namespace TitanOrbit.ECS
             float scale,
             float radius,
             bool isMega,
-            bool pointGuns)
+            bool pointGuns,
+            in ShipAsteroidContactState asteroidContact)
         {
             if (turret.IsControlling || shock.IsActive(elapsed))
             {
@@ -492,7 +553,6 @@ namespace TitanOrbit.ECS
             var velocity = new PhysicsVelocity { Linear = motor.Velocity };
             velocity.Linear.y = 0f;
             var damping = default(PhysicsDamping);
-            var asteroid = default(ShipAsteroidContactState);
             var moon = motor.MoonDock;
             var orbit = motor.Orbit;
             var territoryLatch = motor.Territory;
@@ -508,7 +568,7 @@ namespace TitanOrbit.ECS
                 ref transform,
                 ref orbit,
                 ref territoryLatch,
-                asteroid,
+                asteroidContact,
                 in planets,
                 dt,
                 mapW,

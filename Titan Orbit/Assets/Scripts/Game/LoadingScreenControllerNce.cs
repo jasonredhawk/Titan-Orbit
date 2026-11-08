@@ -199,6 +199,12 @@ namespace TitanOrbit.Game
             if (!IsVisible)
                 return;
 
+            // --- Caption before the hitch ---
+            // [TITAN-ORBIT] Camera.Render and the first SgtPlanet.Rebuild run inside Tick
+            // and can block this player loop for a long time. Paint "Warming up graphics.."
+            // first so the bar does not sit on the previous 100% line for that whole stall.
+            RefreshBar();
+
             // --- Hidden Orbit Menu + graphics construction while the overlay covers hitches ---
             // [TITAN-ORBIT] Game cannot reference TitanOrbit.UI (default assembly). The UI
             // registers a tick handler on OrbitMenuJoinWarmupGate after scene load.
@@ -206,6 +212,16 @@ namespace TitanOrbit.Game
             OrbitMenuJoinWarmupGate.Tick();
             PresentationJoinWarmupGate.Tick();
 
+            RefreshBar();
+        }
+
+        /// <summary>
+        /// Writes fill + in-bar status from the latest join gates.
+        /// Map is most of the bar. Once the map and menus are in, the last slice tracks
+        /// graphics warmup and stays under 100% until that gate opens Join Team.
+        /// </summary>
+        void RefreshBar()
+        {
             float networkProgress = 0f;
             EcsGameBridge.TryGetNetworkJoinLoadProgress(out networkProgress);
             float proxyProgress = 0f;
@@ -213,10 +229,24 @@ namespace TitanOrbit.Game
             float mapCombined = Mathf.Clamp01(0.5f * networkProgress + 0.5f * proxyProgress);
             float menuProgress = OrbitMenuJoinWarmupGate.Progress;
             float gfxProgress = PresentationJoinWarmupGate.Progress;
+
+            bool mapDone = EcsGameBridge.IsMapLoadingComplete();
+            bool menuDone = OrbitMenuJoinWarmupGate.IsCompleteOrNotNeeded;
+            bool gfxDone = PresentationJoinWarmupGate.IsCompleteOrNotNeeded;
+
             // Map stays the bulk of the bar. Menus and graphics are honest tails so the
             // fill does not sit at 100% while those widgets / shaders are still warming.
             float combined = Mathf.Clamp01(
                 0.80f * mapCombined + 0.12f * menuProgress + 0.08f * gfxProgress);
+
+            // Graphics runs in parallel with the map, so its 8% slice is often already
+            // high when the map latch flips — RoundToInt then prints 100% for the whole
+            // planet-mesh / shader tail. Hold that tail between 92% and 99%.
+            bool graphicsTail = !gfxDone && menuDone && (mapDone || mapCombined >= 0.98f);
+            if (graphicsTail)
+                combined = Mathf.Lerp(0.92f, 0.99f, gfxProgress);
+            else if (!(mapDone && menuDone && gfxDone))
+                combined = Mathf.Min(combined, 0.99f);
 
             // --- Stuck hint after a few seconds (recipe / prefabs vs Instantiates drain) ---
             string mapHint = null;
@@ -235,16 +265,17 @@ namespace TitanOrbit.Game
                     mapHint = EcsGameBridge.GetMapLoadStuckHint();
             }
 
-            string status = EcsGameBridge.GetJoinLoadStatusLabel();
-            if (EcsGameBridge.IsMapLoadingComplete() &&
-                !OrbitMenuJoinWarmupGate.IsCompleteOrNotNeeded)
-                status = OrbitMenuJoinWarmupGate.StatusLabel;
-            else if (EcsGameBridge.IsMapLoadingComplete() &&
-                     OrbitMenuJoinWarmupGate.IsCompleteOrNotNeeded &&
-                     !PresentationJoinWarmupGate.IsCompleteOrNotNeeded)
+            // "Ready" from the map label used to win as soon as the map latched, so the
+            // graphics tail looked like a finished 100% bar. Name that phase explicitly.
+            string status;
+            if (graphicsTail)
                 status = PresentationJoinWarmupGate.StatusLabel;
+            else if (mapDone && !menuDone)
+                status = OrbitMenuJoinWarmupGate.StatusLabel;
+            else
+                status = EcsGameBridge.GetJoinLoadStatusLabel();
 
-            ApplyBar(_loadBar, combined, status, mapHint);
+            ApplyBar(_loadBar, combined, status, graphicsTail ? null : mapHint);
         }
 
         /// <summary>

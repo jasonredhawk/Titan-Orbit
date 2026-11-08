@@ -34,13 +34,18 @@ namespace CW.Common
 
 		static CwHelper()
 		{
+			// [TITAN-ORBIT] Same double-dispatch as SgtCamera: URP invokes Camera.onPreRender
+			// and beginCameraRendering. Atmospheres and cloudspheres listen here and were
+			// drawn twice per camera. Skip the built-in events while an SRP is active.
 			Camera.onPreRender += (camera) =>
 				{
+					if (IsSRP == true) return;
 					if (OnCameraPreRender != null) OnCameraPreRender(camera);
 				};
 
 			Camera.onPostRender += (camera) =>
 				{
+					if (IsSRP == true) return;
 					if (OnCameraPostRender != null) OnCameraPostRender(camera);
 				};
 

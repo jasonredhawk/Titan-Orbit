@@ -1,3 +1,4 @@
+using TitanOrbit.Core;
 using TitanOrbit.Data;
 using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
@@ -19,9 +20,12 @@ namespace TitanOrbit.ECS
     /// separation. Unity Physics must not depenetrate that pose afterward — the eased
     /// PhysX pop was the ghost snapshot, and it walked the hull off the predicted path.
     /// Planets and moons still bounce from the physics contact stream.
-    /// On the client, an interpolated enemy does not take its half of the position
-    /// shove — that half is left to the server snapshot so prediction does not walk
-    /// the local hull out and get pulled back. Map size comes from
+    /// On the client, a remote hull is not simulated by Unity Physics (no
+    /// <c>PhysicsVelocity</c>, kinematic). This tick still bounces it off ships,
+    /// asteroids, planets, and moons, and writes that pose back onto
+    /// <see cref="ShipRemoteMotorState"/>. The local predicted hull does not take a
+    /// position shove from a remote — that half stays on the remote so prediction
+    /// is not walked off the server pose. Map size comes from
     /// <see cref="MapStateSingleton"/> / <see cref="ToroidalMapEcs"/>.
     /// </summary>
     [UpdateInGroup(typeof(PredictedFixedStepSimulationSystemGroup), OrderFirst = true)]
@@ -36,6 +40,7 @@ namespace TitanOrbit.ECS
         NativeList<ShipTickHoldElement> _holds;
         NativeList<ShipTickOverlapElement> _overlaps;
         NativeList<AsteroidTickBody> _rocks;
+        NativeList<WorldWallBody> _walls;
         NativeList<ShipTickAsteroidContactElement> _asteroidContacts;
         NativeList<ShipTickAsteroidPoseElement> _asteroidPoses;
         NativeList<byte> _touchedRock;
@@ -52,6 +57,7 @@ namespace TitanOrbit.ECS
             _holds = new NativeList<ShipTickHoldElement>(32, Allocator.Persistent);
             _overlaps = new NativeList<ShipTickOverlapElement>(32, Allocator.Persistent);
             _rocks = new NativeList<AsteroidTickBody>(256, Allocator.Persistent);
+            _walls = new NativeList<WorldWallBody>(32, Allocator.Persistent);
             _asteroidContacts = new NativeList<ShipTickAsteroidContactElement>(32, Allocator.Persistent);
             _asteroidPoses = new NativeList<ShipTickAsteroidPoseElement>(32, Allocator.Persistent);
             _touchedRock = new NativeList<byte>(32, Allocator.Persistent);
@@ -94,6 +100,8 @@ namespace TitanOrbit.ECS
                 _overlaps.Dispose();
             if (_rocks.IsCreated)
                 _rocks.Dispose();
+            if (_walls.IsCreated)
+                _walls.Dispose();
             if (_asteroidContacts.IsCreated)
                 _asteroidContacts.Dispose();
             if (_asteroidPoses.IsCreated)
@@ -146,6 +154,8 @@ namespace TitanOrbit.ECS
             var loadoutLookup = SystemAPI.GetComponentLookup<ShipLoadoutState>(true);
             var territoryLookup = SystemAPI.GetComponentLookup<ShipTerritoryBoostLatch>(true);
             var asteroidContactLookup = SystemAPI.GetComponentLookup<ShipAsteroidContactState>(false);
+            var remoteMotorLookup = SystemAPI.GetComponentLookup<ShipRemoteMotorState>(false);
+            var remoteHistoryLookup = SystemAPI.GetBufferLookup<ShipRemoteMotorHistoryElement>(false);
 
             _bodies.Clear();
             _clientOneSidedOverlap = false;
@@ -196,16 +206,33 @@ namespace TitanOrbit.ECS
                              .WithNone<PhysicsVelocity, Prefab>()
                              .WithEntityAccess())
                 {
-                    if (shipState.ValueRO.IsDead || shipState.ValueRO.AwaitingTeamSelection)
-                        continue;
-                    int networkId = ownerLookup.HasComponent(entity)
-                        ? ownerLookup[entity].NetworkId
-                        : entity.Index;
-                    AddBody(
-                        ref _bodies, entity, transform.ValueRO, kinematicsLookup, motorLookup,
-                        shipLookup, radiusLookup, colliderLookup, networkId,
-                        mobility, write: false, integrate: false, dt, mapW, mapH);
+                if (shipState.ValueRO.IsDead || shipState.ValueRO.AwaitingTeamSelection)
+                    continue;
+                int networkId = ownerLookup.HasComponent(entity)
+                    ? ownerLookup[entity].NetworkId
+                    : entity.Index;
+
+                // Remote motor already integrated this tick. Bounce that pose here.
+                // A docked hull stays put so the moon attach is not shoved off the pad.
+                bool useMotor = remoteMotorLookup.HasComponent(entity)
+                                && remoteMotorLookup[entity].Valid != 0;
+                bool docked = moonLookup.HasComponent(entity)
+                              && (moonLookup[entity].IsFullyLanded || moonLookup[entity].IsTakingOff);
+                float3 motorPos = default;
+                float3 motorVel = default;
+                if (useMotor)
+                {
+                    ShipRemoteMotorState remoteMotor = remoteMotorLookup[entity];
+                    motorPos = remoteMotor.Position;
+                    motorVel = remoteMotor.Velocity;
                 }
+
+                AddBody(
+                    ref _bodies, entity, transform.ValueRO, kinematicsLookup, motorLookup,
+                    shipLookup, radiusLookup, colliderLookup, networkId,
+                    mobility, write: useMotor && !docked, integrate: false, dt, mapW, mapH,
+                    remote: useMotor, usePose: useMotor, posePosition: motorPos, poseVelocity: motorVel);
+            }
             }
 
             SortByNetworkId(_bodies);
@@ -248,15 +275,29 @@ namespace TitanOrbit.ECS
                 mapW, mapH, rockSettings.BounceRestitution,
                 megaLookup, motorLookup, shipLookup,
                 loadoutLookup, territoryLookup, asteroidContactLookup);
+            if (isClient)
+            {
+                double elapsed = SystemAPI.Time.ElapsedTime;
+                if (SystemAPI.TryGetSingleton(out NetworkTime networkTime))
+                {
+                    int hz = 0;
+                    if (SystemAPI.TryGetSingleton<ClientServerTickRate>(out var tickRate))
+                        hz = tickRate.SimulationTickRate;
+                    elapsed = PlanetGemMoonOrbitClock.GetElapsedSeconds(networkTime, hz, includeTickFraction: false);
+                }
+
+                SolveRemoteWorldWalls(ref state, mapW, mapH, rockSettings.BounceRestitution, elapsed, shipLookup);
+            }
 
             for (int i = 0; i < count; i++)
             {
                 ShipTickBody body = _bodies[i];
                 if (body.Write == 0)
                     continue;
-                if (!transformLookup.HasComponent(body.Entity) || !velocityLookup.HasComponent(body.Entity))
+                if (!transformLookup.HasComponent(body.Entity) || !kinematicsLookup.HasComponent(body.Entity))
                     continue;
-                if (!kinematicsLookup.HasComponent(body.Entity))
+                // Interpolated remotes have no PhysicsVelocity. Predicted hulls still do.
+                if (body.Remote == 0 && !velocityLookup.HasComponent(body.Entity))
                     continue;
 
                 float3 dp = _deltaP[i];
@@ -272,6 +313,15 @@ namespace TitanOrbit.ECS
                 float3 vel = body.Velocity + _deltaV[i];
                 vel.y = 0f;
 
+                // Free-flight remotes keep the eased display pose. Only a real hit
+                // overwrites it, or the blend would be thrown away every tick.
+                bool separated = math.lengthsq(dp) > 1e-8f || math.lengthsq(_deltaV[i]) > 1e-6f;
+                if (body.Remote != 0 && !separated)
+                {
+                    PublishRemoteAsteroidContact(i, body.Entity, asteroidContactLookup);
+                    continue;
+                }
+
                 var lt = transformLookup[body.Entity];
                 lt.Position = pos;
                 transformLookup[body.Entity] = lt;
@@ -280,10 +330,28 @@ namespace TitanOrbit.ECS
                 kin.Velocity = vel;
                 kinematicsLookup[body.Entity] = kin;
 
-                var pv = velocityLookup[body.Entity];
-                pv.Linear = float3.zero;
-                pv.Angular = float3.zero;
-                velocityLookup[body.Entity] = pv;
+                if (velocityLookup.HasComponent(body.Entity))
+                {
+                    var pv = velocityLookup[body.Entity];
+                    pv.Linear = float3.zero;
+                    pv.Angular = float3.zero;
+                    velocityLookup[body.Entity] = pv;
+                }
+
+                if (body.Remote != 0 && remoteMotorLookup.HasComponent(body.Entity))
+                {
+                    ShipRemoteMotorState remoteMotor = remoteMotorLookup[body.Entity];
+                    remoteMotor.Position = pos;
+                    remoteMotor.Velocity = vel;
+                    remoteMotor.DisplayPosition = pos;
+                    remoteMotor.DisplayRotation = lt.Rotation;
+                    remoteMotorLookup[body.Entity] = remoteMotor;
+                    if (remoteHistoryLookup.HasBuffer(body.Entity))
+                        PatchRemoteHistory(remoteHistoryLookup[body.Entity], remoteMotor);
+                }
+
+                if (body.Remote != 0)
+                    PublishRemoteAsteroidContact(i, body.Entity, asteroidContactLookup);
 
                 _holds.Add(new ShipTickHoldElement
                 {
@@ -450,18 +518,28 @@ namespace TitanOrbit.ECS
             if (oneSided)
                 _clientOneSidedOverlap = true;
 
+            // Mixed pair: the local hull keeps its predicted position. The remote
+            // takes the whole separation so the two meshes do not stay overlapped.
+            bool mixed = a.Remote != b.Remote;
+            if (mixed)
+                _clientOneSidedOverlap = true;
+
             if (a.Write != 0)
             {
                 _deltaV[i] += dVa;
-                if (!oneSided)
+                if (!oneSided && !mixed)
                     _deltaP[i] += dPa;
+                else if (mixed && a.Remote != 0)
+                    _deltaP[i] += dPa - dPb;
             }
 
             if (b.Write != 0)
             {
                 _deltaV[j] += dVb;
-                if (!oneSided)
+                if (!oneSided && !mixed)
                     _deltaP[j] += dPb;
+                else if (mixed && b.Remote != 0)
+                    _deltaP[j] += dPb - dPa;
             }
 
             _overlaps.Add(new ShipTickOverlapElement
@@ -572,6 +650,16 @@ namespace TitanOrbit.ECS
 
             float dist = math.sqrt(distSq);
             float3 normal = dist > 1e-4f ? offset / dist : new float3(1f, 0f, 0f);
+            // A remote punch-through that has not cleared the rock yet must not reflect.
+            // Predicted hulls clear this flag in the friction pass; remotes do not.
+            if (ship.Remote != 0
+                && contacts.HasComponent(ship.Entity)
+                && contacts[ship.Entity].PunchThrough != 0)
+            {
+                _touchedRock[shipIndex] = 1;
+                return;
+            }
+
             float3 vel = ship.Velocity + _deltaV[shipIndex];
             vel.y = 0f;
             float closing = math.max(0f, -math.dot(vel, normal));
@@ -695,11 +783,20 @@ namespace TitanOrbit.ECS
             float dt,
             float mapW,
             float mapH,
-            float3 integratedVelocity = default)
+            float3 integratedVelocity = default,
+            bool remote = false,
+            bool usePose = false,
+            float3 posePosition = default,
+            float3 poseVelocity = default)
         {
             float3 velocity = integratedVelocity;
             velocity.y = 0f;
-            if (!integrate)
+            if (usePose)
+            {
+                velocity = poseVelocity;
+                velocity.y = 0f;
+            }
+            else if (!integrate)
             {
                 velocity = float3.zero;
                 if (kinematics.HasComponent(entity))
@@ -709,8 +806,8 @@ namespace TitanOrbit.ECS
                 }
             }
 
-            float3 position = transform.Position;
-            if (integrate)
+            float3 position = usePose ? posePosition : transform.Position;
+            if (integrate && !usePose)
             {
                 position += velocity * dt;
                 position.y = 0f;
@@ -726,6 +823,7 @@ namespace TitanOrbit.ECS
                 Radius = HullRadius(entity, transform.Scale, radii, colliders),
                 NetworkId = networkId,
                 Write = write ? (byte)1 : (byte)0,
+                Remote = remote ? (byte)1 : (byte)0,
             });
         }
 
@@ -790,6 +888,177 @@ namespace TitanOrbit.ECS
             return 0;
         }
 
+        /// <summary>
+        /// Planet and moon circles for remote hulls. Unity Physics does not move those
+        /// kinematic ghosts, so the same wall reflect the predicted hull gets from the
+        /// contact stream is applied here. Map size is the caller's resolved torus.
+        /// </summary>
+        /// <param name="state">Required so this helper's planet query can complete its dependency.</param>
+        void SolveRemoteWorldWalls(
+            ref SystemState state,
+            float mapW,
+            float mapH,
+            float restitution,
+            double elapsed,
+            ComponentLookup<ShipState> ships)
+        {
+            _ = state.EntityManager;
+            bool anyRemote = false;
+            for (int i = 0; i < _bodies.Length; i++)
+            {
+                if (_bodies[i].Remote != 0 && _bodies[i].Write != 0)
+                {
+                    anyRemote = true;
+                    break;
+                }
+            }
+
+            if (!anyRemote)
+                return;
+
+            _walls.Clear();
+            foreach (var (planet, transform, moon) in SystemAPI
+                         .Query<RefRO<PlanetState>, RefRO<LocalTransform>, RefRO<PlanetGemMoonState>>()
+                         .WithAll<PlanetTag>())
+            {
+                float planetSize = math.max(0.25f, transform.ValueRO.Scale);
+                bool home = planet.ValueRO.IsHomePlanet;
+                float3 planetPos = transform.ValueRO.Position;
+                _walls.Add(new WorldWallBody
+                {
+                    Position = planetPos,
+                    BodyRadius = BodyCollisionMath.GetPlanetBodyRadiusWorld(planetSize),
+                    ShieldRadius = 0f,
+                    Owner = TeamId.None,
+                });
+
+                float shield = moon.ValueRO.CurrentShield > 0.001f
+                    ? PlanetGemMoonMath.GetMoonShieldOuterRadiusWorld(planetSize, home)
+                    : 0f;
+                _walls.Add(new WorldWallBody
+                {
+                    Position = planetPos + PlanetGemMoonMath.GetMoonOrbitOffset(
+                        planetSize,
+                        planet.ValueRO.PlanetLevel,
+                        home,
+                        planet.ValueRO.PlanetId,
+                        elapsed),
+                    BodyRadius = PlanetGemMoonMath.GetMoonBodyRadiusWorld(planetSize, home),
+                    ShieldRadius = shield,
+                    Owner = planet.ValueRO.Ownership,
+                });
+            }
+
+            for (int i = 0; i < _bodies.Length; i++)
+            {
+                if (_bodies[i].Remote == 0 || _bodies[i].Write == 0)
+                    continue;
+
+                TeamId team = ships.HasComponent(_bodies[i].Entity)
+                    ? ships[_bodies[i].Entity].Team
+                    : TeamId.None;
+                for (int w = 0; w < _walls.Length; w++)
+                    TryWorldWall(i, _walls[w], team, mapW, mapH, restitution);
+            }
+        }
+
+        void TryWorldWall(
+            int shipIndex,
+            in WorldWallBody wall,
+            TeamId team,
+            float mapW,
+            float mapH,
+            float restitution)
+        {
+            bool hostileShield = wall.ShieldRadius > wall.BodyRadius
+                                 && wall.Owner != TeamId.None
+                                 && wall.Owner != team;
+            float radius = hostileShield ? wall.ShieldRadius : wall.BodyRadius;
+            float3 shipPos = _bodies[shipIndex].Position + _deltaP[shipIndex];
+            float3 offset = ToroidalMapEcs.ShortestOffsetXZ(wall.Position, shipPos, mapW, mapH);
+            offset.y = 0f;
+            float reach = _bodies[shipIndex].Radius + radius;
+            float distSq = offset.x * offset.x + offset.z * offset.z;
+            if (distSq >= reach * reach || reach <= 0f)
+                return;
+
+            float dist = math.sqrt(distSq);
+            float3 normal = dist > 1e-4f ? offset / dist : new float3(1f, 0f, 0f);
+            float3 vel = _bodies[shipIndex].Velocity + _deltaV[shipIndex];
+            vel.y = 0f;
+            float3 bounced = vel;
+            if (ShipCollisionImpulseLogic.ApplyInfiniteMassWallImpulse(ref bounced, normal, restitution))
+                _deltaV[shipIndex] += bounced - vel;
+            float depth = math.max(0f, reach - dist) + ShipCollisionImpulseLogic.ShipShipDepenetrationSkin;
+            depth = math.min(depth, ShipCollisionImpulseLogic.ShipShipTickMaxSeparation);
+            _deltaP[shipIndex] += normal * depth;
+        }
+
+        /// <summary>
+        /// Remotes are not in the Simulate friction pass, so the next motor step would
+        /// never see the rock normal. Punch-through stays clear of that stick until the
+        /// hull leaves the rock.
+        /// </summary>
+        void PublishRemoteAsteroidContact(
+            int shipIndex,
+            Entity ship,
+            ComponentLookup<ShipAsteroidContactState> contacts)
+        {
+            if (!contacts.HasComponent(ship))
+                return;
+
+            ShipAsteroidContactState contact = contacts[ship];
+            bool touched = shipIndex < _touchedRock.Length && _touchedRock[shipIndex] != 0;
+            if (!touched)
+            {
+                contacts[ship] = default;
+                return;
+            }
+
+            if (contact.PunchThrough != 0)
+            {
+                contact.InContact = 0;
+                contacts[ship] = contact;
+                return;
+            }
+
+            float3 normal = new float3(0f, 0f, 1f);
+            for (int c = _asteroidContacts.Length - 1; c >= 0; c--)
+            {
+                if (_asteroidContacts[c].Ship != ship)
+                    continue;
+                normal = _asteroidContacts[c].NormalShipFromOther;
+                break;
+            }
+
+            normal.y = 0f;
+            contact.InContact = 1;
+            contact.OutwardNormal = math.lengthsq(normal) > 1e-8f ? math.normalize(normal) : new float3(0f, 0f, 1f);
+            contacts[ship] = contact;
+        }
+
+        /// <summary>
+        /// Rewrites the history slot for this integrated tick so the next flight sample
+        /// scores the bounced pose, not the pose from before the wall.
+        /// </summary>
+        static void PatchRemoteHistory(DynamicBuffer<ShipRemoteMotorHistoryElement> history, in ShipRemoteMotorState motor)
+        {
+            int capacity = ShipRemoteMotorHistoryElement.Capacity;
+            if (history.Length != capacity)
+                return;
+
+            int slot = (int)(motor.IntegratedTick % (uint)capacity);
+            ShipRemoteMotorHistoryElement entry = history[slot];
+            if (entry.Valid == 0 || entry.Tick != motor.IntegratedTick)
+                return;
+
+            entry.X = motor.Position.x;
+            entry.Z = motor.Position.z;
+            entry.VX = motor.Velocity.x;
+            entry.VZ = motor.Velocity.z;
+            history[slot] = entry;
+        }
+
         struct ShipTickBody
         {
             public Entity Entity;
@@ -799,6 +1068,8 @@ namespace TitanOrbit.ECS
             public float Radius;
             public int NetworkId;
             public byte Write;
+            /// <summary>1 for a client remote motor hull. 0 for a predicted or server hull.</summary>
+            public byte Remote;
         }
 
         struct AsteroidTickBody
@@ -807,6 +1078,14 @@ namespace TitanOrbit.ECS
             public float3 Position;
             public float Radius;
             public float Health;
+        }
+
+        struct WorldWallBody
+        {
+            public float3 Position;
+            public float BodyRadius;
+            public float ShieldRadius;
+            public TeamId Owner;
         }
     }
 
