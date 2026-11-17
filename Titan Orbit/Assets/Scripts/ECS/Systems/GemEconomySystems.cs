@@ -667,7 +667,7 @@ namespace TitanOrbit.ECS
 
     /// <summary>
     /// Server: collects gems into ship cargo when a gem center is inside a wing-tip or hull
-    /// absorb sphere. Tractor beams only <b>pull</b> gems; this system is the actual consume.
+    /// absorb sphere. A tractor lock already consumed its gem in <see cref="GemTractorBeamSystem"/>.
     /// No tractor lock is required — flying a wing tip or the hull over a gem is enough.
     /// Radii come from <see cref="TractorBeamSettings"/> (Wing Collect Radius / Hull Pickup Range).
     /// Candidates come from <see cref="GemSpatialHash"/> around the hull, each wing, and gems
@@ -675,7 +675,7 @@ namespace TitanOrbit.ECS
     /// gather). Colour / <c>IsBonusGem</c> is ignored — yellow extra-yield gems scoop like red.
     /// A scoop always destroys the whole crystal. Cargo only gains
     /// <c>min(gem value, capacity left)</c>; the rest is wasted. Crystals are never split.
-    /// Runs after <see cref="GemMotionSystem"/> so same-tick tractor pull can land in the zone.
+    /// Runs after <see cref="GemMotionSystem"/>. Tractor commits are already destroyed by then.
     /// Skips only <c>IsDead</c> / team-select ships. A living 0-HP hull with cargo still aboard
     /// may scoop — dual-resource death is hull AND gems empty, not hull alone.
     /// </summary>

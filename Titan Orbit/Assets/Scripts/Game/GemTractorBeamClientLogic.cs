@@ -142,7 +142,9 @@ namespace TitanOrbit.Game
                     continue;
                 if (!shipSlotByNetworkId.TryGetValue(lockShipId, out int si))
                     continue;
-                if (!IsShipEligibleForBeam(shipStates[si]))
+                // Committed captures still draw while cargo ticks up and the gem flies in.
+                bool captureCommitted = gem.Motion.Phase == GemMotionState.PhaseCommitted;
+                if (!IsShipEligibleForBeam(shipStates[si], captureCommitted))
                     continue;
 
                 var wings = em.HasBuffer<ShipWingTractorBeamElement>(ships[si])
@@ -151,7 +153,9 @@ namespace TitanOrbit.Game
 
                 // Scoop zone: the gem is being consumed (or sitting in the absorb sphere).
                 // Hide the latch so we do not point at empty hull space after pickup.
-                if (IsInsideCargoAbsorbZone(
+                // A committed suck-in keeps the beam until the local gem is destroyed.
+                if (!captureCommitted &&
+                    IsInsideCargoAbsorbZone(
                         shipTransforms[si], wings, gem.Transform, gem.State, mapW, mapH))
                     continue;
 
@@ -412,12 +416,14 @@ namespace TitanOrbit.Game
         /// <summary>
         /// Client copy of server tractor eligibility: dead / team-select / full cargo cannot latch.
         /// 0 HP is allowed — same as <c>GemTractorBeamSystem.IsShipEligibleForPull</c>.
+        /// A committed capture ignores the full-hold check so the suck-in beam still draws
+        /// after cargo was credited.
         /// </summary>
-        public static bool IsShipEligibleForBeam(in ShipState ship)
+        public static bool IsShipEligibleForBeam(in ShipState ship, bool captureCommitted = false)
         {
             if (ship.IsDead || ship.AwaitingTeamSelection)
                 return false;
-            if (ship.CurrentGems >= ship.GemCapacity - 0.001f)
+            if (!captureCommitted && ship.CurrentGems >= ship.GemCapacity - 0.001f)
                 return false;
             return true;
         }

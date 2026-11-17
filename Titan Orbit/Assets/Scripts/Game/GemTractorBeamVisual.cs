@@ -15,7 +15,7 @@ namespace TitanOrbit.Game
     /// <summary>
     /// [HYBRID] Client-only Shapes drawer for wing tractor beams.
     /// Deploy beat: thin line shoots wing mid-center→gem, cone mouth opens at 90% of gem diameter.
-    /// Server pull waits for that same extend+widen clock. Start is pointy on the
+    /// A committed lock plays that extend while the gem slides in. Start is pointy on the
     /// wing body center; gem end stays rounded.
     /// Drawn length is hard-capped to the wing search radius so a wrap-tile or stale proxy
     /// cannot stretch a beam off-screen.
@@ -167,9 +167,8 @@ namespace TitanOrbit.Game
                 // --- Ship × gem pairs: eligibility, range, visibility, deploy phase ---
                 for (int si = 0; si < ships.Length; si++)
                 {
-                    if (!GemTractorBeamClientLogic.IsShipEligibleForBeam(shipStates[si]))
-                        continue;
-
+                    // Pair build already drops ineligible ships. Committed suck-ins stay
+                    // when cargo just filled, so this loop does not skip the whole ship.
                     Color teamBase = shipStates[si].Team != TeamId.None
                         ? shipStates[si].Team.ToColor()
                         : new Color(0.85f, 0.95f, 1f);
@@ -189,10 +188,13 @@ namespace TitanOrbit.Game
                             continue;
                         if (!GemTractorBeamClientLogic.HasVisibleGemCrystal(gem.Entity))
                             continue;
-                        if (GemTractorBeamClientLogic.IsInsideCargoAbsorbZone(
+                        bool captureCommitted = gem.Motion.Phase == GemMotionState.PhaseCommitted;
+                        if (!captureCommitted &&
+                            GemTractorBeamClientLogic.IsInsideCargoAbsorbZone(
                                 shipTransforms[si], wings, gem.Transform, gem.State, mapW, mapH))
                             continue;
-                        if (!GemTractorBeamClientLogic.IsWithinMagneticPullRange(
+                        if (!captureCommitted &&
+                            !GemTractorBeamClientLogic.IsWithinMagneticPullRange(
                                 em, ships[si], shipStates[si], shipTransforms[si], wings,
                                 gem.Entity, gem.Transform, mapW, mapH))
                             continue;
@@ -223,7 +225,8 @@ namespace TitanOrbit.Game
                         float drawnXz = math.length(new float2(
                             gemDisplay.x - shipDisplay.x,
                             gemDisplay.z - shipDisplay.z));
-                        if (!GemTractorBeamMath.IsDrawnBeamWithinReach(drawnXz, searchRadius))
+                        if (!captureCommitted &&
+                            !GemTractorBeamMath.IsDrawnBeamWithinReach(drawnXz, searchRadius))
                             continue;
 
                         float beamY = shipDisplay.y + heightAboveWing;

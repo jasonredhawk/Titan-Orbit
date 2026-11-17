@@ -1207,7 +1207,8 @@ namespace TitanOrbit.ECS
         public float TractorExtendDuration;
 
         /// <summary>
-        /// <c>GemMotionState</c> phase at send (Coast while extending, Tractor after pull starts).
+        /// <c>GemMotionState</c> phase at send. <see cref="GemMotionState.PhaseCommitted"/> means
+        /// the lock already credited cargo; the client plays the suck-in and does not simulate a chase.
         /// </summary>
         public byte Phase;
     }

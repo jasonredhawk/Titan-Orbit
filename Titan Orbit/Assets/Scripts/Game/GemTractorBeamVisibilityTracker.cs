@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using TitanOrbit.ECS;
+using Unity.NetCode;
 using UnityEngine;
 
 namespace TitanOrbit.Game
@@ -71,8 +72,10 @@ namespace TitanOrbit.Game
 
             for (int si = 0; si < ships.Length; si++)
             {
-                if (!GemTractorBeamClientLogic.IsShipEligibleForBeam(shipStates[si]))
-                    continue;
+                bool shipEligible = GemTractorBeamClientLogic.IsShipEligibleForBeam(shipStates[si]);
+                int shipNetworkId = 0;
+                if (em.HasComponent<GhostOwner>(ships[si]))
+                    shipNetworkId = em.GetComponentData<GhostOwner>(ships[si]).NetworkId;
 
                 var wings = em.HasBuffer<ECS.ShipWingTractorBeamElement>(ships[si])
                     ? em.GetBuffer<ECS.ShipWingTractorBeamElement>(ships[si])
@@ -81,6 +84,12 @@ namespace TitanOrbit.Game
                 for (int gi = 0; gi < GemScratch.Count; gi++)
                 {
                     var gem = GemScratch[gi];
+                    bool captureCommitted = gem.Motion.Phase == GemMotionState.PhaseCommitted &&
+                                            shipNetworkId != 0 &&
+                                            gem.Motion.TractorShipId == shipNetworkId;
+                    if (!shipEligible && !captureCommitted)
+                        continue;
+
                     long key = PairKey(ships[si].Index, gem.GhostId);
                     if (CameraGroundView.IsOutside(gem.Transform.Position, CameraGroundView.BodyMargin))
                     {
@@ -97,9 +106,10 @@ namespace TitanOrbit.Game
 
                     Touched.Add(key);
 
-                    bool wantsVisible = GemTractorBeamClientLogic.IsEligibleForBeamVisual(
-                        em, ships[si], shipStates[si], shipTransforms[si], wings,
-                        gem.Entity, gem.Transform, mapW, mapH);
+                    bool wantsVisible = captureCommitted ||
+                        GemTractorBeamClientLogic.IsEligibleForBeamVisual(
+                            em, ships[si], shipStates[si], shipTransforms[si], wings,
+                            gem.Entity, gem.Transform, mapW, mapH);
 
                     VisibilityByPair.TryGetValue(key, out float visibility);
 
