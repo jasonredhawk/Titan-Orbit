@@ -100,6 +100,8 @@ namespace TitanOrbit.ECS
                     out int resolvedBank,
                     out int extras);
                 damage *= CardEffectQuery.GetMul(state.EntityManager, entity, CardEffectKind.RocketDamageMul);
+                // Size follows the fired damage on the same curve as titan missiles.
+                visualScale = RocketShotMath.ShotVisualScale(damage);
                 if (resolvedBank >= 0)
                     _rocketBankIndex = resolvedBank;
 

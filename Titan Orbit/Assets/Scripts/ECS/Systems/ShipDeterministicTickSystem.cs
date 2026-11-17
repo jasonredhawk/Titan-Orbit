@@ -23,9 +23,11 @@ namespace TitanOrbit.ECS
     /// On the client, a remote hull is not simulated by Unity Physics (no
     /// <c>PhysicsVelocity</c>, kinematic). This tick still bounces it off ships,
     /// asteroids, planets, and moons, and writes that pose back onto
-    /// <see cref="ShipRemoteMotorState"/>. The local predicted hull does not take a
-    /// position shove from a remote — that half stays on the remote so prediction
-    /// is not walked off the server pose. Map size comes from
+    /// <see cref="ShipRemoteMotorState"/>. The local predicted hull takes its own
+    /// mass-weighted velocity and separation, the same split the server writes, so
+    /// the client motor bounces on impact instead of waiting for a snapshot.
+    /// Rollback replays that bounce against the remote history and does not rewrite
+    /// the live remote motor. Map size comes from
     /// <see cref="MapStateSingleton"/> / <see cref="ToroidalMapEcs"/>.
     /// </summary>
     [UpdateInGroup(typeof(PredictedFixedStepSimulationSystemGroup), OrderFirst = true)]
@@ -140,6 +142,18 @@ namespace TitanOrbit.ECS
                 return;
 
             bool isClient = state.World.IsClient();
+            // Forward tick writes remote motors. Rollback only reads them, or a resim
+            // would stack the same shove onto the live remote pose.
+            bool forwardTick = true;
+            uint simTick = 0;
+            if (isClient &&
+                SystemAPI.TryGetSingleton(out NetworkTime predictTime) &&
+                predictTime.ServerTick.IsValid)
+            {
+                forwardTick = predictTime.IsFirstTimeFullyPredictingTick;
+                simTick = predictTime.ServerTick.TickIndexForValidTick;
+            }
+
             ShipCargoMobilitySettings mobility = ShipCargoMobilitySettingsCache.ResolveOrDefault();
             var transformLookup = SystemAPI.GetComponentLookup<LocalTransform>(false);
             var velocityLookup = SystemAPI.GetComponentLookup<PhysicsVelocity>(false);
@@ -178,13 +192,35 @@ namespace TitanOrbit.ECS
                     ? ownerLookup[entity].NetworkId
                     : entity.Index;
 
-                // Client bots stay on the interpolated snapshot. Read them as the other hull.
+                // Client bots that still have a physics body must take their half of the
+                // bounce. Leaving them unwritable made an equal-mass AI hull plow through.
+                // A remote motor, when present, is the pose the next step continues from.
                 if (isClient && BotShipIds.IsBot(networkId))
                 {
+                    if (!forwardTick)
+                        continue;
+                    bool botMotor = remoteMotorLookup.HasComponent(entity)
+                                    && remoteMotorLookup[entity].Valid != 0;
+                    if (botMotor)
+                    {
+                        ShipRemoteMotorState botPose = remoteMotorLookup[entity];
+                        AddBody(
+                            ref _bodies, entity, transform.ValueRO, kinematicsLookup, motorLookup,
+                            shipLookup, radiusLookup, colliderLookup, networkId,
+                            mobility, write: true, integrate: false, dt, mapW, mapH,
+                            remote: true, usePose: true,
+                            posePosition: botPose.Position, poseVelocity: botPose.Velocity);
+                        continue;
+                    }
+
+                    float3 botFlight = kinematicsLookup.HasComponent(entity)
+                        ? kinematicsLookup[entity].Velocity
+                        : velocity.ValueRO.Linear;
                     AddBody(
                         ref _bodies, entity, transform.ValueRO, kinematicsLookup, motorLookup,
                         shipLookup, radiusLookup, colliderLookup, networkId,
-                        mobility, write: false, integrate: false, dt, mapW, mapH);
+                        mobility, write: true, integrate: true, dt, mapW, mapH,
+                        integratedVelocity: botFlight);
                     continue;
                 }
 
@@ -220,17 +256,37 @@ namespace TitanOrbit.ECS
                               && (moonLookup[entity].IsFullyLanded || moonLookup[entity].IsTakingOff);
                 float3 motorPos = default;
                 float3 motorVel = default;
+                bool writeRemote = false;
                 if (useMotor)
                 {
                     ShipRemoteMotorState remoteMotor = remoteMotorLookup[entity];
                     motorPos = remoteMotor.Position;
                     motorVel = remoteMotor.Velocity;
+                    writeRemote = forwardTick && !docked;
+                    if (!forwardTick &&
+                        !TryReplayRemotePose(
+                            remoteHistoryLookup, entity, simTick, dt, mapW, mapH,
+                            ref motorPos, ref motorVel))
+                    {
+                        // Ticks older than the motor have no sample. The live pose is
+                        // where the hull is now, so using it would bounce the past ship.
+                        // Ticks at or ahead of the motor hold that pose: the local ship
+                        // predicts into a remote that is not stepped again on rollback.
+                        int ahead = new NetworkTick(simTick).TicksSince(
+                            new NetworkTick(remoteMotor.IntegratedTick));
+                        if (ahead < 0)
+                            continue;
+                    }
+                }
+                else if (!forwardTick)
+                {
+                    continue;
                 }
 
                 AddBody(
                     ref _bodies, entity, transform.ValueRO, kinematicsLookup, motorLookup,
                     shipLookup, radiusLookup, colliderLookup, networkId,
-                    mobility, write: useMotor && !docked, integrate: false, dt, mapW, mapH,
+                    mobility, write: writeRemote, integrate: false, dt, mapW, mapH,
                     remote: useMotor, usePose: useMotor, posePosition: motorPos, poseVelocity: motorVel);
             }
             }
@@ -303,8 +359,8 @@ namespace TitanOrbit.ECS
                 float3 dp = _deltaP[i];
                 dp.y = 0f;
                 float dpLen = math.length(dp);
-                if (dpLen > ShipCollisionImpulseLogic.ShipShipTickMaxSeparation)
-                    dp *= ShipCollisionImpulseLogic.ShipShipTickMaxSeparation / dpLen;
+                if (dpLen > ShipCollisionImpulseLogic.ShipShipResolveMaxSeparation)
+                    dp *= ShipCollisionImpulseLogic.ShipShipResolveMaxSeparation / dpLen;
 
                 float3 pos = body.Position + dp;
                 pos.y = 0f;
@@ -382,9 +438,8 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Client display eases while this is set. A one-sided shove no longer walks
-        /// the hull out, but the snapshot can still step the pose. The latch tells
-        /// presentation not to raw-follow that step.
+        /// Client display follows the predicted hull while this is set, so a bounce
+        /// is not eased away. A gap larger than one separation cap still eases.
         /// </summary>
         void PublishClientShipOverlapLatch(ref SystemState state)
         {
@@ -497,49 +552,53 @@ namespace TitanOrbit.ECS
 
             float3 offset = ToroidalMapEcs.ShortestOffsetXZ(b.Position, a.Position, mapW, mapH);
             offset.y = 0f;
+            float3 incoming = ToroidalMapEcs.ShortestOffsetXZ(b.PrePosition, a.PrePosition, mapW, mapH);
+            incoming.y = 0f;
             float reach = a.Radius + b.Radius;
             float distSq = offset.x * offset.x + offset.z * offset.z;
-            if (distSq >= reach * reach)
+            float incomingSq = incoming.x * incoming.x + incoming.z * incoming.z;
+            // A fast pair can swap sides in one step. The post-step normal then points
+            // out the far side and the impulse lets them finish the plow.
+            bool crossed = incomingSq > 1e-8f && distSq > 1e-8f && math.dot(incoming, offset) < 0f;
+            if (distSq >= reach * reach && !crossed)
                 return;
 
             float dist = math.sqrt(distSq);
-            float3 normal = dist > 1e-4f ? offset / dist : new float3(1f, 0f, 0f);
+            float3 normal;
+            if (crossed)
+            {
+                float incomingDist = math.sqrt(incomingSq);
+                normal = incoming / incomingDist;
+                // Past the center: signed distance is negative, so separation
+                // pushes both hulls back to the side they came from.
+                dist = -dist;
+            }
+            else
+            {
+                normal = dist > 1e-4f ? offset / dist : new float3(1f, 0f, 0f);
+            }
             ShipCollisionImpulseLogic.ComputeDeterministicShipShip(
                 a.Velocity, b.Velocity, normal, a.Mass, b.Mass, reach - dist,
                 out float3 dVa, out float3 dVb, out float3 dPa, out float3 dPb,
                 out float closing);
 
-            // The server writes both halves. A predicting client only owns the local
-            // hull; the enemy stays on the interpolated pose. Applying the local
-            // position half anyway walks the hull out, and the next snapshot pulls
-            // it back. Keep the velocity impulse. Leave the position shove to the
-            // server pose while that pair is one-sided.
-            bool oneSided = a.Write != b.Write;
-            if (oneSided)
-                _clientOneSidedOverlap = true;
-
-            // Mixed pair: the local hull keeps its predicted position. The remote
-            // takes the whole separation so the two meshes do not stay overlapped.
-            bool mixed = a.Remote != b.Remote;
-            if (mixed)
-                _clientOneSidedOverlap = true;
-
+            // Same split on the server and the predicting client. The local motor
+            // owns its half, so the hull bounces here. A remote that is not writable
+            // this tick (rollback) still supplies pose and velocity for that split.
             if (a.Write != 0)
             {
                 _deltaV[i] += dVa;
-                if (!oneSided && !mixed)
-                    _deltaP[i] += dPa;
-                else if (mixed && a.Remote != 0)
-                    _deltaP[i] += dPa - dPb;
+                _deltaP[i] += dPa;
+                if (a.Remote == 0)
+                    _clientOneSidedOverlap = true;
             }
 
             if (b.Write != 0)
             {
                 _deltaV[j] += dVb;
-                if (!oneSided && !mixed)
-                    _deltaP[j] += dPb;
-                else if (mixed && b.Remote != 0)
-                    _deltaP[j] += dPb - dPa;
+                _deltaP[j] += dPb;
+                if (b.Remote == 0)
+                    _clientOneSidedOverlap = true;
             }
 
             _overlaps.Add(new ShipTickOverlapElement
@@ -806,8 +865,18 @@ namespace TitanOrbit.ECS
                 }
             }
 
-            float3 position = usePose ? posePosition : transform.Position;
-            if (integrate && !usePose)
+            float3 start = usePose ? posePosition : transform.Position;
+            start.y = 0f;
+            float3 position = start;
+            if (usePose)
+            {
+                // The remote motor already stepped this tick. The start pose is one
+                // step back so a center that crossed still bounces on the way in.
+                start = ToroidalMapEcs.Wrap(posePosition - velocity * dt, mapW, mapH);
+                position = posePosition;
+                position.y = 0f;
+            }
+            else if (integrate)
             {
                 position += velocity * dt;
                 position.y = 0f;
@@ -818,6 +887,7 @@ namespace TitanOrbit.ECS
             {
                 Entity = entity,
                 Position = position,
+                PrePosition = start,
                 Velocity = velocity,
                 Mass = RammingMass(entity, motors, ships, mobility),
                 Radius = HullRadius(entity, transform.Scale, radii, colliders),
@@ -1038,6 +1108,41 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
+        /// Pose a remote hull had at the start of <paramref name="tick"/>, before that
+        /// tick's bounce. History keeps the post-bounce pose, so this steps forward one
+        /// tick from the previous slot. Map size is the caller's resolved torus.
+        /// </summary>
+        static bool TryReplayRemotePose(
+            BufferLookup<ShipRemoteMotorHistoryElement> historyLookup,
+            Entity entity,
+            uint tick,
+            float dt,
+            float mapW,
+            float mapH,
+            ref float3 position,
+            ref float3 velocity)
+        {
+            if (tick == 0 || dt <= 0f || !historyLookup.HasBuffer(entity))
+                return false;
+
+            DynamicBuffer<ShipRemoteMotorHistoryElement> history = historyLookup[entity];
+            int capacity = ShipRemoteMotorHistoryElement.Capacity;
+            if (history.Length != capacity)
+                return false;
+
+            uint prev = tick - 1;
+            ShipRemoteMotorHistoryElement entry = history[(int)(prev % (uint)capacity)];
+            if (entry.Valid == 0 || entry.Tick != prev)
+                return false;
+
+            velocity = new float3(entry.VX, 0f, entry.VZ);
+            position = new float3(entry.X, 0f, entry.Z) + velocity * dt;
+            position.y = 0f;
+            position = ToroidalMapEcs.Wrap(position, mapW, mapH);
+            return true;
+        }
+
+        /// <summary>
         /// Rewrites the history slot for this integrated tick so the next flight sample
         /// scores the bounced pose, not the pose from before the wall.
         /// </summary>
@@ -1063,6 +1168,8 @@ namespace TitanOrbit.ECS
         {
             public Entity Entity;
             public float3 Position;
+            /// <summary>Pose at the start of this tick, before <see cref="Position"/>.</summary>
+            public float3 PrePosition;
             public float3 Velocity;
             public float Mass;
             public float Radius;
@@ -1095,8 +1202,8 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
-    /// Client-only. Active while the local hull is overlapping an interpolated enemy,
-    /// plus a short tail so the display ease can finish.
+    /// Client-only. Active while the local predicted hull is in a ship-vs-ship overlap,
+    /// plus a short tail so the display can finish following that bounce.
     /// </summary>
     public struct LocalShipShipOverlapLatch : IComponentData
     {

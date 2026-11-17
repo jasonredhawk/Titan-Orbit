@@ -46,9 +46,10 @@ namespace TitanOrbit.Simulation
 
         /// <summary>
         /// Rocket mesh scale before the bank global multiply.
-        /// <paramref name="curveScale"/> is the store-rocket size for this fire power
+        /// <paramref name="curveScale"/> is <see cref="RocketShotMath.ShotVisualScale"/>
         /// (1 at 40, 1.2 at 60, 2 at 240). <paramref name="authoredBankScale"/> is the
-        /// MEGA Weapon Missile bank scale (1 = that store-rocket size).
+        /// MEGA Weapon Missile bank scale. 1 matches a purchased rocket of that fire power.
+        /// Do not multiply by a hull or camera factor — that desyncs titan missiles from store rockets.
         /// </summary>
         [BurstCompile]
         public static float ComputeMissileShotScale(float curveScale, float authoredBankScale)

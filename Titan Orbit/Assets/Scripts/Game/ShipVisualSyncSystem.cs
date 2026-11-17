@@ -5,6 +5,7 @@ using TitanOrbit.ECS;
 using TitanOrbit.Generation;
 using TitanOrbit.NetCode;
 using TitanOrbit.Shared;
+using TitanOrbit.Simulation;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.NetCode;
@@ -399,7 +400,7 @@ namespace TitanOrbit.Game
             else if (!holdWreck && dampShipShipCorrection)
             {
                 InvalidateCruiseSimSample();
-                StepShipContactDamped(targetPos, targetRot, dt);
+                StepShipContactDamped(targetPos, targetRot, simVel, dt);
             }
             else if (!holdWreck)
             {
@@ -532,23 +533,25 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// While the local hull is against an interpolated enemy, raw-follow turns each
-        /// snapshot step into a visible reverse. Ease onto the sim pose instead.
-        /// Wrap, death, and respawn still hard-snap before this runs.
+        /// Predicted ship contact. A gap inside one sim step plus one separation cap is
+        /// the bounce, so the hull follows it. Anything larger is still a snapshot step
+        /// and eases. Wrap, death, and respawn still hard-snap before this runs.
         /// </summary>
-        void StepShipContactDamped(float3 simPos, quaternion simRot, float dt)
+        void StepShipContactDamped(float3 simPos, quaternion simRot, float3 simVel, float dt)
         {
             float3 err = simPos - _smoothPos;
             err.y = 0f;
             float dist = math.length(err);
-            float t = 1f - math.exp(-18f * math.max(0f, dt));
-            if (dist < 0.02f)
+            float step = math.length(simVel) / math.max(1f, TitanOrbitServerTickRateSystem.SimulationHz);
+            float bounceReach = step + ShipCollisionImpulseLogic.ShipShipResolveMaxSeparation + 0.08f;
+            if (dist <= math.max(bounceReach, 0.02f))
             {
                 _smoothPos = simPos;
                 _smoothRot = simRot;
                 return;
             }
 
+            float t = 1f - math.exp(-18f * math.max(0f, dt));
             _smoothPos += err * t;
             _smoothPos.y = simPos.y;
             _smoothRot = math.slerp(_smoothRot, simRot, t);

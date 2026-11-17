@@ -102,7 +102,7 @@ namespace TitanOrbit.Simulation
             _ = referenceSpeed;
             float visualScale = missileVisual
                 ? BulletVisualScale.ComputeMissileShotScale(
-                    RocketShotMath.InterpolateVisualScale(bulletDamage),
+                    RocketShotMath.ShotVisualScale(bulletDamage),
                     authoredBulletScale)
                 : sniperVisual
                     ? BulletVisualScale.ComputeSniperShotScale(bulletDamage)

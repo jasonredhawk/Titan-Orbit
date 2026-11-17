@@ -60,11 +60,21 @@ namespace TitanOrbit.Simulation
                 bankIndex, ref damage, ref dummySpeed, ref dummyRange, ref dummyLife, ref fireRate,
                 extras);
 
-            // Catalog visualScale is the mesh size (0.25 = quarter of a 1× rocket).
-            // 0 = derive from fired damage vs level-1 so a blank row still has a ladder.
-            visualScale = stats.visualScale > 0.01f
-                ? math.max(0.05f, stats.visualScale)
-                : ResolveVisualScaleFromDamage(damage, bankIndex);
+            // Same number titan missiles use for this fire power. Catalog visualScale
+            // is that curve (1 at 40, 2 at 240). Do not multiply by a second hull or
+            // bank factor here — BulletShotMath applies Weapon Missile bank scale on top,
+            // and 1 means "a purchased rocket of this fire power".
+            visualScale = ShotVisualScale(damage);
+        }
+
+        /// <summary>
+        /// Mesh scale written onto a homing rocket before the bullet-bank global multiply.
+        /// Purchased rockets and titan missiles both call this. A second multiplier on
+        /// only one of them is what makes one look right and the other tiny.
+        /// </summary>
+        public static float ShotVisualScale(float firePower)
+        {
+            return math.max(0.05f, InterpolateVisualScale(firePower));
         }
 
         /// <summary>Fired damage only — HUD readout (matches the spawned bullet).</summary>

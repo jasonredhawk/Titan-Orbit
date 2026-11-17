@@ -18,7 +18,7 @@ namespace TitanOrbit.NetCode
     /// first-send bias so MaxSendChunks=1 still walks the whole map. <see cref="TitanOrbitGhostSendGrace"/>
     /// keeps elevated send after TeamChoice Instantiates until the hull snapshot can leave.
     /// Client Instantiates of relevant ghosts is 16/frame (GhostSpawn patch). Do not drop
-    /// MaxSendChunks back to 1 — that starved gem pose/despawn snapshots.
+    /// MaxSendChunks back to 1 — that starved the ship snapshot. Gems are no longer ghosts.
     /// </para>
     /// World: ServerSimulation. Group: InitializationSystemGroup (after tick-rate setup).
     /// </summary>
@@ -30,33 +30,34 @@ namespace TitanOrbit.NetCode
         /// <summary>
         /// Max chunks written into one snapshot for one connection during steady play.
         /// [TITAN-ORBIT] This used to be 1 because asteroid ghosts shared one archetype and
-        /// one chunk delivered dozens of Instantiates (Crash!!!). Asteroids are seed-hydrated
-        /// now — they are not in the relevancy query. A cap of 1 starves gems: ship, gem,
-        /// transport, and planet are different archetypes, so only the highest-priority chunk
-        /// (usually the ship) left each tick. Nearby gems then sat on a stale interpolated
-        /// pose and could not be scooped. 4 = ship + gems + transport + planet in one packet.
-        /// Client Instantiates of relevant ghosts is 16/frame.
+        /// one chunk delivered dozens of Instantiates (Crash!!!). Asteroids are seed-hydrated.
+        /// Gems and troop transports are RPCs, not ghosts. A later cap of 4 left one planet
+        /// slot and about three 48-unit ship tiles, so a fight across a tile border updated
+        /// only the nearest hulls. 8 keeps one planet slot and several ship tiles. Do not
+        /// drop this back to 1 — that starved the hull snapshot. Client Instantiates of
+        /// relevant ghosts is 16/frame.
         /// </summary>
-        public const int MaxSendChunksPerSnapshot = 4;
+        public const int MaxSendChunksPerSnapshot = 8;
 
         /// <summary>
-        /// During post–TeamChoice grace, allow more chunks so the OwnerPredicted ship tile is not
-        /// starved by nearby transport/planet resends. Client Instantiates is 16/frame.
+        /// During post–TeamChoice grace, allow more chunks than steady play so the
+        /// OwnerPredicted ship tile is not starved by the reserved planet slot and nearby
+        /// ship tiles. Client Instantiates is 16/frame.
         /// </summary>
-        public const int MaxSendChunksDuringShipGrace = 8;
+        public const int MaxSendChunksDuringShipGrace = 12;
 
         /// <summary>
         /// How many chunks GhostSend may scan while filling the packet (steady-state).
-        /// NetCode recommends ≥ 2× <see cref="MaxSendChunksPerSnapshot"/>. Play used to
-        /// iterate only 4 — nearby gem tiles could fill the scan and skip the ship chunk.
+        /// NetCode recommends ≥ 2× <see cref="MaxSendChunksPerSnapshot"/>.
         /// </summary>
-        public const int MaxIterateChunksPerSnapshot = 8;
+        public const int MaxIterateChunksPerSnapshot = 16;
 
         /// <summary>
         /// Scan more tiles while loading or during ship-send grace.
-        /// Keeps MaxSendChunks low (Crash!!! safety) but finds never-sent chunks.
+        /// 2× <see cref="MaxSendChunksDuringShipGrace"/> so the wider grace send can
+        /// still find never-sent chunks. Keeps the send cap bounded.
         /// </summary>
-        public const int MaxIterateChunksDuringJoin = 16;
+        public const int MaxIterateChunksDuringJoin = 24;
 
         /// <summary>
         /// After distance scaling, skip chunks whose priority is below this.

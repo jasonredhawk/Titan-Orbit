@@ -863,6 +863,39 @@ namespace TitanOrbit.Simulation
         }
 
         /// <summary>
+        /// Center and heading for troop meshes on the locally predicted hull.
+        /// Prediction steps the ghost origin on the same tick as that hull, so
+        /// <see cref="ApplyFormationLag"/> is the trail. Pass <paramref name="ownerPredicted"/>
+        /// false only as a fallback: remote packs must not read the ghost origin
+        /// (snapshot interpolation against the remote motor shuttles them). Their
+        /// trail is stepped from the presentation pose instead.
+        /// </summary>
+        public static void ResolveVisualFormation(
+            bool ownerPredicted,
+            float3 presentationPos,
+            float3 simPos,
+            float3 formationOrigin,
+            byte centerSeeded,
+            float3 formationHeading,
+            float mapW,
+            float mapH,
+            out float3 center,
+            out float3 heading)
+        {
+            presentationPos.y = 0f;
+            if (!ownerPredicted)
+            {
+                center = presentationPos;
+                heading = float3.zero;
+                return;
+            }
+
+            center = ApplyFormationLag(
+                presentationPos, simPos, formationOrigin, centerSeeded, mapW, mapH);
+            heading = formationHeading;
+        }
+
+        /// <summary>
         /// Shortest planar offset from <paramref name="from"/> toward <paramref name="to"/>.
         /// Euclidean when map size is unset — never invent a period.
         /// </summary>

@@ -19,8 +19,9 @@ namespace TitanOrbit.ECS
         /// hull and <see cref="CurrentGems"/> both depleted (<see cref="TitanOrbit.Simulation.ShipDamageLogic"/>).
         /// Clamp (not Interpolate): floating damage reads this field. Interpolated Health
         /// shredded 2-HP turret hits into sub-1 fragments that PollShips dropped.
+        /// Quantized to 0.1 so a regen tick is a small delta, not a raw float.
         /// </summary>
-        [GhostField(Smoothing = SmoothingAction.Clamp)]
+        [GhostField(Quantization = 10, Smoothing = SmoothingAction.Clamp)]
         public float Health;
 
         /// <summary>[TITAN-ORBIT] Maximum hull from chassis stats + attribute upgrades.</summary>
@@ -57,14 +58,20 @@ namespace TitanOrbit.ECS
         /// </summary>
         [GhostField] public byte HullBulletBankIndex;
 
-        /// <summary>[TITAN-ORBIT] Gems currently stored in the ship cargo hold.</summary>
-        [GhostField] public float CurrentGems;
+        /// <summary>
+        /// [TITAN-ORBIT] Gems currently stored in the ship cargo hold.
+        /// Quantized to 0.1 so a scoop is a small delta, not a raw float.
+        /// </summary>
+        [GhostField(Quantization = 10)] public float CurrentGems;
 
         /// <summary>[TITAN-ORBIT] Maximum gem cargo from chassis + wing tractor stats.</summary>
         [GhostField] public float GemCapacity;
 
-        /// <summary>[TITAN-ORBIT] Weapon energy pool; shots consume this (regen in ShipVitalsRegenSystem).</summary>
-        [GhostField] public float CurrentEnergy;
+        /// <summary>
+        /// [TITAN-ORBIT] Weapon energy pool; shots consume this (regen in ShipVitalsRegenSystem).
+        /// Quantized to 0.1 so regen is a small delta, not a raw float.
+        /// </summary>
+        [GhostField(Quantization = 10)] public float CurrentEnergy;
 
         /// <summary>[TITAN-ORBIT] Maximum energy from chassis stats.</summary>
         [GhostField] public float MaxEnergy;

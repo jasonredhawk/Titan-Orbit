@@ -27,11 +27,12 @@ namespace TitanOrbit.Simulation
         public const float DefaultShipShipRestitution = 0.75f;
 
         /// <summary>
-        /// Ship-vs-ship bounce used by the deterministic tick. A slow close produces a
-        /// small push; a fast close produces a larger one. Mass splits that same impulse.
-        /// This is not <c>AsteroidSettings.BounceRestitution</c> (the world-wall coefficient).
+        /// Ship-vs-ship bounce used by the deterministic tick. Elastic, so equal mass
+        /// exchanges normal velocity: matching speeds rebound equally, and a heavier
+        /// hull changes speed less than the lighter one. This is not
+        /// <c>AsteroidSettings.BounceRestitution</c> (the world-wall coefficient).
         /// </summary>
-        public const float ShipShipTickRestitution = 0.45f;
+        public const float ShipShipTickRestitution = 1f;
 
         /// <summary>
         /// Approach slower than this (world units/sec along the normal) does not change
@@ -41,6 +42,12 @@ namespace TitanOrbit.Simulation
 
         /// <summary>Largest positional split applied to one hull along the normal in one tick.</summary>
         public const float ShipShipTickMaxSeparation = 0.75f;
+
+        /// <summary>
+        /// Safety cap on one tick of ship-vs-ship separation. Big enough to clear a real
+        /// hull overlap. Asteroid pops stay on <see cref="ShipShipTickMaxSeparation"/>.
+        /// </summary>
+        public const float ShipShipResolveMaxSeparation = 24f;
 
         /// <summary>
         /// Client bounce against an interpolated remote (no <c>PhysicsVelocity</c>).
@@ -207,7 +214,8 @@ namespace TitanOrbit.Simulation
         /// One deterministic ship↔ship overlap. Both sides receive the same mass-weighted
         /// impulse and the same split of the overlap. Callers that do not own a hull
         /// (a client looking at an interpolated ship) discard that side's delta.
-        /// A little closing speed yields a little velocity change. Resting overlap
+        /// Equal mass exchanges the normal velocity. A heavier hull takes less of
+        /// that change, so the lighter hull rebounds farther. Resting overlap
         /// still separates and does not add a bounce.
         /// </summary>
         public static void ComputeDeterministicShipShip(
@@ -237,7 +245,7 @@ namespace TitanOrbit.Simulation
                 n = math.normalize(n);
 
             float depth = math.max(0f, penetration) + ShipShipDepenetrationSkin;
-            depth = math.min(depth, ShipShipTickMaxSeparation);
+            depth = math.min(depth, ShipShipResolveMaxSeparation);
             float mA = math.max(MinCollisionMass, massA);
             float mB = math.max(MinCollisionMass, massB);
             float share = 1f / (mA + mB);

@@ -650,7 +650,11 @@ namespace TitanOrbit.ECS
             motor.DisplayRotation = math.slerp(motor.DisplayRotation, targetRot, math.saturate(blend));
         }
 
-        /// <summary>Writes the bled pose and the integrated velocity. Does not add PhysicsVelocity.</summary>
+        /// <summary>
+        /// Writes the bled pose and the integrated velocity. Does not add PhysicsVelocity.
+        /// Leaves <see cref="LocalTransform.Scale"/> alone — tier size comes from
+        /// <c>ShipStatApplySystem</c>.
+        /// </summary>
         static void ApplyPose(
             ref LocalTransform transform,
             ref ShipRemoteMotorState motor,

@@ -483,10 +483,31 @@ namespace TitanOrbit.Game
             if (f.TargetShipNetworkId > 0 &&
                 TryCachedShipFrame(f.TargetShipNetworkId, out var frame))
             {
+                float3 planar = frame.Transform.Position;
+                planar.y = 0f;
+                bool ownerPredicted = f.TargetShipNetworkId == EcsGameBridge.GetLocalNetworkId();
+                // Remote packs publish a trail stepped from the drawn hull. Until that
+                // exists, fall back to the predicted lag (own ship) or the hull itself.
+                float3 slotCenter;
+                float3 faceHeading;
+                if (ownerPredicted ||
+                    !PeopleTransportEscortPresenter.TryGetVisualFormation(
+                        f.TargetShipNetworkId, out slotCenter, out faceHeading))
+                {
+                    PeopleTransportMath.ResolveVisualFormation(
+                        ownerPredicted,
+                        planar,
+                        frame.Transform.Position,
+                        frame.Origin,
+                        frame.CenterSeeded,
+                        frame.Heading,
+                        mapW,
+                        mapH,
+                        out slotCenter,
+                        out faceHeading);
+                }
                 if (f.SeatId != 255)
                 {
-                    float3 slotCenter = PeopleTransportMath.ResolveFormationCenter(
-                        frame.Transform.Position, frame.Origin, frame.CenterSeeded, mapW, mapH);
                     slot = PeopleTransportMath.EvaluateEscortSwarmPose(
                         slotCenter,
                         frame.Transform.Rotation,
@@ -498,13 +519,12 @@ namespace TitanOrbit.Game
                         clock,
                         mapW,
                         mapH,
-                        frame.Heading);
+                        faceHeading);
                     hasSlot = true;
                 }
                 else
                 {
-                    slot = PeopleTransportMath.ResolveFormationCenter(
-                        frame.Transform.Position, frame.Origin, frame.CenterSeeded, mapW, mapH);
+                    slot = slotCenter;
                     hasSlot = true;
                 }
             }
