@@ -97,15 +97,19 @@ namespace TitanOrbit.ECS
     /// Client-only forward integration for remote and AI hulls. Steps
     /// <see cref="ShipPhysicsDriveLogic"/> one tick at a time from the pose it already
     /// has. A new <see cref="ShipRemoteFlightSample"/> measures how far that pose was
-    /// from the server at the sample tick and folds the error in. It does not rewind
-    /// to the sample and replay the whole gap: that replay used only the newest input,
-    /// so a late snapshot (common once many hulls share a send chunk) yanked every
-    /// ship in the tile on the same frame. A collision-sized sample (velocity jump or
-    /// a several-unit miss) adopts the server pose instead of that constant offset,
-    /// because a bounce is not a drift. The deterministic tick then bounces the
-    /// integrated pose off ships, asteroids, planets, and moons. Does not enable
-    /// <see cref="Simulate"/> or <see cref="PredictedGhost"/>. Runs once on the newest
-    /// predicting tick, before the local drive. Map size comes from
+    /// from the server at the sample tick. Cruise-sized misses are stored as a pending
+    /// error and flown out by the motor (extra velocity, a slow velocity blend, a capped
+    /// yaw rate). The history ring is not pre-shifted: it keeps the pose the motor
+    /// actually had, and each slot records the correction applied on the step that
+    /// reached it so the next sample replaces the pending error with whatever is left.
+    /// It does not rewind to the sample and replay the whole gap: that replay used only
+    /// the newest input, so a late snapshot (common once many hulls share a send chunk)
+    /// yanked every ship in the tile on the same frame. A collision-sized sample
+    /// (velocity jump or a several-unit miss) adopts the server pose and clears the
+    /// pending error, because a bounce is not a drift. The deterministic tick then
+    /// bounces the integrated pose off ships, asteroids, planets, and moons. Does not
+    /// enable <see cref="Simulate"/> or <see cref="PredictedGhost"/>. Runs once on the
+    /// newest predicting tick, before the local drive. Map size comes from
     /// <see cref="MapStateSingleton"/> / <see cref="ToroidalMapEcs"/>.
     /// </summary>
     [UpdateInGroup(typeof(PredictedFixedStepSimulationSystemGroup), OrderFirst = true)]
@@ -123,14 +127,23 @@ namespace TitanOrbit.ECS
         /// </summary>
         public const int MaxCatchUpSteps = 2;
 
-        /// <summary>How fast the displayed hull closes a wrong guess (1/seconds).</summary>
-        public const float CorrectSharpness = 18f;
+        /// <summary>
+        /// Seconds of motor time used to turn a cruise position or yaw error into a rate.
+        /// About a third of a second, so the hull flies onto the server path.
+        /// </summary>
+        public const float CorrectTime = 0.33f;
+
+        /// <summary>Cap on the extra planar velocity that closes position error (world units / second).</summary>
+        public const float MaxPositionCorrectSpeed = 8f;
 
         /// <summary>
-        /// Cap on that blend, in world units per second. The exponential spends about a
-        /// quarter of a large error in one tick; a crowd correction then reads as a hitch.
+        /// How fast a velocity error blends into the motor (1/seconds). Slow so the
+        /// one-tick render lead does not pop when a sample arrives.
         /// </summary>
-        public const float MaxDisplayCorrectSpeed = 36f;
+        public const float VelocityCorrectSharpness = 3f;
+
+        /// <summary>Cap on yaw correction (radians / second).</summary>
+        public const float MaxYawCorrectRate = 1.5f;
 
         /// <summary>Gaps larger than this snap. Matches the old remote presentation snap.</summary>
         public const float SnapDistance = 24f;
@@ -154,7 +167,7 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Steps each live remote at most <see cref="MaxCatchUpSteps"/> from its own
-        /// integrated tick, then writes the bled pose onto <see cref="LocalTransform"/>
+        /// integrated tick, then writes that motor pose onto <see cref="LocalTransform"/>
         /// and the motor velocity onto <see cref="ShipKinematics"/>.
         /// </summary>
         public void OnUpdate(ref SystemState state)
@@ -288,8 +301,8 @@ namespace TitanOrbit.ECS
 
                         if (TryHistory(history, flight.Tick, out var hist))
                         {
-                            // Error at the sample tick, added to today's pose. A respawn
-                            // is a large error and still lands on the spawn, not on the wreck.
+                            // Error at the sample tick against the pose the motor actually had.
+                            // A respawn is a large error and still lands on the spawn, not on the wreck.
                             float3 histPos = new float3(hist.X, 0f, hist.Z);
                             float3 err = ToroidalMapEcs.ShortestOffsetXZ(histPos, flight.Position, mapW, mapH);
                             err.y = 0f;
@@ -318,7 +331,7 @@ namespace TitanOrbit.ECS
                             }
                             else
                             {
-                                ApplySampleError(ref motor, history, err, yawErr, velErr, flight.Tick, mapW, mapH);
+                                StoreCruiseError(ref motor, history, err, yawErr, velErr, flight.Tick, subtractApplied: true);
                             }
                         }
                         else
@@ -340,14 +353,25 @@ namespace TitanOrbit.ECS
                                 steps = 0;
                                 collisionSnap = collision;
                             }
+                            else
+                            {
+                                float yawErr = DeltaYaw(
+                                    ShipRemoteFlightSample.YawFromRotation(motor.Rotation), flight.Yaw);
+                                float3 velErr = flight.Velocity - motor.Velocity;
+                                velErr.y = 0f;
+                                // miss is server-extrapolated versus the live pose, so it is already
+                                // the residual. Do not subtract steps that moved this pose.
+                                StoreCruiseError(ref motor, history, miss, yawErr, velErr, flight.Tick, subtractApplied: false);
+                            }
                         }
                     }
                 }
 
                 // The pose at IntegratedTick has to be in the ring before we step,
                 // or the next sample for this tick has nothing to score against.
+                // Keep the correction already recorded for this tick.
                 if (!dead)
-                    RecordHistory(history, in motor);
+                    RecordHistory(history, in motor, writeApplied: false);
 
                 var input = flight.ToFlightInput();
                 for (int s = 0; s < steps; s++)
@@ -359,12 +383,12 @@ namespace TitanOrbit.ECS
                     var integrated = new NetworkTick(motor.IntegratedTick);
                     integrated.Add(1);
                     motor.IntegratedTick = integrated.TickIndexForValidTick;
-                    RecordHistory(history, in motor);
+                    RecordHistory(history, in motor, writeApplied: true);
                 }
 
                 motor.Holding = (byte)(dead ? 1 : 0);
                 motor.IntegratedUnscaledTime = now;
-                PublishDisplay(ref motor, motor.Position, motor.Rotation, dt, mapW, mapH, dead || acquire || collisionSnap);
+                PublishDisplay(ref motor, motor.Position, motor.Rotation, mapW, mapH, dead || acquire || collisionSnap);
                 motor.Valid = 1;
                 var posed = transform.ValueRO;
                 ApplyPose(ref posed, ref motor, ref kinematics, entity);
@@ -406,11 +430,108 @@ namespace TitanOrbit.ECS
             motor.Ship = ship;
             motor.MoonDock = moon;
             motor.Orbit = orbit;
+            ClearCruiseCorrection(ref motor);
+            motor.CorrectionTrustTick = 0;
+        }
+
+        /// <summary>
+        /// Replaces the pending cruise correction with the residual at this sample.
+        /// History positions stay as the motor flew them. Correction already applied on
+        /// later ticks is subtracted so this sample does not fly that distance again.
+        /// A sample from before a client-side bounce is ignored: that pose was discarded.
+        /// </summary>
+        static void StoreCruiseError(
+            ref ShipRemoteMotorState motor,
+            DynamicBuffer<ShipRemoteMotorHistoryElement> history,
+            float3 posError,
+            float yawError,
+            float3 velError,
+            uint sampleTick,
+            bool subtractApplied)
+        {
+            if (motor.CorrectionTrustTick != 0)
+            {
+                int sinceTrust = new NetworkTick(sampleTick).TicksSince(new NetworkTick(motor.CorrectionTrustTick));
+                if (sinceTrust < 0)
+                    return;
+            }
+
+            float3 appliedPos = float3.zero;
+            float appliedYaw = 0f;
+            float3 appliedVel = float3.zero;
+            if (subtractApplied)
+            {
+                SumAppliedAfter(
+                    history, sampleTick, motor.IntegratedTick,
+                    out appliedPos, out appliedYaw, out appliedVel);
+            }
+
+            float3 pendingPos = posError - appliedPos;
+            pendingPos.y = 0f;
+            motor.PendingPosError = pendingPos;
+            motor.PendingYawError = WrapYaw(yawError - appliedYaw);
+            float3 pendingVel = velError - appliedVel;
+            pendingVel.y = 0f;
+            motor.PendingVelError = pendingVel;
+        }
+
+        /// <summary>
+        /// Sums correction applied on history ticks strictly after <paramref name="sampleTick"/>
+        /// and not after <paramref name="integratedTick"/>. Those steps are in the live pose
+        /// and not in the sample-tick position.
+        /// </summary>
+        static void SumAppliedAfter(
+            DynamicBuffer<ShipRemoteMotorHistoryElement> history,
+            uint sampleTick,
+            uint integratedTick,
+            out float3 pos,
+            out float yaw,
+            out float3 vel)
+        {
+            pos = float3.zero;
+            yaw = 0f;
+            vel = float3.zero;
+            int capacity = ShipRemoteMotorHistoryElement.Capacity;
+            if (history.Length != capacity)
+                return;
+
+            for (int i = 0; i < capacity; i++)
+            {
+                ShipRemoteMotorHistoryElement entry = history[i];
+                if (entry.Valid == 0)
+                    continue;
+                int afterSample = new NetworkTick(entry.Tick).TicksSince(new NetworkTick(sampleTick));
+                if (afterSample <= 0 || afterSample >= capacity)
+                    continue;
+                int untilNow = new NetworkTick(integratedTick).TicksSince(new NetworkTick(entry.Tick));
+                if (untilNow < 0)
+                    continue;
+                pos.x += entry.AppliedX;
+                pos.z += entry.AppliedZ;
+                yaw += entry.AppliedYaw;
+                vel.x += entry.AppliedVX;
+                vel.z += entry.AppliedVZ;
+            }
+        }
+
+        /// <summary>Drops a cruise correction. Used on acquire, death, and a hard adopt.</summary>
+        static void ClearCruiseCorrection(ref ShipRemoteMotorState motor)
+        {
+            motor.PendingPosError = float3.zero;
+            motor.PendingYawError = 0f;
+            motor.PendingVelError = float3.zero;
+            motor.CorrectionVelocity = float3.zero;
+            motor.StepPosX = 0f;
+            motor.StepPosZ = 0f;
+            motor.StepYaw = 0f;
+            motor.StepVelX = 0f;
+            motor.StepVelZ = 0f;
         }
 
         /// <summary>
         /// Adds the measured sample error to the live pose and to every history entry
         /// from that tick forward, so the next sample does not apply the same offset again.
+        /// Collision adopts only. Cruise misses use <see cref="StoreCruiseError"/>.
         /// </summary>
         static void ApplySampleError(
             ref ShipRemoteMotorState motor,
@@ -428,6 +549,7 @@ namespace TitanOrbit.ECS
             motor.Velocity.y = 0f;
             float yaw = ShipRemoteFlightSample.YawFromRotation(motor.Rotation) + yawError;
             motor.Rotation = quaternion.RotateY(yaw);
+            ClearCruiseCorrection(ref motor);
 
             for (int i = 0; i < history.Length; i++)
             {
@@ -443,6 +565,13 @@ namespace TitanOrbit.ECS
                 entry.Yaw = WrapYaw(entry.Yaw + yawError);
                 entry.VX += velError.x;
                 entry.VZ += velError.z;
+                // The shifted pose already includes this adopt. A leftover step delta
+                // would be subtracted again on the next cruise sample.
+                entry.AppliedX = 0f;
+                entry.AppliedZ = 0f;
+                entry.AppliedYaw = 0f;
+                entry.AppliedVX = 0f;
+                entry.AppliedVZ = 0f;
                 history[i] = entry;
             }
         }
@@ -491,8 +620,15 @@ namespace TitanOrbit.ECS
             return entry.Valid != 0 && entry.Tick == tick;
         }
 
-        /// <summary>Writes the integrated pose into the slot for its tick.</summary>
-        static void RecordHistory(DynamicBuffer<ShipRemoteMotorHistoryElement> history, in ShipRemoteMotorState motor)
+        /// <summary>
+        /// Writes the integrated pose into the slot for its tick.
+        /// <paramref name="writeApplied"/> stores the correction from the step that just
+        /// arrived at this tick. A rewrite of the current tick keeps the delta already there.
+        /// </summary>
+        static void RecordHistory(
+            DynamicBuffer<ShipRemoteMotorHistoryElement> history,
+            in ShipRemoteMotorState motor,
+            bool writeApplied)
         {
             int capacity = ShipRemoteMotorHistoryElement.Capacity;
             if (history.Length != capacity)
@@ -502,7 +638,23 @@ namespace TitanOrbit.ECS
                     history[i] = default;
             }
 
-            history[(int)(motor.IntegratedTick % (uint)capacity)] = new ShipRemoteMotorHistoryElement
+            int slot = (int)(motor.IntegratedTick % (uint)capacity);
+            ShipRemoteMotorHistoryElement previous = history[slot];
+            float appliedX = motor.StepPosX;
+            float appliedZ = motor.StepPosZ;
+            float appliedYaw = motor.StepYaw;
+            float appliedVx = motor.StepVelX;
+            float appliedVz = motor.StepVelZ;
+            if (!writeApplied && previous.Valid != 0 && previous.Tick == motor.IntegratedTick)
+            {
+                appliedX = previous.AppliedX;
+                appliedZ = previous.AppliedZ;
+                appliedYaw = previous.AppliedYaw;
+                appliedVx = previous.AppliedVX;
+                appliedVz = previous.AppliedVZ;
+            }
+
+            history[slot] = new ShipRemoteMotorHistoryElement
             {
                 Valid = 1,
                 Tick = motor.IntegratedTick,
@@ -511,6 +663,11 @@ namespace TitanOrbit.ECS
                 Yaw = ShipRemoteFlightSample.YawFromRotation(motor.Rotation),
                 VX = motor.Velocity.x,
                 VZ = motor.Velocity.z,
+                AppliedX = appliedX,
+                AppliedZ = appliedZ,
+                AppliedYaw = appliedYaw,
+                AppliedVX = appliedVx,
+                AppliedVZ = appliedVz,
             };
         }
 
@@ -546,6 +703,13 @@ namespace TitanOrbit.ECS
             {
                 motor.Velocity = float3.zero;
                 motor.Ship.OverdriveBurstActive = false;
+                // Pinned: do not keep last tick's correction in the render lead or the history slot.
+                motor.CorrectionVelocity = float3.zero;
+                motor.StepPosX = 0f;
+                motor.StepPosZ = 0f;
+                motor.StepYaw = 0f;
+                motor.StepVelX = 0f;
+                motor.StepVelZ = 0f;
                 return;
             }
 
@@ -604,50 +768,116 @@ namespace TitanOrbit.ECS
                 pos += linear * dt;
             pos.y = 0f;
             motor.Position = ToroidalMapEcs.Wrap(pos, mapW, mapH);
+            ApplyCruiseCorrection(ref motor, dt, mapW, mapH);
         }
 
         /// <summary>
-        /// Pulls the visible hull toward the integrated pose. Wrap, death, and a 24 unit
-        /// gap snap. <paramref name="hardSnap"/> covers the first sample and a dead hull.
+        /// Flies a cruise sample error out after the shared motor step. Position error
+        /// becomes a capped extra velocity in this same integration. Velocity error blends
+        /// in slowly. Yaw error becomes a capped yaw rate. The pending vectors shrink by
+        /// exactly the amount applied, position via the toroidal shortest offset, so the
+        /// next sample does not apply that distance again. Dead, team-select, and a pinned
+        /// moon dock skip the bias. The extra velocity is not written into
+        /// <see cref="ShipRemoteMotorState.Velocity"/> — that stays the flight model so the
+        /// next velocity sample is not fighting a correction we baked in.
+        /// </summary>
+        static void ApplyCruiseCorrection(ref ShipRemoteMotorState motor, float dt, float mapW, float mapH)
+        {
+            motor.StepPosX = 0f;
+            motor.StepPosZ = 0f;
+            motor.StepYaw = 0f;
+            motor.StepVelX = 0f;
+            motor.StepVelZ = 0f;
+            motor.CorrectionVelocity = float3.zero;
+
+            if (dt <= 0f)
+                return;
+            if (motor.Ship.IsDead || motor.Ship.AwaitingTeamSelection)
+                return;
+            if (motor.MoonDock.IsFullyLanded || motor.MoonDock.IsTakingOff)
+                return;
+
+            float gain = 1f / math.max(CorrectTime, 1e-4f);
+
+            float3 posErr = motor.PendingPosError;
+            posErr.y = 0f;
+            float errLen = math.length(posErr);
+            if (errLen > 1e-5f)
+            {
+                float3 target = ToroidalMapEcs.Wrap(motor.Position + posErr, mapW, mapH);
+                float3 corrVel = posErr * gain;
+                float corrSpeed = math.length(corrVel);
+                if (corrSpeed > MaxPositionCorrectSpeed)
+                    corrVel *= MaxPositionCorrectSpeed / corrSpeed;
+                float3 posStep = corrVel * dt;
+                float stepLen = math.length(posStep);
+                if (stepLen > errLen && stepLen > 1e-8f)
+                    posStep *= errLen / stepLen;
+
+                motor.Position = ToroidalMapEcs.Wrap(motor.Position + posStep, mapW, mapH);
+                float3 remain = ToroidalMapEcs.ShortestOffsetXZ(motor.Position, target, mapW, mapH);
+                remain.y = 0f;
+                motor.PendingPosError = remain;
+                motor.CorrectionVelocity = posStep / dt;
+                motor.StepPosX = posStep.x;
+                motor.StepPosZ = posStep.z;
+            }
+
+            float vBlend = 1f - math.exp(-VelocityCorrectSharpness * math.max(0f, dt));
+            float3 velErr = motor.PendingVelError;
+            velErr.y = 0f;
+            float3 velStep = velErr * vBlend;
+            motor.Velocity += velStep;
+            motor.Velocity.y = 0f;
+            float3 velRemain = velErr - velStep;
+            velRemain.y = 0f;
+            motor.PendingVelError = velRemain;
+            motor.StepVelX = velStep.x;
+            motor.StepVelZ = velStep.z;
+
+            float yawErr = motor.PendingYawError;
+            if (math.abs(yawErr) > 1e-6f)
+            {
+                float yawRate = math.clamp(yawErr * gain, -MaxYawCorrectRate, MaxYawCorrectRate);
+                float yawStep = yawRate * dt;
+                if (math.abs(yawStep) > math.abs(yawErr))
+                    yawStep = yawErr;
+                float yaw = ShipRemoteFlightSample.YawFromRotation(motor.Rotation) + yawStep;
+                motor.Rotation = quaternion.RotateY(WrapYaw(yaw));
+                motor.PendingYawError = WrapYaw(yawErr - yawStep);
+                motor.StepYaw = yawStep;
+            }
+        }
+
+        /// <summary>
+        /// Copies the motor pose onto the visible hull. Cruise error is already in that
+        /// pose, so there is no second chase. Acquire, death, collision, a toroidal wrap,
+        /// and a gap past <see cref="SnapDistance"/> are the same copy — the mesh does not
+        /// lerp across the map.
         /// </summary>
         static void PublishDisplay(
             ref ShipRemoteMotorState motor,
             float3 targetPos,
             quaternion targetRot,
-            float dt,
             float mapW,
             float mapH,
             bool hardSnap)
         {
-            if (motor.Valid == 0 || hardSnap)
+            bool wrap = motor.Valid != 0 && ToroidalMapEcs.IsWrapJump(motor.DisplayPosition, targetPos, mapW, mapH);
+            float gapLen = motor.Valid == 0
+                ? 0f
+                : math.length(ToroidalMapEcs.ShortestOffsetXZ(motor.DisplayPosition, targetPos, mapW, mapH));
+            // Both arms assign. The branch stays so a wrap or a 24u gap is an explicit snap
+            // and hardSnap (acquire, death, collision) is not a dead write.
+            if (motor.Valid == 0 || hardSnap || wrap || gapLen > SnapDistance)
             {
                 motor.DisplayPosition = targetPos;
                 motor.DisplayRotation = targetRot;
                 return;
             }
 
-            float3 gap = ToroidalMapEcs.ShortestOffsetXZ(motor.DisplayPosition, targetPos, mapW, mapH);
-            gap.y = targetPos.y - motor.DisplayPosition.y;
-            float gapLen = math.length(gap);
-            bool wrap = ToroidalMapEcs.IsWrapJump(motor.DisplayPosition, targetPos, mapW, mapH);
-            if (wrap || gapLen > SnapDistance)
-            {
-                motor.DisplayPosition = targetPos;
-                motor.DisplayRotation = targetRot;
-                return;
-            }
-
-            float blend = 1f - math.exp(-CorrectSharpness * math.max(0f, dt));
-            float3 delta = gap * blend;
-            float deltaLen = math.length(delta);
-            float maxStep = MaxDisplayCorrectSpeed * math.max(0f, dt);
-            if (deltaLen > maxStep && maxStep > 0f)
-                delta *= maxStep / deltaLen;
-            float3 pos = motor.DisplayPosition + delta;
-            pos = ToroidalMapEcs.Wrap(pos, mapW, mapH);
-            pos.y = targetPos.y;
-            motor.DisplayPosition = pos;
-            motor.DisplayRotation = math.slerp(motor.DisplayRotation, targetRot, math.saturate(blend));
+            motor.DisplayPosition = targetPos;
+            motor.DisplayRotation = targetRot;
         }
 
         /// <summary>
@@ -702,12 +932,27 @@ namespace TitanOrbit.ECS
 
         /// <summary>Planar velocity Z at <see cref="Tick"/>.</summary>
         public float VZ;
+
+        /// <summary>Position correction applied on the step that arrived at <see cref="Tick"/>, X.</summary>
+        public float AppliedX;
+
+        /// <summary>Position correction applied on the step that arrived at <see cref="Tick"/>, Z.</summary>
+        public float AppliedZ;
+
+        /// <summary>Yaw correction applied on the step that arrived at <see cref="Tick"/>, radians.</summary>
+        public float AppliedYaw;
+
+        /// <summary>Velocity correction blended in on the step that arrived at <see cref="Tick"/>, X.</summary>
+        public float AppliedVX;
+
+        /// <summary>Velocity correction blended in on the step that arrived at <see cref="Tick"/>, Z.</summary>
+        public float AppliedVZ;
     }
 
     /// <summary>
     /// Client-only integrated remote pose. Not ghosted. Presentation reads the display
-    /// fields; the next motor step continues from <see cref="Position"/> and
-    /// <see cref="Velocity"/>, not from the bled display.
+    /// fields, which match <see cref="Position"/> in cruise. The next motor step continues
+    /// from <see cref="Position"/> and <see cref="Velocity"/>.
     /// </summary>
     public struct ShipRemoteMotorState : IComponentData
     {
@@ -726,13 +971,53 @@ namespace TitanOrbit.ECS
         /// <summary>Integrated rotation.</summary>
         public quaternion Rotation;
 
-        /// <summary>Integrated planar velocity.</summary>
+        /// <summary>Integrated planar velocity. Flight model only; cruise position correction is separate.</summary>
         public float3 Velocity;
 
-        /// <summary>Bled pose written to the ghost transform.</summary>
+        /// <summary>
+        /// Position error still to fly out, as a toroidal offset from <see cref="Position"/>
+        /// toward the server. Replaced by each cruise sample, not stacked.
+        /// </summary>
+        public float3 PendingPosError;
+
+        /// <summary>Yaw error still to fly out, radians, shortest direction.</summary>
+        public float PendingYawError;
+
+        /// <summary>Velocity error still to blend in.</summary>
+        public float3 PendingVelError;
+
+        /// <summary>
+        /// Extra planar velocity applied for the position error on the last step.
+        /// Presentation adds this to the one-tick lead. Not part of <see cref="Velocity"/>.
+        /// </summary>
+        public float3 CorrectionVelocity;
+
+        /// <summary>
+        /// Client tick of the last bounce that discarded the integrated pose. Cruise samples
+        /// older than this are not stored; their history no longer matches the live hull.
+        /// 0 until that happens.
+        /// </summary>
+        public uint CorrectionTrustTick;
+
+        /// <summary>Position correction applied by the last <see cref="ShipRemoteMotorSystem"/> step, X.</summary>
+        public float StepPosX;
+
+        /// <summary>Position correction applied by the last step, Z.</summary>
+        public float StepPosZ;
+
+        /// <summary>Yaw correction applied by the last step, radians.</summary>
+        public float StepYaw;
+
+        /// <summary>Velocity correction applied by the last step, X.</summary>
+        public float StepVelX;
+
+        /// <summary>Velocity correction applied by the last step, Z.</summary>
+        public float StepVelZ;
+
+        /// <summary>Motor pose written to the ghost transform. Matches <see cref="Position"/> in cruise.</summary>
         public float3 DisplayPosition;
 
-        /// <summary>Bled rotation written to the ghost transform.</summary>
+        /// <summary>Motor rotation written to the ghost transform.</summary>
         public quaternion DisplayRotation;
 
         /// <summary>Local copy so a replay can drain energy without writing the ghost.</summary>

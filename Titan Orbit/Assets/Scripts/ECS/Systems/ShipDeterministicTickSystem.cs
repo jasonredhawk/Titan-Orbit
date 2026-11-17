@@ -401,6 +401,18 @@ namespace TitanOrbit.ECS
                     remoteMotor.Velocity = vel;
                     remoteMotor.DisplayPosition = pos;
                     remoteMotor.DisplayRotation = lt.Rotation;
+                    // The bounce discarded the cruise offset. Do not fly the pre-hit error
+                    // back through the wall. Samples from before this tick are ignored.
+                    remoteMotor.PendingPosError = float3.zero;
+                    remoteMotor.PendingYawError = 0f;
+                    remoteMotor.PendingVelError = float3.zero;
+                    remoteMotor.CorrectionVelocity = float3.zero;
+                    remoteMotor.StepPosX = 0f;
+                    remoteMotor.StepPosZ = 0f;
+                    remoteMotor.StepYaw = 0f;
+                    remoteMotor.StepVelX = 0f;
+                    remoteMotor.StepVelZ = 0f;
+                    remoteMotor.CorrectionTrustTick = remoteMotor.IntegratedTick;
                     remoteMotorLookup[body.Entity] = remoteMotor;
                     if (remoteHistoryLookup.HasBuffer(body.Entity))
                         PatchRemoteHistory(remoteHistoryLookup[body.Entity], remoteMotor);
@@ -1161,6 +1173,12 @@ namespace TitanOrbit.ECS
             entry.Z = motor.Position.z;
             entry.VX = motor.Velocity.x;
             entry.VZ = motor.Velocity.z;
+            // This slot's pose is the bounce, not the cruise step that arrived here.
+            entry.AppliedX = 0f;
+            entry.AppliedZ = 0f;
+            entry.AppliedYaw = 0f;
+            entry.AppliedVX = 0f;
+            entry.AppliedVZ = 0f;
             history[slot] = entry;
         }
 
