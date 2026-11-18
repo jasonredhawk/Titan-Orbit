@@ -95,7 +95,8 @@ namespace TitanOrbit.Simulation
             // Guns: fire power ÷ the bullet bank asset reference
             // (Bullet Reference Fire Power, live value 4).
             // A sniper divides by 50. A missile uses the store-rocket size for this
-            // shot's fire power (40 → 1, 60 → 1.2, 30 → 0.75). The gun divisor is not used.
+            // shot's fire power (catalog 40 → 1, 60 → 1.2, 30 → 0.75, then
+            // RocketShotMath.GlobalMeshScale). The gun divisor is not used.
             // Lasers never reach this builder.
             _ = categoryUpgradeScale;
             _ = referenceDamage;

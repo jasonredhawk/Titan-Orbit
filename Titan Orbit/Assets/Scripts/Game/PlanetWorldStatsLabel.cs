@@ -14,7 +14,7 @@ namespace TitanOrbit.Game
     /// spreadsheet: Rajdhani place name, optional HOME PLANET stamp, <c>FLEET</c> / <c>GUN</c>
     /// rails, then a labeled people stack — <c>CREW</c> (live count), <c>CAP</c> (hold limit),
     /// and <c>+N LINK</c> when connection triangles add extra beds. Under that, a gem line
-    /// shows gems stored now over the cost to reach the next level (240 / 1600 at level 5).
+    /// shows gems stored now over the cost to reach the next level (240 / 3200 at level 5).
     /// Optional capture-contributor name sits between identity and the people stack.
     /// Client / hybrid presentation only — reads replicated <see cref="PlanetState"/> and the
     /// published connection graph; never drives sim. Paired with <see cref="WorldBodyVisualApplier"/>
@@ -196,7 +196,7 @@ namespace TitanOrbit.Game
         /// Drops the cached gem count and level cost, then repaints from live planet state.
         /// <see cref="WorldBodyVisualApplier.RefreshPlanetVisualAppearance"/> calls this on
         /// level-up, in the same pass as the moon, so both labels show stored gems over the
-        /// new cost (level 5 → current / 1600). Deposits update the left number from LateUpdate.
+        /// new cost (level 5 → current / 3200). Deposits update the left number from LateUpdate.
         /// </summary>
         public void RefreshGemRequirement()
         {
@@ -532,7 +532,7 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// One line under CREW: <c>NEXT  240 / 1600</c>. Left number is gems stored now.
+        /// One line under CREW: <c>NEXT  240 / 3200</c>. Left number is gems stored now.
         /// Right number is the cost to reach the next level. <see cref="Refresh"/> rewrites it.
         /// </summary>
         static TextMeshPro CreateGemRequirementText(Transform parent)
@@ -1275,7 +1275,7 @@ namespace TitanOrbit.Game
             _populationRow.BonusText.text = showLink ? WorldBodyLabelTheme.FormatLinkLine(bonusAmount) : string.Empty;
             _populationRow.BonusText.color = WorldBodyLabelTheme.LinkCyan;
 
-            // NEXT 240 / 1600. Rewritten when stored gems or the level cost changes.
+            // NEXT 240 / 3200. Rewritten when stored gems or the level cost changes.
             _gemRequirementText.gameObject.SetActive(true);
             _gemRequirementText.richText = true;
             _gemRequirementText.text = WorldBodyLabelTheme.FormatGemProgressLine(currentGems, state.PlanetLevel);

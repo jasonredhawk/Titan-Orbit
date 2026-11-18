@@ -61,11 +61,19 @@ namespace TitanOrbit.Simulation
                 extras);
 
             // Same number titan missiles use for this fire power. Catalog visualScale
-            // is that curve (1 at 40, 2 at 240). Do not multiply by a second hull or
-            // bank factor here — BulletShotMath applies Weapon Missile bank scale on top,
-            // and 1 means "a purchased rocket of this fire power".
+            // is the relative curve (1 at 40, 2 at 240); ShotVisualScale then applies
+            // GlobalMeshScale. Do not multiply by a second hull or bank factor here —
+            // BulletShotMath applies Weapon Missile bank scale on top, and 1 means
+            // "a purchased rocket of this fire power".
             visualScale = ShotVisualScale(damage);
         }
+
+        /// <summary>
+        /// Multiplies every store rocket and titan missile mesh. Catalog rows stay the
+        /// relative curve (1 at fire power 40, 2 at 240). 2 draws those rows at 2 and 4
+        /// before the bullet-bank global multiply.
+        /// </summary>
+        public const float GlobalMeshScale = 2f;
 
         /// <summary>
         /// Mesh scale written onto a homing rocket before the bullet-bank global multiply.
@@ -74,7 +82,7 @@ namespace TitanOrbit.Simulation
         /// </summary>
         public static float ShotVisualScale(float firePower)
         {
-            return math.max(0.05f, InterpolateVisualScale(firePower));
+            return math.max(0.05f, InterpolateVisualScale(firePower) * GlobalMeshScale);
         }
 
         /// <summary>Fired damage only — HUD readout (matches the spawned bullet).</summary>

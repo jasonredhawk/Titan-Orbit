@@ -153,7 +153,7 @@ namespace TitanOrbit.Game
 
             // --- Gem requirement on the planet label ---
             // Same level-up pass as the moon. LateUpdate would catch it a frame later;
-            // this call paints NEXT / 1600 in the frame the ghost level changes.
+            // this call paints NEXT / 3200 in the frame the ghost level changes.
             var planetStats = instance.GetComponent<PlanetWorldStatsLabel>();
             if (planetStats != null)
                 planetStats.RefreshGemRequirement();

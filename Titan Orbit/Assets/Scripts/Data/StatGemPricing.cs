@@ -6,16 +6,17 @@ namespace TitanOrbit.Data
     /// <summary>
     /// Turns a part's stats into a gem price using <see cref="StatGemRates"/>.
     /// Each stat is multiplied by that stat's rate (1.25 gems per damage, 0.375 gems per health)
-    /// and the products are added. A hull still prices those grown numbers directly.
-    /// A gear card prices the same numbers, then multiplies by the buy level, so a higher
-    /// level costs more even when Per Extra is only a small step. Titan parts use the
-    /// same rates on their catalog stats (no buy-level multiply — Titans do not Extra-Level).
+    /// and the products are added. A hull prices those grown numbers directly — there is no
+    /// extra multiply of the gem total. A gear card prices the same numbers with abilities at 0,
+    /// then multiplies by the buy level. Titan parts use the same rates on their catalog stats
+    /// (no Extra Level — Titans do not level).
     /// <para>
     /// [TITAN-ORBIT] A ship's price is the sum of those part prices, one charge per bolted copy.
     /// The orbit-tree pill and the server debit both use the hull sum. A hull child is scaled
-    /// by its prefab <c>localScale</c> first (same rules as the power bar), then Extra Level
-    /// runs, then that family's bonus multipliers. A gear card bought in the store has no hull
-    /// mesh and no family roll yet, so that sticker is the catalog part at the buy level.
+    /// by its prefab <c>localScale</c> first, then Extra Level runs at the ship level with every
+    /// ability maxed to that level (<see cref="ShipAbilityLevelCounts.Maxed"/>), then that
+    /// family's bonus multipliers. A gear card bought in the store has no hull mesh and no
+    /// family roll yet, so that sticker is the catalog part at the buy level with abilities at 0.
     /// </para>
     /// </summary>
     public static class StatGemPricing
@@ -120,8 +121,8 @@ namespace TitanOrbit.Data
 
         /// <summary>
         /// Gems to buy this family hull: each prefab child that matches a catalog part
-        /// adds the gem value of that child's stats at <paramref name="shipLevel"/>.
-        /// This is not the gear-card sticker — hulls do not also multiply by the level.
+        /// adds the gem value of that child's stats at <paramref name="shipLevel"/> with
+        /// every ability maxed to that level. The gem total is not multiplied again.
         /// Two copies of the same wing add that value twice.
         /// </summary>
         /// <param name="config">Family list. Null loads the default Resources asset.</param>
@@ -155,8 +156,9 @@ namespace TitanOrbit.Data
 
         /// <summary>
         /// Gems for one hull prefab at <paramref name="shipLevel"/>, using <paramref name="family"/>'s catalog.
-        /// Each child is scaled, grown with Extra Level, then multiplied by that family's bonuses.
-        /// The upgrade-tree sort on the family inspector and on ShipFamilyDefinitionCatalog both call this.
+        /// Each child is scaled, grown with Extra Level at that level plus maxed abilities, then
+        /// multiplied by that family's bonuses. The upgrade-tree sort on the family inspector
+        /// and on ShipFamilyDefinitionCatalog both call this.
         /// </summary>
         public static int PriceFamilyPrefab(GameObject prefab, ShipFamilyDefinition family, int shipLevel)
         {
@@ -171,9 +173,10 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Adds the gear price of every stat-bearing child on <paramref name="prefab"/>.
-        /// Scale is applied to that child's catalog row before Extra Level, matching the
-        /// power bar. Children whose names do not match a catalog row add nothing.
+        /// Adds the gem price of every stat-bearing child on <paramref name="prefab"/>.
+        /// Scale is applied to that child's catalog row before Extra Level. Each part is
+        /// priced at <paramref name="shipLevel"/> with every ability maxed to that level.
+        /// Children whose names do not match a catalog row add nothing.
         /// </summary>
         static int SumPrefabParts(GameObject prefab, ShipFamilyDefinition family, int shipLevel)
         {
@@ -187,6 +190,8 @@ namespace TitanOrbit.Data
             int total = 0;
             string prefix = familyId + "_";
             shipLevel = Mathf.Max(1, shipLevel);
+            // Same cap as the bottom bar: each ability can be bought shipLevel times.
+            ShipAbilityLevelCounts maxedAbilities = ShipAbilityLevelCounts.Maxed(shipLevel);
             for (int i = 0; i < transforms.Length; i++)
             {
                 Transform child = transforms[i];
@@ -201,15 +206,25 @@ namespace TitanOrbit.Data
                 if (!family.TryGetComponentEntry(componentId, out ShipFamilyComponentEntry entry) || entry == null)
                     continue;
 
-                // --- Scale, Extra Level, family bonus, then the rate table ---
+                // --- Scale, Extra Level at maxed abilities, family bonus, then the rate table ---
                 // [TITAN-ORBIT] A cockpit at scale 3 is 3× health before Per Extra grows it.
-                // A uniform scale-2 gun is 4× damage and ¼ fire rate. The family bonus
-                // (authored multipliers, or this match's roll) is the same multiply the
-                // power bar and the live hull apply. Home planets stay 1× during a match.
+                // A uniform scale-2 gun is 4× damage and ¼ fire rate. Stats that have a
+                // bottom-bar chip use base + perExtra × (shipLevel + maxAbility). Max ability
+                // equals the ship level. Bullet range, fire rate, and tractor stay ship-level
+                // only — they have no chip. Weapon bullet speed uses the ability only.
+                // Cargo mobility drag still shrinks move, accel, and turn after that, the same
+                // way a live hull does. The family bonus is the same multiply the live hull
+                // applies. Home planets stay 1× during a match.
                 ShipComponentAbilityStats scaled = ShipComponentAbilityStatsMath.ScaleStatsByTransform(
                     entry.stats, child, componentId);
-                ShipComponentAbilityStats grown = ShipComponentStoreData.GetEffectiveStatsAtShipLevel(
-                    scaled, shipLevel, entry.componentId);
+                bool weapon = ShipComponentAbilityStats.IsWeaponComponent(entry.componentId);
+                ShipComponentAbilityStats grown = ShipComponentExtraLevelMath.EvaluatePool(
+                    scaled,
+                    componentCount: 1,
+                    shipLevel,
+                    in maxedAbilities,
+                    isWeaponPool: weapon);
+                grown = ShipComponentExtraLevelMath.ApplyMobilityPenalties(grown, shipLevel);
                 grown = family.ApplySpecialBonuses(grown);
                 total += Price(grown);
             }

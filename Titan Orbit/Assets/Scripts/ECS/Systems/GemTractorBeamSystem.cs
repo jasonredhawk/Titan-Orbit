@@ -19,9 +19,9 @@ namespace TitanOrbit.ECS
     /// pull chase, so ship speed cannot drag a locked gem or drop the capture.
     /// Matching uses <see cref="GemTractorBeamAssignment"/> + <see cref="TractorBeamSettings"/>.
     /// Nearby gem scans use <see cref="GemSpatialHash"/> so ships do not walk every gem.
-    /// Extend duration is presentation-only (client suck-in length). Clients must not invent
-    /// a second wing assignment. Flying over a gem that never locked still uses
-    /// <see cref="GemPickupSystem"/>.
+    /// Each wing holds one gem until that beam's extend, cone, and suck-in finish, then
+    /// may lock the next crystal. Clients must not invent a second wing assignment.
+    /// Flying over a gem that never locked still uses <see cref="GemPickupSystem"/>.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
@@ -67,6 +67,12 @@ namespace TitanOrbit.ECS
         /// </summary>
         readonly Dictionary<int, Dictionary<int, long>> _stickyLocksByShip =
             new Dictionary<int, Dictionary<int, long>>(16);
+        /// <summary>
+        /// Wing is busy until this server-clock time. One capture per wing; the next gem
+        /// waits until the beam animation for the current gem has finished.
+        /// </summary>
+        readonly Dictionary<int, Dictionary<int, float>> _wingBusyUntilByShip =
+            new Dictionary<int, Dictionary<int, float>>(16);
         /// <summary>Scratch: gem key → primary wing for ghost TractorWingIndex.</summary>
         readonly Dictionary<long, int> _primaryWingByGem = new Dictionary<long, int>(16);
         /// <summary>Scratch: gem key → all wing indices pulling it this tick (primary + assists).</summary>
@@ -157,6 +163,7 @@ namespace TitanOrbit.ECS
                     if (!IsShipEligibleForPull(shipState, moonDock))
                     {
                         _stickyLocksByShip.Remove(shipEntity.Index);
+                        _wingBusyUntilByShip.Remove(shipEntity.Index);
                         continue;
                     }
 
@@ -166,6 +173,7 @@ namespace TitanOrbit.ECS
                     if (shipNetworkId == 0)
                     {
                         _stickyLocksByShip.Remove(shipEntity.Index);
+                        _wingBusyUntilByShip.Remove(shipEntity.Index);
                         continue;
                     }
 
@@ -307,6 +315,12 @@ namespace TitanOrbit.ECS
                 int primaryWing = _primaryWingByGem.TryGetValue(MakeGemKey(gemEntity), out int pw)
                     ? pw
                     : wingList[0];
+
+                // One beam per wing until this gem's extend, cone, and suck-in finish.
+                float hold = GemTractorBeamMath.ComputeCaptureHoldSeconds(deploy.ExtendDuration);
+                float busyUntil = nowServerTime + hold;
+                for (int wi = 0; wi < wingList.Count; wi++)
+                    MarkWingBusy(shipEntity.Index, wingList[wi], busyUntil);
 
                 ship.CurrentGems = math.min(ship.GemCapacity, ship.CurrentGems + take);
                 capacityLeft = ship.GemCapacity - ship.CurrentGems;
@@ -460,6 +474,10 @@ namespace TitanOrbit.ECS
             // --- Collect in-range wing↔gem samples (spatial cells, not every gem on the map) ---
             for (int wi = 0; wi < wingCount; wi++)
             {
+                // This wing is still playing the previous capture.
+                if (IsWingBusy(shipIndex, wi, nowServerTime))
+                    continue;
+
                 var wing = wings[wi];
                 ShipWingTractorBeamPose.GetTractorParams(wing, shipLevel, inOrbit, out float searchRadius, out _);
                 float3 wingPos = ShipWingTractorBeamPose.GetWorldPosition(shipTransform, wing);
@@ -546,6 +564,10 @@ namespace TitanOrbit.ECS
             uint serverTick,
             HashSet<long> activePairs)
         {
+            // Hull has one beam. Wait until the previous capture animation finishes.
+            if (IsWingBusy(shipEntity.Index, 0, nowServerTime))
+                return;
+
             // --- Hull-center fallback reach (legacy ships without wing buffers) ---
             GemTractorBeamMath.GetTractorBeamFromMaxGems(8f, inOrbit, out float searchRadius, out _);
             TractorBeamSettingsCache.ApplyReach(ref searchRadius);
@@ -653,6 +675,32 @@ namespace TitanOrbit.ECS
             gem.Value > 0.001f &&
             gem.DepositTeam == TeamId.None &&
             !GemSelfPickupBlock.IsTractorBlockedForShip(gem, shipNetworkId, nowServerTime);
+
+        bool IsWingBusy(int shipIndex, int wingIndex, float nowServerTime)
+        {
+            if (!_wingBusyUntilByShip.TryGetValue(shipIndex, out var wings))
+                return false;
+            if (!wings.TryGetValue(wingIndex, out float until))
+                return false;
+            if (nowServerTime < until)
+                return true;
+            wings.Remove(wingIndex);
+            if (wings.Count == 0)
+                _wingBusyUntilByShip.Remove(shipIndex);
+            return false;
+        }
+
+        void MarkWingBusy(int shipIndex, int wingIndex, float busyUntil)
+        {
+            if (!_wingBusyUntilByShip.TryGetValue(shipIndex, out var wings))
+            {
+                wings = new Dictionary<int, float>(4);
+                _wingBusyUntilByShip[shipIndex] = wings;
+            }
+
+            if (!wings.TryGetValue(wingIndex, out float prev) || busyUntil > prev)
+                wings[wingIndex] = busyUntil;
+        }
 
         static long MakeGemKey(Entity e) => ((long)(uint)e.Version << 32) | (uint)e.Index;
 

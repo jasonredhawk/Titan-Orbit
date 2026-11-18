@@ -12,7 +12,7 @@ namespace TitanOrbit.Game
     /// World-space label above the orbiting gem moon. Matches the planet cockpit stack:
     /// Rajdhani place name, <c>FLEET</c> / <c>GUN</c> rails, then labeled GEMS and SHIELD.
     /// Gems show stored amount over the cost to reach the next planet level
-    /// (<see cref="PlanetEconomyMath.GetMaxGemsForLevel"/> — 1600 at level 5).
+    /// (<see cref="PlanetEconomyMath.GetMaxGemsForLevel"/> — 3200 at level 5).
     /// Shield stays current over MAX.
     /// World / family / gun strings match <see cref="PlanetWorldStatsLabel"/>.
     /// Client presentation only. During idle theatrical camera,

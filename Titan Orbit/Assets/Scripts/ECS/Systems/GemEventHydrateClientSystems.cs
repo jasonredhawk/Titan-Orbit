@@ -503,7 +503,8 @@ namespace TitanOrbit.ECS
                 }
 
                 float deployEnd = GemTractorBeamMath.ComputeDeployTotalDuration(extend);
-                float suck = math.max(extend, 0.28f);
+                float hold = GemTractorBeamMath.ComputeCaptureHoldSeconds(extend);
+                float suck = math.max(0.0001f, hold - deployEnd);
                 float travel = elapsed <= deployEnd
                     ? 0f
                     : math.saturate((elapsed - deployEnd) / suck);
@@ -530,7 +531,7 @@ namespace TitanOrbit.ECS
                 present.Elapsed = elapsed;
                 presentation.ValueRW = present;
 
-                if (elapsed >= deployEnd + suck - 0.0001f)
+                if (elapsed >= hold - 0.0001f)
                     QueueFinish(spawnId, entity);
             }
 

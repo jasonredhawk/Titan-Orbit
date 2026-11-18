@@ -18,8 +18,8 @@ namespace TitanOrbit.Game
     /// Publishes NetCode presentation-phase ship poses once per frame for camera, hybrid leftovers,
     /// and parallax. Remote and AI hulls are driven by <see cref="ShipRemoteMotorSystem"/> up to
     /// the estimated server tick. This system copies that pose and adds at most one tick of
-    /// flight velocity plus the motor's correction velocity so extra render frames do not freeze
-    /// the hull or step back when the correction lands. It does not coast them a second
+    /// flight velocity so extra render frames do not freeze the hull. The cruise correction
+    /// is already inside that pose, so it is not added again. It does not coast them a second
     /// time toward the interpolated snapshot.
     /// <para>
     /// [TITAN-ORBIT] Local ship wraps onto the canonical chart; camera follows that pose.
@@ -627,10 +627,11 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Copies the remote motor pose. Adds at most one tick of flight velocity plus
-        /// the cruise correction velocity between sim steps, so the lead matches the
-        /// extra the motor will apply. Wrap, death, and a 24 unit gap snap to the motor
-        /// pose with no lead. Does not coast toward the interpolated snapshot.
+        /// Copies the remote motor pose. Adds at most one tick of flight velocity between
+        /// sim steps. The cruise correction is already in the motor pose, so adding it
+        /// again coasts past the hull and steps back on the next tick. Wrap, death, and
+        /// a 24 unit gap snap to the motor pose with no lead. Does not coast toward the
+        /// interpolated snapshot.
         /// </summary>
         LocalTransform PublishRemotePose(
             Entity entity,
@@ -655,7 +656,7 @@ namespace TitanOrbit.Game
                 {
                     target = motor.DisplayPosition;
                     targetRot = motor.DisplayRotation;
-                    velocity = motor.Velocity + motor.CorrectionVelocity;
+                    velocity = motor.Velocity;
                     velocity.y = 0f;
                     holding = motor.Holding != 0;
                     float age = holding

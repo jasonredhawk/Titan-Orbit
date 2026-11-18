@@ -560,8 +560,9 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Gems to buy this chassis: the sum of its parts at <paramref name="shipLevel"/>,
-        /// each priced from <see cref="StatGemRates"/>. The orbit-tree pill and the server debit both read this.
+        /// Gems to buy this chassis: the sum of its parts at <paramref name="shipLevel"/>
+        /// with every ability maxed to that level, each priced from <see cref="StatGemRates"/>.
+        /// The orbit-tree pill and the server debit both read this.
         /// </summary>
         public int GetPurchaseGemCostForChassisId(string chassisId, int shipLevel)
         {

@@ -268,8 +268,8 @@ MonoBehaviour:
       extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 0
       turnSpeedPerExtraLevel: 0
-      maxGems: 16
-      maxGemsPerExtraLevel: 4
+      maxGems: 30
+      maxGemsPerExtraLevel: 15
       tractorBeamDistance: 0
       tractorBeamDistancePerExtraLevel: 0
       tractorBeamPower: 0
@@ -489,7 +489,7 @@ MonoBehaviour:
       energyCapPerExtraLevel: 6
       energyRegen: 5
       energyRegenPerExtraLevel: 1.5
-      moveSpeed: 6
+      moveSpeed: 5
       moveSpeedPerExtraLevel: 0.1
       accelerationCap: 0
       accelerationCapPerExtraLevel: 0
@@ -1038,8 +1038,8 @@ MonoBehaviour:
       extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 0
       turnSpeedPerExtraLevel: 0
-      maxGems: 10
-      maxGemsPerExtraLevel: 2
+      maxGems: 16
+      maxGemsPerExtraLevel: 8
       tractorBeamDistance: 3
       tractorBeamDistancePerExtraLevel: 0.75
       tractorBeamPower: 4
@@ -1115,12 +1115,12 @@ MonoBehaviour:
       extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 0
       turnSpeedPerExtraLevel: 0
-      maxGems: 16
-      maxGemsPerExtraLevel: 3
+      maxGems: 24
+      maxGemsPerExtraLevel: 12
       tractorBeamDistance: 6
       tractorBeamDistancePerExtraLevel: 1.5
       tractorBeamPower: 8
-      tractorBeamPowerPerExtraLevel: 2
+      tractorBeamPowerPerExtraLevel: 3
       maxPeople: 10
       maxPeoplePerExtraLevel: 2
     bulletPrefabIndex: -1
@@ -1192,12 +1192,12 @@ MonoBehaviour:
       extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 0
       turnSpeedPerExtraLevel: 0
-      maxGems: 22
-      maxGemsPerExtraLevel: 4
+      maxGems: 32
+      maxGemsPerExtraLevel: 16
       tractorBeamDistance: 9
       tractorBeamDistancePerExtraLevel: 2.25
       tractorBeamPower: 12
-      tractorBeamPowerPerExtraLevel: 3
+      tractorBeamPowerPerExtraLevel: 5
       maxPeople: 14
       maxPeoplePerExtraLevel: 3
     bulletPrefabIndex: -1
@@ -1269,12 +1269,12 @@ MonoBehaviour:
       extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 0
       turnSpeedPerExtraLevel: 0
-      maxGems: 28
-      maxGemsPerExtraLevel: 5
+      maxGems: 40
+      maxGemsPerExtraLevel: 20
       tractorBeamDistance: 12
       tractorBeamDistancePerExtraLevel: 3
       tractorBeamPower: 16
-      tractorBeamPowerPerExtraLevel: 4
+      tractorBeamPowerPerExtraLevel: 7
       maxPeople: 18
       maxPeoplePerExtraLevel: 4
     bulletPrefabIndex: -1
@@ -1430,14 +1430,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 7df6dcce6414f5a4386bd780712d9722, type: 3}
     minHomePlanetLevel: 1
-    powerScore: 327.39667
-    powerScoreAtMaxLevel: 470.71112
+    powerScore: 387.36624
+    powerScoreAtMaxLevel: 569.243
     powerScoreBreakdown:
       offense: 49.63901
       defense: 101.14193
       energy: 94.71703
-      mobility: 22.83994
-      capacity: 80.89658
+      mobility: 21.801239
+      capacity: 141.90488
       firePower: 8.6372795
       bulletSpeed: 10
       fireRate: 5.501733
@@ -1447,16 +1447,16 @@ MonoBehaviour:
       healthRegen: 3.1805637
       energyCap: 85.160995
       energyRegen: 9.55604
-      moveSpeed: 6.4399395
+      moveSpeed: 5.40124
       turnSpeed: 14
-      gemCap: 43.264084
+      gemCap: 104.27237
       peopleCap: 37.6325
     powerScoreBreakdownAtShipLevel:
       offense: 49.63901
       defense: 101.14193
       energy: 94.71703
-      mobility: 22.83994
-      capacity: 80.89658
+      mobility: 21.801239
+      capacity: 141.90488
       firePower: 8.6372795
       bulletSpeed: 10
       fireRate: 5.501733
@@ -1466,11 +1466,91 @@ MonoBehaviour:
       healthRegen: 3.1805637
       energyCap: 85.160995
       energyRegen: 9.55604
-      moveSpeed: 6.4399395
+      moveSpeed: 5.40124
       turnSpeed: 14
-      gemCap: 43.264084
+      gemCap: 104.27237
       peopleCap: 37.6325
     componentMass: 17.713984
+    lockedInUpgradeTree: 0
+  - chassisId: GalaxyRaptor_15
+    upgradeTreeShipName: Talon
+    prefab: {fileID: 1821533767906182752, guid: 254907265f8244c459e53b06f4d9fcd0, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 43f61c31356360a499bb1265c4f93973, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 43f61c31356360a499bb1265c4f93973, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 5084309bbceb5fc4996a754bfc764f2d, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 55a0e10cb82ca0244af5aa1082eb9cd6, type: 3}
+    - variantName: Brown
+      team: 4
+      sprite: {fileID: 21300000, guid: 3cd14746cc2a69e47b76390f9d0c58bc, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 2560c829bc3cbd14f9cb2cb9b94ba94a, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 43f61c31356360a499bb1265c4f93973, type: 3}
+    teamTheatricalMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 43f61c31356360a499bb1265c4f93973, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 5084309bbceb5fc4996a754bfc764f2d, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 55a0e10cb82ca0244af5aa1082eb9cd6, type: 3}
+    - variantName: Brown
+      team: 4
+      sprite: {fileID: 21300000, guid: 3cd14746cc2a69e47b76390f9d0c58bc, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 2560c829bc3cbd14f9cb2cb9b94ba94a, type: 3}
+    minHomePlanetLevel: 2
+    powerScore: 440.38666
+    powerScoreAtMaxLevel: 964.6499
+    powerScoreBreakdown:
+      offense: 85.94756
+      defense: 48.539333
+      energy: 249.85426
+      mobility: 21.880314
+      capacity: 69
+      firePower: 22.098322
+      bulletSpeed: 10
+      fireRate: 28.34924
+      sustainedDps: 83.15999
+      rammingPower: 3.5
+      healthCap: 47.01294
+      healthRegen: 1.5263942
+      energyCap: 235.81885
+      energyRegen: 14.035417
+      moveSpeed: 5.4803143
+      turnSpeed: 14
+      gemCap: 45
+      peopleCap: 24
+    powerScoreBreakdownAtShipLevel:
+      offense: 92.867226
+      defense: 83.27973
+      energy: 349.95853
+      mobility: 22.360628
+      capacity: 88
+      firePower: 26.517986
+      bulletSpeed: 10
+      fireRate: 28.34924
+      sustainedDps: 99.791985
+      rammingPower: 4
+      healthCap: 80.66087
+      healthRegen: 2.6188598
+      energyCap: 327.6377
+      energyRegen: 22.320833
+      moveSpeed: 5.9606276
+      turnSpeed: 14
+      gemCap: 60
+      peopleCap: 28
+    componentMass: 13.794848
     lockedInUpgradeTree: 0
   - chassisId: GalaxyRaptor_06
     upgradeTreeShipName: Neststar
@@ -1510,14 +1590,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: ca8e2e05fb7bec6479e5e029b2f953ce, type: 3}
     minHomePlanetLevel: 2
-    powerScore: 340.40463
-    powerScoreAtMaxLevel: 783.06464
+    powerScore: 392.11234
+    powerScoreAtMaxLevel: 923.20703
     powerScoreBreakdown:
       offense: 50.319775
       defense: 108.56334
       energy: 101.30426
-      mobility: 22.759985
-      capacity: 77.87676
+      mobility: 21.750309
+      capacity: 130.59412
       firePower: 10.127684
       bulletSpeed: 10
       fireRate: 4.69209
@@ -1527,16 +1607,16 @@ MonoBehaviour:
       healthRegen: 3.4139416
       energyCap: 90.29025
       energyRegen: 11.01401
-      moveSpeed: 6.359985
+      moveSpeed: 5.35031
       turnSpeed: 14
-      gemCap: 41.557938
+      gemCap: 94.27529
       peopleCap: 36.318825
     powerScoreBreakdownAtShipLevel:
       offense: 54.84531
       defense: 191.34592
       energy: 142.62875
-      mobility: 23.06192
-      capacity: 95.11588
+      mobility: 22.052244
+      capacity: 177.31146
       firePower: 12.153221
       bulletSpeed: 10
       fireRate: 4.69209
@@ -1546,9 +1626,9 @@ MonoBehaviour:
       healthRegen: 6.017167
       energyCap: 126.40636
       energyRegen: 16.22239
-      moveSpeed: 6.6619196
+      moveSpeed: 5.6522446
       turnSpeed: 14
-      gemCap: 51.717354
+      gemCap: 133.91293
       peopleCap: 43.39853
     componentMass: 19.042362
     lockedInUpgradeTree: 0
@@ -1589,15 +1669,15 @@ MonoBehaviour:
     - variantName: Purple
       team: 5
       sprite: {fileID: 21300000, guid: 62646a7440e0b2b41b90c3bd51279a45, type: 3}
-    minHomePlanetLevel: 2
-    powerScore: 386.5875
-    powerScoreAtMaxLevel: 899.20276
+    minHomePlanetLevel: 3
+    powerScore: 476.65652
+    powerScoreAtMaxLevel: 1665.5504
     powerScoreBreakdown:
       offense: 56.684624
       defense: 107.68955
       energy: 116.46213
-      mobility: 22.008804
-      capacity: 110.98685
+      mobility: 21.10416
+      capacity: 201.96054
       firePower: 8.360458
       bulletSpeed: 10
       fireRate: 12.824165
@@ -1607,110 +1687,30 @@ MonoBehaviour:
       healthRegen: 3.3864634
       energyCap: 108.13938
       energyRegen: 8.322742
-      moveSpeed: 5.608805
+      moveSpeed: 4.7041593
       turnSpeed: 14
-      gemCap: 60.657898
+      gemCap: 151.63159
       peopleCap: 50.32895
     powerScoreBreakdownAtShipLevel:
-      offense: 60.856712
-      defense: 189.89708
-      energy: 157.4389
-      mobility: 22.189735
-      capacity: 149.9737
-      firePower: 10.032549
+      offense: 65.02881
+      defense: 272.1046
+      energy: 198.4157
+      mobility: 21.466019
+      capacity: 413.88165
+      firePower: 11.70464
       bulletSpeed: 10
       fireRate: 12.824165
-      sustainedDps: 42.768
-      rammingPower: 4
-      healthCap: 183.92548
-      healthRegen: 5.9716063
-      energyCap: 145.99513
-      energyRegen: 11.443771
-      moveSpeed: 5.7897344
-      turnSpeed: 14
-      gemCap: 83.315796
-      peopleCap: 66.6579
-    componentMass: 21.774118
-    lockedInUpgradeTree: 0
-  - chassisId: GalaxyRaptor_15
-    upgradeTreeShipName: Talon
-    prefab: {fileID: 1821533767906182752, guid: 254907265f8244c459e53b06f4d9fcd0, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 43f61c31356360a499bb1265c4f93973, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: 43f61c31356360a499bb1265c4f93973, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: 5084309bbceb5fc4996a754bfc764f2d, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: 55a0e10cb82ca0244af5aa1082eb9cd6, type: 3}
-    - variantName: Brown
-      team: 4
-      sprite: {fileID: 21300000, guid: 3cd14746cc2a69e47b76390f9d0c58bc, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: 2560c829bc3cbd14f9cb2cb9b94ba94a, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 43f61c31356360a499bb1265c4f93973, type: 3}
-    teamTheatricalMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: 43f61c31356360a499bb1265c4f93973, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: 5084309bbceb5fc4996a754bfc764f2d, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: 55a0e10cb82ca0244af5aa1082eb9cd6, type: 3}
-    - variantName: Brown
-      team: 4
-      sprite: {fileID: 21300000, guid: 3cd14746cc2a69e47b76390f9d0c58bc, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: 2560c829bc3cbd14f9cb2cb9b94ba94a, type: 3}
-    minHomePlanetLevel: 3
-    powerScore: 416.38666
-    powerScoreAtMaxLevel: 1234.8256
-    powerScoreBreakdown:
-      offense: 85.94756
-      defense: 48.539333
-      energy: 249.85426
-      mobility: 22.880314
-      capacity: 44
-      firePower: 22.098322
-      bulletSpeed: 10
-      fireRate: 28.34924
-      sustainedDps: 83.15999
-      rammingPower: 3.5
-      healthCap: 47.01294
-      healthRegen: 1.5263942
-      energyCap: 235.81885
-      energyRegen: 14.035417
-      moveSpeed: 6.4803143
-      turnSpeed: 14
-      gemCap: 20
-      peopleCap: 24
-    powerScoreBreakdownAtShipLevel:
-      offense: 99.78689
-      defense: 118.02016
-      energy: 450.0628
-      mobility: 23.840942
-      capacity: 60
-      firePower: 30.93765
-      bulletSpeed: 10
-      fireRate: 28.34924
-      sustainedDps: 116.42399
+      sustainedDps: 49.896
       rammingPower: 4.5
-      healthCap: 114.30883
-      healthRegen: 3.7113252
-      energyCap: 419.45654
-      energyRegen: 30.606249
-      moveSpeed: 7.440943
+      healthCap: 263.54785
+      healthRegen: 8.556747
+      energyCap: 183.85089
+      energyRegen: 14.564801
+      moveSpeed: 5.0660176
       turnSpeed: 14
-      gemCap: 28
-      peopleCap: 32
-    componentMass: 13.794848
+      gemCap: 330.8948
+      peopleCap: 82.98685
+    componentMass: 21.774118
     lockedInUpgradeTree: 0
   - chassisId: GalaxyRaptor_03
     upgradeTreeShipName: Wingcrest
@@ -1750,14 +1750,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 50ee9e334d540e048ab0eb0da90882c0, type: 3}
     minHomePlanetLevel: 3
-    powerScore: 419.01013
-    powerScoreAtMaxLevel: 1287.0537
+    powerScore: 490.52228
+    powerScoreAtMaxLevel: 1601.949
     powerScoreBreakdown:
       offense: 63.1
       defense: 104.724724
       energy: 153.64742
-      mobility: 23.619745
-      capacity: 100.8383
+      mobility: 22.455269
+      capacity: 173.51492
       firePower: 13.2
       bulletSpeed: 10
       fireRate: 14.400001
@@ -1767,16 +1767,16 @@ MonoBehaviour:
       healthRegen: 3.2932303
       energyCap: 142.93425
       energyRegen: 10.713169
-      moveSpeed: 7.2197447
+      moveSpeed: 6.0552697
       turnSpeed: 14
-      gemCap: 54.55887
+      gemCap: 127.23549
       peopleCap: 46.279434
     powerScoreBreakdownAtShipLevel:
       offense: 73.38
       defense: 264.0892
       energy: 261.6297
-      mobility: 24.085535
-      capacity: 158.51492
+      mobility: 22.921059
+      capacity: 328.5448
       firePower: 18.48
       bulletSpeed: 10
       fireRate: 14.400001
@@ -1786,9 +1786,9 @@ MonoBehaviour:
       healthRegen: 8.30469
       energyCap: 242.88165
       energyRegen: 18.748047
-      moveSpeed: 7.6855345
+      moveSpeed: 6.5210595
       turnSpeed: 14
-      gemCap: 87.67662
+      gemCap: 257.70648
       peopleCap: 70.83831
     componentMass: 18.389687
     lockedInUpgradeTree: 0
@@ -1830,14 +1830,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 410e0f272f0ff884cb4ecadf3f7820d2, type: 3}
     minHomePlanetLevel: 3
-    powerScore: 403.1815
-    powerScoreAtMaxLevel: 1442.2764
+    powerScore: 489.86646
+    powerScoreAtMaxLevel: 1856.6122
     powerScoreBreakdown:
       offense: 49.367725
       defense: 148.76431
       energy: 100.31341
-      mobility: 23.35299
-      capacity: 101.12635
+      mobility: 22.236889
+      capacity: 188.92743
       firePower: 6.6
       bulletSpeed: 10
       fireRate: 7.2000003
@@ -1847,16 +1847,16 @@ MonoBehaviour:
       healthRegen: 4.678123
       energyCap: 89.47313
       energyRegen: 10.8402815
-      moveSpeed: 6.952989
+      moveSpeed: 5.836889
       turnSpeed: 14
-      gemCap: 54.492775
+      gemCap: 142.29385
       peopleCap: 46.633575
     powerScoreBreakdownAtShipLevel:
       offense: 57.027077
       defense: 400.01965
       energy: 175.92548
-      mobility: 23.865767
-      capacity: 177.98587
+      mobility: 22.749666
+      capacity: 396.8473
       firePower: 9.24
       bulletSpeed: 10
       fireRate: 7.2000003
@@ -1866,9 +1866,9 @@ MonoBehaviour:
       healthRegen: 12.579233
       energyCap: 156.23978
       energyRegen: 19.685694
-      moveSpeed: 7.4657664
+      moveSpeed: 6.349666
       turnSpeed: 14
-      gemCap: 98.85913
+      gemCap: 317.72055
       peopleCap: 79.12673
     componentMass: 27.392818
     lockedInUpgradeTree: 0
@@ -1910,14 +1910,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: fd0df138697c4064491803dc84cc8c93, type: 3}
     minHomePlanetLevel: 4
-    powerScore: 468.0731
-    powerScoreAtMaxLevel: 2059.0403
+    powerScore: 566.13873
+    powerScoreAtMaxLevel: 2682.5657
     powerScoreBreakdown:
       offense: 63.1
       defense: 127.59031
       energy: 162.65
-      mobility: 22.8
-      capacity: 116.032814
+      mobility: 21.8
+      capacity: 215.09845
       firePower: 13.2
       bulletSpeed: 10
       fireRate: 14.400001
@@ -1927,16 +1927,16 @@ MonoBehaviour:
       healthRegen: 4.0122733
       energyCap: 150
       energyRegen: 12.65
-      moveSpeed: 6.3999996
+      moveSpeed: 5.3999996
       turnSpeed: 14
-      gemCap: 63.35521
+      gemCap: 162.42084
       peopleCap: 52.677605
     powerScoreBreakdownAtShipLevel:
       offense: 78.52
       defense: 438.30014
       energy: 363.35
-      mobility: 24
-      capacity: 248.13126
+      mobility: 23
+      capacity: 572.3938
       firePower: 21.119999
       bulletSpeed: 10
       fireRate: 14.400001
@@ -1946,11 +1946,91 @@ MonoBehaviour:
       healthRegen: 13.783022
       energyCap: 330
       energyRegen: 33.35
-      moveSpeed: 7.6000004
+      moveSpeed: 6.6000004
       turnSpeed: 14
-      gemCap: 139.42084
+      gemCap: 463.68335
       peopleCap: 108.71042
     componentMass: 20.754736
+    lockedInUpgradeTree: 0
+  - chassisId: GalaxyRaptor_14
+    upgradeTreeShipName: Cluster
+    prefab: {fileID: 8803592365555683382, guid: 4451fd156ec87b74983449a54a36f90c, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: ee12903fa54aa1e43b3ef7597f0acd81, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: ee12903fa54aa1e43b3ef7597f0acd81, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: d284bae89acf27249bbbe075f7e2e7c1, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: ae310932e1f04a842ac03862ea07d3cb, type: 3}
+    - variantName: Brown
+      team: 4
+      sprite: {fileID: 21300000, guid: 76794b3ce9f21944a893b1495f74f3ac, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 471863b1a7e1ac84fb57d6faa4d65c1b, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: ee12903fa54aa1e43b3ef7597f0acd81, type: 3}
+    teamTheatricalMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: ee12903fa54aa1e43b3ef7597f0acd81, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: d284bae89acf27249bbbe075f7e2e7c1, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: ae310932e1f04a842ac03862ea07d3cb, type: 3}
+    - variantName: Brown
+      team: 4
+      sprite: {fileID: 21300000, guid: 76794b3ce9f21944a893b1495f74f3ac, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 471863b1a7e1ac84fb57d6faa4d65c1b, type: 3}
+    minHomePlanetLevel: 4
+    powerScore: 622.9461
+    powerScoreAtMaxLevel: 2957.4414
+    powerScoreBreakdown:
+      offense: 62.95971
+      defense: 121.90604
+      energy: 202.84563
+      mobility: 24.403828
+      capacity: 221.73889
+      firePower: 15.881735
+      bulletSpeed: 10
+      fireRate: 12.319734
+      sustainedDps: 47.52
+      rammingPower: 2.7582417
+      healthCap: 118.07251
+      healthRegen: 3.833523
+      energyCap: 181.0216
+      energyRegen: 21.824015
+      moveSpeed: 8.003827
+      turnSpeed: 14
+      gemCap: 169.75781
+      peopleCap: 51.981083
+    powerScoreBreakdownAtShipLevel:
+      offense: 79.67085
+      defense: 412.33307
+      energy: 492.49753
+      mobility: 26.755308
+      capacity: 608.26514
+      firePower: 25.410776
+      bulletSpeed: 10
+      fireRate: 12.319734
+      sustainedDps: 76.032005
+      rammingPower: 3.940345
+      healthCap: 399.3666
+      healthRegen: 12.966447
+      energyCap: 430.11047
+      energyRegen: 62.38706
+      moveSpeed: 10.355308
+      turnSpeed: 14
+      gemCap: 496.46674
+      peopleCap: 111.79842
+    componentMass: 19.676792
     lockedInUpgradeTree: 0
   - chassisId: GalaxyRaptor_10
     upgradeTreeShipName: Crown
@@ -1990,14 +2070,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 2eb9d371b85ff7749b601844e7f35729, type: 3}
     minHomePlanetLevel: 4
-    powerScore: 444.38403
-    powerScoreAtMaxLevel: 2152.8066
+    powerScore: 569.4333
+    powerScoreAtMaxLevel: 2995.4385
     powerScoreBreakdown:
       offense: 49.42455
       defense: 161.4149
       energy: 100.11859
-      mobility: 22.120567
-      capacity: 131.25241
+      mobility: 21.22052
+      capacity: 257.20172
       firePower: 7.938631
       bulletSpeed: 10
       fireRate: 5.9859195
@@ -2007,16 +2087,16 @@ MonoBehaviour:
       healthRegen: 5.07594
       energyCap: 89.418304
       energyRegen: 10.700287
-      moveSpeed: 5.7205667
+      moveSpeed: 4.8205204
       turnSpeed: 14
-      gemCap: 72.52478
+      gemCap: 198.47409
       peopleCap: 58.72763
     powerScoreBreakdownAtShipLevel:
       offense: 61.68773
       defense: 570.4048
       energy: 228.34607
-      mobility: 23.08144
-      capacity: 308.4783
+      mobility: 22.181395
+      capacity: 741.96295
       firePower: 12.701809
       bulletSpeed: 10
       fireRate: 5.9859195
@@ -2026,91 +2106,11 @@ MonoBehaviour:
       healthRegen: 17.937258
       energyCap: 201.07071
       energyRegen: 27.275356
-      moveSpeed: 6.6814404
+      moveSpeed: 5.781394
       turnSpeed: 14
-      gemCap: 176.03658
+      gemCap: 609.52124
       peopleCap: 132.44173
     componentMass: 21.966803
-    lockedInUpgradeTree: 0
-  - chassisId: GalaxyRaptor_05
-    upgradeTreeShipName: Spiral
-    prefab: {fileID: 3086048336993431180, guid: 7f3dc8d8b6bfd1e4d98311d3cb215608, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 683c003266760af4ca116f82e30e0145, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: 683c003266760af4ca116f82e30e0145, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: 1a01ed2fe2c15d340879f0a17991d681, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: dc0b094167b12e44890866cae9d776a0, type: 3}
-    - variantName: Brown
-      team: 4
-      sprite: {fileID: 21300000, guid: e1abaeac0a770944f9d7900a9bf55899, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: 7355a74ad933de1478c49b1c8099629c, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 683c003266760af4ca116f82e30e0145, type: 3}
-    teamTheatricalMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: 683c003266760af4ca116f82e30e0145, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: 1a01ed2fe2c15d340879f0a17991d681, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: dc0b094167b12e44890866cae9d776a0, type: 3}
-    - variantName: Brown
-      team: 4
-      sprite: {fileID: 21300000, guid: e1abaeac0a770944f9d7900a9bf55899, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: 7355a74ad933de1478c49b1c8099629c, type: 3}
-    minHomePlanetLevel: 4
-    powerScore: 495.4367
-    powerScoreAtMaxLevel: 2223.6108
-    powerScoreBreakdown:
-      offense: 63.1
-      defense: 154.99033
-      energy: 155.41055
-      mobility: 24.267897
-      capacity: 123.98018
-      firePower: 13.2
-      bulletSpeed: 10
-      fireRate: 14.400001
-      sustainedDps: 47.52
-      rammingPower: 3.5
-      healthCap: 150.11642
-      healthRegen: 4.873909
-      energyCap: 144.25461
-      energyRegen: 11.155937
-      moveSpeed: 7.867896
-      turnSpeed: 14
-      gemCap: 67.588104
-      peopleCap: 56.392075
-    powerScoreBreakdownAtShipLevel:
-      offense: 78.52
-      defense: 547.90027
-      energy: 314.84653
-      mobility: 24.933735
-      capacity: 279.92072
-      firePower: 21.119999
-      bulletSpeed: 10
-      fireRate: 14.400001
-      sustainedDps: 76.032005
-      rammingPower: 5
-      healthCap: 530.6707
-      healthRegen: 17.229565
-      energyCap: 292.2049
-      energyRegen: 22.641642
-      moveSpeed: 8.533734
-      turnSpeed: 14
-      gemCap: 156.35243
-      peopleCap: 123.56828
-    componentMass: 21.5667
     lockedInUpgradeTree: 0
   - chassisId: GalaxyRaptor_12
     upgradeTreeShipName: Sweep
@@ -2150,14 +2150,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 5eccd76b6f672b14a8b0025f42a69480, type: 3}
     minHomePlanetLevel: 4
-    powerScore: 454.6549
-    powerScoreAtMaxLevel: 2228.019
+    powerScore: 572.9936
+    powerScoreAtMaxLevel: 3016.8955
     powerScoreBreakdown:
       offense: 48.646366
       defense: 176.35857
       energy: 97.6758
-      mobility: 21.735016
-      capacity: 130.21487
+      mobility: 20.897144
+      capacity: 249.39145
       firePower: 6.6
       bulletSpeed: 10
       fireRate: 7.2000003
@@ -2167,16 +2167,16 @@ MonoBehaviour:
       healthRegen: 5.5458684
       energyCap: 87.54875
       energyRegen: 10.127042
-      moveSpeed: 5.3350163
+      moveSpeed: 4.4971447
       turnSpeed: 14
-      gemCap: 73.21342
+      gemCap: 192.39
       peopleCap: 57.001457
     powerScoreBreakdownAtShipLevel:
       offense: 59.826233
       defense: 628.1827
       energy: 223.00478
-      mobility: 22.65837
-      capacity: 295.02878
+      mobility: 21.820498
+      capacity: 701.5788
       firePower: 10.559999
       bulletSpeed: 10
       fireRate: 7.2000003
@@ -2186,91 +2186,91 @@ MonoBehaviour:
       healthRegen: 19.754173
       energyCap: 196.9499
       energyRegen: 26.054876
-      moveSpeed: 6.2583685
+      moveSpeed: 5.420497
       turnSpeed: 14
-      gemCap: 169.8178
+      gemCap: 576.3678
       peopleCap: 125.21098
     componentMass: 33.367165
     lockedInUpgradeTree: 0
-  - chassisId: GalaxyRaptor_14
-    upgradeTreeShipName: Cluster
-    prefab: {fileID: 8803592365555683382, guid: 4451fd156ec87b74983449a54a36f90c, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: ee12903fa54aa1e43b3ef7597f0acd81, type: 3}
+  - chassisId: GalaxyRaptor_05
+    upgradeTreeShipName: Spiral
+    prefab: {fileID: 3086048336993431180, guid: 7f3dc8d8b6bfd1e4d98311d3cb215608, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 683c003266760af4ca116f82e30e0145, type: 3}
     teamMenuPreviewSprites:
     - variantName: Red
       team: 1
-      sprite: {fileID: 21300000, guid: ee12903fa54aa1e43b3ef7597f0acd81, type: 3}
+      sprite: {fileID: 21300000, guid: 683c003266760af4ca116f82e30e0145, type: 3}
     - variantName: Blue
       team: 2
-      sprite: {fileID: 21300000, guid: d284bae89acf27249bbbe075f7e2e7c1, type: 3}
+      sprite: {fileID: 21300000, guid: 1a01ed2fe2c15d340879f0a17991d681, type: 3}
     - variantName: Green
       team: 3
-      sprite: {fileID: 21300000, guid: ae310932e1f04a842ac03862ea07d3cb, type: 3}
+      sprite: {fileID: 21300000, guid: dc0b094167b12e44890866cae9d776a0, type: 3}
     - variantName: Brown
       team: 4
-      sprite: {fileID: 21300000, guid: 76794b3ce9f21944a893b1495f74f3ac, type: 3}
+      sprite: {fileID: 21300000, guid: e1abaeac0a770944f9d7900a9bf55899, type: 3}
     - variantName: Purple
       team: 5
-      sprite: {fileID: 21300000, guid: 471863b1a7e1ac84fb57d6faa4d65c1b, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: ee12903fa54aa1e43b3ef7597f0acd81, type: 3}
+      sprite: {fileID: 21300000, guid: 7355a74ad933de1478c49b1c8099629c, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 683c003266760af4ca116f82e30e0145, type: 3}
     teamTheatricalMenuPreviewSprites:
     - variantName: Red
       team: 1
-      sprite: {fileID: 21300000, guid: ee12903fa54aa1e43b3ef7597f0acd81, type: 3}
+      sprite: {fileID: 21300000, guid: 683c003266760af4ca116f82e30e0145, type: 3}
     - variantName: Blue
       team: 2
-      sprite: {fileID: 21300000, guid: d284bae89acf27249bbbe075f7e2e7c1, type: 3}
+      sprite: {fileID: 21300000, guid: 1a01ed2fe2c15d340879f0a17991d681, type: 3}
     - variantName: Green
       team: 3
-      sprite: {fileID: 21300000, guid: ae310932e1f04a842ac03862ea07d3cb, type: 3}
+      sprite: {fileID: 21300000, guid: dc0b094167b12e44890866cae9d776a0, type: 3}
     - variantName: Brown
       team: 4
-      sprite: {fileID: 21300000, guid: 76794b3ce9f21944a893b1495f74f3ac, type: 3}
+      sprite: {fileID: 21300000, guid: e1abaeac0a770944f9d7900a9bf55899, type: 3}
     - variantName: Purple
       team: 5
-      sprite: {fileID: 21300000, guid: 471863b1a7e1ac84fb57d6faa4d65c1b, type: 3}
+      sprite: {fileID: 21300000, guid: 7355a74ad933de1478c49b1c8099629c, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 520.2479
-    powerScoreAtMaxLevel: 2787.4004
+    powerScore: 605.9267
+    powerScoreAtMaxLevel: 3617.6008
     powerScoreBreakdown:
-      offense: 62.95971
-      defense: 121.90604
-      energy: 202.84563
-      mobility: 25.847826
-      capacity: 117.596725
-      firePower: 15.881735
+      offense: 63.1
+      defense: 154.99033
+      energy: 155.41055
+      mobility: 22.99357
+      capacity: 235.7445
+      firePower: 13.2
       bulletSpeed: 10
-      fireRate: 12.319734
+      fireRate: 14.400001
       sustainedDps: 47.52
-      rammingPower: 2.7582417
-      healthCap: 118.07251
-      healthRegen: 3.833523
-      energyCap: 181.0216
-      energyRegen: 21.824015
-      moveSpeed: 9.447825
+      rammingPower: 3.5
+      healthCap: 150.11642
+      healthRegen: 4.873909
+      energyCap: 144.25461
+      energyRegen: 11.155937
+      moveSpeed: 6.5935707
       turnSpeed: 14
-      gemCap: 65.61565
-      peopleCap: 51.981083
+      gemCap: 179.35243
+      peopleCap: 56.392075
     powerScoreBreakdownAtShipLevel:
-      offense: 85.241234
-      defense: 509.14206
-      energy: 589.0482
-      mobility: 28.983135
-      capacity: 307.04422
-      firePower: 28.587122
+      offense: 83.66
+      defense: 678.8702
+      energy: 367.99188
+      mobility: 23.881355
+      capacity: 794.72253
+      firePower: 23.76
       bulletSpeed: 10
-      fireRate: 12.319734
+      fireRate: 14.400001
       sustainedDps: 85.536
-      rammingPower: 4.3343797
-      healthCap: 493.13132
-      healthRegen: 16.010756
-      energyCap: 513.14014
-      energyRegen: 75.90808
-      moveSpeed: 12.583136
+      rammingPower: 5.5
+      healthCap: 657.52203
+      healthRegen: 21.348118
+      energyCap: 341.52167
+      energyRegen: 26.47021
+      moveSpeed: 7.481355
       turnSpeed: 14
-      gemCap: 175.30669
-      peopleCap: 131.73753
-    componentMass: 19.676792
+      gemCap: 648.76215
+      peopleCap: 145.96036
+    componentMass: 21.5667
     lockedInUpgradeTree: 0
   - chassisId: GalaxyRaptor_20
     upgradeTreeShipName: Quill
@@ -2310,14 +2310,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 9aee8a434c8f0ea4b89551d65a207629, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 434.97644
-    powerScoreAtMaxLevel: 2349.7854
+    powerScore: 527.35657
+    powerScoreAtMaxLevel: 3073.8696
     powerScoreBreakdown:
       offense: 74.83644
       defense: 129.48447
       energy: 131.6104
-      mobility: 25.630693
-      capacity: 116.89087
+      mobility: 24.185644
+      capacity: 210.7161
       firePower: 38.699554
       bulletSpeed: 10
       fireRate: 1.227921
@@ -2327,16 +2327,16 @@ MonoBehaviour:
       healthRegen: 4.0718384
       energyCap: 113.63455
       energyRegen: 17.97584
-      moveSpeed: 9.230693
+      moveSpeed: 7.7856445
       turnSpeed: 14
-      gemCap: 64.971634
+      gemCap: 158.79686
       peopleCap: 51.91923
     powerScoreBreakdownAtShipLevel:
       offense: 115.45835
       defense: 547.9967
       energy: 376.77222
-      mobility: 27.87227
-      capacity: 280.77106
+      mobility: 26.427221
+      capacity: 655.3537
       firePower: 69.659195
       bulletSpeed: 10
       fireRate: 1.227921
@@ -2346,9 +2346,9 @@ MonoBehaviour:
       healthRegen: 17.232601
       energyCap: 320.12918
       energyRegen: 56.643044
-      moveSpeed: 11.47227
+      moveSpeed: 10.027222
       turnSpeed: 14
-      gemCap: 159.66562
+      gemCap: 534.2482
       peopleCap: 121.10545
     componentMass: 27.819622
     lockedInUpgradeTree: 0
@@ -2390,14 +2390,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 04f625f8233ffba4b8f7efed29af2761, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 434.97644
-    powerScoreAtMaxLevel: 2349.7854
+    powerScore: 527.35657
+    powerScoreAtMaxLevel: 3073.8696
     powerScoreBreakdown:
       offense: 74.83644
       defense: 129.48447
       energy: 131.6104
-      mobility: 25.630693
-      capacity: 116.89087
+      mobility: 24.185644
+      capacity: 210.7161
       firePower: 38.699554
       bulletSpeed: 10
       fireRate: 1.227921
@@ -2407,16 +2407,16 @@ MonoBehaviour:
       healthRegen: 4.0718384
       energyCap: 113.63455
       energyRegen: 17.97584
-      moveSpeed: 9.230693
+      moveSpeed: 7.7856445
       turnSpeed: 14
-      gemCap: 64.971634
+      gemCap: 158.79686
       peopleCap: 51.91923
     powerScoreBreakdownAtShipLevel:
       offense: 115.45835
       defense: 547.9967
       energy: 376.77222
-      mobility: 27.87227
-      capacity: 280.77106
+      mobility: 26.427221
+      capacity: 655.3537
       firePower: 69.659195
       bulletSpeed: 10
       fireRate: 1.227921
@@ -2426,9 +2426,9 @@ MonoBehaviour:
       healthRegen: 17.232601
       energyCap: 320.12918
       energyRegen: 56.643044
-      moveSpeed: 11.47227
+      moveSpeed: 10.027222
       turnSpeed: 14
-      gemCap: 159.66562
+      gemCap: 534.2482
       peopleCap: 121.10545
     componentMass: 27.819622
     lockedInUpgradeTree: 0
@@ -2470,14 +2470,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: f79ca23bda6e834458628315c0fa1121, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 534.6863
-    powerScoreAtMaxLevel: 3084.648
+    powerScore: 650.89417
+    powerScoreAtMaxLevel: 4032.0378
     powerScoreBreakdown:
       offense: 63.1
       defense: 178.95215
       energy: 161.45013
-      mobility: 23.280148
-      capacity: 132.35425
+      mobility: 22.193071
+      capacity: 249.6492
       firePower: 13.2
       bulletSpeed: 10
       fireRate: 14.400001
@@ -2487,16 +2487,16 @@ MonoBehaviour:
       healthRegen: 5.627426
       energyCap: 149.02917
       energyRegen: 12.420953
-      moveSpeed: 6.8801465
+      moveSpeed: 5.7930717
       turnSpeed: 14
-      gemCap: 72.64783
+      gemCap: 189.9428
       peopleCap: 59.706413
     powerScoreBreakdownAtShipLevel:
       offense: 83.66
       defense: 791.1025
       energy: 415.97852
-      mobility: 24.710936
-      capacity: 350.00275
+      mobility: 23.623861
+      capacity: 836.712
       firePower: 23.76
       bulletSpeed: 10
       fireRate: 14.400001
@@ -2506,9 +2506,9 @@ MonoBehaviour:
       healthRegen: 24.877432
       energyCap: 378.87646
       energyRegen: 37.102047
-      moveSpeed: 8.310935
+      moveSpeed: 7.2238607
       turnSpeed: 14
-      gemCap: 197.11923
+      gemCap: 683.8284
       peopleCap: 152.88353
     componentMass: 33.945663
     lockedInUpgradeTree: 0
@@ -2550,14 +2550,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 12d194483c8bbc143b7650b9d122dc38, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 546.62146
-    powerScoreAtMaxLevel: 3162.429
+    powerScore: 694.08435
+    powerScoreAtMaxLevel: 4399.581
     powerScoreBreakdown:
       offense: 63.33712
       defense: 170.78378
       energy: 161.7533
-      mobility: 22.788393
-      capacity: 152.5833
+      mobility: 21.788393
+      capacity: 301.04614
       firePower: 13.455979
       bulletSpeed: 10
       fireRate: 14.381141
@@ -2567,16 +2567,16 @@ MonoBehaviour:
       healthRegen: 5.370559
       energyCap: 149.30353
       energyRegen: 12.449764
-      moveSpeed: 6.388393
+      moveSpeed: 5.388393
       turnSpeed: 14
-      gemCap: 86.141945
+      gemCap: 234.6048
       peopleCap: 66.44135
     powerScoreBreakdownAtShipLevel:
       offense: 84.101906
       defense: 746.69666
       energy: 425.76645
-      mobility: 24.34196
-      capacity: 426.15448
+      mobility: 23.34196
+      capacity: 1058.9237
       firePower: 24.220762
       bulletSpeed: 10
       fireRate: 14.381141
@@ -2586,11 +2586,91 @@ MonoBehaviour:
       healthRegen: 23.481026
       energyCap: 386.51764
       energyRegen: 39.24882
-      moveSpeed: 7.9419613
+      moveSpeed: 6.9419613
       turnSpeed: 14
-      gemCap: 248.91074
+      gemCap: 881.67993
       peopleCap: 177.24374
     componentMass: 22.87552
+    lockedInUpgradeTree: 0
+  - chassisId: GalaxyRaptor_07
+    upgradeTreeShipName: Horizon
+    prefab: {fileID: 7624767546194323242, guid: 40f211f4e52e5e74d9be286f1351dede, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: b66e0f094889056438fdb7ebee5a81aa, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: b66e0f094889056438fdb7ebee5a81aa, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: d7e5a6fecfb6af942b7903276b4d3cc0, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 20fc7a83739164e4b81c5e83191ad7da, type: 3}
+    - variantName: Brown
+      team: 4
+      sprite: {fileID: 21300000, guid: 6fe2ecbf75aabb548bf0ea6c6fcca252, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 6e42c47c9d7bd334ab4ab9b6e7f3d700, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: b66e0f094889056438fdb7ebee5a81aa, type: 3}
+    teamTheatricalMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: b66e0f094889056438fdb7ebee5a81aa, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: d7e5a6fecfb6af942b7903276b4d3cc0, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 20fc7a83739164e4b81c5e83191ad7da, type: 3}
+    - variantName: Brown
+      team: 4
+      sprite: {fileID: 21300000, guid: 6fe2ecbf75aabb548bf0ea6c6fcca252, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 6e42c47c9d7bd334ab4ab9b6e7f3d700, type: 3}
+    minHomePlanetLevel: 6
+    powerScore: 568.55347
+    powerScoreAtMaxLevel: 3649.9712
+    powerScoreBreakdown:
+      offense: 111.375015
+      defense: 137.10803
+      energy: 209.69048
+      mobility: 22.726288
+      capacity: 155.4238
+      firePower: 70.29544
+      bulletSpeed: 10
+      fireRate: 6.0840364
+      sustainedDps: 71.28
+      rammingPower: 2.9955347
+      healthCap: 132.79646
+      healthRegen: 4.311574
+      energyCap: 198.49782
+      energyRegen: 11.192664
+      moveSpeed: 6.326288
+      turnSpeed: 14
+      gemCap: 117.06421
+      peopleCap: 38.35958
+    powerScoreBreakdownAtShipLevel:
+      offense: 193.81012
+      defense: 712.81366
+      energy: 573.67236
+      mobility: 23.942883
+      capacity: 548.57605
+      firePower: 140.59088
+      bulletSpeed: 10
+      fireRate: 6.0840364
+      sustainedDps: 142.56
+      rammingPower: 5.1352024
+      healthCap: 690.39813
+      healthRegen: 22.41552
+      energyCap: 541.49347
+      energyRegen: 32.178913
+      moveSpeed: 7.542883
+      turnSpeed: 14
+      gemCap: 454.00525
+      peopleCap: 94.5708
+    componentMass: 28.99816
     lockedInUpgradeTree: 0
   - chassisId: GalaxyRaptor_16
     upgradeTreeShipName: Skydive
@@ -2630,14 +2710,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 50c873960af13434aaff18066ad1a415, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 646.8476
-    powerScoreAtMaxLevel: 4235.5415
+    powerScore: 801.4142
+    powerScoreAtMaxLevel: 5749.649
     powerScoreBreakdown:
       offense: 80.08171
       defense: 188.70279
       energy: 218.47878
-      mobility: 25.332867
-      capacity: 167.82501
+      mobility: 23.892082
+      capacity: 323.83237
       firePower: 19.8
       bulletSpeed: 10
       fireRate: 21.6
@@ -2647,16 +2727,16 @@ MonoBehaviour:
       healthRegen: 5.9340506
       energyCap: 205.22356
       energyRegen: 13.255222
-      moveSpeed: 8.932867
+      moveSpeed: 7.4920826
       turnSpeed: 14
-      gemCap: 90.06544
+      gemCap: 246.0728
       peopleCap: 77.75957
     powerScoreBreakdownAtShipLevel:
       offense: 119.2766
       defense: 994.0882
       energy: 599.7794
-      mobility: 26.773653
-      capacity: 538.7861
+      mobility: 25.332869
+      capacity: 1312.7666
       firePower: 39.6
       bulletSpeed: 10
       fireRate: 21.6
@@ -2666,9 +2746,9 @@ MonoBehaviour:
       healthRegen: 31.260635
       energyCap: 561.67065
       energyRegen: 38.10876
-      moveSpeed: 10.373653
+      moveSpeed: 8.932868
       turnSpeed: 14
-      gemCap: 302.31976
+      gemCap: 1076.3003
       peopleCap: 236.46631
     componentMass: 36.907417
     lockedInUpgradeTree: 0
@@ -2710,14 +2790,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 67fb2893333650247a8f5b91784ca92d, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 553.6142
-    powerScoreAtMaxLevel: 4063.9885
+    powerScore: 691.0027
+    powerScoreAtMaxLevel: 5455.747
     powerScoreBreakdown:
       offense: 59.188953
       defense: 202.411
       energy: 147.5955
-      mobility: 23.754593
-      capacity: 140.34604
+      mobility: 22.614065
+      capacity: 278.87503
       firePower: 16.392746
       bulletSpeed: 10
       fireRate: 6.7388606
@@ -2727,16 +2807,16 @@ MonoBehaviour:
       healthRegen: 6.3651257
       energyCap: 132.2153
       energyRegen: 15.380203
-      moveSpeed: 7.3545923
+      moveSpeed: 6.214065
       turnSpeed: 14
-      gemCap: 77.28089
+      gemCap: 215.80989
       peopleCap: 63.06515
     powerScoreBreakdownAtShipLevel:
       offense: 90.39975
       defense: 1087.8103
       energy: 480.13547
-      mobility: 26.311745
-      capacity: 475.41028
+      mobility: 25.171217
+      capacity: 1184.1077
       firePower: 32.785492
       bulletSpeed: 10
       fireRate: 6.7388606
@@ -2746,91 +2826,11 @@ MonoBehaviour:
       healthRegen: 34.207863
       energyCap: 420.6444
       energyRegen: 59.491066
-      moveSpeed: 9.911744
+      moveSpeed: 8.771216
       turnSpeed: 14
-      gemCap: 270.54907
+      gemCap: 979.24646
       peopleCap: 204.8612
     componentMass: 35.550163
-    lockedInUpgradeTree: 0
-  - chassisId: GalaxyRaptor_07
-    upgradeTreeShipName: Horizon
-    prefab: {fileID: 7624767546194323242, guid: 40f211f4e52e5e74d9be286f1351dede, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: b66e0f094889056438fdb7ebee5a81aa, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: b66e0f094889056438fdb7ebee5a81aa, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: d7e5a6fecfb6af942b7903276b4d3cc0, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: 20fc7a83739164e4b81c5e83191ad7da, type: 3}
-    - variantName: Brown
-      team: 4
-      sprite: {fileID: 21300000, guid: 6fe2ecbf75aabb548bf0ea6c6fcca252, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: 6e42c47c9d7bd334ab4ab9b6e7f3d700, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: b66e0f094889056438fdb7ebee5a81aa, type: 3}
-    teamTheatricalMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: b66e0f094889056438fdb7ebee5a81aa, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: d7e5a6fecfb6af942b7903276b4d3cc0, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: 20fc7a83739164e4b81c5e83191ad7da, type: 3}
-    - variantName: Brown
-      team: 4
-      sprite: {fileID: 21300000, guid: 6fe2ecbf75aabb548bf0ea6c6fcca252, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: 6e42c47c9d7bd334ab4ab9b6e7f3d700, type: 3}
-    minHomePlanetLevel: 6
-    powerScore: 499.4608
-    powerScoreAtMaxLevel: 3027.2793
-    powerScoreBreakdown:
-      offense: 111.375015
-      defense: 137.10803
-      energy: 209.69048
-      mobility: 23.942883
-      capacity: 85.11447
-      firePower: 70.29544
-      bulletSpeed: 10
-      fireRate: 6.0840364
-      sustainedDps: 71.28
-      rammingPower: 2.9955347
-      healthCap: 132.79646
-      healthRegen: 4.311574
-      energyCap: 198.49782
-      energyRegen: 11.192664
-      moveSpeed: 7.5428824
-      turnSpeed: 14
-      gemCap: 46.75489
-      peopleCap: 38.35958
-    powerScoreBreakdownAtShipLevel:
-      offense: 193.81012
-      defense: 712.81366
-      energy: 573.67236
-      mobility: 25.159477
-      capacity: 226.63078
-      firePower: 140.59088
-      bulletSpeed: 10
-      fireRate: 6.0840364
-      sustainedDps: 142.56
-      rammingPower: 5.1352024
-      healthCap: 690.39813
-      healthRegen: 22.41552
-      energyCap: 541.49347
-      energyRegen: 32.178913
-      moveSpeed: 8.759477
-      turnSpeed: 14
-      gemCap: 132.05998
-      peopleCap: 94.5708
-    componentMass: 28.99816
     lockedInUpgradeTree: 0
   - chassisId: GalaxyRaptor_04
     upgradeTreeShipName: Gyre
@@ -2870,14 +2870,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: a295c093ce888d6409210c8ac90f8dc9, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 477.0501
-    powerScoreAtMaxLevel: 3107.716
+    powerScore: 613.41614
+    powerScoreAtMaxLevel: 4419.7905
     powerScoreBreakdown:
       offense: 91.4788
       defense: 176.06824
       energy: 89.12925
-      mobility: 23.20821
-      capacity: 162.6033
+      mobility: 22.09211
+      capacity: 300.0854
       firePower: 55.116627
       bulletSpeed: 10
       fireRate: 0.86217165
@@ -2887,16 +2887,16 @@ MonoBehaviour:
       healthRegen: 5.5367365
       energyCap: 80.7864
       energyRegen: 8.342847
-      moveSpeed: 6.80821
+      moveSpeed: 5.6921096
       turnSpeed: 14
-      gemCap: 90.69303
+      gemCap: 228.17511
       peopleCap: 71.91026
     powerScoreBreakdownAtShipLevel:
       offense: 159.09543
       defense: 895.5098
       energy: 222.23862
-      mobility: 23.76626
-      capacity: 477.4626
+      mobility: 22.65016
+      capacity: 1149.3574
       firePower: 110.23325
       bulletSpeed: 10
       fireRate: 0.86217165
@@ -2906,9 +2906,9 @@ MonoBehaviour:
       healthRegen: 28.160685
       energyCap: 204.26941
       energyRegen: 17.96921
-      moveSpeed: 7.36626
+      moveSpeed: 6.2501597
       turnSpeed: 14
-      gemCap: 270.49728
+      gemCap: 942.39215
       peopleCap: 206.96532
     componentMass: 24.90298
     lockedInUpgradeTree: 0
@@ -2950,14 +2950,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 58a0cd734c901834486b0ed81480a392, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 610.8899
-    powerScoreAtMaxLevel: 4353.7236
+    powerScore: 781.08826
+    powerScoreAtMaxLevel: 6076.524
     powerScoreBreakdown:
       offense: 66.09291
       defense: 215.52008
       energy: 155.02002
-      mobility: 23.031683
-      capacity: 180.73996
+      mobility: 21.973633
+      capacity: 351.9964
       firePower: 18.338797
       bulletSpeed: 10
       fireRate: 10.364911
@@ -2967,16 +2967,16 @@ MonoBehaviour:
       healthRegen: 6.777361
       energyCap: 144.04788
       energyRegen: 10.972143
-      moveSpeed: 6.631683
+      moveSpeed: 5.573633
       turnSpeed: 14
-      gemCap: 100.08515
+      gemCap: 271.34158
       peopleCap: 80.654816
     powerScoreBreakdownAtShipLevel:
       offense: 106.37773
       defense: 1133.5542
       energy: 444.4767
-      mobility: 24.448599
-      capacity: 614.44495
+      mobility: 23.390549
+      capacity: 1491.4294
       firePower: 36.677593
       bulletSpeed: 10
       fireRate: 10.364911
@@ -2986,9 +2986,9 @@ MonoBehaviour:
       healthRegen: 35.64636
       energyCap: 409.06277
       energyRegen: 35.41393
-      moveSpeed: 8.048598
+      moveSpeed: 6.990548
       turnSpeed: 14
-      gemCap: 343.29184
+      gemCap: 1220.2764
       peopleCap: 271.15308
     componentMass: 29.153925
     lockedInUpgradeTree: 0
@@ -3030,14 +3030,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 58498a5275b9ebc49b83141ea6de2a15, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 623.68604
-    powerScoreAtMaxLevel: 4513.409
+    powerScore: 793.0377
+    powerScoreAtMaxLevel: 6264.503
     powerScoreBreakdown:
       offense: 60.653797
       defense: 229.2071
       energy: 153.01585
-      mobility: 26.442463
-      capacity: 173.59715
+      mobility: 24.842089
+      capacity: 344.54922
       firePower: 20.409384
       bulletSpeed: 10
       fireRate: 5.2387667
@@ -3047,16 +3047,16 @@ MonoBehaviour:
       healthRegen: 7.207772
       energyCap: 136.21991
       energyRegen: 16.795938
-      moveSpeed: 10.042462
+      moveSpeed: 8.442089
       turnSpeed: 14
-      gemCap: 97.27223
+      gemCap: 268.2243
       peopleCap: 76.32492
     powerScoreBreakdownAtShipLevel:
       offense: 93.21007
       defense: 1227.5061
       energy: 458.05063
-      mobility: 28.64356
-      capacity: 596.9252
+      mobility: 27.043186
+      capacity: 1486.8511
       firePower: 40.818768
       bulletSpeed: 10
       fireRate: 5.2387667
@@ -3066,9 +3066,9 @@ MonoBehaviour:
       healthRegen: 38.600822
       energyCap: 403.28577
       energyRegen: 54.764866
-      moveSpeed: 12.24356
+      moveSpeed: 10.643187
       turnSpeed: 14
-      gemCap: 338.36145
+      gemCap: 1228.2874
       peopleCap: 258.56372
     componentMass: 35.29731
     lockedInUpgradeTree: 0

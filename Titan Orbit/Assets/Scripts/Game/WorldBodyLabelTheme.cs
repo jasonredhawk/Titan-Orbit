@@ -167,7 +167,7 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Gems the planet must store to leave <paramref name="planetLevel"/>.
-        /// Level 1 is 100 and each level doubles, so level 5 is 1600.
+        /// Level 1 is 200 and each level doubles, so level 5 is 3200.
         /// Returns 0 at <see cref="PlanetEconomyMath.MaxPlanetLevel"/> — there is no further level.
         /// </summary>
         /// <param name="planetLevel">Ghosted <c>PlanetState.PlanetLevel</c> (at least 1).</param>
@@ -183,7 +183,7 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Max half of the gem line: <c>NEXT  1600</c>, or <c>NEXT  MAX</c> on the last level.
+        /// Max half of the gem line: <c>NEXT  3200</c>, or <c>NEXT  MAX</c> on the last level.
         /// The live count sits beside this — stored gems over the cost to leave this level.
         /// </summary>
         public static string FormatNextLevelGemLine(int planetLevel)
@@ -196,7 +196,7 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// One line with both numbers: <c>NEXT  240 / 1600</c>.
+        /// One line with both numbers: <c>NEXT  240 / 3200</c>.
         /// <paramref name="current"/> is gems stored on the planet right now.
         /// The right side is the cost to reach the next level.
         /// </summary>

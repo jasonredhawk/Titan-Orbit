@@ -450,6 +450,8 @@ namespace TitanOrbit.UI
 
                 if (anchor.Kind == MinimapBlipKind.Ship && em.HasComponent<ShipState>(entity))
                 {
+                    // Mesh pose, not the tick-stepped sim transform. See OverlayPresentedShipPose.
+                    OverlayPresentedShipPose(entity, ref lt);
                     WriteAnchorPoseIfChanged(anchor, lt);
                     var ship = em.GetComponentData<ShipState>(entity);
                     ApplyShipAnchorPresentation(em, entity, anchor, ship, lt);
@@ -528,6 +530,32 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
+        /// Replaces <paramref name="lt"/> with the pose <see cref="ShipVisualSyncSystem"/>
+        /// published for the mesh, when one exists.
+        /// Remote hulls write <see cref="LocalTransform"/> only on a simulation tick
+        /// (~60 Hz). Between ticks the mesh keeps coasting on its velocity, so a
+        /// minimap mark that copied the sim transform froze and then jumped.
+        /// The local ship has the same split: the camera follows the published pose
+        /// while the raw transform steps. Both marks use the mesh pose so the radar
+        /// center and every other ship move together. A hull that has never been
+        /// published (spawn frame) keeps the sim transform.
+        /// </summary>
+        /// <param name="entity">Ship ghost the anchor tracks.</param>
+        /// <param name="lt">Sim transform in, mesh pose out when a publish exists.</param>
+        static void OverlayPresentedShipPose(Entity entity, ref LocalTransform lt)
+        {
+            // --- One dictionary read; no ship gather ---
+            if (!ShipPresentationPose.TryGetShip(entity, out float3 position, out quaternion rotation, out float scale))
+                return;
+
+            lt.Position = position;
+            lt.Rotation = rotation;
+            // Scale of 0 is an empty snapshot, not a real hull. Keep the sim scale.
+            if (scale > 0.01f)
+                lt.Scale = scale;
+        }
+
+        /// <summary>
         /// Writes minimap anchor pose only when the ECS transform actually moved/scaled.
         /// Assigning the same position still dirties the Transform and showed up in grind hitches.
         /// </summary>
@@ -603,6 +631,9 @@ namespace TitanOrbit.UI
                 alive.Add(entity);
                 var state = states[i];
                 var lt = transforms[i];
+                // Same mesh pose as the per-frame path, so a cache rebuild does not
+                // plant the mark on the stepped sim transform for one frame.
+                OverlayPresentedShipPose(entity, ref lt);
                 var anchor = GetOrCreateAnchor(entity, MinimapBlipKind.Ship);
                 ApplyShipAnchorPresentation(em, entity, anchor, state, lt);
                 anchor.transform.position = lt.Position;
