@@ -921,10 +921,14 @@ namespace TitanOrbit.UI
         /// </summary>
         public void ForceRebuildHoverTray()
         {
-            _hoverLayoutHealed = false;
             RectTransform tray = ResolveHoverTray();
             if (tray == null)
                 return;
+            // Opening the menu used to rebuild every bar even when the landing
+            // delay had already given the tray a real size.
+            if (_hoverLayoutHealed && tray.rect.width > 1f && tray.rect.height > 1f)
+                return;
+            _hoverLayoutHealed = false;
             LayoutRebuilder.ForceRebuildLayoutImmediate(tray);
             if (transform is RectTransform self)
                 LayoutRebuilder.ForceRebuildLayoutImmediate(self);

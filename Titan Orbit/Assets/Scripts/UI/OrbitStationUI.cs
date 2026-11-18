@@ -261,6 +261,11 @@ namespace TitanOrbit.UI
         int _landPrepareNodeIndex;
         /// <summary>True when every tree card (and the sidebar Your Ship hero) has this moon's screenshots.</summary>
         bool _landPrepareComplete;
+        /// <summary>
+        /// True after this dock already activated the hidden tree and rebuilt its layout once.
+        /// Later delay frames must not call that again — it was a multi-frame hitch.
+        /// </summary>
+        bool _landPrepareRearmed;
         /// <summary>How many tree cards to screenshot-paint per landing-delay frame.</summary>
         const int LandPrepareNodesPerTick = 6;
         /// <summary>Planet ids scratch for idle family-store caching. Filled from <see cref="EcsGameBridge.CopyKnownPlanetIds"/>.</summary>
@@ -533,6 +538,16 @@ namespace TitanOrbit.UI
 
         private float storeRefreshAccum;
         private const float StoreRefreshInterval = 0.35f;
+        /// <summary>
+        /// Loadout fingerprint last painted into the slot grids.
+        /// The 0.35s poll skips <see cref="RefreshSlots"/> when this still matches,
+        /// so unchanged gear does not rebuild TextMesh Pro meshes.
+        /// </summary>
+        int _storeRefreshLoadoutFingerprint = int.MinValue;
+        /// <summary>False until <see cref="RefreshSidebar"/> has painted the Your Ship card for <see cref="_sidebarShipPaintSignature"/>.</summary>
+        bool _sidebarShipPaintValid;
+        /// <summary>Last <see cref="ComputeTreeVisualSignature"/> applied to the sidebar hero card.</summary>
+        int _sidebarShipPaintSignature;
         private float contributedGemsRequestAccum;
         private const float ContributedGemsRequestInterval = 1f; // Request contributed gems periodically so deposits show up
 
@@ -713,8 +728,14 @@ namespace TitanOrbit.UI
             {
                 storeRefreshAccum = 0f;
                 RefreshStoreLabels();
-                RefreshSlots();
-                RefreshEquipmentSlots();
+                // Slot grids rewrite every title. Only do that when the equipped
+                // cards or gear actually changed — otherwise each poll dirties the canvas.
+                int loadoutFp = currentShip.LoadoutFingerprint;
+                if (loadoutFp != _storeRefreshLoadoutFingerprint)
+                {
+                    RefreshSlots();
+                    RefreshEquipmentSlots();
+                }
             }
             // Periodically request contributed gems (soft-reconcile while depositing — never skip
             // entirely or Bank freezes if a beat was missed).
@@ -1188,7 +1209,9 @@ namespace TitanOrbit.UI
             Canvas.ForceUpdateCanvases();
             RefreshShipsTab(scrollToActiveShipNode: false);
 
-            moonDockCenterBackdrop.SetActive(false);
+            // Stay active with the nested canvas off. SetActive(false) here made the
+            // next land Activate every card and rebuild the HUD canvases.
+            SetMoonDockOverlayRendering(false);
             // Hide must not leave Update() refreshing store/slots every frame.
             _moonDockLayoutActive = false;
             _moonDockTreeWarmed = shipUpgradeTree.Nodes != null && shipUpgradeTree.Nodes.Count > 0;
@@ -1569,7 +1592,8 @@ namespace TitanOrbit.UI
             ApplyCachedStoreForBoundPlanet();
             RefreshSlots();
             RefreshEquipmentSlots();
-            RefreshSidebar(includeStore: false);
+            // SetMoonDockCenterView paints the sidebar once. A second RefreshSidebar
+            // here used to populate the hero card twice on the open frame.
             if (!_moonDockMenuClosedByUser)
                 SetMoonDockCenterView(MoonDockCenterView.Ships, reuseWarmedTree: true);
         }
@@ -1605,8 +1629,20 @@ namespace TitanOrbit.UI
             ApplyShipTreeHudObscuring(false);
             _moonDockLayoutActive = false;
             _moonDockCenterView = MoonDockCenterView.None;
+            // Next land must re-arm the hidden tree once. Forgetting this left the
+            // backdrop inactive and pushed Activate + a full canvas rebuild onto Show.
+            _landPrepareRearmed = false;
+            _sidebarShipPaintValid = false;
+            _storeRefreshLoadoutFingerprint = int.MinValue;
             if (moonDockCenterBackdrop != null)
-                moonDockCenterBackdrop.SetActive(false);
+            {
+                // Keep the warmed tree active. SetActive(false) made the next land
+                // pay ActivateAwake plus a canvas rebuild for every card.
+                if (_moonDockTreeWarmed)
+                    SetMoonDockOverlayRendering(false);
+                else
+                    moonDockCenterBackdrop.SetActive(false);
+            }
             if (_moonDockBackdropGroup != null)
             {
                 _moonDockBackdropGroup.alpha = 0f;
@@ -1615,6 +1651,11 @@ namespace TitanOrbit.UI
             }
             ShipPowerBarStatTooltip.Hide();
         }
+
+        /// <summary>Nested canvas so the dock can stay active without redrawing during flight.</summary>
+        Canvas _moonDockOverlayCanvas;
+        /// <summary>Clicks on the dock. A nested canvas is not hit by the parent raycaster.</summary>
+        GraphicRaycaster _moonDockOverlayRaycaster;
 
         /// <summary>
         /// Adds a <see cref="CanvasGroup"/> on the dock backdrop so warmup can keep the
@@ -1629,6 +1670,47 @@ namespace TitanOrbit.UI
                 _moonDockBackdropGroup = moonDockCenterBackdrop.GetComponent<CanvasGroup>();
             if (_moonDockBackdropGroup == null)
                 _moonDockBackdropGroup = moonDockCenterBackdrop.AddComponent<CanvasGroup>();
+            EnsureMoonDockOverlayCanvas();
+        }
+
+        /// <summary>
+        /// Gives the dock its own canvas. Disabling that canvas hides the menu without
+        /// <c>SetActive(false)</c>, so the next land does not run ActivateAwake on every card.
+        /// </summary>
+        void EnsureMoonDockOverlayCanvas()
+        {
+            if (moonDockCenterBackdrop == null)
+                return;
+            if (_moonDockOverlayCanvas == null)
+                _moonDockOverlayCanvas = moonDockCenterBackdrop.GetComponent<Canvas>();
+            if (_moonDockOverlayCanvas == null)
+            {
+                Canvas parent = null;
+                if (moonDockCenterBackdrop.transform.parent != null)
+                    parent = moonDockCenterBackdrop.transform.parent.GetComponentInParent<Canvas>();
+                _moonDockOverlayCanvas = moonDockCenterBackdrop.AddComponent<Canvas>();
+                _moonDockOverlayCanvas.overrideSorting = false;
+                if (parent != null)
+                    _moonDockOverlayCanvas.additionalShaderChannels = parent.additionalShaderChannels;
+            }
+
+            if (_moonDockOverlayRaycaster == null)
+                _moonDockOverlayRaycaster = moonDockCenterBackdrop.GetComponent<GraphicRaycaster>();
+            if (_moonDockOverlayRaycaster == null)
+                _moonDockOverlayRaycaster = moonDockCenterBackdrop.AddComponent<GraphicRaycaster>();
+        }
+
+        /// <summary>
+        /// Turns dock rendering on or off. The GameObjects stay active once the tree exists.
+        /// </summary>
+        /// <param name="render">True while the hidden prepare or the visible menu needs graphics.</param>
+        void SetMoonDockOverlayRendering(bool render)
+        {
+            EnsureMoonDockOverlayCanvas();
+            if (_moonDockOverlayCanvas != null)
+                _moonDockOverlayCanvas.enabled = render;
+            if (_moonDockOverlayRaycaster != null)
+                _moonDockOverlayRaycaster.enabled = render;
         }
 
         public void RefreshFromReceivedGems()
@@ -4039,6 +4121,15 @@ namespace TitanOrbit.UI
             // unlocks the next hulls instead of leaving them on "Planet Lv N+".
             SyncDockedPlanetLevelsFromEcs();
 
+            // Ships and GEAR do not show spin-offer tiles. Writing those labels
+            // on the 0.35s poll rebuilt text meshes for a hidden panel.
+            if (_moonDockLayoutActive && _moonDockCenterView != MoonDockCenterView.Cards)
+            {
+                if (_moonDockCenterView == MoonDockCenterView.Ships)
+                    RefreshShipTreeVisualStateOnly();
+                return;
+            }
+
             if (CardShopSystem.Instance == null)
             {
                 for (int i = 0; i < cardRoots.Length; i++)
@@ -4306,17 +4397,25 @@ namespace TitanOrbit.UI
                 ? TeamManager.ToTeamId(currentShip.ShipTeam)
                 : TeamId.None;
             orbitDockSidebar.RefreshAccentPicker(paintTeam);
-            ShipPowerBarStatMaxes maxes = shipUpgradeTree != null
-                ? shipUpgradeTree.GetPowerBarStatMaxes()
-                : ShipFamilyPowerBarNorm.GetGlobalMaxPerStat();
-            orbitDockSidebar.RefreshCurrentShip(PopulateTreeNode, maxes);
-            ShipFamilyDefinition sidebarFamily = CardShopSystem.Instance != null && currentShip != null
-                ? CardShopSystem.Instance.GetShipFamilyForShip(currentShip)
-                : null;
-            orbitDockSidebar.RefreshFamilyIdentity(
-                sidebarFamily,
-                currentShip != null ? currentShip.ShipLevel : 1,
-                EcsGameBridge.ResolvePlanetFamilyBulletBankIndex(storePlanetId));
+            // Hero card + family line walk the upgrade tree. Bank ticks must not
+            // repaint them while the hull, planet, and afford mask are unchanged.
+            int shipPaintSignature = ComputeTreeVisualSignature();
+            if (!_sidebarShipPaintValid || shipPaintSignature != _sidebarShipPaintSignature)
+            {
+                _sidebarShipPaintValid = true;
+                _sidebarShipPaintSignature = shipPaintSignature;
+                ShipPowerBarStatMaxes maxes = shipUpgradeTree != null
+                    ? shipUpgradeTree.GetPowerBarStatMaxes()
+                    : ShipFamilyPowerBarNorm.GetGlobalMaxPerStat();
+                orbitDockSidebar.RefreshCurrentShip(PopulateTreeNode, maxes);
+                ShipFamilyDefinition sidebarFamily = CardShopSystem.Instance != null && currentShip != null
+                    ? CardShopSystem.Instance.GetShipFamilyForShip(currentShip)
+                    : null;
+                orbitDockSidebar.RefreshFamilyIdentity(
+                    sidebarFamily,
+                    currentShip != null ? currentShip.ShipLevel : 1,
+                    EcsGameBridge.ResolvePlanetFamilyBulletBankIndex(storePlanetId));
+            }
             if (includeStore)
                 RefreshMoonDockStore();
         }
@@ -7215,6 +7314,15 @@ namespace TitanOrbit.UI
             // Relayout after card heights are known (empty vs filled).
             if (_moonDockLayoutActive && slotPanelRect != null && slotGridRect != null)
                 ApplySidebarSlotGridLayout(cardCount);
+            RememberStoreRefreshLoadout();
+        }
+
+        /// <summary>Records the loadout currently shown in the slot grids so the next poll can no-op.</summary>
+        void RememberStoreRefreshLoadout()
+        {
+            _storeRefreshLoadoutFingerprint = currentShip != null
+                ? currentShip.LoadoutFingerprint
+                : int.MinValue;
         }
 
         /// <summary>
@@ -7525,6 +7633,7 @@ namespace TitanOrbit.UI
                 ApplySidebarEquipmentGridLayout(slotCount);
 
             UpdateLegacyOrbitStorePanelTop(currentShip.SlotCount, slotCount);
+            RememberStoreRefreshLoadout();
         }
 
         /// <summary>
@@ -8883,7 +8992,15 @@ namespace TitanOrbit.UI
                 _moonDockBackdropGroup.interactable = show;
             }
 
-            moonDockCenterBackdrop.SetActive(show);
+            if (show)
+            {
+                moonDockCenterBackdrop.SetActive(true);
+                SetMoonDockOverlayRendering(true);
+            }
+            else if (_moonDockTreeWarmed)
+                SetMoonDockOverlayRendering(false);
+            else
+                moonDockCenterBackdrop.SetActive(false);
             if (!show)
             {
                 ApplyShipTreeHudObscuring(false);
@@ -8965,11 +9082,27 @@ namespace TitanOrbit.UI
             if (moonDockCloseButton != null) moonDockCloseButton.transform.SetAsLastSibling();
             ApplyMoonDockShipTreeRowLayout();
             // --- Hover trays + STAT TELEMETRY overlay ---
-            // [UNITY] Hide() deactivates this backdrop. Flush layout, then rebuild
-            // the dedicated tooltip overlay and LateUpdate probe so the second
-            // Orbit Menu open always gets a live hover card.
-            Canvas.ForceUpdateCanvases();
+            // [UNITY] Canvas.ForceUpdateCanvases rebuilds every canvas in the game
+            // (HUD, minimap, dock). That was the 100–280ms land hitch. The landing
+            // delay already laid out this backdrop; only a cold open still needs
+            // a rebuild, and only of this panel.
+            bool warmedLayout = reuseWarmedTree
+                && _landPrepareRearmed
+                && IsLandedMoonTreePreparedForCurrentPlanet();
+            if (!warmedLayout)
+                RebuildMoonDockBackdropLayout();
             ShipPowerBarStatHoverRelay.NotifyMenuShown();
+        }
+
+        /// <summary>
+        /// Lays out the moon-dock overlay only. Does not touch the gameplay HUD canvases.
+        /// </summary>
+        void RebuildMoonDockBackdropLayout()
+        {
+            if (moonDockCenterBackdrop == null)
+                return;
+            if (moonDockCenterBackdrop.transform is RectTransform backdropRt)
+                LayoutRebuilder.ForceRebuildLayoutImmediate(backdropRt);
         }
 
         private void RebuildMoonDockLayoutsAfterShow()

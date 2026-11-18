@@ -16,7 +16,9 @@ namespace TitanOrbit.ECS
     /// deposit, and troop systems do the work. Home-planet mining stays the goal until
     /// this hull matches the highest level that planet can sell right now (its planet
     /// level, and never past <see cref="MaxShipLevel"/>). Gems deposited there fill the
-    /// bank that buys the next hull. A nearby capture starts only after that hull is
+    /// bank that buys the next hull. Each bot rolls one level-6 branch once and only
+    /// buys a tree step that can still reach it, so the fleet does not pile onto the
+    /// cheap side of the ladder. A nearby capture starts only after that hull is
     /// reached. A Comms Matrix order still retasks immediately. Loot from a rock that
     /// just broke is followed every tick so the hull does not sit out the scan
     /// while the gems coast away. An enemy inside
@@ -105,7 +107,7 @@ namespace TitanOrbit.ECS
         /// ship at this level has nothing left to buy from the planet it spawned at.
         /// </summary>
         const int MaxShipLevel = 6;
-        /// <summary>Server-only coin flip for the next hull. Not ghosted.</summary>
+        /// <summary>Server-only roll for the level-6 goal and a fork that still reaches it. Not ghosted.</summary>
         static uint _upgradeRoll = 0xC001D00Du;
         const float DockShipRadius = 0.8f;
         const float DockZoneMultiplier = 1.05f;
@@ -318,6 +320,10 @@ namespace TitanOrbit.ECS
                 if (em.HasComponent<Simulate>(shipEntity) && !em.IsComponentEnabled<Simulate>(shipEntity))
                     em.SetComponentEnabled<Simulate>(shipEntity, true);
 
+                // One level-6 hull, chosen the first tick this bot is alive. Death and
+                // idle park keep the same branch so the ladder is not re-rolled.
+                EnsureLevel6Goal(ref brain, ship.ShipLevel, ship.BranchIndex);
+
                 float3 pos = em.GetComponentData<LocalTransform>(shipEntity).Position;
                 int networkId = em.GetComponentData<GhostOwner>(shipEntity).NetworkId;
                 bool landed = false;
@@ -513,7 +519,7 @@ namespace TitanOrbit.ECS
                 {
                     BotShipBrain brain = em.GetComponentData<BotShipBrain>(ship);
                     if (brain.Task != BotTaskKind.None || brain.GoalNetworkId != 0 || brain.GoalPlanetId != 0)
-                        em.SetComponentData(ship, new BotShipBrain());
+                        em.SetComponentData(ship, brain.ClearedKeepingGoal());
                 }
 
                 ClearDeposit(em, ship);
@@ -864,10 +870,13 @@ namespace TitanOrbit.ECS
             if (storePlanetId == 0)
                 return;
 
+            EnsureLevel6Goal(ref brain, ship.ShipLevel, ship.BranchIndex);
             int nextLevel = ship.ShipLevel + 1;
             if (allowHullUpgrade &&
                 nextLevel <= MaxShipLevel &&
-                TryRollUpgradeBranch(ship.ShipLevel, ship.BranchIndex, out int branch) &&
+                brain.GoalLevel6Chosen != 0 &&
+                TryStepTowardLevel6Goal(
+                    ship.ShipLevel, ship.BranchIndex, brain.GoalLevel6Branch, out int branch) &&
                 UpgradeTree.IsValidUpgradeStep(ship.ShipLevel, ship.BranchIndex, nextLevel, branch))
             {
                 if (MoonOrbitStoreSystem.TryPurchaseShipUpgradeForNetworkId(
@@ -914,47 +923,109 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Picks a legal next hull. Levels 1–5 can step to the current branch or the
-        /// next one; both are a fair coin flip. A single legal hull is taken as-is.
+        /// Rolls <see cref="BotShipBrain.GoalLevel6Branch"/> once, among level-6 branches
+        /// this hull can still reach. A branch already on file is kept while the tree
+        /// can still get there. Level 6 remembers the hull it is already flying.
         /// </summary>
-        static bool TryRollUpgradeBranch(int fromLevel, int fromBranch, out int branch)
+        static void EnsureLevel6Goal(ref BotShipBrain brain, int shipLevel, int branchIndex)
         {
-            branch = fromBranch;
-            if (fromLevel < 1 || fromLevel > 5)
-                return false;
-            if (fromBranch < 0 || fromBranch >= UpgradeTree.GetShipCountForLevel(fromLevel))
-                return false;
+            int goal = brain.GoalLevel6Branch;
+            if (brain.GoalLevel6Chosen != 0 && Level6GoalReachable(shipLevel, branchIndex, goal))
+                return;
 
-            int nextCount = UpgradeTree.GetShipCountForLevel(fromLevel + 1);
-            int first = -1;
-            int second = -1;
-            int count = 0;
-            for (int j = fromBranch; j <= fromBranch + 1; j++)
+            if (shipLevel >= MaxShipLevel)
             {
-                if (j < 0 || j >= nextCount)
-                    continue;
-                if (count == 0)
-                    first = j;
-                else
-                    second = j;
-                count++;
+                int count = UpgradeTree.GetShipCountForLevel(MaxShipLevel);
+                if (branchIndex < 0 || branchIndex >= count)
+                    return;
+                brain.GoalLevel6Chosen = 1;
+                brain.GoalLevel6Branch = (byte)branchIndex;
+                return;
             }
 
-            if (count <= 0)
+            if (!TryRollReachableLevel6(shipLevel, branchIndex, out int rolled))
+                return;
+            brain.GoalLevel6Chosen = 1;
+            brain.GoalLevel6Branch = (byte)rolled;
+        }
+
+        /// <summary>
+        /// True when <paramref name="goal"/> is a level-6 branch this hull can still
+        /// reach. Each step stays on the current branch or moves one higher, so the
+        /// goal has to sit between the current branch and that branch plus the steps left.
+        /// </summary>
+        static bool Level6GoalReachable(int shipLevel, int branchIndex, int goal)
+        {
+            int count = UpgradeTree.GetShipCountForLevel(MaxShipLevel);
+            if (goal < 0 || goal >= count || branchIndex < 0)
                 return false;
-            if (count == 1)
+            if (shipLevel >= MaxShipLevel)
+                return shipLevel == MaxShipLevel && branchIndex == goal;
+            if (shipLevel < 1)
+                return false;
+            int steps = MaxShipLevel - shipLevel;
+            return goal >= branchIndex && goal <= branchIndex + steps;
+        }
+
+        /// <summary>Uniform pick among level-6 branches still reachable from this hull.</summary>
+        static bool TryRollReachableLevel6(int shipLevel, int branchIndex, out int goal)
+        {
+            goal = 0;
+            if (shipLevel < 1 || shipLevel >= MaxShipLevel || branchIndex < 0)
+                return false;
+            int steps = MaxShipLevel - shipLevel;
+            int min = branchIndex;
+            int max = branchIndex + steps;
+            int cap = UpgradeTree.GetShipCountForLevel(MaxShipLevel) - 1;
+            if (max > cap)
+                max = cap;
+            if (min > max)
+                return false;
+            int span = max - min + 1;
+            goal = min + (int)(NextUpgradeRoll() % (uint)span);
+            return true;
+        }
+
+        /// <summary>
+        /// Next hull on the way to <paramref name="goal"/>. A step is legal when the
+        /// tree allows it and the goal is still reachable afterward. When staying and
+        /// moving up both still arrive, either purchase is taken.
+        /// </summary>
+        static bool TryStepTowardLevel6Goal(int fromLevel, int fromBranch, int goal, out int branch)
+        {
+            branch = fromBranch;
+            bool stay = StepReachesLevel6Goal(fromLevel, fromBranch, fromBranch, goal);
+            bool rise = StepReachesLevel6Goal(fromLevel, fromBranch, fromBranch + 1, goal);
+            if (!stay && !rise)
+                return false;
+            if (stay && rise)
             {
-                branch = first;
+                branch = (NextUpgradeRoll() & 1u) == 0u ? fromBranch : fromBranch + 1;
                 return true;
             }
 
+            branch = stay ? fromBranch : fromBranch + 1;
+            return true;
+        }
+
+        static bool StepReachesLevel6Goal(int fromLevel, int fromBranch, int nextBranch, int goal)
+        {
+            int nextLevel = fromLevel + 1;
+            if (!UpgradeTree.IsValidUpgradeStep(fromLevel, fromBranch, nextLevel, nextBranch))
+                return false;
+            return Level6GoalReachable(nextLevel, nextBranch, goal);
+        }
+
+        static uint NextUpgradeRoll()
+        {
             uint x = _upgradeRoll;
             x ^= x << 13;
             x ^= x >> 17;
             x ^= x << 5;
-            _upgradeRoll = x == 0u ? 0xC001D00Du : x;
-            branch = (_upgradeRoll >> 31) == 0u ? first : second;
-            return true;
+            if (x == 0u)
+                x = 0xC001D00Du;
+            _upgradeRoll = x;
+            return x;
         }
 
         static bool TryPickAttribute(in ShipAttributeUpgradeState attrs, int shipLevel, float gems, out int index)

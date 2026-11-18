@@ -285,7 +285,7 @@ namespace TitanOrbit.Core
         [SerializeField] bool debugEnableInstructionImageCapture;
 
         [Header("Debug — Stutter Isolator")]
-        [Tooltip("When enabled in Play Mode, shows an on-screen panel and accepts Shift+F1–F5 to temporarily disable impact VFX, floats, asteroid toroidal collision, ship soft-track, or gem burst. Leave OFF for normal play.")]
+        [Tooltip("When enabled in Play Mode, shows an on-screen panel and accepts Shift+F1–F5 to temporarily disable impact VFX, floats, asteroid toroidal collision, or gem burst. F4 no longer changes the ship pose. Leave OFF for normal play.")]
         [SerializeField] bool debugEnableStutterIsolator;
 
         [Tooltip("Starting value when the isolator is enabled: skip impact VFX (Shift+F1).")]
@@ -297,7 +297,7 @@ namespace TitanOrbit.Core
         [Tooltip("Starting value when the isolator is enabled: skip asteroid toroidal ship collision (Shift+F3).")]
         [SerializeField] bool isolatorStartDisableAsteroidShipCollision;
 
-        [Tooltip("Starting value when the isolator is enabled: raw ship pose, no soft-track (Shift+F4).")]
+        [Tooltip("Unused. The hull always copies the motor pose. Shift+F4 still toggles this so the isolator key order stays put.")]
         [SerializeField] bool isolatorStartDisableShipSoftTrack;
 
         [Tooltip("Starting value when the isolator is enabled: skip local gem burst (Shift+F5).")]

@@ -277,7 +277,10 @@ namespace TitanOrbit.ECS
                 em.SetComponentData(ship, new ShipInput());
 
             if (em.HasComponent<BotShipBrain>(ship))
-                em.SetComponentData(ship, new BotShipBrain());
+            {
+                BotShipBrain brain = em.GetComponentData<BotShipBrain>(ship);
+                em.SetComponentData(ship, brain.ClearedKeepingGoal());
+            }
 
             PeopleTransportEscortLogic.ClearAll(em, ship);
 

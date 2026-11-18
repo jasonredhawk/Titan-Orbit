@@ -99,8 +99,9 @@ namespace TitanOrbit.Game
             /// <summary>1 = store rocket — cosmetic tracer steers toward the closest enemy.</summary>
             public byte Homing;
             /// <summary>
-            /// 1 when this straight shot was stepped off-screen this frame and must not be
-            /// swept or placed again until it enters the camera rectangle.
+            /// 1 when this straight shot was stepped outside the camera frustum and must
+            /// not be swept or placed again until it enters the frame. Shells stay hidden
+            /// so a paused projectile cannot sit at the last on-screen pose.
             /// </summary>
             public byte SweptOffscreen;
             /// <summary>Max yaw rate in degrees per second while Homing is set.</summary>
@@ -362,8 +363,9 @@ namespace TitanOrbit.Game
                 _hasLastObserverHull = true;
             }
 
-            // Straight shots outside the camera rectangle step lifetime only — no hit sweep,
-            // no transform write. A shot that will enter the rect this frame still sweeps.
+            // Straight shots outside the camera frustum step lifetime only — no hit sweep,
+            // no transform write. The ground rect is the whole map when the lens tilts, so
+            // this uses the real frustum. A shot that will enter the frame this tick still sweeps.
             AdvanceOffscreenStraightTracers(dt);
 
             // --- Cosmetic hit prediction (hybrid-proxy spheres; no map ToEntityArray) ---
@@ -377,6 +379,9 @@ namespace TitanOrbit.Game
                 var t = _tracers[i];
                 if (t.Go == null)
                 {
+                    // Root already gone — still return split shells so they cannot sit
+                    // in the world after the tracer record is dropped.
+                    DestroyTracerGo(t);
                     RemoveAtSwap(i);
                     continue;
                 }
@@ -414,6 +419,7 @@ namespace TitanOrbit.Game
                 {
                     // --- Gun / drone / PD: variable-dt dead reckon (already a straight line) ---
                     float3 prevPos = t.LogicalPos;
+                    t.Age += dt;
                     t.RemainingLifetime -= dt;
                     float remainingRange = math.max(0f, t.MaxDistance - t.Traveled);
                     BulletFlight.GetStep(
@@ -452,7 +458,9 @@ namespace TitanOrbit.Game
                         continue;
                     }
 
-                    if (t.RemainingLifetime <= 0f || BulletFlight.IsRangeExpired(t.Traveled, t.MaxDistance))
+                    if (t.RemainingLifetime <= 0f
+                        || BulletFlight.IsRangeExpired(t.Traveled, t.MaxDistance)
+                        || IsAbandonedStraightShot(in t))
                     {
                         DestroyTracerGo(t);
                         RemoveAtSwap(i);
@@ -461,6 +469,13 @@ namespace TitanOrbit.Game
 
                     displayLogical = t.LogicalPos;
                     displayVel = t.Velocity;
+                }
+
+                if (t.Homing == 0 && IsAbandonedStraightShot(in t))
+                {
+                    DestroyTracerGo(t);
+                    RemoveAtSwap(i);
+                    continue;
                 }
 
                 // --- Display pose ---
@@ -476,16 +491,16 @@ namespace TitanOrbit.Game
                 if (BulletCosmeticHitQuery.TryGetMegaFlightLiftY(
                         displayLogical, t.OwnerNetworkId, out float megaY, out float lift))
                     displayPos.y = math.lerp(t.VisualMuzzleY, megaY, lift);
-                if (CameraGroundView.IsOutside(displayPos, CameraGroundView.BulletMargin))
+                if (CameraGroundView.IsOutsideBulletView(displayPos))
                 {
-                    if (t.Go.activeSelf)
-                        t.Go.SetActive(false);
+                    // Root and every extra barrel. A hidden root used to leave the
+                    // other shells looping at the last pose (static bolts).
+                    SilenceShells(in t);
                     _tracers[i] = t;
                     continue;
                 }
 
-                if (!t.Go.activeSelf)
-                    t.Go.SetActive(true);
+                bool wasHidden = t.Go != null && !t.Go.activeSelf;
                 bool snapped = (displayPos - prevDisplay).sqrMagnitude > 40f * 40f;
                 if (snapped)
                     ResetTrail(in t);
@@ -494,6 +509,8 @@ namespace TitanOrbit.Game
                     : t.Go.transform.rotation;
                 ApplyTracerRootScale(in t);
                 PlaceTracerShells(in t, displayPos, flightRot);
+                if (wasHidden)
+                    WakeShells(in t);
 
                 if (t.Stretch != null)
                 {
@@ -1702,33 +1719,41 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Straight shots whose current point and this frame's step both sit outside the
-        /// camera ground rectangle only age and move. They are not swept and their
-        /// transforms are not written. A shot that will cross into the rect is left for the sweep.
+        /// camera frustum only age and move. They are not swept and their transforms are
+        /// not written. Shells are silenced so a paused looping projectile cannot stay
+        /// drawn at the last on-screen pose. A shot that will cross into the frame is
+        /// left for the sweep. Coming back on screen does not enable the shell here —
+        /// the place pass writes the current pose first.
         /// </summary>
         void AdvanceOffscreenStraightTracers(float dt)
         {
             for (int i = _tracers.Count - 1; i >= 0; i--)
             {
                 var t = _tracers[i];
-                if (t.Go == null || t.Homing != 0)
+                if (t.Homing != 0)
                     continue;
+                if (t.Go == null)
+                {
+                    DestroyTracerGo(t);
+                    RemoveAtSwap(i);
+                    continue;
+                }
 
                 float3 stepEnd = t.LogicalPos + t.Velocity * dt;
-                bool outside = CameraGroundView.IsOutside(t.LogicalPos, CameraGroundView.BulletMargin)
-                    && CameraGroundView.IsOutside(stepEnd, CameraGroundView.BulletMargin);
+                bool outside = CameraGroundView.IsOutsideBulletView(t.LogicalPos)
+                    && CameraGroundView.IsOutsideBulletView(stepEnd);
                 if (!outside)
                 {
                     if (t.SweptOffscreen != 0)
                     {
                         t.SweptOffscreen = 0;
-                        if (!t.Go.activeSelf)
-                            t.Go.SetActive(true);
                         _tracers[i] = t;
                     }
 
                     continue;
                 }
 
+                t.Age += dt;
                 t.RemainingLifetime -= dt;
                 float remainingRange = math.max(0f, t.MaxDistance - t.Traveled);
                 BulletFlight.GetStep(
@@ -1738,7 +1763,9 @@ namespace TitanOrbit.Game
                 if (ToroidalMapEcs.HasValidMapSize)
                     t.LogicalPos = ToroidalMapEcs.Wrap(t.LogicalPos);
 
-                if (t.RemainingLifetime <= 0f || BulletFlight.IsRangeExpired(t.Traveled, t.MaxDistance))
+                if (t.RemainingLifetime <= 0f
+                    || BulletFlight.IsRangeExpired(t.Traveled, t.MaxDistance)
+                    || IsAbandonedStraightShot(in t))
                 {
                     DestroyTracerGo(t);
                     RemoveAtSwap(i);
@@ -1746,10 +1773,105 @@ namespace TitanOrbit.Game
                 }
 
                 t.SweptOffscreen = 1;
-                if (t.Go.activeSelf)
-                    t.Go.SetActive(false);
+                SilenceShells(in t);
                 _tracers[i] = t;
             }
+        }
+
+        /// <summary>
+        /// A straight cosmetic that will never fly off. Zero speed sits on the muzzle
+        /// forever when lifetime was disabled. A shot older than any real gun flight
+        /// is a tracer the integrator stopped visiting.
+        /// </summary>
+        static bool IsAbandonedStraightShot(in Tracer t)
+        {
+            if (t.Homing != 0)
+                return false;
+            if (t.Age >= 20f)
+                return true;
+            return t.Age >= 2.5f && math.lengthsq(t.Velocity) < 0.25f;
+        }
+
+        /// <summary>
+        /// Hides every shell of this shot and wipes particles and trails. Looping
+        /// projectile prefabs otherwise freeze at the last simulated point once the
+        /// camera frustum culls them.
+        /// </summary>
+        static void SilenceShells(in Tracer t)
+        {
+            SilenceShell(t.Go);
+            if (t.SplitExtras == null)
+                return;
+            for (int i = 0; i < t.SplitExtras.Length; i++)
+                SilenceShell(t.SplitExtras[i]);
+        }
+
+        static void SilenceShell(GameObject go)
+        {
+            // Already parked. Walking particles every frame on every off-screen shot
+            // would hitch a mega volley for no visual change.
+            if (go == null || !go.activeSelf)
+                return;
+            StopAndClearParticles(go.transform);
+            go.SetActive(false);
+        }
+
+        static void StopAndClearParticles(Transform node)
+        {
+            ParticleSystem ps = node.GetComponent<ParticleSystem>();
+            if (ps != null)
+            {
+                ParticleSystem.MainModule main = ps.main;
+                main.cullingMode = ParticleSystemCullingMode.AlwaysSimulate;
+                ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+            }
+
+            TrailRenderer trail = node.GetComponent<TrailRenderer>();
+            if (trail != null)
+                trail.Clear();
+
+            int childCount = node.childCount;
+            for (int i = 0; i < childCount; i++)
+                StopAndClearParticles(node.GetChild(i));
+        }
+
+        /// <summary>
+        /// Enables shells only after <see cref="PlaceTracerShells"/> has written the
+        /// current pose, and keeps projectile particles simulating off the frustum
+        /// so they cannot pause into a static bolt.
+        /// </summary>
+        static void WakeShells(in Tracer t)
+        {
+            WakeShell(t.Go);
+            if (t.SplitExtras == null)
+                return;
+            for (int i = 0; i < t.SplitExtras.Length; i++)
+                WakeShell(t.SplitExtras[i]);
+        }
+
+        static void WakeShell(GameObject go)
+        {
+            if (go == null)
+                return;
+            if (!go.activeSelf)
+                go.SetActive(true);
+            ResumeParticles(go.transform);
+        }
+
+        static void ResumeParticles(Transform node)
+        {
+            ParticleSystem ps = node.GetComponent<ParticleSystem>();
+            if (ps != null)
+            {
+                ParticleSystem.MainModule main = ps.main;
+                main.cullingMode = ParticleSystemCullingMode.AlwaysSimulate;
+                if (!ps.isPlaying)
+                    ps.Play(false);
+            }
+
+            int childCount = node.childCount;
+            for (int i = 0; i < childCount; i++)
+                ResumeParticles(node.GetChild(i));
         }
 
         /// <summary>
@@ -1839,6 +1961,7 @@ namespace TitanOrbit.Game
                         : outcome.NewPos;
                     t.Traveled = outcome.NewTraveled;
                     t.RemainingLifetime = outcome.NewLifetime;
+                    t.Age += dt;
                     _tracers[i] = t;
                 }
 

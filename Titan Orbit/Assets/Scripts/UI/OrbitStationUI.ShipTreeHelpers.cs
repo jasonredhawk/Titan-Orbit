@@ -299,19 +299,22 @@ namespace TitanOrbit.UI
             if (_landPrepareComplete && _landPreparePlanetId == storePlanetId)
             {
                 // --- Same moon as last dock ---
-                // Screenshots are already assigned, so a matching signature skips the
-                // 24-card paint. Hide() still SetActive(false) the backdrop; after a
-                // long inactive stretch those power-bar trays are 0×0. Re-arm once at
-                // alpha 0 and flush layout so the second land's hover math has real rects.
+                // Screenshots are already assigned. Hide() deactivated the backdrop, so
+                // re-arm it once at alpha 0. Doing this every delay frame, plus
+                // Canvas.ForceUpdateCanvases, rebuilt the HUD on each of those frames.
+                if (_landPrepareRearmed)
+                    return;
+
+                if (moonDockCenterBackdrop == null || !moonDockCenterBackdrop.activeSelf)
+                    ArmHiddenLandPrepareHierarchy();
+                else
+                    SetMoonDockOverlayRendering(true);
                 // If Bank crossed another hull's price while we were away, paint that
                 // chip. Remembering the new signature without a paint left the dearer
                 // button grey, and the later poll then thought the cards were current.
-                if (moonDockCenterBackdrop == null || !moonDockCenterBackdrop.activeSelf)
-                {
-                    ArmHiddenLandPrepareHierarchy();
-                    Canvas.ForceUpdateCanvases();
-                }
                 RefreshShipTreeVisualStateOnly();
+                RebuildMoonDockBackdropLayout();
+                _landPrepareRearmed = true;
                 return;
             }
 
@@ -320,6 +323,7 @@ namespace TitanOrbit.UI
                 _landPreparePlanetId = storePlanetId;
                 _landPrepareNodeIndex = 0;
                 _landPrepareComplete = false;
+                _landPrepareRearmed = false;
             }
 
             if (!IsTreeDataAvailable() || shipUpgradeTree == null)
@@ -337,18 +341,18 @@ namespace TitanOrbit.UI
                 PopulateTreeNode(nodes[i], maxes);
             _landPrepareNodeIndex = end;
 
-            // [UNITY] Flush the batch so textures upload while the overlay is still invisible.
-            Canvas.ForceUpdateCanvases();
-
             if (_landPrepareNodeIndex < nodes.Count)
                 return;
 
             // --- Last batch: header + Your Ship hero ---
+            // One layout of this backdrop, not Canvas.ForceUpdateCanvases. The global
+            // flush was rebuilding HUD text meshes on the landing frames.
             UpdateShipTreeHintText();
             if (orbitDockSidebar != null)
                 orbitDockSidebar.RefreshCurrentShip(PopulateTreeNode, maxes);
-            Canvas.ForceUpdateCanvases();
+            RebuildMoonDockBackdropLayout();
             _landPrepareComplete = true;
+            _landPrepareRearmed = true;
             // The cards are already this moon's hulls. Remember that so the first
             // store poll after the menu appears does not paint all 24 again.
             RememberTreeVisualSignature();
@@ -384,6 +388,7 @@ namespace TitanOrbit.UI
             _moonDockBackdropGroup.blocksRaycasts = false;
             _moonDockBackdropGroup.interactable = false;
             moonDockCenterBackdrop.SetActive(true);
+            SetMoonDockOverlayRendering(true);
             if (moonDockCenterShipsHost != null)
                 moonDockCenterShipsHost.gameObject.SetActive(true);
             if (shipsTabContent != null)

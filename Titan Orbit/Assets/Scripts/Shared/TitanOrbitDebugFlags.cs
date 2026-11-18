@@ -144,7 +144,8 @@ namespace TitanOrbit
         public static bool IsolateDisableAsteroidShipCollision;
 
         /// <summary>
-        /// Skip soft-track / cruise-correct on local ship presentation — raw NetCode pose only.
+        /// Unused. Local and remote hulls always copy the motor pose. Kept so the
+        /// stutter-isolator key does not shift.
         /// </summary>
         public static bool IsolateDisableShipSoftTrack;
 

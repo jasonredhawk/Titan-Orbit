@@ -3,9 +3,7 @@ using TitanOrbit;
 using TitanOrbit.Core;
 using TitanOrbit.ECS;
 using TitanOrbit.Generation;
-using TitanOrbit.NetCode;
 using TitanOrbit.Shared;
-using TitanOrbit.Simulation;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.NetCode;
@@ -17,31 +15,18 @@ namespace TitanOrbit.Game
     /// <summary>
     /// Publishes NetCode presentation-phase ship poses once per frame for camera, hybrid leftovers,
     /// and parallax. Remote and AI hulls are driven by <see cref="ShipRemoteMotorSystem"/> up to
-    /// the estimated server tick. This system copies that pose and adds at most one tick of
-    /// flight velocity so extra render frames do not freeze the hull. The cruise correction
-    /// is already inside that pose, so it is not added again. It does not coast them a second
-    /// time toward the interpolated snapshot.
+    /// the estimated server tick. This system copies that motor pose. It does not add a
+    /// velocity lead, and it does not coast toward an interpolated snapshot.
     /// <para>
     /// [TITAN-ORBIT] Local ship wraps onto the canonical chart; camera follows that pose.
-    /// A ±map-size jump hard-snaps display (no long lerp / H73 coast across the rectangle).
-    /// Soft-track on NetCode storms; H73 cruise for reconcile pops. Death→alive hard-snaps to
-    /// the home orbit ring so the hull does not crawl across the map. While dead, display stays
-    /// on the wreck — a one-frame LocalTransform hop to the home-ring spawn (asteroid death)
-    /// must not drag the camera there and back. Asteroid grind and hull contacts do not spring
-    /// the hull pose (that coast chased every PhysX bounce and looked jittery). The hull stays
-    /// on H73 cruise; <see cref="CameraFollowEcs"/> trails the published pose while
-    /// <see cref="ShipDisplayPose.LocalHullContact"/> is set. A held predicted tick glides
-        /// at kinematics speed for at most one simulation step so formation flight does not
-        /// shuffle against remote and AI ships on the same server tick. Ship-vs-ship separation is the
-    /// simulated pose from the shared tick, not a display offset. Wrap / respawn / 50u
-    /// abandon still hard-snap, and that glide is not applied on wrap, death, catch-up,
-    /// or overlap. GhostPredictionSmoothing is left off so this system alone
-    /// owns local presentation (avoids double-smooth jitter).
-    /// </para>
-    /// <para>
-    /// Evidence: H71 absorbed pops (maxDelta max 0.25). H72 deadzone rejected — correctFrames
-    /// stayed ~58 because capped pull could not close a steady &gt;0.08u lag, so the spring ran
-    /// every frame. H73 snaps when close (no shimmer) and only coasts on real pops.
+    /// The published pose is the motor tick (predicted <c>LocalTransform</c> for the owner,
+    /// <see cref="ShipRemoteMotorState.DisplayPosition"/> for everyone else). Collision
+    /// separation stays inside that tick. This system does not blend, coast, or ease a
+    /// contact. A ±map-size jump is the wrapped motor pose in one frame. While dead, display
+    /// stays on the wreck — a one-frame LocalTransform hop to the home-ring spawn (asteroid
+    /// death) must not drag the camera there and back. <see cref="CameraFollowEcs"/> trails
+    /// the published pose while <see cref="ShipDisplayPose.LocalHullContact"/> is set.
+    /// GhostPredictionSmoothing stays off so this copy is the only presentation pose.
     /// </para>
     /// <para>
     /// [TITAN-ORBIT] Asteroid destroy / Join Team eye-blink (2026-07-20 Editor.log): any miss from
@@ -59,13 +44,10 @@ namespace TitanOrbit.Game
     [UpdateInGroup(typeof(PresentationSystemGroup), OrderLast = true)]
     public partial class ShipVisualSyncSystem : SystemBase
     {
-        /// <summary>Rotation slerp rate during soft-track (1/seconds).</summary>
-        const float DisplayRotationSharpness = 12f;
-
         /// <summary>
-        /// Hard-snap when the display-to-sim gap exceeds this (abandon / missed death edge).
-        /// Death→alive always snaps, even under this threshold — otherwise a 20–50u crawl
-        /// to the home ring looks like the hull flying home instead of respawning.
+        /// Respawn farther than this clears the toroidal display session. The mesh still
+        /// copies the motor pose that frame. Otherwise a home-ring respawn keeps the old
+        /// tile set and the map blinks.
         /// </summary>
         const float DisplayRespawnSnapDistance = 50f;
 
@@ -77,67 +59,11 @@ namespace TitanOrbit.Game
         const float DeathWreckHoldDistance = 40f;
 
         /// <summary>
-        /// When |ServerCommandAge| exceeds this, soft-track (join / catch-up storms).
-        /// </summary>
-        const float CommandAgeHoldThreshold = 8f;
-
-        /// <summary>Max visual catch-up speed during command-age storms (world units/sec).</summary>
-        const float CatchUpDisplayMaxSpeed = 22f;
-
-        /// <summary>Cap hitch dt so a stall does not overshoot soft-track.</summary>
-        const float MaxSmoothDeltaTime = 0.05f;
-
-        /// <summary>
-        /// [TITAN-ORBIT] H71: exponential blend rate toward sim error after coast (1/seconds).
-        /// </summary>
-        const float CruiseCorrectSharpness = 8f;
-
-        /// <summary>
-        /// [TITAN-ORBIT] H71: max correction on top of coast, as a fraction of one vel×dt step.
-        /// Keeps display step ≈ steady cruise even while closing reconcile error.
-        /// </summary>
-        const float CruiseCorrectPullCapRatio = 0.25f;
-
-        /// <summary>
-        /// [TITAN-ORBIT] H73: if display-to-sim gap ≤ this × (speed·dt), snap to sim (raw follow).
-        /// Larger gaps are treated as reconcile pops and use coast + capped correct.
-        /// </summary>
-        const float CruiseRawFollowSlopRatio = 1.15f;
-
-        /// <summary>
-        /// [TITAN-ORBIT] Floor for raw-follow even when speed is ~0 (grind / ram stuck on a rock).
-        /// H73 used max(speed·dt, 0.02) — bounce/reconcile of a few centimeters then looked like a
-        /// pop, so coast ran every frame and the toroidal map stepped with the camera.
-        /// Contact shoves under this floor stay on the hull. Camera lag lives in
-        /// <see cref="CameraFollowEcs"/>, not a second spring here.
-        /// </summary>
-        const float CruiseMinRawFollowDistance = 0.45f;
-
-        /// <summary>
-        /// Sim pose closer than this to the last cruise sample is a held tick (same predicted
-        /// pose across extra render frames). Partial-tick motion is centimeters, so it still
-        /// counts as a new sample and does not add a second lead.
-        /// </summary>
-        const float CruiseHeldTickPositionEpsilon = 0.001f;
-
-        /// <summary>
-        /// Below this planar speed a held tick stays on the sim pose. Stops and grind noise
-        /// must not walk the camera; cruise speeds still glide between snapshots.
-        /// </summary>
-        const float CruiseHeldTickMinPlanarSpeed = 1f;
-
-        /// <summary>
         /// [TITAN-ORBIT] Frames the local ship must stay unresolved before we treat it as a real
         /// despawn. Editor.log 2026-07-20: calling ResetSession every Null frame wiped ~283 tiles
         /// and blinked the whole map (Join Team suppress / brief lookup misses).
         /// </summary>
         const int MissingShipClearDelayFrames = 45;
-
-        /// <summary>
-        /// Remote display snaps when the motor pose is this far from the last published pose.
-        /// Covers respawn and join. The motor already bled smaller gaps.
-        /// </summary>
-        const float RemoteSnapDistance = 24f;
 
         // --- Local-owner display state (not sim) ---
         float3 _smoothPos;
@@ -153,30 +79,20 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Previous presentation frame's local <see cref="ShipState.IsDead"/>. Detects the
-        /// death→alive edge so we hard-snap to the home orbit ring instead of soft-tracking
-        /// across the map (catch-up storms used to skip the 50u snap entirely).
+        /// death→alive edge so a far respawn clears the toroidal tile session.
         /// </summary>
         bool _localShipWasDead;
 
-        /// <summary>Last sim position consumed by cruise. Held ticks glide ahead of this sample.</summary>
-        float3 _cruiseSimPos;
-
-        /// <summary>Unscaled time when <see cref="_cruiseSimPos"/> was sampled.</summary>
-        float _cruiseSimSampleTime;
-
-        /// <summary>False until cruise has sampled a pose, and after snap / overlap / catch-up.</summary>
-        bool _cruiseSimSampleValid;
-
-        /// <summary>Per remote hull: last published pose, so a wrap or respawn snaps.</summary>
-        readonly Dictionary<Entity, RemotePublishedPose> _remotePublished = new Dictionary<Entity, RemotePublishedPose>(32);
+        /// <summary>Per remote hull: last frame it was published, so a despawn can leave the cache.</summary>
+        readonly Dictionary<Entity, int> _remoteFrame = new Dictionary<Entity, int>(32);
 
         /// <summary>Reused keys for remotes that were not published this frame.</summary>
         readonly List<Entity> _remotePrune = new List<Entity>(32);
 
         /// <summary>
-        /// Each presentation frame: publish the remote motor pose, then soft-track
-        /// or raw-follow the local owner. Local pose keeps updating during gem Instantiates
-        /// backlog so the camera does not freeze then jump.
+        /// Each presentation frame: copy the remote motor pose, then copy the local owner.
+        /// Local pose keeps updating during gem Instantiates backlog so the camera does not
+        /// freeze then jump.
         /// </summary>
         protected override void OnUpdate()
         {
@@ -236,12 +152,8 @@ namespace TitanOrbit.Game
             // missed deferred Confirm / TeamChoice hold folds. Use the helper API.
             if (!skipShipGathers)
             {
-                // The motor already bled the hull to the estimated server tick.
-                // Extra render frames only add the fraction of the current tick.
+                // Motor pose only. A render frame between ticks does not invent a lead.
                 int frame = UnityEngine.Time.frameCount;
-                float now = UnityEngine.Time.unscaledTime;
-                bool hasMap = ToroidalMapEcs.TryGetMapSize(out float mapW, out float mapH);
-                float tickDt = 1f / TitanOrbitServerTickRateSystem.SimulationHz;
                 foreach (var (lt, entity) in SystemAPI
                              .Query<RefRO<LocalTransform>>()
                              .WithAll<ShipTag>()
@@ -253,8 +165,8 @@ namespace TitanOrbit.Game
                         SystemAPI.IsComponentEnabled<GhostOwnerIsLocal>(entity))
                         continue;
 
-                    LocalTransform display = PublishRemotePose(
-                        entity, lt.ValueRO, now, frame, tickDt, hasMap, mapW, mapH);
+                    LocalTransform display = PublishRemotePose(entity, lt.ValueRO);
+                    _remoteFrame[entity] = frame;
                     PublishShip(entity, display);
                     if (EntityManager.HasComponent<LocalToWorld>(entity))
                     {
@@ -287,9 +199,8 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Builds the local owner's camera/mesh pose: soft-track on storms, H73 raw-or-coast cruise.
-        /// Hard-snaps on death, respawn, ship replace, and gaps beyond
-        /// <see cref="DisplayRespawnSnapDistance"/>.
+        /// Copies the local owner's motor pose for the camera and the mesh.
+        /// A dead wreck holds across a one-frame spawn hop. A far respawn clears tiles.
         /// </summary>
         /// <param name="localShip">Local player ship entity, or Null when not spawned.</param>
         /// <param name="skipBankPivotQuery">
@@ -317,25 +228,10 @@ namespace TitanOrbit.Game
             float3 targetPos = lt.Position;
             quaternion targetRot = lt.Rotation;
 
-            // --- Read command age for catch-up hold ---
-            float commandAge = 0f;
-            if (SystemAPI.TryGetSingleton<NetworkSnapshotAck>(out var ack))
-                commandAge = ack.ServerCommandAge / 256f;
-
-            bool catchingUp = math.abs(commandAge) > CommandAgeHoldThreshold;
-            float dt = math.min(math.max(0f, UnityEngine.Time.unscaledDeltaTime), MaxSmoothDeltaTime);
-
-            float3 simVel = float3.zero;
-            if (EntityManager.HasComponent<ShipKinematics>(localShip))
-                simVel = EntityManager.GetComponentData<ShipKinematics>(localShip).Velocity;
-
             bool shipChanged = _smoothInitialized && _smoothShipEntity != Entity.Null && localShip != _smoothShipEntity;
             _smoothShipEntity = localShip;
 
-            // --- Asteroid / hull contact flag for camera trail (hull pose stays on H73) ---
-            // [TITAN-ORBIT] A contact spring on this pose chased every PhysX bounce (velocity
-            // coast + capped pull) and the camera, hard-locked to the pose, jittered worse.
-            // Publish the contact; CameraFollowEcs lags its own XZ anchor.
+            // Contact is for the camera trail only. The hull pose is the motor tick.
             bool liveContact = false;
             if (EntityManager.HasComponent<ShipAsteroidContactState>(localShip))
             {
@@ -345,16 +241,11 @@ namespace TitanOrbit.Game
 
             ShipDisplayPose.SetLocalHullContact(liveContact);
 
-            bool dampShipShipCorrection = false;
-            if (SystemAPI.TryGetSingleton<LocalShipShipOverlapLatch>(out var shipOverlap)
-                && shipOverlap.Active != 0)
-                dampShipShipCorrection = true;
-
             // --- Death / respawn edge ---
             // [TITAN-ORBIT] Respawn teleports LocalTransform to the home orbit ring. Display
             // stays on the wreck for the countdown. A one-frame hop to that spawn (asteroid
             // death) used to hard-snap the camera home, then the next frame snapped back to
-            // the field. Hold the wreck across that spike. Snap on alive-again.
+            // the field. Hold the wreck across that spike. The next live pose copies the motor.
             bool isDead = EntityManager.HasComponent<ShipState>(localShip) &&
                           EntityManager.GetComponentData<ShipState>(localShip).IsDead;
             bool justRespawned = _localShipWasDead && !isDead;
@@ -370,51 +261,20 @@ namespace TitanOrbit.Game
                             && ToroidalMapEcs.IsWrapJump(_smoothPos, targetPos);
             if (wrapJump)
                 MapWrapTransition.NotifyWrap();
-            bool hardSnap = TitanOrbitDebugFlags.IsolateDisableShipSoftTrack
-                            || !_smoothInitialized
-                            || shipChanged
-                            || (isDead && !holdWreck)
-                            || justRespawned
-                            || wrapJump
-                            || (!isDead && displayErr > DisplayRespawnSnapDistance);
 
-            // --- Step display state ---
-            // [TITAN-ORBIT] Isolation F4: raw sim pose only — if destroy stutter vanishes, soft-track
-            // was amplifying physics reconcile pops from phantom asteroid hulls.
             // holdWreck leaves _smoothPos on the death pose (published below).
-            if (!holdWreck && hardSnap)
+            if (!holdWreck)
             {
                 if (shipChanged)
                     ToroidalDisplay.ResetSession("ShipVisualSync.shipChanged");
                 else if (justRespawned && displayErr > DisplayRespawnSnapDistance)
                     ToroidalDisplay.ResetSession("ShipVisualSync.respawn");
-                InvalidateCruiseSimSample();
                 _smoothPos = targetPos;
                 _smoothRot = targetRot;
                 _smoothInitialized = true;
             }
-            else if (!holdWreck && (catchingUp || displayErr > 2f))
-            {
-                InvalidateCruiseSimSample();
-                StepDisplayToward(targetPos, targetRot, dt, CatchUpDisplayMaxSpeed);
-            }
-            else if (!holdWreck && dampShipShipCorrection)
-            {
-                InvalidateCruiseSimSample();
-                StepShipContactDamped(targetPos, targetRot, simVel, dt);
-            }
-            else if (!holdWreck)
-            {
-                StepCruiseRawOrCoast(targetPos, targetRot, simVel, dt);
-            }
-            else
-            {
-                InvalidateCruiseSimSample();
-            }
 
             // --- Publish pose for camera / hybrid / EG LocalToWorld ---
-            // Cruise may sit up to one tick ahead of a held sim pose. Remotes stay on the
-            // motor pose published above.
             float3 published = _smoothPos;
             var displayLt = lt;
             displayLt.Position = published;
@@ -448,114 +308,6 @@ namespace TitanOrbit.Game
                     Value = math.mul(shipLtw.Value, pivotLt.ValueRO.ToMatrix()),
                 });
             }
-        }
-
-        /// <summary>
-        /// H73 cruise: snap to the render target when within one tick or the cruise floor;
-        /// otherwise coast + capped soft correct (H71). A held predicted pose (same sim
-        /// position across extra render frames) aims one step ahead at kinematics velocity
-        /// so the camera matches remote hulls on the server tick. Grind / hull bounce is not filtered
-        /// here — the camera trails that pose on its own anchor.
-        /// </summary>
-        /// <param name="simPos">Predicted / reconciled pose this frame.</param>
-        /// <param name="simRot">Sim rotation.</param>
-        /// <param name="simVel">Kinematics velocity (world units/sec).</param>
-        /// <param name="dt">Clamped unscaled frame delta.</param>
-        void StepCruiseRawOrCoast(float3 simPos, quaternion simRot, float3 simVel, float dt)
-        {
-            float3 renderTarget = ResolveCruiseRenderTarget(simPos, simVel);
-            float expected = math.max(math.length(simVel) * math.max(0f, dt), 0.02f);
-            float dist = math.distance(_smoothPos, renderTarget);
-            float rawFollowSlop = math.max(expected * CruiseRawFollowSlopRatio, CruiseMinRawFollowDistance);
-
-            // --- Healthy frame: within one tick (+slop) or the cruise floor — raw follow ---
-            // H72 failed because capped pull left a permanent >deadzone lag and corrected forever.
-            if (dist <= rawFollowSlop)
-            {
-                _smoothPos = renderTarget;
-                _smoothRot = simRot;
-                return;
-            }
-
-            // --- Reconcile pop: coast then capped soft correct ---
-            float3 coasted = _smoothPos + simVel * dt;
-            float3 err = renderTarget - coasted;
-            err.y = 0f;
-            float t = 1f - math.exp(-CruiseCorrectSharpness * math.max(0f, dt));
-            float3 pull = err * t;
-            float pullLen = math.length(pull);
-            float pullCap = expected * CruiseCorrectPullCapRatio;
-            if (pullLen > pullCap && pullLen > 1e-6f)
-                pull *= pullCap / pullLen;
-
-            _smoothPos = coasted + pull;
-            _smoothPos.y = renderTarget.y;
-            _smoothRot = math.slerp(_smoothRot, simRot, 1f - math.exp(-DisplayRotationSharpness * dt));
-        }
-
-        /// <summary>
-        /// Sim pose, or that pose plus at most one tick of kinematics lead while the predicted
-        /// position is held. A moving sim sample (Relay partial ticks) resets the clock so
-        /// lead stays zero and prediction is not stepped twice.
-        /// </summary>
-        /// <param name="simPos">Predicted / reconciled pose this frame.</param>
-        /// <param name="simVel">Kinematics velocity (world units/sec).</param>
-        /// <returns>Position H73 should follow this frame.</returns>
-        float3 ResolveCruiseRenderTarget(float3 simPos, float3 simVel)
-        {
-            float now = UnityEngine.Time.unscaledTime;
-            float heldEpsilonSq = CruiseHeldTickPositionEpsilon * CruiseHeldTickPositionEpsilon;
-            bool heldTick = _cruiseSimSampleValid &&
-                            math.distancesq(_cruiseSimPos, simPos) <= heldEpsilonSq;
-            if (!heldTick)
-            {
-                _cruiseSimPos = simPos;
-                _cruiseSimSampleTime = now;
-                _cruiseSimSampleValid = true;
-                return simPos;
-            }
-
-            float planarSpeed = math.length(simVel.xz);
-            if (planarSpeed <= CruiseHeldTickMinPlanarSpeed)
-                return simPos;
-
-            float tickDt = 1f / TitanOrbitServerTickRateSystem.SimulationHz;
-            float lead = math.clamp(now - _cruiseSimSampleTime, 0f, tickDt);
-            return simPos + simVel * lead;
-        }
-
-        /// <summary>
-        /// Drops the held-tick sample so the next cruise frame starts on the sim pose.
-        /// Wrap, death, respawn, catch-up, overlap, and the wreck hold must not inherit a lead.
-        /// </summary>
-        void InvalidateCruiseSimSample()
-        {
-            _cruiseSimSampleValid = false;
-        }
-
-        /// <summary>
-        /// Predicted ship contact. A gap inside one sim step plus one separation cap is
-        /// the bounce, so the hull follows it. Anything larger is still a snapshot step
-        /// and eases. Wrap, death, and respawn still hard-snap before this runs.
-        /// </summary>
-        void StepShipContactDamped(float3 simPos, quaternion simRot, float3 simVel, float dt)
-        {
-            float3 err = simPos - _smoothPos;
-            err.y = 0f;
-            float dist = math.length(err);
-            float step = math.length(simVel) / math.max(1f, TitanOrbitServerTickRateSystem.SimulationHz);
-            float bounceReach = step + ShipCollisionImpulseLogic.ShipShipResolveMaxSeparation + 0.08f;
-            if (dist <= math.max(bounceReach, 0.02f))
-            {
-                _smoothPos = simPos;
-                _smoothRot = simRot;
-                return;
-            }
-
-            float t = 1f - math.exp(-18f * math.max(0f, dt));
-            _smoothPos += err * t;
-            _smoothPos.y = simPos.y;
-            _smoothRot = math.slerp(_smoothRot, simRot, t);
         }
 
         /// <summary>
@@ -596,8 +348,8 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Clears local soft-track state so the next ship entity hard-snaps instead of panning
-        /// from a previous disconnect / abandon pose.
+        /// Clears the last published local pose so the next ship copies its motor pose
+        /// instead of keeping a disconnect pose for one frame.
         /// </summary>
         void ResetLocalDisplaySmoothing()
         {
@@ -606,49 +358,17 @@ namespace TitanOrbit.Game
             _smoothPos = float3.zero;
             _smoothRot = quaternion.identity;
             _localShipWasDead = false;
-            InvalidateCruiseSimSample();
         }
 
         /// <summary>
-        /// Moves the display pose toward a target with a hard speed cap (catch-up / soft reacquire).
+        /// Copies the remote motor pose. The same copy for every hull: no velocity lead,
+        /// no collision snap, no per-peer blend. Before the motor is valid, the ghost pose
+        /// is the only sample the client has.
         /// </summary>
-        void StepDisplayToward(float3 targetPos, quaternion targetRot, float dt, float maxSpeed)
-        {
-            float3 delta = targetPos - _smoothPos;
-            float dist = math.length(delta);
-            float maxStep = math.max(0f, maxSpeed) * math.max(0f, dt);
-            if (dist <= maxStep || dist < 1e-5f)
-                _smoothPos = targetPos;
-            else
-                _smoothPos += delta * (maxStep / dist);
-
-            float rotT = dist > 1e-5f ? math.saturate(maxStep / dist) : 1f;
-            _smoothRot = math.slerp(_smoothRot, targetRot, math.max(rotT, 1f - math.exp(-DisplayRotationSharpness * dt)));
-        }
-
-        /// <summary>
-        /// Copies the remote motor pose. Adds at most one tick of flight velocity between
-        /// sim steps. The cruise correction is already in the motor pose, so adding it
-        /// again coasts past the hull and steps back on the next tick. Wrap, death, and
-        /// a 24 unit gap snap to the motor pose with no lead. Does not coast toward the
-        /// interpolated snapshot.
-        /// </summary>
-        LocalTransform PublishRemotePose(
-            Entity entity,
-            in LocalTransform snapshot,
-            float now,
-            int frame,
-            float tickDt,
-            bool hasMap,
-            float mapW,
-            float mapH)
+        LocalTransform PublishRemotePose(Entity entity, in LocalTransform snapshot)
         {
             float3 target = snapshot.Position;
             quaternion targetRot = snapshot.Rotation;
-            float3 velocity = float3.zero;
-            bool holding = false;
-            bool dead = EntityManager.HasComponent<ShipState>(entity)
-                        && EntityManager.GetComponentData<ShipState>(entity).IsDead;
             if (EntityManager.HasComponent<ShipRemoteMotorState>(entity))
             {
                 var motor = EntityManager.GetComponentData<ShipRemoteMotorState>(entity);
@@ -656,46 +376,8 @@ namespace TitanOrbit.Game
                 {
                     target = motor.DisplayPosition;
                     targetRot = motor.DisplayRotation;
-                    velocity = motor.Velocity;
-                    velocity.y = 0f;
-                    holding = motor.Holding != 0;
-                    float age = holding
-                        ? 0f
-                        : math.clamp(now - motor.IntegratedUnscaledTime, 0f, tickDt);
-                    if (!dead && age > 0f)
-                    {
-                        target += velocity * age;
-                        if (hasMap)
-                            target = ToroidalMapEcs.Wrap(target, mapW, mapH);
-                        target.y = motor.DisplayPosition.y;
-                    }
                 }
             }
-
-            _remotePublished.TryGetValue(entity, out RemotePublishedPose prev);
-            float3 gap = hasMap
-                ? ToroidalMapEcs.ShortestOffsetXZ(prev.Pos, target, mapW, mapH)
-                : target - prev.Pos;
-            float gapLen = math.length(gap);
-            bool wrap = prev.Valid && hasMap && ToroidalMapEcs.IsWrapJump(prev.Pos, target, mapW, mapH);
-            if (!prev.Valid || wrap || dead || gapLen > RemoteSnapDistance)
-            {
-                if (EntityManager.HasComponent<ShipRemoteMotorState>(entity))
-                {
-                    var motor = EntityManager.GetComponentData<ShipRemoteMotorState>(entity);
-                    if (motor.Valid != 0)
-                    {
-                        target = motor.DisplayPosition;
-                        targetRot = motor.DisplayRotation;
-                    }
-                }
-            }
-
-            prev.Pos = target;
-            prev.Rot = targetRot;
-            prev.Valid = true;
-            prev.Frame = frame;
-            _remotePublished[entity] = prev;
 
             var display = snapshot;
             display.Position = target;
@@ -703,30 +385,21 @@ namespace TitanOrbit.Game
             return display;
         }
 
-        /// <summary>Drops display state for hulls that were not published this frame.</summary>
+        /// <summary>Drops presentation cache entries for hulls that were not published this frame.</summary>
         void PruneRemoteDisplays(int frame)
         {
             _remotePrune.Clear();
-            foreach (var kv in _remotePublished)
+            foreach (var kv in _remoteFrame)
             {
-                if (kv.Value.Frame != frame)
+                if (kv.Value != frame)
                     _remotePrune.Add(kv.Key);
             }
 
             for (int i = 0; i < _remotePrune.Count; i++)
             {
-                _remotePublished.Remove(_remotePrune[i]);
+                _remoteFrame.Remove(_remotePrune[i]);
                 GhostPresentationTransformCache.ForgetShip(_remotePrune[i]);
             }
-        }
-
-        /// <summary>Last published pose for one remote or AI hull.</summary>
-        struct RemotePublishedPose
-        {
-            public float3 Pos;
-            public quaternion Rot;
-            public bool Valid;
-            public int Frame;
         }
 
         /// <summary>Writes one ship snapshot into the presentation cache.</summary>

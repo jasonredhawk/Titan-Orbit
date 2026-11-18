@@ -141,6 +141,29 @@ namespace TitanOrbit.ECS
         public int AvoidNetworkId;
         /// <summary>World time when <see cref="AvoidNetworkId"/> expires.</summary>
         public float AvoidUntil;
+        /// <summary>
+        /// 1 once <see cref="GoalLevel6Branch"/> has been rolled. Kept across death and
+        /// idle park so a half-built ladder is not abandoned for a new target.
+        /// </summary>
+        public byte GoalLevel6Chosen;
+        /// <summary>
+        /// Upgrade-tree branch (0–5) of the level-6 hull this ship is buying toward.
+        /// Each bot rolls one reachable branch once. Later purchases only take a step
+        /// that can still arrive there.
+        /// </summary>
+        public byte GoalLevel6Branch;
+
+        /// <summary>
+        /// Fresh task memory that still remembers the level-6 hull this ship is unlocking.
+        /// </summary>
+        public BotShipBrain ClearedKeepingGoal()
+        {
+            return new BotShipBrain
+            {
+                GoalLevel6Chosen = GoalLevel6Chosen,
+                GoalLevel6Branch = GoalLevel6Branch,
+            };
+        }
     }
 
     /// <summary>

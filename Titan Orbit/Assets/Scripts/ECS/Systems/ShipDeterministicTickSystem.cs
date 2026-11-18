@@ -46,9 +46,9 @@ namespace TitanOrbit.ECS
         NativeList<ShipTickAsteroidContactElement> _asteroidContacts;
         NativeList<ShipTickAsteroidPoseElement> _asteroidPoses;
         NativeList<byte> _touchedRock;
+        NativeList<int> _asteroidOrder;
         NativeParallelMultiHashMap<int, int> _bins;
         int _binCapacity;
-        bool _clientOneSidedOverlap;
 
         public void OnCreate(ref SystemState state)
         {
@@ -63,6 +63,7 @@ namespace TitanOrbit.ECS
             _asteroidContacts = new NativeList<ShipTickAsteroidContactElement>(32, Allocator.Persistent);
             _asteroidPoses = new NativeList<ShipTickAsteroidPoseElement>(32, Allocator.Persistent);
             _touchedRock = new NativeList<byte>(32, Allocator.Persistent);
+            _asteroidOrder = new NativeList<int>(32, Allocator.Persistent);
             _bins = new NativeParallelMultiHashMap<int, int>(128, Allocator.Persistent);
             _binCapacity = 128;
 
@@ -80,12 +81,6 @@ namespace TitanOrbit.ECS
                 state.EntityManager.AddBuffer<ShipTickAsteroidContactElement>(motion);
             if (!state.EntityManager.HasBuffer<ShipTickAsteroidPoseElement>(motion))
                 state.EntityManager.AddBuffer<ShipTickAsteroidPoseElement>(motion);
-
-            if (!SystemAPI.TryGetSingletonEntity<LocalShipShipOverlapLatch>(out _))
-            {
-                var latchEntity = state.EntityManager.CreateEntity();
-                state.EntityManager.AddComponentData(latchEntity, new LocalShipShipOverlapLatch());
-            }
         }
 
         public void OnDestroy(ref SystemState state)
@@ -110,6 +105,8 @@ namespace TitanOrbit.ECS
                 _asteroidPoses.Dispose();
             if (_touchedRock.IsCreated)
                 _touchedRock.Dispose();
+            if (_asteroidOrder.IsCreated)
+                _asteroidOrder.Dispose();
             if (_bins.IsCreated)
                 _bins.Dispose();
         }
@@ -172,7 +169,6 @@ namespace TitanOrbit.ECS
             var remoteHistoryLookup = SystemAPI.GetBufferLookup<ShipRemoteMotorHistoryElement>(false);
 
             _bodies.Clear();
-            _clientOneSidedOverlap = false;
             foreach (var (transform, velocity, shipState, entity) in SystemAPI
                          .Query<RefRO<LocalTransform>, RefRO<PhysicsVelocity>, RefRO<ShipState>>()
                          .WithAll<ShipTag, Simulate>()
@@ -369,8 +365,7 @@ namespace TitanOrbit.ECS
                 float3 vel = body.Velocity + _deltaV[i];
                 vel.y = 0f;
 
-                // Free-flight remotes keep the eased display pose. Only a real hit
-                // overwrites it, or the blend would be thrown away every tick.
+                // Free-flight remotes keep the motor pose. Only a real hit overwrites it.
                 bool separated = math.lengthsq(dp) > 1e-8f || math.lengthsq(_deltaV[i]) > 1e-6f;
                 if (body.Remote != 0 && !separated)
                 {
@@ -443,31 +438,7 @@ namespace TitanOrbit.ECS
             foreach (var velocity in SystemAPI.Query<RefRW<PhysicsVelocity>>().WithAll<ShipTag, Simulate>())
                 velocity.ValueRW = PhysicsVelocity.Zero;
 
-            if (isClient)
-                PublishClientShipOverlapLatch(ref state);
-
             FlushScratch(ref state);
-        }
-
-        /// <summary>
-        /// Client display follows the predicted hull while this is set, so a bounce
-        /// is not eased away. A gap larger than one separation cap still eases.
-        /// </summary>
-        void PublishClientShipOverlapLatch(ref SystemState state)
-        {
-            if (!SystemAPI.TryGetSingletonRW<LocalShipShipOverlapLatch>(out var latch))
-                return;
-
-            double now = SystemAPI.Time.ElapsedTime;
-            if (_clientOneSidedOverlap)
-            {
-                latch.ValueRW.Active = 1;
-                latch.ValueRW.LastTime = now;
-                return;
-            }
-
-            if (latch.ValueRO.Active != 0 && now - latch.ValueRO.LastTime > 0.15)
-                latch.ValueRW.Active = 0;
         }
 
         void FlushScratch(ref SystemState state)
@@ -601,16 +572,12 @@ namespace TitanOrbit.ECS
             {
                 _deltaV[i] += dVa;
                 _deltaP[i] += dPa;
-                if (a.Remote == 0)
-                    _clientOneSidedOverlap = true;
             }
 
             if (b.Write != 0)
             {
                 _deltaV[j] += dVb;
                 _deltaP[j] += dPb;
-                if (b.Remote == 0)
-                    _clientOneSidedOverlap = true;
             }
 
             _overlaps.Add(new ShipTickOverlapElement
@@ -628,6 +595,8 @@ namespace TitanOrbit.ECS
         /// does not move. MEGA plows (overlap only). A killing blow reduces into-rock
         /// speed instead of reflecting. Every other overlap reflects with the asteroid
         /// restitution and pushes the ship out by at most one ship-ship separation cap.
+        /// Neighbor rocks are applied in canonical XZ order so a multi-rock tick matches
+        /// on every peer. Hash-map walk order is not that order.
         /// </summary>
         void SolveNearbyAsteroids(
             float mapW,
@@ -676,6 +645,7 @@ namespace TitanOrbit.ECS
                     continue;
                 float3 shipPos = _bodies[i].Position + _deltaP[i];
                 CellCoords(shipPos, cell, cellsX, cellsZ, mapW, mapH, out int cx, out int cz);
+                _asteroidOrder.Clear();
                 for (int dz = -1; dz <= 1; dz++)
                 {
                     int nz = Mod(cz + dz, cellsZ);
@@ -686,14 +656,57 @@ namespace TitanOrbit.ECS
                             continue;
                         do
                         {
-                            TryAsteroidPair(
-                                i, rockIndex, mapW, mapH, restitution,
-                                megas, motors, ships, loadouts, territory, contacts);
+                            _asteroidOrder.Add(rockIndex);
                         }
                         while (_bins.TryGetNextValue(out rockIndex, ref it));
                     }
                 }
+
+                SortAsteroidOrder(ref _asteroidOrder);
+                for (int n = 0; n < _asteroidOrder.Length; n++)
+                {
+                    TryAsteroidPair(
+                        i, _asteroidOrder[n], mapW, mapH, restitution,
+                        megas, motors, ships, loadouts, territory, contacts);
+                }
             }
+        }
+
+        /// <summary>
+        /// Orders this ship's neighbor rocks by canonical XZ before separation.
+        /// Each rock sees the shove the previous rock already wrote, so walk order
+        /// is part of the result. Position matches across server and client.
+        /// </summary>
+        void SortAsteroidOrder(ref NativeList<int> order)
+        {
+            for (int i = 1; i < order.Length; i++)
+            {
+                int index = order[i];
+                int j = i - 1;
+                while (j >= 0 && AsteroidIsBefore(_rocks[index], _rocks[order[j]]))
+                {
+                    order[j + 1] = order[j];
+                    j--;
+                }
+
+                order[j + 1] = index;
+            }
+        }
+
+        static bool AsteroidIsBefore(in AsteroidTickBody a, in AsteroidTickBody b)
+        {
+            const float Epsilon = 0.001f;
+            if (a.Position.x < b.Position.x - Epsilon)
+                return true;
+            if (a.Position.x > b.Position.x + Epsilon)
+                return false;
+            if (a.Position.z < b.Position.z - Epsilon)
+                return true;
+            if (a.Position.z > b.Position.z + Epsilon)
+                return false;
+            if (a.Entity.Index != b.Entity.Index)
+                return a.Entity.Index < b.Entity.Index;
+            return a.Entity.Version < b.Entity.Version;
         }
 
         void TryAsteroidPair(
@@ -1217,16 +1230,6 @@ namespace TitanOrbit.ECS
     /// <summary>Singleton for the per-tick hold and ship-ship overlap buffers.</summary>
     public struct ShipTickMotionTag : IComponentData
     {
-    }
-
-    /// <summary>
-    /// Client-only. Active while the local predicted hull is in a ship-vs-ship overlap,
-    /// plus a short tail so the display can finish following that bounce.
-    /// </summary>
-    public struct LocalShipShipOverlapLatch : IComponentData
-    {
-        public byte Active;
-        public double LastTime;
     }
 
     /// <summary>

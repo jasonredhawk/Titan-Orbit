@@ -275,6 +275,51 @@ namespace TitanOrbit.Game
         public static bool IsOutside(Vector3 point, float margin) =>
             IsOutside(new float3(point.x, 0f, point.z), margin);
 
+        /// <summary>
+        /// True when a bullet at <paramref name="worldPos"/> is outside the gameplay camera
+        /// frustum. The ground rectangle expands to the whole map whenever a corner ray
+        /// misses y=0 (theatrical tilt, horizon). That must not keep off-screen bolts
+        /// alive: their particle systems pause at the last on-screen point and read as
+        /// static leftover shots when you fly back.
+        /// False when the camera is missing, so callers keep drawing.
+        /// </summary>
+        public static bool IsOutsideBulletView(Vector3 worldPos)
+        {
+            if (!TryFrustum(out Plane[] planes))
+                return false;
+
+            // Pad in XZ so a bolt that will cross the frame this tick is still swept.
+            // Tall Y so a muzzle-height shell and the y=0 flight plane are the same test.
+            var bounds = new Bounds(
+                new Vector3(worldPos.x, 4f, worldPos.z),
+                new Vector3(BulletMargin * 2f, 16f, BulletMargin * 2f));
+            return !GeometryUtility.TestPlanesAABB(planes, bounds);
+        }
+
+        public static bool IsOutsideBulletView(float3 worldPos) =>
+            IsOutsideBulletView(new Vector3(worldPos.x, 0f, worldPos.z));
+
+        static readonly Plane[] s_FrustumPlanes = new Plane[6];
+        static int _frustumFrame = -1;
+        static bool _frustumValid;
+
+        static bool TryFrustum(out Plane[] planes)
+        {
+            planes = s_FrustumPlanes;
+            if (_frustumFrame == Time.frameCount)
+                return _frustumValid;
+
+            _frustumFrame = Time.frameCount;
+            _frustumValid = false;
+            Ensure();
+            if (_camera == null || !_camera.isActiveAndEnabled)
+                return false;
+
+            GeometryUtility.CalculateFrustumPlanes(_camera, s_FrustumPlanes);
+            _frustumValid = true;
+            return true;
+        }
+
         static void Ensure()
         {
             if (_frame == Time.frameCount)

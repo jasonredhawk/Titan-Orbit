@@ -102,14 +102,13 @@ namespace TitanOrbit.ECS
     /// yaw rate). The history ring is not pre-shifted: it keeps the pose the motor
     /// actually had, and each slot records the correction applied on the step that
     /// reached it so the next sample replaces the pending error with whatever is left.
-    /// It does not rewind to the sample and replay the whole gap: that replay used only
-    /// the newest input, so a late snapshot (common once many hulls share a send chunk)
-    /// yanked every ship in the tile on the same frame. A collision-sized sample
-    /// (velocity jump or a several-unit miss) adopts the server pose and clears the
-    /// pending error, because a bounce is not a drift. The deterministic tick then
-    /// bounces the integrated pose off ships, asteroids, planets, and moons. Does not
-    /// enable <see cref="Simulate"/> or <see cref="PredictedGhost"/>. Runs once on the
-    /// newest predicting tick, before the local drive. Map size comes from
+    /// It does not rewind a cruise or bounce miss and replay the gap. Sample error,
+    /// including a bounce, is stored and flown out by the same cruise correction. The
+    /// motor does not adopt an extrapolated post-hit pose.
+    /// <see cref="ShipDeterministicTickSystem"/> is the only collision write. A miss past
+    /// <see cref="SnapDistance"/> still sits on the sample (a respawn, not a bounce).
+    /// Does not enable <see cref="Simulate"/> or <see cref="PredictedGhost"/>. Runs once
+    /// on the newest predicting tick, before the local drive. Map size comes from
     /// <see cref="MapStateSingleton"/> / <see cref="ToroidalMapEcs"/>.
     /// </summary>
     [UpdateInGroup(typeof(PredictedFixedStepSimulationSystemGroup), OrderFirst = true)]
@@ -145,19 +144,8 @@ namespace TitanOrbit.ECS
         /// <summary>Cap on yaw correction (radians / second).</summary>
         public const float MaxYawCorrectRate = 1.5f;
 
-        /// <summary>Gaps larger than this snap. Matches the old remote presentation snap.</summary>
+        /// <summary>Gaps larger than this sit on the sample. A respawn, not a bounce.</summary>
         public const float SnapDistance = 24f;
-
-        /// <summary>
-        /// Velocity change above this, between the predicted pose and the server sample,
-        /// is a bounce. Thrust over a short gap stays under it.
-        /// </summary>
-        public const float CollisionVelocityDelta = 8f;
-
-        /// <summary>
-        /// Position miss above this is a wall correction. Cruise drift over a few ticks stays under it.
-        /// </summary>
-        public const float CollisionPositionDelta = 6f;
 
         /// <summary>Require a flight sample before scheduling.</summary>
         public void OnCreate(ref SystemState state)
@@ -266,7 +254,6 @@ namespace TitanOrbit.ECS
                 bool acquire = motor.Valid == 0;
                 bool newSample = acquire || motor.SampleTick != flight.Tick;
                 int steps = 0;
-                bool collisionSnap = false;
                 var asteroid = asteroidContacts.HasComponent(entity)
                     ? asteroidContacts[entity]
                     : default;
@@ -310,24 +297,22 @@ namespace TitanOrbit.ECS
                             float3 histVel = new float3(hist.VX, 0f, hist.VZ);
                             float3 velErr = flight.Velocity - histVel;
                             velErr.y = 0f;
-                            // A bounce is not a constant offset. The hull has already
-                            // tunneled past the wall, so fold in the post-hit sample
-                            // extrapolated to this tick and show that pose immediately.
-                            if (IsCollisionCorrection(histVel, flight.Velocity, math.length(err)))
+                            // A map-sized miss is a respawn. Sit on the sample, brought forward
+                            // by the snapshot gap, and do not take extra motor steps.
+                            // Anything smaller, including a bounce, is the same cruise
+                            // residual. The deterministic tick writes the overlap.
+                            if (math.length(err) > SnapDistance)
                             {
-                                float lead = math.max(0, gap) * dt;
-                                float3 extrapolated = ToroidalMapEcs.Wrap(
-                                    flight.Position + flight.Velocity * lead, mapW, mapH);
-                                float3 adopt = ToroidalMapEcs.ShortestOffsetXZ(
-                                    motor.Position, extrapolated, mapW, mapH);
-                                adopt.y = 0f;
-                                float3 adoptVel = flight.Velocity - motor.Velocity;
-                                adoptVel.y = 0f;
-                                float adoptYaw = DeltaYaw(
-                                    ShipRemoteFlightSample.YawFromRotation(motor.Rotation), flight.Yaw);
-                                ApplySampleError(
-                                    ref motor, history, adopt, adoptYaw, adoptVel, flight.Tick, mapW, mapH);
-                                collisionSnap = true;
+                                AssignSamplePose(ref motor, in flight, shipState.ValueRO, in moon, in orbit);
+                                if (gap > 0)
+                                {
+                                    motor.Position = ToroidalMapEcs.Wrap(
+                                        flight.Position + flight.Velocity * (gap * dt), mapW, mapH);
+                                }
+
+                                motor.IntegratedTick = networkTime.ServerTick.TickIndexForValidTick;
+                                ClearHistory(history);
+                                steps = 0;
                             }
                             else
                             {
@@ -337,21 +322,19 @@ namespace TitanOrbit.ECS
                         else
                         {
                             // No ring entry (sample older than 16 ticks). Keep flying unless
-                            // the constant-velocity guess is a respawn-sized miss or a bounce.
+                            // the constant-velocity guess is a respawn-sized miss.
                             float3 expected = flight.Position;
                             if (gap > 0)
                                 expected = ToroidalMapEcs.Wrap(flight.Position + flight.Velocity * (gap * dt), mapW, mapH);
                             float3 miss = ToroidalMapEcs.ShortestOffsetXZ(motor.Position, expected, mapW, mapH);
                             float missLen = math.length(miss);
-                            bool collision = IsCollisionCorrection(motor.Velocity, flight.Velocity, missLen);
-                            if (missLen > SnapDistance || collision)
+                            if (missLen > SnapDistance)
                             {
                                 AssignSamplePose(ref motor, in flight, shipState.ValueRO, in moon, in orbit);
                                 motor.Position = expected;
                                 motor.IntegratedTick = networkTime.ServerTick.TickIndexForValidTick;
                                 ClearHistory(history);
                                 steps = 0;
-                                collisionSnap = collision;
                             }
                             else
                             {
@@ -388,7 +371,7 @@ namespace TitanOrbit.ECS
 
                 motor.Holding = (byte)(dead ? 1 : 0);
                 motor.IntegratedUnscaledTime = now;
-                PublishDisplay(ref motor, motor.Position, motor.Rotation, mapW, mapH, dead || acquire || collisionSnap);
+                PublishDisplay(ref motor, motor.Position, motor.Rotation);
                 motor.Valid = 1;
                 var posed = transform.ValueRO;
                 ApplyPose(ref posed, ref motor, ref kinematics, entity);
@@ -514,7 +497,7 @@ namespace TitanOrbit.ECS
             }
         }
 
-        /// <summary>Drops a cruise correction. Used on acquire, death, and a hard adopt.</summary>
+        /// <summary>Drops a cruise correction. Used on acquire and death.</summary>
         static void ClearCruiseCorrection(ref ShipRemoteMotorState motor)
         {
             motor.PendingPosError = float3.zero;
@@ -528,70 +511,10 @@ namespace TitanOrbit.ECS
             motor.StepVelZ = 0f;
         }
 
-        /// <summary>
-        /// Adds the measured sample error to the live pose and to every history entry
-        /// from that tick forward, so the next sample does not apply the same offset again.
-        /// Collision adopts only. Cruise misses use <see cref="StoreCruiseError"/>.
-        /// </summary>
-        static void ApplySampleError(
-            ref ShipRemoteMotorState motor,
-            DynamicBuffer<ShipRemoteMotorHistoryElement> history,
-            float3 error,
-            float yawError,
-            float3 velError,
-            uint sampleTick,
-            float mapW,
-            float mapH)
-        {
-            float3 pos = motor.Position + error;
-            motor.Position = ToroidalMapEcs.Wrap(pos, mapW, mapH);
-            motor.Velocity += velError;
-            motor.Velocity.y = 0f;
-            float yaw = ShipRemoteFlightSample.YawFromRotation(motor.Rotation) + yawError;
-            motor.Rotation = quaternion.RotateY(yaw);
-            ClearCruiseCorrection(ref motor);
-
-            for (int i = 0; i < history.Length; i++)
-            {
-                var entry = history[i];
-                if (entry.Valid == 0)
-                    continue;
-                int age = new NetworkTick(entry.Tick).TicksSince(new NetworkTick(sampleTick));
-                if (age < 0 || age >= ShipRemoteMotorHistoryElement.Capacity)
-                    continue;
-                float3 shifted = ToroidalMapEcs.Wrap(new float3(entry.X, 0f, entry.Z) + error, mapW, mapH);
-                entry.X = shifted.x;
-                entry.Z = shifted.z;
-                entry.Yaw = WrapYaw(entry.Yaw + yawError);
-                entry.VX += velError.x;
-                entry.VZ += velError.z;
-                // The shifted pose already includes this adopt. A leftover step delta
-                // would be subtracted again on the next cruise sample.
-                entry.AppliedX = 0f;
-                entry.AppliedZ = 0f;
-                entry.AppliedYaw = 0f;
-                entry.AppliedVX = 0f;
-                entry.AppliedVZ = 0f;
-                history[i] = entry;
-            }
-        }
-
         /// <summary>Signed shortest yaw delta, radians.</summary>
         static float DeltaYaw(float from, float to)
         {
             return WrapYaw(to - from);
-        }
-
-        /// <summary>
-        /// True when the server sample disagrees like a wall hit rather than thrust drift.
-        /// </summary>
-        static bool IsCollisionCorrection(float3 fromVelocity, float3 toVelocity, float positionError)
-        {
-            if (positionError > CollisionPositionDelta)
-                return true;
-            float3 delta = toVelocity - fromVelocity;
-            delta.y = 0f;
-            return math.length(delta) > CollisionVelocityDelta;
         }
 
         /// <summary>Wraps a yaw into (-pi, pi].</summary>
@@ -849,33 +772,9 @@ namespace TitanOrbit.ECS
             }
         }
 
-        /// <summary>
-        /// Copies the motor pose onto the visible hull. Cruise error is already in that
-        /// pose, so there is no second chase. Acquire, death, collision, a toroidal wrap,
-        /// and a gap past <see cref="SnapDistance"/> are the same copy — the mesh does not
-        /// lerp across the map.
-        /// </summary>
-        static void PublishDisplay(
-            ref ShipRemoteMotorState motor,
-            float3 targetPos,
-            quaternion targetRot,
-            float mapW,
-            float mapH,
-            bool hardSnap)
+        /// <summary>Copies the motor pose onto the hull. Cruise error is already in that pose.</summary>
+        static void PublishDisplay(ref ShipRemoteMotorState motor, float3 targetPos, quaternion targetRot)
         {
-            bool wrap = motor.Valid != 0 && ToroidalMapEcs.IsWrapJump(motor.DisplayPosition, targetPos, mapW, mapH);
-            float gapLen = motor.Valid == 0
-                ? 0f
-                : math.length(ToroidalMapEcs.ShortestOffsetXZ(motor.DisplayPosition, targetPos, mapW, mapH));
-            // Both arms assign. The branch stays so a wrap or a 24u gap is an explicit snap
-            // and hardSnap (acquire, death, collision) is not a dead write.
-            if (motor.Valid == 0 || hardSnap || wrap || gapLen > SnapDistance)
-            {
-                motor.DisplayPosition = targetPos;
-                motor.DisplayRotation = targetRot;
-                return;
-            }
-
             motor.DisplayPosition = targetPos;
             motor.DisplayRotation = targetRot;
         }
