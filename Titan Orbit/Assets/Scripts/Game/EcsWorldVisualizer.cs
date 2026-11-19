@@ -1451,8 +1451,9 @@ namespace TitanOrbit.Game
                     float now = PlanetGemMoonOrbitClock.TryGetElapsedSeconds(out double tickNow, includeTickFraction: true)
                         ? (float)tickNow
                         : (float)Time.timeAsDouble;
-                    // Dim while this ship cannot pull: own spill penalty, or another ship's
-                    // asteroid-destroy first dibs. The reserved ship keeps the normal tint.
+                    // White while this ship cannot pull: own spill penalty, or another ship's
+                    // asteroid-destroy first dibs. Window length is GemExplosionSettings.
+                    // The reserved ship keeps the normal tint.
                     byte fade = 0;
                     if (localNetworkId > 0 &&
                         GemSelfPickupBlock.IsPickupBlockedForShip(gemState, localNetworkId, now))

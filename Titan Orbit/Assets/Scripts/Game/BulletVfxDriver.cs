@@ -100,8 +100,9 @@ namespace TitanOrbit.Game
             public byte Homing;
             /// <summary>
             /// 1 when this straight shot was stepped outside the camera frustum and must
-            /// not be swept or placed again until it enters the frame. Shells stay hidden
-            /// so a paused projectile cannot sit at the last on-screen pose.
+            /// not be swept or placed again until it enters the frame. The shell is back
+            /// in the pool (<see cref="Go"/> is null) so a world-space projectile cannot
+            /// sit at the last pose.
             /// </summary>
             public byte SweptOffscreen;
             /// <summary>Max yaw rate in degrees per second while Homing is set.</summary>
@@ -364,8 +365,9 @@ namespace TitanOrbit.Game
             }
 
             // Straight shots outside the camera frustum step lifetime only — no hit sweep,
-            // no transform write. The ground rect is the whole map when the lens tilts, so
-            // this uses the real frustum. A shot that will enter the frame this tick still sweeps.
+            // no shell. The projectile prefab simulates in world space and pauses off-camera,
+            // which left a static bolt where a remote ship had fired. The shell is pooled
+            // until the shot enters the frame. A shot that will enter this tick still sweeps.
             AdvanceOffscreenStraightTracers(dt);
 
             // --- Cosmetic hit prediction (hybrid-proxy spheres; no map ToEntityArray) ---
@@ -377,17 +379,19 @@ namespace TitanOrbit.Game
             for (int i = _tracers.Count - 1; i >= 0; i--)
             {
                 var t = _tracers[i];
-                if (t.Go == null)
-                {
-                    // Root already gone — still return split shells so they cannot sit
-                    // in the world after the tracer record is dropped.
-                    DestroyTracerGo(t);
-                    RemoveAtSwap(i);
-                    continue;
-                }
-
                 if (t.SweptOffscreen != 0)
                     continue;
+
+                if (t.Go == null)
+                {
+                    // Off-screen flight kept the record and pooled the shell. Rent a new
+                    // one only now that the shot is in frame, at the current pose.
+                    if (!TryRestoreTracerShell(ref t))
+                    {
+                        _tracers[i] = t;
+                        continue;
+                    }
+                }
 
                 float3 displayLogical;
                 float3 displayVel;
@@ -493,8 +497,8 @@ namespace TitanOrbit.Game
                     displayPos.y = math.lerp(t.VisualMuzzleY, megaY, lift);
                 if (CameraGroundView.IsOutsideBulletView(displayPos))
                 {
-                    // Root and every extra barrel. A hidden root used to leave the
-                    // other shells looping at the last pose (static bolts).
+                    // Still crossing into the frame, so keep the shell and only hide it.
+                    // Fully off-screen shots were already returned to the pool.
                     SilenceShells(in t);
                     _tracers[i] = t;
                     continue;
@@ -1525,7 +1529,11 @@ namespace TitanOrbit.Game
 
             // Enable after the cannon pose so trails do not streak from the pool origin.
             // Audio on before enable so a shell that was a silent sibling can PlayOnAwake again.
+            // Local space before play — the prefab's world-space particles otherwise freeze
+            // off-camera at this muzzle and stay there after the shell moves on.
             SetShellAudioEnabled(go, true);
+            MarkTracerShell(go);
+            VfxUrpCompat.BindTracerParticlesToShell(go);
             VfxUrpCompat.PrepareVfxInstance(go);
             BulletVisualFactory.SetAudioPitchInHierarchy(
                 go, BulletVisualFactory.GetFirePowerSoundPitch(
@@ -1719,11 +1727,10 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Straight shots whose current point and this frame's step both sit outside the
-        /// camera frustum only age and move. They are not swept and their transforms are
-        /// not written. Shells are silenced so a paused looping projectile cannot stay
-        /// drawn at the last on-screen pose. A shot that will cross into the frame is
-        /// left for the sweep. Coming back on screen does not enable the shell here —
-        /// the place pass writes the current pose first.
+        /// camera frustum only age and move. They are not swept. The shell is returned
+        /// to the pool so nothing is left at the last pose. A shot that will cross into
+        /// the frame is left for the sweep. Coming back on screen does not rent a shell
+        /// here — the place pass rents one and writes the current pose first.
         /// </summary>
         void AdvanceOffscreenStraightTracers(float dt)
         {
@@ -1732,12 +1739,6 @@ namespace TitanOrbit.Game
                 var t = _tracers[i];
                 if (t.Homing != 0)
                     continue;
-                if (t.Go == null)
-                {
-                    DestroyTracerGo(t);
-                    RemoveAtSwap(i);
-                    continue;
-                }
 
                 float3 stepEnd = t.LogicalPos + t.Velocity * dt;
                 bool outside = CameraGroundView.IsOutsideBulletView(t.LogicalPos)
@@ -1772,10 +1773,115 @@ namespace TitanOrbit.Game
                     continue;
                 }
 
-                t.SweptOffscreen = 1;
-                SilenceShells(in t);
+                ReleaseOffscreenShell(ref t);
                 _tracers[i] = t;
             }
+        }
+
+        /// <summary>
+        /// Puts every shell of an off-screen straight shot back in the pool and clears
+        /// its particles. The flight record stays. A hidden-but-alive shell was still
+        /// a looping world-space bolt at the remote ship's last muzzle.
+        /// </summary>
+        void ReleaseOffscreenShell(ref Tracer t)
+        {
+            t.SweptOffscreen = 1;
+            if (t.Go == null && (t.SplitExtras == null || t.SplitExtras.Length == 0))
+                return;
+
+            WipeShell(t.Go);
+            if (t.SplitExtras != null)
+            {
+                for (int i = 0; i < t.SplitExtras.Length; i++)
+                    WipeShell(t.SplitExtras[i]);
+            }
+
+            DestroyTracerGo(in t);
+            t.Go = null;
+            t.SplitExtras = null;
+            t.Trail = null;
+            t.Stretch = null;
+        }
+
+        /// <summary>
+        /// Rents a shell for a shot that just entered the frame. No muzzle flash and
+        /// no shoot sound — those already played at fire time.
+        /// </summary>
+        bool TryRestoreTracerShell(ref Tracer t)
+        {
+            EnsureBank();
+            var team = (TeamId)t.OwnerTeam;
+            int bankIndex = math.max(0, t.BankIndex);
+            GameObject projectilePrefab = null;
+            if (!Application.isMobilePlatform && _bank != null)
+                projectilePrefab = _bank.GetProjectileVisualPrefab(bankIndex, team);
+
+            float bulletSpeed = math.length(t.Velocity);
+            float drawScale = t.SplitVisualScale > 0f
+                ? t.SplitVisualScale
+                : (t.ScaleMultiplier > 0f ? t.ScaleMultiplier : 1f);
+            float family = t.HullFamilyScale > 0.01f ? t.HullFamilyScale : 1f;
+            float visualScale = BulletVisualFactory.GetBulletVisualScale(
+                _bank, drawScale * family, bankIndex);
+
+            if (!BulletTracerPool.TryRent(projectilePrefab, out GameObject go, out _) || go == null)
+            {
+                go = new GameObject("BulletTracer");
+                BulletVisualFactory.BuildVisual(
+                    go.transform, _bank, bankIndex, team, BulletShape.Sphere,
+                    drawScale, bulletSpeed, t.Damage, noTrail: false);
+            }
+            else if (projectilePrefab != null)
+            {
+                VfxUrpCompat.EnsureAuthoredProjectileVisual(go, projectilePrefab);
+            }
+
+            MarkTracerShell(go);
+            VfxUrpCompat.BindTracerParticlesToShell(go);
+            SetShellAudioEnabled(go, false);
+
+            GameObject[] splitExtras = null;
+            int splitCount = 1;
+            if (t.SplitLocalOffsets != null && t.SplitLocalOffsets.Length > 1)
+            {
+                splitExtras = RentSplitExtras(
+                    projectilePrefab,
+                    t.SplitLocalOffsets.Length - 1,
+                    bankIndex,
+                    team,
+                    drawScale,
+                    visualScale,
+                    bulletSpeed,
+                    t.Damage);
+                splitCount = 1 + (splitExtras != null ? splitExtras.Length : 0);
+            }
+
+            t.Go = go;
+            t.SplitExtras = splitExtras;
+            t.SplitVisualCount = splitCount;
+            t.Trail = go.GetComponentInChildren<TrailRenderer>(true);
+            t.Stretch = null;
+            ApplyTracerRootScale(in t);
+            return true;
+        }
+
+        static void MarkTracerShell(GameObject go)
+        {
+            if (go == null || go.GetComponent<VfxUrpCompat.TracerShellMarker>() != null)
+                return;
+            go.AddComponent<VfxUrpCompat.TracerShellMarker>();
+        }
+
+        /// <summary>
+        /// Clears particles and trails even when the shell is already inactive.
+        /// <see cref="SilenceShell"/> skips that case, and a paused world-space
+        /// system keeps its last cloud through a later disable.
+        /// </summary>
+        static void WipeShell(GameObject go)
+        {
+            if (go == null)
+                return;
+            StopAndClearParticles(go.transform);
         }
 
         /// <summary>
@@ -1889,7 +1995,7 @@ namespace TitanOrbit.Game
             for (int i = 0; i < _tracers.Count; i++)
             {
                 var t = _tracers[i];
-                if (t.Go != null && t.Homing == 0 && t.SweptOffscreen == 0)
+                if (t.Homing == 0 && t.SweptOffscreen == 0)
                     gunN++;
             }
 
@@ -1906,7 +2012,7 @@ namespace TitanOrbit.Game
                 for (int i = 0; i < _tracers.Count; i++)
                 {
                     var t = _tracers[i];
-                    if (t.Go == null || t.Homing != 0 || t.SweptOffscreen != 0)
+                    if (t.Homing != 0 || t.SweptOffscreen != 0)
                         continue;
                     tracerIndex[w] = i;
                     requests[w] = new CosmeticSweepRequest
@@ -1936,12 +2042,6 @@ namespace TitanOrbit.Game
                     if (i < 0 || i >= _tracers.Count)
                         continue;
                     var t = _tracers[i];
-                    if (t.Go == null)
-                    {
-                        RemoveAtSwap(i);
-                        continue;
-                    }
-
                     var outcome = results[r];
                     if (outcome.Outcome == CosmeticSweepResult.Hit)
                     {
@@ -2701,6 +2801,8 @@ namespace TitanOrbit.Game
                 }
 
                 VfxUrpCompat.ApplyImpactVisualScale(shell, visualScale, lockUniformParticleSize: true);
+                MarkTracerShell(shell);
+                VfxUrpCompat.BindTracerParticlesToShell(shell);
                 SetShellAudioEnabled(shell, false);
                 extras[i] = shell;
             }

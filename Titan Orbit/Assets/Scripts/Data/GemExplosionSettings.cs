@@ -95,7 +95,8 @@ namespace TitanOrbit.Data
         [Header("Damage expulsion (ship cargo spill)")]
         [Tooltip(
             "Seconds after a ship spills gems before THAT ship may tractor or absorb them. " +
-            "Other ships can take them immediately. Covers grind-to-zero cargo dumps that " +
+            "That ship sees the crystal white until this elapses. Other ships can take them " +
+            "immediately and see the normal tint. Covers grind-to-zero cargo dumps that " +
             "spawn inside the hull. 0 = no penalty.")]
         [Min(0f)]
         public float SelfPickupBlockSeconds = 3f;
@@ -104,8 +105,9 @@ namespace TitanOrbit.Data
         [Tooltip(
             "Seconds after an asteroid bursts its gems during which only the ship that " +
             "dealt the most health damage to that rock may tractor or absorb them. " +
-            "Other ships see the dim blocked-gem tint. After this, any ship may pull. " +
-            "Mining chips and cargo spills are not reserved. Values at or below 0 fall back to 4.")]
+            "Other ships see a white crystal and cannot pull. After this, any ship may pull " +
+            "and the crystal returns to its tint. Mining chips and cargo spills are not reserved. " +
+            "Values at or below 0 fall back to 4.")]
         [Min(0f)]
         public float DestroyClaimExclusiveSeconds = 4f;
 
