@@ -95,6 +95,8 @@ namespace TitanOrbit.Game
 
             Vector3 displayPos = ToroidalDisplay.ToDisplayPositionWithHysteresis(
                 _entity, _logicalPos, reference);
+            if (CameraGroundView.IsOutside(_logicalPos, CameraGroundView.BodyMargin))
+                return;
             transform.SetPositionAndRotation(displayPos, lt.Rotation);
         }
     }

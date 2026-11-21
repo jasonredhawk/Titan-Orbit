@@ -108,6 +108,8 @@ namespace TitanOrbit.Editor
                 "Two lists, different jobs:\n" +
                 "• Name Mappings = one row per prefab part, with that part's own base stats.\n" +
                 "  HyperFalcon_Cockpit and LightFox_Cockpit are independent. Edit a row to change only that part.\n" +
+                "  Add extra part types on a row to combine those profiles (Engine + Thruster + Tail).\n" +
+                "  The first Part Type still picks the mesh-scale group. Then Replace With Part Profile Stats.\n" +
                 "• Part Profiles = template stats per group (Cockpit, Weapon Bullet, Wing, Engine, Thruster, Tail, Hull).\n" +
                 "  They seed a name mapping the first time stats are applied. They do not overwrite a row that already has stats.\n\n" +
                 "Attribute mesh grow still uses the Part Profile (shared per group), damped by Global Upgrade Scale Multiplier.\n\n" +

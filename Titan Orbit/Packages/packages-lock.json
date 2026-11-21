@@ -305,20 +305,20 @@
       "url": "https://packages.unity.com"
     },
     "com.unity.sdk.linux-arm64": {
-      "version": "1.1.0",
+      "version": "1.1.1",
       "depth": 0,
       "source": "registry",
       "dependencies": {
-        "com.unity.sysroot.base": "1.1.0"
+        "com.unity.sysroot.base": "1.1.1"
       },
       "url": "https://packages.unity.com"
     },
     "com.unity.sdk.linux-x86_64": {
-      "version": "1.1.0",
+      "version": "1.1.1",
       "depth": 0,
       "source": "registry",
       "dependencies": {
-        "com.unity.sysroot.base": "1.1.0"
+        "com.unity.sysroot.base": "1.1.1"
       },
       "url": "https://packages.unity.com"
     },
@@ -339,6 +339,17 @@
       },
       "url": "https://packages.unity.com"
     },
+    "com.unity.services.analytics": {
+      "version": "6.3.0",
+      "depth": 0,
+      "source": "registry",
+      "dependencies": {
+        "com.unity.ugui": "1.0.0",
+        "com.unity.services.core": "1.16.0",
+        "com.unity.modules.jsonserialize": "1.0.0"
+      },
+      "url": "https://packages.unity.com"
+    },
     "com.unity.services.authentication": {
       "version": "3.6.1",
       "depth": 0,
@@ -352,11 +363,11 @@
       "url": "https://packages.unity.com"
     },
     "com.unity.services.cloud-build": {
-      "version": "2.0.8",
+      "version": "2.1.1",
       "depth": 0,
       "source": "registry",
       "dependencies": {
-        "com.unity.collab-proxy": "2.11.3",
+        "com.unity.collab-proxy": "2.12.4",
         "com.unity.services.core": "1.16.0",
         "com.unity.nuget.newtonsoft-json": "3.2.2"
       },
@@ -458,7 +469,7 @@
       }
     },
     "com.unity.sysroot.base": {
-      "version": "1.1.0",
+      "version": "1.1.1",
       "depth": 1,
       "source": "registry",
       "dependencies": {},
@@ -485,11 +496,11 @@
       "url": "https://packages.unity.com"
     },
     "com.unity.toolchain.win-x86_64-linux": {
-      "version": "1.1.0",
+      "version": "1.1.1",
       "depth": 0,
       "source": "registry",
       "dependencies": {
-        "com.unity.sysroot.base": "1.1.0"
+        "com.unity.sysroot.base": "1.1.1"
       },
       "url": "https://packages.unity.com"
     },

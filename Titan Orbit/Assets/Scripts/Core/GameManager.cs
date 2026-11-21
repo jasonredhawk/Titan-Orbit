@@ -5,6 +5,23 @@ using UnityEngine;
 namespace TitanOrbit.Core
 {
     /// <summary>
+    /// Where a regular ship's guns and shots aim. MEGA hulls ignore this.
+    /// A cursor or bot target behind the ship does not flip the barrels around.
+    /// </summary>
+    public enum RegularShipWeaponAim
+    {
+        /// <summary>Guns stay on the authored nose, whether the move button is held or released.</summary>
+        Forward = 0,
+
+        /// <summary>
+        /// Guns stay on the nose while the move button is held. When it is released, guns and
+        /// shots aim at the cursor (or an AI ship's target) while that point is in front
+        /// of the nose, including while the hull is still gliding. Behind the nose, they stay on Forward.
+        /// </summary>
+        Point = 1,
+    }
+
+    /// <summary>
     /// Editor multiplayer workflow for this machine: Test (local Client &amp; Server) vs
     /// Production (Client-only join to a dedicated server via UGS/Relay).
     /// Stored on <see cref="GameManager"/> so you can flip it in the Inspector instead of the
@@ -33,6 +50,16 @@ namespace TitanOrbit.Core
     /// the spin-offer panel back without deleting that UI. The Your Ship card toggles
     /// (<see cref="PortraitShipOnly"/>, moon, stars, nearby hulls, auto-rotate) live here too
     /// so the live camera and the card buttons share one set of switches.
+    /// <see cref="ParkLandedWeapons"/> (default on) keeps guns facing forward while a hull
+    /// is fully landed, including in that card.
+    /// <see cref="RegularShipGuns"/> chooses whether a regular hull's guns stay on the
+    /// nose (<see cref="RegularShipWeaponAim.Forward"/>) or, while the move button is
+    /// released, track the cursor or an AI ship's target in front of the nose
+    /// (<see cref="RegularShipWeaponAim.Point"/>), including a glide with the brakes off.
+    /// Holding the move button always shoots along the nose. MEGA hulls ignore it.
+    /// <see cref="MegaShipProjectileAutoAim"/> (default off) is the switch that brings
+    /// sticky auto-aim back on Titan gun, missile, and sniper mounts. Cannon lasers
+    /// always auto-aim. Shift still points every Titan barrel at the cursor.
     /// <see cref="ShowJoinGameClosesIn"/>
     /// hides the Join Game "closes in…" countdown (default off); flip it to show empty-lobby
     /// idle-kill time again. <see cref="EnableBetaFeedback"/> (default off) treats the
@@ -159,6 +186,25 @@ namespace TitanOrbit.Core
         [Tooltip("ON: the Your Ship camera slowly orbits the hull, keeping the theatrical 3/4 height. Drag on the picture still spins it either way.")]
         [SerializeField] bool portraitAutoRotate;
 
+        [Tooltip("ON: while a ship is fully landed on a gem moon, its guns stay facing forward, including in the Your Ship card. OFF: those guns keep tracking the cursor while parked. Flight aim is unchanged either way.")]
+        [SerializeField] bool parkLandedWeapons = true;
+
+        // [TITAN-ORBIT] Regular-ship guns. Forward is always the nose.
+        // Point keeps the nose while the move button is held, then aims at the
+        // cursor or bot target once it is released — including a glide — and
+        // only in the forward half. MEGA hulls ignore this. Their projectile
+        // auto-aim is the checkbox below.
+        [Header("Regular Ships — Guns")]
+        [Tooltip("Forward: regular-ship guns stay on the nose and every shot leaves along the ship. Point: while the move button is held, guns stay on the nose. When it is released, guns and shots aim at the cursor (or an AI ship's target) if that point is in front of the ship, even while the hull is still gliding with the brakes off. A point behind the nose keeps the guns and the shot forward. MEGA hulls are unchanged.")]
+        [SerializeField] RegularShipWeaponAim regularShipWeaponAim = RegularShipWeaponAim.Point;
+
+        // [TITAN-ORBIT] Titan projectile mounts. Lasers always acquire a target.
+        // This switch only brings back sticky auto-aim on gun, missile, and sniper.
+        // Shift still points every barrel at the cursor either way.
+        [Header("Mega Ships — Guns")]
+        [Tooltip("ON: gun, missile, and sniper mounts auto-aim the nearest valid target while Fire is held. OFF: those mounts stay on the nose and fire forward. Shift still aims every barrel at the cursor. Cannon lasers always auto-aim. Honored on the dedicated server.")]
+        [SerializeField] bool megaShipProjectileAutoAim;
+
         /// <summary>
         /// Play Mode: fired when any Your Ship camera checkbox changes so the card
         /// buttons can repaint without the camera polling the UI.
@@ -217,14 +263,14 @@ namespace TitanOrbit.Core
         [SerializeField] bool debugSelfHarmRocketsAndMines;
 
         [Header("Debug — Titan Ships")]
-        [Tooltip("When enabled, Titan projectile guns (gun, missile, sniper) auto-aim living asteroids in damage mode — only when no enemy ship, turret, or moon shield is in that muzzle's range. A closer rock never wins, and a rock lock drops as soon as an enemy enters range. Heal mode is unchanged. Honored on the dedicated server (WebGL clients do not run this aim locally). Cannon lasers always acquire rocks under the same order.")]
+        [Tooltip("When enabled, Titan projectile guns (gun, missile, sniper) auto-aim living asteroids in damage mode — only when Mega Ships — Guns auto-aim is also ON, and only when no enemy ship, turret, or moon shield is in that muzzle's range. A closer rock never wins, and a rock lock drops as soon as an enemy enters range. Heal mode is unchanged. Honored on the dedicated server (WebGL clients do not run this aim locally). Cannon lasers always acquire rocks under the same order.")]
         [SerializeField] bool debugMegaShipsAutoFireAsteroids;
 
         [Tooltip("Temporary isolate: skip MegaShipAutoFireSystem (no Titan auto-aim / turret slew). Leave OFF for normal play. Shift+Fire still aims at the mouse in BulletSimulationSystem. Honored on dedicated after rebuild.")]
         [SerializeField] bool debugDisableMegaShipAutoFire;
 
         [Header("Debug — AI Ships")]
-        [Tooltip("ON: the server spawns AI ships for each team that already has a home planet. They stay parked until a real player has a ship, then mine, deposit, and level. An enemy ship that comes close is shot, and they do not leave the asteroid or the moon to chase it. They haul troops, and a Comms Matrix order retasks them and copies that player's ship skin. Dedicated server and WebGL use this same switch.")]
+        [Tooltip("ON: the server spawns AI ships for each team that already has a home planet. They stay parked until a real player has a ship, then mine asteroids and deposit on that home planet until the hull is the highest level the planet can sell. After that they capture nearby planets. An enemy ship that comes close is shot, and they do not leave the asteroid or the moon to chase it. A Comms Matrix order retasks them and copies that player's ship skin. Dedicated server and WebGL use this same switch.")]
         [SerializeField] bool debugAiShips;
 
         [Tooltip("AI ships per team while Debug AI Ships is on. Clamped to 1–12. Humans on that team take slots first, so a count of 11 beside one player fills a 12-player team. A new player removes one bot; a player who leaves frees the slot and a bot returns.")]
@@ -239,7 +285,7 @@ namespace TitanOrbit.Core
         [SerializeField] bool debugEnableInstructionImageCapture;
 
         [Header("Debug — Stutter Isolator")]
-        [Tooltip("When enabled in Play Mode, shows an on-screen panel and accepts Shift+F1–F5 to temporarily disable impact VFX, floats, asteroid toroidal collision, ship soft-track, or gem burst. Leave OFF for normal play.")]
+        [Tooltip("When enabled in Play Mode, shows an on-screen panel and accepts Shift+F1–F5 to temporarily disable impact VFX, floats, asteroid toroidal collision, or gem burst. F4 no longer changes the ship pose. Leave OFF for normal play.")]
         [SerializeField] bool debugEnableStutterIsolator;
 
         [Tooltip("Starting value when the isolator is enabled: skip impact VFX (Shift+F1).")]
@@ -251,7 +297,7 @@ namespace TitanOrbit.Core
         [Tooltip("Starting value when the isolator is enabled: skip asteroid toroidal ship collision (Shift+F3).")]
         [SerializeField] bool isolatorStartDisableAsteroidShipCollision;
 
-        [Tooltip("Starting value when the isolator is enabled: raw ship pose, no soft-track (Shift+F4).")]
+        [Tooltip("Unused. The hull always copies the motor pose. Shift+F4 still toggles this so the isolator key order stays put.")]
         [SerializeField] bool isolatorStartDisableShipSoftTrack;
 
         [Tooltip("Starting value when the isolator is enabled: skip local gem burst (Shift+F5).")]
@@ -295,6 +341,33 @@ namespace TitanOrbit.Core
 
         /// <summary>True when the Your Ship camera slowly orbits the hull.</summary>
         public bool PortraitAutoRotate => portraitAutoRotate;
+
+        /// <summary>
+        /// True when a fully landed hull should park its guns forward.
+        /// Off leaves cursor tracking on while the ship sits on the moon.
+        /// </summary>
+        public bool ParkLandedWeapons => parkLandedWeapons;
+
+        /// <summary>
+        /// Regular-ship gun aim from the Inspector. <see cref="RegularShipWeaponAim.Forward"/>
+        /// keeps barrels on the nose. <see cref="RegularShipWeaponAim.Point"/> tracks the
+        /// cursor or bot target while the move button is released and that point is in front,
+        /// including while the hull is still gliding.
+        /// </summary>
+        public RegularShipWeaponAim RegularShipGuns => regularShipWeaponAim;
+
+        /// <summary>
+        /// True when a regular ship with the move button released should track an aim
+        /// point in front of the nose. Holding the move button stays on the nose either way.
+        /// </summary>
+        public bool RegularShipGunsPoint => regularShipWeaponAim == RegularShipWeaponAim.Point;
+
+        /// <summary>
+        /// True when Titan gun, missile, and sniper mounts auto-aim while Fire is held.
+        /// Off keeps those barrels on the nose. Cannon lasers always auto-aim.
+        /// Shift still aims every barrel at the cursor.
+        /// </summary>
+        public bool MegaShipProjectileAutoAim => megaShipProjectileAutoAim;
 
         /// <summary>
         /// True when the card is showing moon, stars, and nearby hulls.
@@ -581,6 +654,7 @@ namespace TitanOrbit.Core
                 TitanOrbitDebugFlags.InfiniteMines = false;
                 TitanOrbitDebugFlags.SelfHarmRocketsAndMines = false;
                 TitanOrbitDebugFlags.MegaShipsAutoFireAsteroids = false;
+                TitanOrbitDebugFlags.MegaShipProjectileAutoAim = false;
                 TitanOrbitDebugFlags.DisableMegaShipAutoFire = false;
                 TitanOrbitDebugFlags.LogAsteroidDestroyPerf = false;
                 TitanOrbitDebugFlags.InstructionImageCaptureEnabled = false;
@@ -589,6 +663,7 @@ namespace TitanOrbit.Core
                 TitanOrbitDebugFlags.AiShips = false;
                 TitanOrbitDebugFlags.AiShipsPerTeam = 0;
                 TitanOrbitDebugFlags.BetaFeedbackEnabled = false;
+                TitanOrbitDebugFlags.RegularShipGunsPoint = false;
                 ClearIsolationFlags();
                 _hasPublishedShowSpeedometer = false;
                 _hasPublishedShowEgressMeter = false;
@@ -632,6 +707,13 @@ namespace TitanOrbit.Core
             TitanOrbitDebugFlags.InfiniteMines = debugInfiniteMines;
             TitanOrbitDebugFlags.SelfHarmRocketsAndMines = debugSelfHarmRocketsAndMines;
 #endif
+            // [TITAN-ORBIT] Regular-ship gun aim is match rules. The dedicated server
+            // publishes the scene value so shots and client meshes use the same mode.
+            TitanOrbitDebugFlags.RegularShipGunsPoint = regularShipWeaponAim == RegularShipWeaponAim.Point;
+            // [TITAN-ORBIT] Titan projectile auto-aim is match rules. Lasers always
+            // acquire. WebGL never runs MegaShipAutoFireSystem — the dedicated server
+            // publishes this so barrels and shots stay on the nose together.
+            TitanOrbitDebugFlags.MegaShipProjectileAutoAim = megaShipProjectileAutoAim;
             // [TITAN-ORBIT] AI ships are match simulation. WebGL never runs the brain —
             // the dedicated server must publish the same toggle the Editor host uses.
             TitanOrbitDebugFlags.AiShips = debugAiShips;

@@ -55,8 +55,15 @@ namespace TitanOrbit.ECS
 
                 var cfg = vitals.ValueRO;
 
-                // --- Energy regen (always active when below max) ---
-                if (s.CurrentEnergy < s.MaxEnergy && cfg.EnergyRegenPerSecond > 0f)
+                // A live cannon burn spends energy in BulletSimulationSystem this tick.
+                // Regen used to replace that cost before the bar was drawn, so the
+                // pool sat on full while the beams were on. Health regen still runs.
+                bool laserBurning = SystemAPI.HasComponent<MegaShipState>(entity)
+                    && SystemAPI.GetComponent<MegaShipState>(entity).IsMega
+                    && SystemAPI.GetComponent<MegaShipState>(entity).CannonLaserPulseOn;
+
+                // --- Energy regen (paused for the whole cannon burn) ---
+                if (!laserBurning && s.CurrentEnergy < s.MaxEnergy && cfg.EnergyRegenPerSecond > 0f)
                 {
                     s.CurrentEnergy = UnityEngine.Mathf.Min(
                         s.MaxEnergy,

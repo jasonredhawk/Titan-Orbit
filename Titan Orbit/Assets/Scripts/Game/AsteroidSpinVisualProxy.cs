@@ -169,6 +169,10 @@ namespace TitanOrbit.Game
 
             var newSgt = bodyGo.AddComponent<SgtPlanet>();
             CopySgtPlanet(sgt, newSgt);
+            // The prefab root is not on a share yet. Hold the copy so its first
+            // LateUpdate cannot Instantiate a private Geosphere before Assign runs.
+            if (Application.platform == RuntimePlatform.WebGLPlayer)
+                newSgt.HoldWebGlSharedMesh();
 
             // Asteroids are dry rocks. A water gradient is a tiny lookup; a water texture is a
             // full RenderTexture per body. On WebGL that texture is what filled ALLOC_GFX.
@@ -260,6 +264,11 @@ namespace TitanOrbit.Game
                 return;
 
             if (_rotationSpeed <= 0.0001f)
+                return;
+
+            // Root is the rock. Off-screen rocks also get deactivated by the visualizer;
+            // this return covers the frame before that, and any rock left active.
+            if (CameraGroundView.IsOutside(transform.position, CameraGroundView.BodyMargin))
                 return;
 
             _spinPivot.Rotate(_rotationAxis, _rotationSpeed * Time.deltaTime, Space.World);

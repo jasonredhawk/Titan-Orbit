@@ -58,9 +58,9 @@ namespace TitanOrbit.Simulation
         /// Guns scale as this shot's fire power ÷ the Bullet VFX Bank
         /// reference (<see cref="BulletVisualScale.ResolveFixedBulletReferenceDamage"/>, default 4).
         /// <paramref name="sniperVisual"/> divides fire power by 50.
-        /// <paramref name="missileVisual"/> lerps the live store-rocket size curve from
+        /// <paramref name="missileVisual"/> uses the live store-rocket size curve for
         /// this shot's fire power, then multiplies by <paramref name="authoredBulletScale"/>
-        /// (MEGA Weapon Missile bank scale, 1 = the curve unchanged).
+        /// (MEGA Weapon Missile bank scale 1 = a store rocket of that fire power).
         /// </summary>
         public static BulletShotPlan Build(
             float3 fireOrigin,
@@ -94,15 +94,16 @@ namespace TitanOrbit.Simulation
 
             // Guns: fire power ÷ the bullet bank asset reference
             // (Bullet Reference Fire Power, live value 4).
-            // A sniper divides by 50. A missile lerps the store-rocket size curve
-            // from this shot's fire power (50 → 1.1). The gun divisor is not used.
+            // A sniper divides by 50. A missile uses the store-rocket size for this
+            // shot's fire power (catalog 40 → 1, 60 → 1.2, 30 → 0.75, then
+            // RocketShotMath.GlobalMeshScale). The gun divisor is not used.
             // Lasers never reach this builder.
             _ = categoryUpgradeScale;
             _ = referenceDamage;
             _ = referenceSpeed;
             float visualScale = missileVisual
                 ? BulletVisualScale.ComputeMissileShotScale(
-                    RocketShotMath.InterpolateVisualScale(bulletDamage),
+                    RocketShotMath.ShotVisualScale(bulletDamage),
                     authoredBulletScale)
                 : sniperVisual
                     ? BulletVisualScale.ComputeSniperShotScale(bulletDamage)

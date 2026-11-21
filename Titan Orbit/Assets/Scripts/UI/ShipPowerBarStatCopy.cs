@@ -229,23 +229,23 @@ namespace TitanOrbit.UI
                 sb.Append("<color=#").Append(HexThisHull).Append('>')
                     .Append(holder)
                     .Append(FormatValue(leader.value))
-                    .Append(unit);
+                    .Append(unit)
+                    .Append("</color>");
                 if (pool == ShipPowerBarComparisonPool.Components)
                 {
                     float bonus = PlanetBonusForLeaderKey(thisChassisId, statIndex);
                     if (bonus <= 0.0001f)
                         bonus = leader.planetBonusMul;
-                    AppendGearPlanetCallout(sb, thisChassisId, bonus);
+                    // Planet name reuses the winner mint. The roll is its own tag.
+                    AppendGearPlanetCallout(sb, thisChassisId, bonus, HexThisHull);
                 }
-
-                sb.Append("</color>");
                 sb.AppendLine();
                 return;
             }
 
-            sb.Append("<color=#").Append(HexRankBody).Append('>')
-                .Append(FormatLeaderLine(in leader, unit, statIndex))
-                .Append("</color>");
+            // The line paints its own colour tags so the planet roll can be
+            // mint or red without swallowing the ship name or the stat number.
+            sb.Append(FormatLeaderLine(in leader, unit, statIndex, HexRankBody));
             sb.AppendLine();
         }
 
@@ -255,14 +255,24 @@ namespace TitanOrbit.UI
         /// Titan: <c>Void Reaper · Galactic Leopard · 88.1 DPS/s</c> (no L7 — the pool is Titan-only).
         /// Gear adds the one world whose part won this lane, then that roll:
         /// <c>Twin Engines · Hyper Falcon · Aetheris · +40% · 88</c>.
+        /// <paramref name="bodyHex"/> colours the ship name and the stat number.
+        /// The roll in the middle is mint or red and is not wrapped in that hex.
+        /// Pass null for a plain string with no colour tags on the name.
         /// </summary>
-        public static string FormatLeaderLine(in ShipPowerBarStatLeader leader, string unit, int statIndex = -1)
+        public static string FormatLeaderLine(
+            in ShipPowerBarStatLeader leader,
+            string unit,
+            int statIndex = -1,
+            string bodyHex = null)
         {
             string family = string.IsNullOrWhiteSpace(leader.familyId) ? string.Empty : leader.familyId.Trim();
             string ship = ResolveShipLabel(in leader);
             bool mega = MegaShipCatalog.IsMegaChassisId(leader.chassisId);
 
             var line = new StringBuilder(96);
+            bool tintBody = !string.IsNullOrEmpty(bodyHex);
+            if (tintBody)
+                line.Append("<color=#").Append(bodyHex).Append('>');
             line.Append(ship);
 
             // Family / Titan visual line. Regular hulls skip it when the ship token
@@ -281,18 +291,28 @@ namespace TitanOrbit.UI
             if (!mega && leader.treeLevel > 0)
                 line.Append(" · L").Append(leader.treeLevel);
 
+            bool hasPlanetRoll = leader.planetBonusMul > 0.0001f;
+            // Close the name colour before the roll so a green or red percent
+            // cannot replace the ship name. The stat number opens that colour again.
+            if (hasPlanetRoll && tintBody)
+                line.Append("</color>");
+
             // Gear only. Same middot as the family, then the planet roll on this lane.
-            if (leader.planetBonusMul > 0.0001f)
+            if (hasPlanetRoll)
             {
                 float bonus = statIndex >= 0
                     ? PlanetBonusForLeaderKey(leader.chassisId, statIndex)
                     : 0f;
                 if (bonus <= 0.0001f)
                     bonus = leader.planetBonusMul;
-                AppendGearPlanetCallout(line, leader.chassisId, bonus);
+                AppendGearPlanetCallout(line, leader.chassisId, bonus, bodyHex);
             }
 
+            if (hasPlanetRoll && tintBody)
+                line.Append("<color=#").Append(bodyHex).Append('>');
             line.Append(" · ").Append(FormatValue(leader.value)).Append(unit ?? string.Empty);
+            if (tintBody)
+                line.Append("</color>");
             return line.ToString();
         }
 
@@ -301,16 +321,42 @@ namespace TitanOrbit.UI
         /// One name only — other worlds that share the family are the same roll
         /// and stay off the line. Sits in the same middot list as the ship family.
         /// </summary>
-        static void AppendGearPlanetCallout(StringBuilder line, string leaderKey, float bonusMul)
+        static void AppendGearPlanetCallout(StringBuilder line, string leaderKey, float bonusMul, string bodyHex)
         {
             if (line == null)
                 return;
 
+            // Planet name uses the same hue as the ship title. Each tag is opened
+            // and closed here so it does not sit inside another colour tag.
             string planets = PlanetNamesForLeaderKey(leaderKey);
             if (!string.IsNullOrEmpty(planets))
+            {
+                if (!string.IsNullOrEmpty(bodyHex))
+                    line.Append("<color=#").Append(bodyHex).Append('>');
                 line.Append(" · ").Append(planets);
+                if (!string.IsNullOrEmpty(bodyHex))
+                    line.Append("</color>");
+            }
+
             if (bonusMul > 0.0001f)
-                line.Append(" · ").Append(FamilyStatHudCopy.FormatMultiplierCallout(bonusMul));
+            {
+                string callout = FamilyStatHudCopy.FormatMultiplierCallout(bonusMul);
+                string tinted = FamilyStatHudCopy.TintSignedBonus(callout);
+                if (tinted != callout)
+                {
+                    // +40% / -12% only. The name on either side stays bodyHex.
+                    line.Append(" · ").Append(tinted);
+                }
+                else if (!string.IsNullOrEmpty(bodyHex))
+                {
+                    line.Append("<color=#").Append(bodyHex).Append("> · ")
+                        .Append(callout).Append("</color>");
+                }
+                else
+                {
+                    line.Append(" · ").Append(callout);
+                }
+            }
         }
 
         /// <summary>

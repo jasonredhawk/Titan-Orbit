@@ -19,8 +19,9 @@ namespace TitanOrbit.ECS
         /// hull and <see cref="CurrentGems"/> both depleted (<see cref="TitanOrbit.Simulation.ShipDamageLogic"/>).
         /// Clamp (not Interpolate): floating damage reads this field. Interpolated Health
         /// shredded 2-HP turret hits into sub-1 fragments that PollShips dropped.
+        /// Quantized to 0.1 so a regen tick is a small delta, not a raw float.
         /// </summary>
-        [GhostField(Smoothing = SmoothingAction.Clamp)]
+        [GhostField(Quantization = 10, Smoothing = SmoothingAction.Clamp)]
         public float Health;
 
         /// <summary>[TITAN-ORBIT] Maximum hull from chassis stats + attribute upgrades.</summary>
@@ -57,14 +58,20 @@ namespace TitanOrbit.ECS
         /// </summary>
         [GhostField] public byte HullBulletBankIndex;
 
-        /// <summary>[TITAN-ORBIT] Gems currently stored in the ship cargo hold.</summary>
-        [GhostField] public float CurrentGems;
+        /// <summary>
+        /// [TITAN-ORBIT] Gems currently stored in the ship cargo hold.
+        /// Quantized to 0.1 so a scoop is a small delta, not a raw float.
+        /// </summary>
+        [GhostField(Quantization = 10)] public float CurrentGems;
 
         /// <summary>[TITAN-ORBIT] Maximum gem cargo from chassis + wing tractor stats.</summary>
         [GhostField] public float GemCapacity;
 
-        /// <summary>[TITAN-ORBIT] Weapon energy pool; shots consume this (regen in ShipVitalsRegenSystem).</summary>
-        [GhostField] public float CurrentEnergy;
+        /// <summary>
+        /// [TITAN-ORBIT] Weapon energy pool; shots consume this (regen in ShipVitalsRegenSystem).
+        /// Quantized to 0.1 so regen is a small delta, not a raw float.
+        /// </summary>
+        [GhostField(Quantization = 10)] public float CurrentEnergy;
 
         /// <summary>[TITAN-ORBIT] Maximum energy from chassis stats.</summary>
         [GhostField] public float MaxEnergy;
@@ -105,6 +112,26 @@ namespace TitanOrbit.ECS
         /// not a snapshot other players receive. Written by <see cref="ShipPhysicsDriveLogic"/>.
         /// </summary>
         [GhostField] public bool OverdriveBurstActive;
+
+        /// <summary>
+        /// Regular-ship weapon components are tracking the owner's aim point.
+        /// On only while Game Manager guns are Point, the move button is released,
+        /// and that point is in front of the nose. A glide with the brakes off still
+        /// counts. Forward, thrust, and a cursor behind the ship leave this false.
+        /// MEGA hulls leave this false and use gunner slots.
+        /// Ghosted so remote clients can yaw the weapon meshes; <see cref="ShipInput"/>
+        /// is not on other players' snapshots.
+        /// </summary>
+        [GhostField] public bool ManualAimActive;
+
+        /// <summary>
+        /// World X of the aim point in the same unbounded space as the hull
+        /// (<c>hull + AimPlanarDir × AimDistance</c>). Zero when <see cref="ManualAimActive"/> is false.
+        /// </summary>
+        [GhostField(Quantization = 10)] public float ManualAimWorldX;
+
+        /// <summary>World Z paired with <see cref="ManualAimWorldX"/>.</summary>
+        [GhostField(Quantization = 10)] public float ManualAimWorldZ;
     }
 
     /// <summary>
@@ -443,8 +470,9 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
-    /// Gameplay-readable velocity mirror of physics linear velocity. Ghost-serialized for
-    /// remote interpolation and HUD. Synced by <see cref="ShipKinematicsSyncSystem"/> after physics.
+    /// Gameplay flight velocity. The motor and the shared tick read and write this.
+    /// Ghost-serialized so the client uses the same speed the server computed.
+    /// <see cref="PhysicsVelocity"/> stays zero so Unity Physics does not move the hull.
     /// </summary>
     public struct ShipKinematics : IComponentData
     {
@@ -458,6 +486,21 @@ namespace TitanOrbit.ECS
         /// </summary>
         [GhostField(Quantization = 1000)]
         public float3 FormationHeading;
+
+        /// <summary>
+        /// Planar formation center shared by parked troops and equipment drones.
+        /// Ghosted so a move lags the same on every peer.
+        /// </summary>
+        [GhostField(Quantization = 1000)]
+        public float3 FormationOrigin;
+
+        /// <summary>
+        /// 1 after <see cref="FormationOrigin"/> has been placed on the hull.
+        /// 0 snaps the pack onto the ship (spawn, death, turret stow) instead of
+        /// easing in from the world origin.
+        /// </summary>
+        [GhostField]
+        public byte FormationCenterSeeded;
     }
 
     /// <summary>[ECS/DOTS] Marker — entity is a player or AI starship (used in queries across all ship systems).</summary>

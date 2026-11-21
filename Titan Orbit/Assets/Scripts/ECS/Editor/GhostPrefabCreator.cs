@@ -22,6 +22,9 @@ namespace TitanOrbit.ECS.Editor
         /// <summary>Sole project path for the shared map-generation ScriptableObject (Resources).</summary>
         const string MapGenerationSettingsPath = "Assets/Resources/MapGenerationSettings.asset";
 
+        /// <summary>Owned starship ghost. Interpolated copies must not receive <c>LocalTransform</c>.</summary>
+        const string StarshipGhostPrefabPath = "Assets/Prefabs/ECS/StarshipGhost.prefab";
+
         /// <summary>Menu entry — creates all ECS ghost prefabs and the registry asset.</summary>
         [MenuItem("Titan Orbit/Create Ghost Prefabs")]
         public static void CreateGhostPrefabs()
@@ -139,7 +142,7 @@ namespace TitanOrbit.ECS.Editor
             var go = new GameObject("StarshipGhost");
             AddOwnedGhostRootComponents(go);
             go.AddComponent<TitanOrbit.ECS.Authoring.StarshipGhostAuthoring>();
-            PrefabUtility.SaveAsPrefabAsset(go, "Assets/Prefabs/ECS/StarshipGhost.prefab");
+            PrefabUtility.SaveAsPrefabAsset(go, StarshipGhostPrefabPath);
             Object.DestroyImmediate(go);
         }
 

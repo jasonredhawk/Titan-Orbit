@@ -57,6 +57,15 @@ namespace TitanOrbit.Core
         }
 
         /// <summary>
+        /// Marks a cosmetic bullet shell. A hull hide must not detach it: the projectile
+        /// prefab loops, and a rescue that unparents it leaves a static bolt where the
+        /// ship last was.
+        /// </summary>
+        public sealed class TracerShellMarker : MonoBehaviour
+        {
+        }
+
+        /// <summary>
         /// Marks a pooled muzzle/impact shell that already paid FixAllIn1 + light strip +
         /// Hierarchy scale setup. Session 74383c kill frames hit <c>hitMs:21</c> while the pool
         /// was still Instantiates-growing and re-running GrabPass material walks every Rent.
@@ -77,7 +86,13 @@ namespace TitanOrbit.Core
             /// </summary>
             void OnDisable()
             {
+                // Tracer shells loop. Detaching one when its parent hides leaves a
+                // static bolt at the last pose. Impacts are the flashes this rescue is for.
+                if (GetComponent<TracerShellMarker>() != null)
+                    return;
                 Transform parent = transform.parent;
+                if (parent != null && parent.GetComponent<TracerShellMarker>() != null)
+                    return;
                 if (parent == null || parent.GetComponent<VfxPoolRootMarker>() != null)
                     return;
                 if (parent.gameObject.activeInHierarchy)
@@ -545,6 +560,40 @@ namespace TitanOrbit.Core
             }
 
             return total;
+        }
+
+        /// <summary>
+        /// Projectile prefabs simulate in world space and pause when the camera
+        /// frustum culls them. Those particles stay at the last point the camera
+        /// saw — the remote ship's old firing spot — and do not follow a later
+        /// move or a disable. Local space keeps every particle on the shell, and
+        /// Hierarchy scaling still honors the tracer root's fire-power scale.
+        /// </summary>
+        public static void BindTracerParticlesToShell(GameObject root)
+        {
+            if (root == null)
+                return;
+            BindTracerParticlesRecursive(root.transform);
+        }
+
+        static void BindTracerParticlesRecursive(Transform node)
+        {
+            int childCount = node.childCount;
+            for (int i = 0; i < childCount; i++)
+                BindTracerParticlesRecursive(node.GetChild(i));
+
+            ParticleSystem ps = node.GetComponent<ParticleSystem>();
+            if (ps == null)
+                return;
+
+            ParticleSystem.MainModule main = ps.main;
+            main.simulationSpace = ParticleSystemSimulationSpace.Local;
+            main.scalingMode = ParticleSystemScalingMode.Hierarchy;
+            main.cullingMode = ParticleSystemCullingMode.AlwaysSimulate;
+            main.stopAction = ParticleSystemStopAction.None;
+            main.playOnAwake = true;
+            ParticleSystem.EmissionModule emission = ps.emission;
+            emission.enabled = true;
         }
 
         /// <summary>

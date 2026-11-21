@@ -82,8 +82,8 @@ namespace TitanOrbit.NetCode
                     topOther = priority;
             }
 
-            // Sorts this planet chunk first. The other three MaxSendChunks slots stay
-            // with ships, gems, and transports.
+            // Sorts this planet chunk first. The other MaxSendChunks slots stay with
+            // ship tiles. Gems and troop transports are not ghosts.
             ref var reserved = ref chunks.ElementAt(bestPlanet);
             if (topOther < int.MaxValue && reserved.priority <= topOther)
                 reserved.priority = topOther + 1;

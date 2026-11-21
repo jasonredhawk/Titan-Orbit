@@ -42,15 +42,15 @@ namespace TitanOrbit.ECS
             if (state.World.IsClient() && ClientJoinSettleCache.ShouldSkipShipSimulation)
                 return;
 
-            foreach (var (velocity, transform, snapshot, shipState) in SystemAPI
-                         .Query<RefRO<PhysicsVelocity>, RefRO<LocalTransform>, RefRW<ShipPreCollisionVelocity>,
+            foreach (var (kinematics, transform, snapshot, shipState) in SystemAPI
+                         .Query<RefRO<ShipKinematics>, RefRO<LocalTransform>, RefRW<ShipPreCollisionVelocity>,
                              RefRO<ShipState>>()
                          .WithAll<ShipTag, Simulate>())
             {
                 if (shipState.ValueRO.IsDead || shipState.ValueRO.AwaitingTeamSelection)
                     continue;
 
-                float3 lin = velocity.ValueRO.Linear;
+                float3 lin = kinematics.ValueRO.Velocity;
                 lin.y = 0f;
                 snapshot.ValueRW.Linear = lin;
                 snapshot.ValueRW.Position = transform.ValueRO.Position;

@@ -68,11 +68,12 @@ namespace TitanOrbit.Entities
         public const float BuzzSpeed = 3.2f;
 
         /// <summary>
-        /// Idle escort slerp rate (per second) toward formation forward.
-        /// Parked troops and idle fighter / mining drones share this so a ram
-        /// does not spin them — facing is the heading, not ship velocity.
+        /// Seconds for an idle escort mesh to catch ~63% of a facing change.
+        /// Parked troops and idle fighter / mining / shield drones share this so a
+        /// yaw eases instead of spinning them. Facing follows formation heading,
+        /// not ship velocity.
         /// </summary>
-        public const float IdleFacingTurnSpeed = 10f;
+        public const float IdleFacingLagTau = 0.48f;
 
         /// <summary>Legacy ring-drift constant (unused — combat drones translate a formation offset).</summary>
         public const float DefaultOrbitSpeedDeg = 55f;
@@ -379,6 +380,9 @@ namespace TitanOrbit.Entities
         /// stays put in the world. With no target, leave the offset ship-relative so the
         /// escort rotates with the hull instead of hanging in world space.
         /// Both sides must pass ServerTick <paramref name="dt"/>.
+        /// <paramref name="speedScale"/> multiplies top speed. Acceleration scales
+        /// with its square so a slower cap keeps the same speed-versus-distance
+        /// shape (troop load/unload uses 0.7; drones leave this at 1).
         /// </summary>
         public static FormationAnchorState StepFormationOffset(
             FormationAnchorState state,
@@ -387,7 +391,8 @@ namespace TitanOrbit.Entities
             float dt,
             float mapW,
             float mapH,
-            bool holdWorldOnIdleShift)
+            bool holdWorldOnIdleShift,
+            float speedScale = 1f)
         {
             currentIdle.y = 0f;
             Vector3 offset = state.Offset;
@@ -414,8 +419,9 @@ namespace TitanOrbit.Entities
                 return state;
             }
 
-            float maxSpeed = Mathf.Max(0.05f, FormationAnchorSpeed);
-            float accel = Mathf.Max(0.05f, FormationAnchorAccel);
+            float scale = Mathf.Max(0.05f, speedScale);
+            float maxSpeed = Mathf.Max(0.05f, FormationAnchorSpeed * scale);
+            float accel = Mathf.Max(0.05f, FormationAnchorAccel * scale * scale);
             Vector3 toDesired = desiredOffset - offset;
             float dist = toDesired.magnitude;
             const float arriveEps = 0.02f;
@@ -665,7 +671,8 @@ namespace TitanOrbit.Entities
             if (planarForward.sqrMagnitude < 0.01f)
                 return current;
             Quaternion target = Quaternion.LookRotation(planarForward.normalized, Vector3.up);
-            float t = Mathf.Clamp01(DroneSwarmLogic.IdleFacingTurnSpeed * Mathf.Max(0f, dt));
+            float tau = Mathf.Max(0.05f, DroneSwarmLogic.IdleFacingLagTau);
+            float t = 1f - Mathf.Exp(-Mathf.Max(0f, dt) / tau);
             return Quaternion.Slerp(current, target, t);
         }
 

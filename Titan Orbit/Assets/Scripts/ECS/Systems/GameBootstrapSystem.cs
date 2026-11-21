@@ -454,6 +454,10 @@ namespace TitanOrbit.ECS
             if (!_spawnQueue.IsCreated || _spawnIndex >= _spawnQueue.Length)
                 return true;
 
+            // New match: asteroid gem claims must not keep the previous match's damage totals.
+            if (_spawnIndex == 0)
+                AsteroidDamageCredit.ClearWorld(state.EntityManager);
+
             int batchEnd = math.min(_spawnQueue.Length, _spawnIndex + SpawnsPerSimulationTick);
             while (_spawnIndex < batchEnd)
             {

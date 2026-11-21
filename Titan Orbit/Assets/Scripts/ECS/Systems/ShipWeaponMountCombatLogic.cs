@@ -12,10 +12,12 @@ namespace TitanOrbit.ECS
     /// Fills each <see cref="ShipWeaponMountElement"/> with Extra Level fire power / fire rate.
     /// <para>
     /// [TITAN-ORBIT] Each barrel keeps its own catalog fire power (Base + PerExtra ×
-    /// ship level), already multiplied by prefab start scale (average |X|+|Y|).
+    /// ship level), already multiplied by prefab start scale. That scale is the
+    /// average of |X| and |Y|, raised to that same average (uniform 2 is 4×, not 2×).
     /// Fire rate does <b>not</b> grow with ship level or with how many barrels the
-    /// hull has. It is the catalog rate × one family bonus × prefab |Z|.
-    /// A Z of 0.9 fires slower than unit scale; a larger Z fires faster.
+    /// hull has. It is the catalog rate × one family bonus × (1/|Z|) raised to the
+    /// XY average. A larger Z fires slower. Uniform scale 2 is quarter rate.
+    /// XY average 1 leaves Z linear (Z 0.9 is faster than 1).
     /// Every ready barrel then fires on that rate at the same time.
     /// </para>
     /// <para>
@@ -39,16 +41,16 @@ namespace TitanOrbit.ECS
             /// <summary>Matches <see cref="ShipWeaponMountElement.CannonIndex"/> / bake order.</summary>
             public int CannonIndex;
 
-            /// <summary>Catalog firePower × prefab average |X|+|Y|.</summary>
+            /// <summary>Catalog firePower × (average |X| and |Y|) ^ that average.</summary>
             public float FirePower;
 
-            /// <summary>Catalog firePowerPerExtraLevel × prefab average |X|+|Y|.</summary>
+            /// <summary>Catalog firePowerPerExtraLevel × (average |X| and |Y|) ^ that average.</summary>
             public float FirePowerPerLevel;
 
-            /// <summary>Catalog fireRate × |Z| (0.9 = slower than 1).</summary>
+            /// <summary>Catalog fireRate × (1/|Z|) ^ XY average. Larger Z is slower.</summary>
             public float FireRate;
 
-            /// <summary>Catalog fireRatePerExtraLevel × |Z|.</summary>
+            /// <summary>Catalog fireRatePerExtraLevel × (1/|Z|) ^ XY average.</summary>
             public float FireRatePerLevel;
         }
 
@@ -231,7 +233,7 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Resolves family component stats for a weapon transform (catalog × XY / |Z| scale).
+        /// Resolves family component stats for a weapon transform (catalog × XY^avg and (1/|Z|)^avg).
         /// </summary>
         static bool TryBuildCombatBase(
             ShipFamilyDefinition family,

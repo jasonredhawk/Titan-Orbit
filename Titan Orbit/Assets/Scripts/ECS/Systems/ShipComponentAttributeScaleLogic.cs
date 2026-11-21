@@ -428,10 +428,9 @@ namespace TitanOrbit.ECS
         /// so the rear assembly stays one set. Pass 1 for colliders.
         /// </param>
         /// <param name="storeFactors">
-        /// [TITAN-ORBIT] Moon-store extra-component grow from
-        /// <see cref="ShipComponentStoreVisualScaleLogic"/>. Default / zeros = identity (×1).
-        /// Applied after attribute compute and before territory / overdrive. Combat stats are
-        /// unchanged — this is mesh + collider size only.
+        /// Equipped GEAR scale. <see cref="ShipComponentStoreVisualScaleLogic.ComputeForShip"/>
+        /// returns identity, so a purchase does not resize parts. Default / zeros = ×1.
+        /// Applied after attribute compute and before territory / overdrive.
         /// </param>
         public static void Apply(
             in ShipAttributeUpgradeState attrs,
@@ -458,7 +457,7 @@ namespace TitanOrbit.ECS
                 out float tailScale,
                 out float partScale);
 
-            // --- Orbit store extras (stat-ratio grow, same groups) ---
+            // Orbit GEAR purchases pass identity — bought parts must not resize the hull.
             var store = ShipComponentStoreVisualScaleLogic.Resolve(storeFactors);
             cockpitScale *= store.Cockpit;
             wingScale *= store.Wing;
@@ -506,7 +505,7 @@ namespace TitanOrbit.ECS
         /// Pass 1 for collider bake. Presentation may pass friendly-triangle speed mult.
         /// </param>
         /// <param name="storeFactors">
-        /// Moon-store visual grow. Pass default for attribute-only bake.
+        /// Equipped GEAR scale. Purchases pass identity and do not resize the bake.
         /// </param>
         /// <returns>True when at least one part group was found and scaled.</returns>
         public static bool ApplyToHierarchy(

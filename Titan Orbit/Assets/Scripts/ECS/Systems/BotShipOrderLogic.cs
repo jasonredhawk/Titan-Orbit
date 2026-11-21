@@ -15,7 +15,8 @@ namespace TitanOrbit.ECS
     /// </summary>
     public static class BotShipOrderLogic
     {
-        public const float OrderLifetimeSeconds = 30f;
+        /// <summary>How long a Comms Matrix sentence keeps retasking the team. 3 minutes.</summary>
+        public const float OrderLifetimeSeconds = 180f;
 
         public static void EnsureSingleton(EntityManager em)
         {

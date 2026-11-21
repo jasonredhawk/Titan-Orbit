@@ -976,8 +976,10 @@ namespace TitanOrbit.Data
                 stats.energyCapPerExtraLevel = stats.energyCap * PerLevelFractionOfBase;
                 stats.energyRegenPerExtraLevel = stats.energyRegen * PerLevelFractionOfBase;
                 // Engines do not author turn — clear leftover turn from older scans.
+                // An engine that also lists Thruster or Tail keeps that combined turn.
                 // Thruster-only fallback keeps turn (ApplyThrusterTurn already wrote it).
-                if (ShipFamilyPartTypes.IsEngineLikeName(entry.componentId))
+                if (ShipFamilyPartTypes.IsEngineLikeName(entry.componentId)
+                    && !MappingContributesTurn(entry.componentId))
                 {
                     stats.turnSpeed = 0f;
                     stats.turnSpeedPerExtraLevel = 0f;
@@ -1003,6 +1005,19 @@ namespace TitanOrbit.Data
                 if (!hasEnergy)
                     entry.statCategories.Add(ShipComponentStatCategory.Energy);
             }
+        }
+
+        /// <summary>
+        /// True when the shared Name Mapping lists Thruster or Tail, so Scan must not wipe that turn.
+        /// </summary>
+        static bool MappingContributesTurn(string componentId)
+        {
+            ShipFamilyPartCalcProfileSet set = ShipFamilyPartCalcProfileSet.LoadShared();
+            if (set == null
+                || !set.TryGetNameMapping(componentId, out ShipFamilyPartNameMapping mapping)
+                || mapping == null)
+                return false;
+            return mapping.ContributesTurnStats();
         }
 
         /// <summary>

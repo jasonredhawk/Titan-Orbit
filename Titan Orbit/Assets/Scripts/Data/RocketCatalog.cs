@@ -14,7 +14,8 @@ namespace TitanOrbit.Data
     /// (Concussive Push, asteroid bonus, tracers). This catalog owns flight + damage numbers:
     /// fire power, independent flight speed (not ship velocity), lifetime (no max-distance cull),
     /// acquire range, and a level-scaled reload. Mesh size is the row's <c>visualScale</c>
-    /// (0.25 = quarter size). 0 falls back to fired-damage vs level 1.
+    /// (1 at fire power 40, 2 at 240) times <c>RocketShotMath.GlobalMeshScale</c>.
+    /// Titan missiles read this same curve. 0 falls back to fired-damage vs level 1.
     /// </para>
     /// Paired with <c>ShipRocketFireSystem</c> (server spawn) and <c>RocketHomingLogic</c> (turn).
     /// </summary>
@@ -85,7 +86,7 @@ namespace TitanOrbit.Data
             [Tooltip("Seconds after a shot before the next rocket may fire. Level 1 = 3s, +0.5s per level.")]
             public float fireCooldown;
 
-            [Tooltip("Mesh size vs a 1× rocket (0.25 = quarter size). 0 = derive from fired damage vs level 1.")]
+            [Tooltip("Mesh size on the shared rocket curve (1 at fire power 40, 2 at 240). Titan missiles use this same number. 0 = derive from fired damage vs level 1.")]
             public float visualScale;
         }
 

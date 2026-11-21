@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -11,12 +12,29 @@ namespace TitanOrbit.Data
     /// copying another catalog Base onto the frozen hull.
     /// HUD chips and orbit-menu power bars call here so they never Extra-Level the Titan hull
     /// as if it were a regular L7 family chassis.
+    /// Gem cargo is the exception: each cockpit, wing, and cargo copy uses the regular
+    /// starter formula at the live ship level with no gem-ability purchases.
     /// </summary>
     public static class MegaShipStatsCalculator
     {
         /// <summary>
+        /// Regular-ship starter gem base (<c>ShipFamilyDefinition</c> default <c>maxGems</c>).
+        /// A hold part whose type-table gem base is still 0 uses this, so an old catalog
+        /// asset carries gems before anyone re-seeds the inspector.
+        /// </summary>
+        public const float HoldGemBase = 8f;
+
+        /// <summary>
+        /// Regular-ship starter gem step (<c>maxGemsPerExtraLevel</c>).
+        /// Titans have no gem ability bar, so each hold copy is
+        /// <c>base + this × shipLevel</c>.
+        /// </summary>
+        public const float HoldGemPerShipLevel = 2f;
+
+        /// <summary>
         /// Uses <see cref="MegaShipCatalogEntry.summedStats"/> when present; otherwise
-        /// walks the prefab against the unique library. Forces <c>maxGems = 0</c>.
+        /// walks the prefab against the unique library. Gem cap is recomputed from
+        /// cockpit / wing / cargo copy counts so a stored sum of 0 still holds cargo.
         /// Catalog-only — no moon-store extras. Prefer
         /// <see cref="SumFromEntry(MegaShipCatalogEntry, MegaShipCatalog, IReadOnlyList{string}, int, out ShipComponentAbilityStats)"/>
         /// when the live ship has equipped gear.
@@ -33,14 +51,16 @@ namespace TitanOrbit.Data
         /// Catalog hull sum plus equipped moon-store <see cref="StoreItemType.ShipComponent"/> rows.
         /// Hull numbers stay frozen. Each extra adds <b>PerExtra × shipLevel only</b>
         /// (no Base — the Titan already owns the hull Bases). Ability purchases stay 0.
-        /// Gem cap stays 0. Weapon extras add fire power / rate steps and keep the fastest
-        /// bullet speed / range instead of summing travel stats.
+        /// Gem cap is the hold-part formula at <paramref name="shipLevel"/>, plus each
+        /// purchased cockpit, wing, or cargo's PerExtra × that level. Weapon extras add
+        /// fire power / rate steps and keep the fastest bullet speed / range instead of
+        /// summing travel stats.
         /// </summary>
         /// <param name="entry">Catalog hull row.</param>
         /// <param name="catalog">Unique-component library used for runtime defaults.</param>
         /// <param name="extraComponentIds">Equipped store component ids, or null when none.</param>
-        /// <param name="shipLevel">Titan chassis level (almost always 7). Extras Extra-Level at this tier.</param>
-        /// <param name="summed">Resolved hull + gear totals. Gem cap is 0.</param>
+        /// <param name="shipLevel">Titan chassis level (almost always 7). Hold gems and extras use this tier.</param>
+        /// <param name="summed">Resolved hull + gear totals, including gem cap.</param>
         /// <returns>True when the hull row existed and summed.</returns>
         public static bool SumFromEntry(
             MegaShipCatalogEntry entry,
@@ -63,40 +83,106 @@ namespace TitanOrbit.Data
                 if (MegaShipComponentInventory.TryComputeCruiseFromUniqueParts(
                         catalog, entry, out float cruise))
                     raw.moveSpeed = cruise;
-                MegaShipPartStats resolved = catalog != null
-                    ? catalog.ResolveRuntimeStats(raw)
-                    : raw;
-                summed = resolved.ToAbilityStats();
-                summed.maxGems = 0f;
+                summed = ResolveScaledHull(entry, catalog, raw, shipLevel);
                 AddEquippedStoreComponents(ref summed, extraComponentIds, shipLevel);
                 return true;
             }
 
-            if (!SumFromPrefab(entry.prefab, catalog, out summed))
+            if (!TrySumRawFromPrefab(entry.prefab, catalog, out MegaShipCatalogEntry walked))
                 return false;
 
+            // The walk has no family of its own. Keep this hull's visual line so the
+            // stat scale matches Craizan / Leopard / Okamoto, and keep stored part
+            // counts when the asset already listed them.
+            walked.visualFamily = entry.visualFamily;
+            if (entry.componentCounts != null && entry.componentCounts.Count > 0)
+                walked.componentCounts = entry.componentCounts;
+            summed = ResolveScaledHull(walked, catalog, walked.summedStats, shipLevel);
             AddEquippedStoreComponents(ref summed, extraComponentIds, shipLevel);
             return true;
         }
 
         /// <summary>
+        /// Turns a raw component sum into the numbers a Titan actually uses.
+        /// Family stat scale runs first, and only on health and energy (including
+        /// regen). Catalog defaults then fill zeros and minimums raise a glass hull.
+        /// Gem cargo is recomputed from hold copies and is not multiplied — the
+        /// stored sum often still has gems at 0, but troop and gem caps stay authored.
+        /// Fire power, ramming, cruise, and turn are not touched by the family knob.
+        /// </summary>
+        static ShipComponentAbilityStats ResolveScaledHull(
+            MegaShipCatalogEntry entry,
+            MegaShipCatalog catalog,
+            in MegaShipPartStats raw,
+            int shipLevel)
+        {
+            float scale = catalog != null
+                ? catalog.GetStatScaleForEntry(entry)
+                : MegaShipCatalog.DefaultFamilyStatScale;
+            MegaShipPartStats scaled = MegaShipPartStats.ApplyFamilyStatScale(raw, scale);
+            MegaShipPartStats resolved = catalog != null
+                ? catalog.ResolveRuntimeStats(scaled)
+                : scaled;
+            ShipComponentAbilityStats summed = resolved.ToAbilityStats();
+            // Hold size is not health or energy. Copy counts keep the authored cargo.
+            summed.maxGems = SumHoldGemCap(entry, catalog, shipLevel);
+            return summed;
+        }
+
+        /// <summary>
+        /// Walks the prefab and returns a scratch hull row with the raw unique-part
+        /// sum and the name counts. No family scale and no runtime defaults yet.
+        /// False when the prefab or catalog is missing.
+        /// </summary>
+        static bool TrySumRawFromPrefab(
+            GameObject prefab,
+            MegaShipCatalog catalog,
+            out MegaShipCatalogEntry scratch)
+        {
+            scratch = null;
+            if (prefab == null || catalog == null)
+                return false;
+
+            scratch = new MegaShipCatalogEntry { prefab = prefab };
+            MegaShipComponentInventory.RecalcShipSum(catalog, scratch);
+            return true;
+        }
+
+        /// <summary>
         /// Walks every classified child of <paramref name="prefab"/> and adds the unique
-        /// component stats for that child name (type-table fallback). Forces <c>maxGems = 0</c>.
+        /// component stats for that child name (type-table fallback). Gem cap uses the
+        /// same hold-part formula as <see cref="SumFromEntry"/>.
         /// </summary>
         public static bool SumFromPrefab(
             GameObject prefab,
             MegaShipCatalog catalog,
             out ShipComponentAbilityStats summed)
         {
+            return SumFromPrefab(prefab, catalog, shipLevel: 7, out summed);
+        }
+
+        /// <summary>
+        /// Same walk as <see cref="SumFromPrefab(GameObject, MegaShipCatalog, out ShipComponentAbilityStats)"/>
+        /// with the live Titan ship level on gem cargo.
+        /// </summary>
+        public static bool SumFromPrefab(
+            GameObject prefab,
+            MegaShipCatalog catalog,
+            int shipLevel,
+            out ShipComponentAbilityStats summed)
+        {
             summed = default;
             if (prefab == null || catalog == null)
                 return false;
 
-            var scratch = new MegaShipCatalogEntry { prefab = prefab };
-            MegaShipComponentInventory.RecalcShipSum(catalog, scratch);
+            if (!TrySumRawFromPrefab(prefab, catalog, out MegaShipCatalogEntry scratch))
+                return false;
+
+            // No hull row here, so there is no visual family to scale. Callers that
+            // know the Titan (SumFromEntry) apply GetStatScaleForEntry themselves.
             MegaShipPartStats resolved = catalog.ResolveRuntimeStats(scratch.summedStats);
             summed = resolved.ToAbilityStats();
-            summed.maxGems = 0f;
+            summed.maxGems = SumHoldGemCap(scratch, catalog, shipLevel);
             return true;
         }
 
@@ -105,7 +191,7 @@ namespace TitanOrbit.Data
         /// Returns false when the catalog or hull row is missing.
         /// </summary>
         /// <param name="catalogIndex">Index into <see cref="MegaShipCatalog.entries"/>.</param>
-        /// <param name="summed">Runtime-resolved catalog totals (gem cap forced to 0).</param>
+        /// <param name="summed">Runtime-resolved catalog totals, including gem cap at level 7.</param>
         /// <returns>True when the catalog row existed and summed.</returns>
         public static bool TrySumForCatalogIndex(int catalogIndex, out ShipComponentAbilityStats summed)
         {
@@ -120,7 +206,7 @@ namespace TitanOrbit.Data
         /// <param name="catalogIndex">Index into <see cref="MegaShipCatalog.entries"/>.</param>
         /// <param name="extraComponentIds">Equipped store component ids, or null when none.</param>
         /// <param name="shipLevel">Titan chassis level used to Extra-Level extras.</param>
-        /// <param name="summed">Hull + gear totals (gem cap forced to 0).</param>
+        /// <param name="summed">Hull + gear totals, including gem cap at <paramref name="shipLevel"/>.</param>
         /// <returns>True when the catalog row existed and summed.</returns>
         public static bool TrySumForCatalogIndex(
             int catalogIndex,
@@ -148,9 +234,10 @@ namespace TitanOrbit.Data
         /// Weapon extras do not add damage or cadence — they unlock a bullet type.
         /// They still take the faster travel stats (max, not sum) so a long-range
         /// store gun does not get added onto every Titan barrel's speed.
-        /// Gem cap stays 0.
+        /// A purchased cockpit, wing, or cargo adds its gem PerExtra × ship level
+        /// on top of the hull hold. Other purchases add no gems.
         /// </summary>
-        /// <param name="hull">In/out catalog totals. Gem cap is forced to 0 after the merge.</param>
+        /// <param name="hull">In/out catalog totals. Hull gem cap is kept; hold gear adds to it.</param>
         /// <param name="extraComponentIds">Equipped store component ids.</param>
         /// <param name="shipLevel">Titan chassis level (1-based).</param>
         /// <param name="gearFamilyConfigIndices">
@@ -165,12 +252,8 @@ namespace TitanOrbit.Data
             int shipLevel,
             IReadOnlyList<int> gearFamilyConfigIndices = null)
         {
-            // --- No extras: still pin gem cap ---
             if (extraComponentIds == null || extraComponentIds.Count == 0)
-            {
-                hull.maxGems = 0f;
                 return;
-            }
 
             for (int i = 0; i < extraComponentIds.Count; i++)
             {
@@ -206,6 +289,14 @@ namespace TitanOrbit.Data
                     extra.fireRatePerExtraLevel = 0f;
                 }
 
+                // Gem cargo is cockpit, wing, and cargo only — an engine that authors
+                // a gem step must not fill the Titan hold.
+                if (!IsHoldComponent(id))
+                {
+                    extra.maxGems = 0f;
+                    extra.maxGemsPerExtraLevel = 0f;
+                }
+
                 // Weapon travel is one hull value (fastest barrel), not a sum of every gun.
                 float keepSpeed = Mathf.Max(hull.bulletSpeed, extra.bulletSpeed);
                 float keepRange = Mathf.Max(hull.bulletRange, extra.bulletRange);
@@ -213,8 +304,6 @@ namespace TitanOrbit.Data
                 hull.bulletSpeed = keepSpeed;
                 hull.bulletRange = keepRange;
             }
-
-            hull.maxGems = 0f;
         }
 
         /// <summary>
@@ -274,17 +363,91 @@ namespace TitanOrbit.Data
 
         /// <summary>
         /// Multiplies a Titan hull by <see cref="ResolveFleetBonuses"/>.
-        /// Gem cap stays 0 — Titans do not hold gems, even when the family rolls gem cap.
+        /// The family's gem-cap roll scales hold gems the same way it scales health.
         /// </summary>
-        /// <param name="stats">Catalog hull plus any moon-store extras already folded in.</param>
+        /// <param name="stats">Catalog hull. Gear added after this keeps its own purchase-moon roll.</param>
         /// <param name="familyConfigIndex">Planet family slot this Titan was added with.</param>
         public static ShipComponentAbilityStats ApplyFleetBonuses(
             ShipComponentAbilityStats stats,
             int familyConfigIndex)
         {
-            stats = ResolveFleetBonuses(familyConfigIndex).Apply(stats);
-            stats.maxGems = 0f;
-            return stats;
+            return ResolveFleetBonuses(familyConfigIndex).Apply(stats);
+        }
+
+        /// <summary>True for cockpit, wing, and cargo — the parts that hold gems.</summary>
+        public static bool IsHoldPartType(string partType)
+        {
+            if (string.IsNullOrWhiteSpace(partType))
+                return false;
+            return string.Equals(partType, ShipFamilyPartTypes.Cockpit, StringComparison.OrdinalIgnoreCase)
+                   || string.Equals(partType, ShipFamilyPartTypes.Wing, StringComparison.OrdinalIgnoreCase)
+                   || ShipFamilyPartTypes.IsCargoProfile(partType);
+        }
+
+        /// <summary>True when a moon-store component id is a cockpit, wing, or cargo.</summary>
+        public static bool IsHoldComponent(string componentId)
+        {
+            return IsHoldPartType(ShipComponentAbilityStats.ResolvePartTypeForSuggestedStats(componentId));
+        }
+
+        /// <summary>
+        /// Gems one cockpit, wing, or cargo copy holds at <paramref name="shipLevel"/>
+        /// with no gem-ability purchases: authored type-table base (or <see cref="HoldGemBase"/>)
+        /// plus <see cref="HoldGemPerShipLevel"/> × ship level. A level-7 copy of the starter
+        /// base holds 22, the same as one regular cockpit that never bought Gem Cap.
+        /// </summary>
+        public static float GemCapPerHoldCopy(MegaShipCatalog catalog, string partType, int shipLevel)
+        {
+            float authored = 0f;
+            if (catalog != null && IsHoldPartType(partType))
+                authored = catalog.GetStatsForPartType(partType).maxGems;
+            float baseGems = authored > 0.01f ? authored : HoldGemBase;
+            return baseGems + HoldGemPerShipLevel * Mathf.Max(1, shipLevel);
+        }
+
+        /// <summary>
+        /// Sums <see cref="GemCapPerHoldCopy"/> × copy count for every cockpit, wing,
+        /// and cargo row on the hull. Guns, engines, and armor add nothing.
+        /// </summary>
+        public static float SumHoldGemCap(MegaShipCatalogEntry entry, MegaShipCatalog catalog, int shipLevel)
+        {
+            if (entry?.componentCounts == null || catalog == null)
+                return 0f;
+
+            float total = 0f;
+            for (int i = 0; i < entry.componentCounts.Count; i++)
+            {
+                MegaShipComponentCount count = entry.componentCounts[i];
+                if (count == null || count.count <= 0 || string.IsNullOrEmpty(count.displayName))
+                    continue;
+                if (!TryResolveHoldPartType(catalog, count.displayName, out string partType))
+                    continue;
+                total += count.count * GemCapPerHoldCopy(catalog, partType, shipLevel);
+            }
+
+            return total;
+        }
+
+        /// <summary>
+        /// Part profile for one unique-component name. Prefers the catalog row's
+        /// authored type, then the name heuristic used when the row has none.
+        /// </summary>
+        static bool TryResolveHoldPartType(MegaShipCatalog catalog, string displayName, out string partType)
+        {
+            partType = null;
+            if (catalog != null
+                && catalog.TryGetUniqueComponent(displayName, out MegaShipComponentEntry row)
+                && row != null
+                && !string.IsNullOrWhiteSpace(row.partType))
+            {
+                partType = row.partType;
+            }
+            else
+            {
+                partType = MegaShipPartClassifier.ResolvePartType(displayName);
+            }
+
+            return IsHoldPartType(partType);
         }
 
         /// <summary>True when a stored sum was never written (all zeros).</summary>

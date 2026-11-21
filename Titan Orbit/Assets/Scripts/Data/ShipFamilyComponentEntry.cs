@@ -215,7 +215,17 @@ namespace TitanOrbit.Data
             string componentId)
         {
             string[] allowed = ShipFamilyComponentPartKey.GetAuthoringStatFieldNames(categories, componentId);
-            var allowedSet = new HashSet<string>(allowed, StringComparer.Ordinal);
+            return KeepOnlyFieldNames(stats, allowed);
+        }
+
+        /// <summary>Keeps only the named ability fields. Unknown names are ignored.</summary>
+        public static ShipComponentAbilityStats KeepOnlyFieldNames(
+            ShipComponentAbilityStats stats,
+            IReadOnlyList<string> fieldNames)
+        {
+            var allowedSet = new HashSet<string>(
+                fieldNames ?? Array.Empty<string>(),
+                StringComparer.Ordinal);
             var filtered = new ShipComponentAbilityStats();
 
             if (allowedSet.Contains("firePower")) filtered.firePower = stats.firePower;

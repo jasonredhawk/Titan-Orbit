@@ -57,6 +57,12 @@ namespace TitanOrbit.Entities
         int _lastLoadoutFingerprint = int.MinValue;
 
         /// <summary>
+        /// Last equipped-loadout hash from <see cref="SyncLoadoutBuffers"/>.
+        /// The orbit menu compares this so a gem tick does not rebuild every ship card.
+        /// </summary>
+        public int LoadoutFingerprint => _lastLoadoutFingerprint;
+
+        /// <summary>
         /// Cached <c>Resources/PlanetShipFamilyConfig</c>. SyncFromEcs used to
         /// <see cref="Resources.Load{T}(string)"/> every refresh (including every Orbit Menu
         /// frame) — Unity caches the asset, but the lookup still showed up on the dock hitch.

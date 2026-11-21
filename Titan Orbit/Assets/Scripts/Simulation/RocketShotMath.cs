@@ -60,11 +60,29 @@ namespace TitanOrbit.Simulation
                 bankIndex, ref damage, ref dummySpeed, ref dummyRange, ref dummyLife, ref fireRate,
                 extras);
 
-            // Catalog visualScale is the mesh size (0.25 = quarter of a 1× rocket).
-            // 0 = derive from fired damage vs level-1 so a blank row still has a ladder.
-            visualScale = stats.visualScale > 0.01f
-                ? math.max(0.05f, stats.visualScale)
-                : ResolveVisualScaleFromDamage(damage, bankIndex);
+            // Same number titan missiles use for this fire power. Catalog visualScale
+            // is the relative curve (1 at 40, 2 at 240); ShotVisualScale then applies
+            // GlobalMeshScale. Do not multiply by a second hull or bank factor here —
+            // BulletShotMath applies Weapon Missile bank scale on top, and 1 means
+            // "a purchased rocket of this fire power".
+            visualScale = ShotVisualScale(damage);
+        }
+
+        /// <summary>
+        /// Multiplies every store rocket and titan missile mesh. Catalog rows stay the
+        /// relative curve (1 at fire power 40, 2 at 240). 2 draws those rows at 2 and 4
+        /// before the bullet-bank global multiply.
+        /// </summary>
+        public const float GlobalMeshScale = 2f;
+
+        /// <summary>
+        /// Mesh scale written onto a homing rocket before the bullet-bank global multiply.
+        /// Purchased rockets and titan missiles both call this. A second multiplier on
+        /// only one of them is what makes one look right and the other tiny.
+        /// </summary>
+        public static float ShotVisualScale(float firePower)
+        {
+            return math.max(0.05f, InterpolateVisualScale(firePower) * GlobalMeshScale);
         }
 
         /// <summary>Fired damage only — HUD readout (matches the spawned bullet).</summary>
@@ -97,8 +115,9 @@ namespace TitanOrbit.Simulation
         /// <see cref="RocketCatalog"/> rows and lerps <c>visualScale</c> between the
         /// two fire-power steps that bracket <paramref name="firePower"/>.
         /// Level 1 is 1 at 40, level 6 is 2 at 240, and each step is +0.2, so
-        /// 50 lands at 1.1 and 80 lands at about 1.333. Outside the ladder the
-        /// size stays on the nearest end row. No per-shot allocation.
+        /// 50 lands at 1.1 and 80 lands at about 1.333. Above the last row the
+        /// size stays on that row. Below the first row the level-1 scale/damage
+        /// ratio continues (30 at a 40 → 1 row is 0.75). No per-shot allocation.
         /// </summary>
         public static float InterpolateVisualScale(float firePower)
         {
@@ -163,8 +182,9 @@ namespace TitanOrbit.Simulation
 
             if (haveLo)
                 return loScale;
+            // Weaker than the first store rocket: keep that row's scale/damage ratio.
             if (haveHi)
-                return hiScale;
+                return math.max(0.05f, hiScale * firePower / math.max(0.01f, hiPower));
             return 1f;
         }
     }

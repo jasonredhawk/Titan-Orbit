@@ -174,6 +174,15 @@ namespace TitanOrbit.ECS
                     id = em.GetComponentData<GhostOwner>(ship).NetworkId;
                     disconnected = id <= 0 || !liveIds.Contains(id);
                 }
+
+                // --- Duplicate hull of someone still connected ---
+                // [TITAN-ORBIT] Roster release is skipped for these (the player did not
+                // leave). Destroying the older ghost without freeing its Titan bay left
+                // the orbit-menu card in their name after they had already taken a new one.
+                // Do not free the bay the surviving hull still flies.
+                if (!disconnected)
+                    ReleaseDuplicateTitanBay(em, bestById, id, ship);
+
                 LogRemoved(id, !disconnected);
                 em.DestroyEntity(ship);
             }
@@ -214,6 +223,43 @@ namespace TitanOrbit.ECS
 
             ids.Dispose();
             rpcEntities.Dispose();
+        }
+
+        /// <summary>
+        /// Frees a Titan bay held by a duplicate hull that is about to be deleted,
+        /// when the hull we are keeping does not fly that same bay.
+        /// </summary>
+        /// <param name="em">Server entity manager.</param>
+        /// <param name="bestById">Newest surviving hull for each still-connected owner.</param>
+        /// <param name="networkId">Owner of both the duplicate and the survivor.</param>
+        /// <param name="duplicate">Older hull that will be destroyed this tick.</param>
+        static void ReleaseDuplicateTitanBay(
+            EntityManager em,
+            NativeHashMap<int, Entity> bestById,
+            int networkId,
+            Entity duplicate)
+        {
+            if (!em.HasComponent<MegaShipState>(duplicate))
+                return;
+
+            var mega = em.GetComponentData<MegaShipState>(duplicate);
+            if (!mega.IsMega)
+                return;
+
+            // The ship we keep may already be this same Titan. Leave that card taken.
+            if (bestById.TryGetValue(networkId, out Entity survivor)
+                && em.Exists(survivor)
+                && survivor != duplicate
+                && em.HasComponent<MegaShipState>(survivor))
+            {
+                var live = em.GetComponentData<MegaShipState>(survivor);
+                if (live.IsMega
+                    && live.StorePlanetId == mega.StorePlanetId
+                    && live.MegaSlotIndex == mega.MegaSlotIndex)
+                    return;
+            }
+
+            MegaShipPlanetLogic.FreeSlotIfOccupiedBy(em, mega.StorePlanetId, mega.MegaSlotIndex, networkId);
         }
 
         /// <summary>Frees the team slot and any titan bay this hull was holding.</summary>

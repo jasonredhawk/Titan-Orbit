@@ -16,6 +16,7 @@ MonoBehaviour:
   nameMappings:
   - discoveredName: AstroEagle_Cockpit
     partType: Cockpit
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -51,17 +52,18 @@ MonoBehaviour:
       extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 0
       turnSpeedPerExtraLevel: 0
-      maxGems: 8
-      maxGemsPerExtraLevel: 4
+      maxGems: 20
+      maxGemsPerExtraLevel: 10
       tractorBeamDistance: 0
       tractorBeamDistancePerExtraLevel: 0
       tractorBeamPower: 0
       tractorBeamPowerPerExtraLevel: 0
-      maxPeople: 10
-      maxPeoplePerExtraLevel: 2
+      maxPeople: 20
+      maxPeoplePerExtraLevel: 4
     hasBaseStats: 1
   - discoveredName: AstroEagle_Cockpit_Base_1
     partType: Cockpit
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -97,17 +99,18 @@ MonoBehaviour:
       extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 0
       turnSpeedPerExtraLevel: 0
-      maxGems: 8
-      maxGemsPerExtraLevel: 4
+      maxGems: 20
+      maxGemsPerExtraLevel: 10
       tractorBeamDistance: 0
       tractorBeamDistancePerExtraLevel: 0
       tractorBeamPower: 0
       tractorBeamPowerPerExtraLevel: 0
-      maxPeople: 10
-      maxPeoplePerExtraLevel: 2
+      maxPeople: 20
+      maxPeoplePerExtraLevel: 4
     hasBaseStats: 1
   - discoveredName: AstroEagle_Cockpit_Base_2
     partType: Cockpit
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -143,17 +146,18 @@ MonoBehaviour:
       extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 0
       turnSpeedPerExtraLevel: 0
-      maxGems: 12
-      maxGemsPerExtraLevel: 6
+      maxGems: 26
+      maxGemsPerExtraLevel: 13
       tractorBeamDistance: 0
       tractorBeamDistancePerExtraLevel: 0
       tractorBeamPower: 0
       tractorBeamPowerPerExtraLevel: 0
-      maxPeople: 13
-      maxPeoplePerExtraLevel: 3
+      maxPeople: 24
+      maxPeoplePerExtraLevel: 5
     hasBaseStats: 1
   - discoveredName: AstroEagle_Engine_1
     partType: Engine
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -177,14 +181,14 @@ MonoBehaviour:
       healthRegenPerExtraLevel: 0
       energyCap: 18
       energyCapPerExtraLevel: 6
-      energyRegen: 3
-      energyRegenPerExtraLevel: 1
-      moveSpeed: 6
+      energyRegen: 5
+      energyRegenPerExtraLevel: 1.5
+      moveSpeed: 5
       moveSpeedPerExtraLevel: 0.1
       accelerationCap: 0
       accelerationCapPerExtraLevel: 0
-      extraSpeedPercent: 0.25
-      extraSpeedPercentPerExtraLevel: 0
+      extraSpeedPercent: 0.3
+      extraSpeedPercentPerExtraLevel: 0.1
       extraSpeedEnergyDrain: 12
       extraSpeedEnergyDrainPerExtraLevel: 6
       turnSpeed: 0
@@ -200,6 +204,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: AstroEagle_Engine_2
     partType: Engine
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -223,14 +228,14 @@ MonoBehaviour:
       healthRegenPerExtraLevel: 0
       energyCap: 24
       energyCapPerExtraLevel: 7
-      energyRegen: 4
-      energyRegenPerExtraLevel: 1.3333334
-      moveSpeed: 7
+      energyRegen: 6
+      energyRegenPerExtraLevel: 1.8333334
+      moveSpeed: 6
       moveSpeedPerExtraLevel: 0.15
       accelerationCap: 0
       accelerationCapPerExtraLevel: 0
-      extraSpeedPercent: 0.25
-      extraSpeedPercentPerExtraLevel: 0
+      extraSpeedPercent: 0.3
+      extraSpeedPercentPerExtraLevel: 0.1
       extraSpeedEnergyDrain: 12
       extraSpeedEnergyDrainPerExtraLevel: 6
       turnSpeed: 0
@@ -246,6 +251,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: AstroEagle_Fin
     partType: Tail
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -292,6 +298,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: AstroEagle_Part_1
     partType: Hull
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -338,6 +345,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: AstroEagle_Part_2
     partType: Hull
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -384,6 +392,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: AstroEagle_Tail
     partType: Tail
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -430,6 +439,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: AstroEagle_Thruster
     partType: Thruster
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 1
     propulsionVfxScale: 1
@@ -476,6 +486,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: AstroEagle_Weapon
     partType: Weapon Bullet
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -485,7 +496,7 @@ MonoBehaviour:
     baseStats:
       firePower: 3
       firePowerPerExtraLevel: 0.75
-      bulletSpeed: 10
+      bulletSpeed: 12
       bulletSpeedPerExtraLevel: 1
       bulletRange: 20
       bulletRangePerExtraLevel: 2
@@ -522,6 +533,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: AstroEagle_Wing_1
     partType: Wing
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -557,17 +569,18 @@ MonoBehaviour:
       extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 0
       turnSpeedPerExtraLevel: 0
-      maxGems: 10
-      maxGemsPerExtraLevel: 2
+      maxGems: 12
+      maxGemsPerExtraLevel: 6
       tractorBeamDistance: 3
       tractorBeamDistancePerExtraLevel: 0.75
       tractorBeamPower: 4
       tractorBeamPowerPerExtraLevel: 1
-      maxPeople: 4
+      maxPeople: 6
       maxPeoplePerExtraLevel: 1
     hasBaseStats: 1
   - discoveredName: AstroEagle_Wing_2
     partType: Wing
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -603,17 +616,18 @@ MonoBehaviour:
       extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 0
       turnSpeedPerExtraLevel: 0
-      maxGems: 15
-      maxGemsPerExtraLevel: 3
+      maxGems: 16
+      maxGemsPerExtraLevel: 8
       tractorBeamDistance: 6
       tractorBeamDistancePerExtraLevel: 1.5
       tractorBeamPower: 8
-      tractorBeamPowerPerExtraLevel: 2
-      maxPeople: 6
+      tractorBeamPowerPerExtraLevel: 3
+      maxPeople: 10
       maxPeoplePerExtraLevel: 2
     hasBaseStats: 1
   - discoveredName: AstroEagle_Wing_3
     partType: Wing
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -650,16 +664,17 @@ MonoBehaviour:
       turnSpeed: 0
       turnSpeedPerExtraLevel: 0
       maxGems: 20
-      maxGemsPerExtraLevel: 4
+      maxGemsPerExtraLevel: 10
       tractorBeamDistance: 9
       tractorBeamDistancePerExtraLevel: 2.25
       tractorBeamPower: 12
-      tractorBeamPowerPerExtraLevel: 3
-      maxPeople: 8
+      tractorBeamPowerPerExtraLevel: 5
+      maxPeople: 14
       maxPeoplePerExtraLevel: 3
     hasBaseStats: 1
   - discoveredName: AstroEagle_Wing_4
     partType: Wing
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -695,17 +710,18 @@ MonoBehaviour:
       extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 0
       turnSpeedPerExtraLevel: 0
-      maxGems: 25
-      maxGemsPerExtraLevel: 5
+      maxGems: 24
+      maxGemsPerExtraLevel: 12
       tractorBeamDistance: 12
       tractorBeamDistancePerExtraLevel: 3
       tractorBeamPower: 16
-      tractorBeamPowerPerExtraLevel: 4
-      maxPeople: 10
+      tractorBeamPowerPerExtraLevel: 7
+      maxPeople: 18
       maxPeoplePerExtraLevel: 4
     hasBaseStats: 1
   - discoveredName: AstroEagle_Wing_5
     partType: Wing
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -741,17 +757,18 @@ MonoBehaviour:
       extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 0
       turnSpeedPerExtraLevel: 0
-      maxGems: 30
-      maxGemsPerExtraLevel: 6
+      maxGems: 28
+      maxGemsPerExtraLevel: 14
       tractorBeamDistance: 15
       tractorBeamDistancePerExtraLevel: 3.75
       tractorBeamPower: 20
-      tractorBeamPowerPerExtraLevel: 5
-      maxPeople: 12
+      tractorBeamPowerPerExtraLevel: 9
+      maxPeople: 22
       maxPeoplePerExtraLevel: 5
     hasBaseStats: 1
   - discoveredName: CosmicShark_Body
     partType: Hull
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -798,6 +815,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: CosmicShark_Engine1
     partType: Engine
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -821,14 +839,14 @@ MonoBehaviour:
       healthRegenPerExtraLevel: 0
       energyCap: 18
       energyCapPerExtraLevel: 6
-      energyRegen: 3
-      energyRegenPerExtraLevel: 1
-      moveSpeed: 6
+      energyRegen: 5
+      energyRegenPerExtraLevel: 1.5
+      moveSpeed: 5
       moveSpeedPerExtraLevel: 0.1
       accelerationCap: 0
       accelerationCapPerExtraLevel: 0
-      extraSpeedPercent: 0.25
-      extraSpeedPercentPerExtraLevel: 0
+      extraSpeedPercent: 0.3
+      extraSpeedPercentPerExtraLevel: 0.1
       extraSpeedEnergyDrain: 12
       extraSpeedEnergyDrainPerExtraLevel: 6
       turnSpeed: 0
@@ -844,6 +862,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: CosmicShark_Engine2
     partType: Engine
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -867,14 +886,14 @@ MonoBehaviour:
       healthRegenPerExtraLevel: 0
       energyCap: 24
       energyCapPerExtraLevel: 7
-      energyRegen: 4
-      energyRegenPerExtraLevel: 1.3333334
-      moveSpeed: 7
+      energyRegen: 6
+      energyRegenPerExtraLevel: 1.8333334
+      moveSpeed: 6
       moveSpeedPerExtraLevel: 0.15
       accelerationCap: 0
       accelerationCapPerExtraLevel: 0
-      extraSpeedPercent: 0.25
-      extraSpeedPercentPerExtraLevel: 0
+      extraSpeedPercent: 0.3
+      extraSpeedPercentPerExtraLevel: 0.1
       extraSpeedEnergyDrain: 12
       extraSpeedEnergyDrainPerExtraLevel: 6
       turnSpeed: 0
@@ -890,6 +909,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: CosmicShark_Hull
     partType: Hull
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -936,6 +956,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: CosmicShark_Knob
     partType: Hull
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -982,6 +1003,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: CosmicShark_Thruster
     partType: Thruster
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 1
     propulsionVfxScale: 1
@@ -1028,6 +1050,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: CosmicShark_Weapon
     partType: Weapon Bullet
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -1037,7 +1060,7 @@ MonoBehaviour:
     baseStats:
       firePower: 3
       firePowerPerExtraLevel: 0.75
-      bulletSpeed: 10
+      bulletSpeed: 12
       bulletSpeedPerExtraLevel: 1
       bulletRange: 20
       bulletRangePerExtraLevel: 2
@@ -1074,6 +1097,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: CosmicShark_Wing1
     partType: Wing
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -1109,17 +1133,18 @@ MonoBehaviour:
       extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 0
       turnSpeedPerExtraLevel: 0
-      maxGems: 10
-      maxGemsPerExtraLevel: 2
+      maxGems: 12
+      maxGemsPerExtraLevel: 6
       tractorBeamDistance: 3
       tractorBeamDistancePerExtraLevel: 0.75
       tractorBeamPower: 4
       tractorBeamPowerPerExtraLevel: 1
-      maxPeople: 4
+      maxPeople: 6
       maxPeoplePerExtraLevel: 1
     hasBaseStats: 1
   - discoveredName: CosmicShark_Wing2
     partType: Wing
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -1155,17 +1180,18 @@ MonoBehaviour:
       extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 0
       turnSpeedPerExtraLevel: 0
-      maxGems: 15
-      maxGemsPerExtraLevel: 3
+      maxGems: 16
+      maxGemsPerExtraLevel: 8
       tractorBeamDistance: 6
       tractorBeamDistancePerExtraLevel: 1.5
       tractorBeamPower: 8
-      tractorBeamPowerPerExtraLevel: 2
-      maxPeople: 6
+      tractorBeamPowerPerExtraLevel: 3
+      maxPeople: 10
       maxPeoplePerExtraLevel: 2
     hasBaseStats: 1
   - discoveredName: ForceBadger_Cockpit
     partType: Cockpit
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -1201,17 +1227,18 @@ MonoBehaviour:
       extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 0
       turnSpeedPerExtraLevel: 0
-      maxGems: 8
-      maxGemsPerExtraLevel: 4
+      maxGems: 20
+      maxGemsPerExtraLevel: 10
       tractorBeamDistance: 0
       tractorBeamDistancePerExtraLevel: 0
       tractorBeamPower: 0
       tractorBeamPowerPerExtraLevel: 0
-      maxPeople: 10
-      maxPeoplePerExtraLevel: 2
+      maxPeople: 20
+      maxPeoplePerExtraLevel: 4
     hasBaseStats: 1
   - discoveredName: ForceBadger_Engine
     partType: Engine
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -1235,14 +1262,14 @@ MonoBehaviour:
       healthRegenPerExtraLevel: 0
       energyCap: 18
       energyCapPerExtraLevel: 6
-      energyRegen: 3
-      energyRegenPerExtraLevel: 1
-      moveSpeed: 6
+      energyRegen: 5
+      energyRegenPerExtraLevel: 1.5
+      moveSpeed: 5
       moveSpeedPerExtraLevel: 0.1
       accelerationCap: 0
       accelerationCapPerExtraLevel: 0
-      extraSpeedPercent: 0.25
-      extraSpeedPercentPerExtraLevel: 0
+      extraSpeedPercent: 0.3
+      extraSpeedPercentPerExtraLevel: 0.1
       extraSpeedEnergyDrain: 12
       extraSpeedEnergyDrainPerExtraLevel: 6
       turnSpeed: 0
@@ -1258,6 +1285,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: ForceBadger_Fin
     partType: Tail
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -1304,6 +1332,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: ForceBadger_Sensor
     partType: Hull
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -1350,6 +1379,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: ForceBadger_Support
     partType: Hull
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -1396,6 +1426,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: ForceBadger_Tail
     partType: Tail
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -1442,6 +1473,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: ForceBadger_Thruster
     partType: Thruster
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 1
     propulsionVfxScale: 1
@@ -1488,6 +1520,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: ForceBadger_Weapon
     partType: Weapon Bullet
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -1497,7 +1530,7 @@ MonoBehaviour:
     baseStats:
       firePower: 3
       firePowerPerExtraLevel: 0.75
-      bulletSpeed: 10
+      bulletSpeed: 12
       bulletSpeedPerExtraLevel: 1
       bulletRange: 20
       bulletRangePerExtraLevel: 2
@@ -1534,6 +1567,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: ForceBadger_Wing
     partType: Wing
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -1569,17 +1603,18 @@ MonoBehaviour:
       extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 0
       turnSpeedPerExtraLevel: 0
-      maxGems: 10
-      maxGemsPerExtraLevel: 2
+      maxGems: 12
+      maxGemsPerExtraLevel: 6
       tractorBeamDistance: 3
       tractorBeamDistancePerExtraLevel: 0.75
       tractorBeamPower: 4
       tractorBeamPowerPerExtraLevel: 1
-      maxPeople: 4
+      maxPeople: 6
       maxPeoplePerExtraLevel: 1
     hasBaseStats: 1
   - discoveredName: GalaxyRaptor_Acc
     partType: Hull
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -1626,6 +1661,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: GalaxyRaptor_Barrel
     partType: Weapon Bullet
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -1635,7 +1671,7 @@ MonoBehaviour:
     baseStats:
       firePower: 3
       firePowerPerExtraLevel: 0.75
-      bulletSpeed: 10
+      bulletSpeed: 12
       bulletSpeedPerExtraLevel: 1
       bulletRange: 20
       bulletRangePerExtraLevel: 2
@@ -1672,6 +1708,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: GalaxyRaptor_Cockpit
     partType: Cockpit
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -1707,17 +1744,18 @@ MonoBehaviour:
       extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 0
       turnSpeedPerExtraLevel: 0
-      maxGems: 8
-      maxGemsPerExtraLevel: 4
+      maxGems: 20
+      maxGemsPerExtraLevel: 10
       tractorBeamDistance: 0
       tractorBeamDistancePerExtraLevel: 0
       tractorBeamPower: 0
       tractorBeamPowerPerExtraLevel: 0
-      maxPeople: 10
-      maxPeoplePerExtraLevel: 2
+      maxPeople: 20
+      maxPeoplePerExtraLevel: 4
     hasBaseStats: 1
   - discoveredName: GalaxyRaptor_Cylinder
     partType: Hull
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -1764,6 +1802,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: GalaxyRaptor_Detail
     partType: Hull
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -1810,6 +1849,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: GalaxyRaptor_Engine
     partType: Engine
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -1833,14 +1873,14 @@ MonoBehaviour:
       healthRegenPerExtraLevel: 0
       energyCap: 18
       energyCapPerExtraLevel: 6
-      energyRegen: 3
-      energyRegenPerExtraLevel: 1
-      moveSpeed: 6
+      energyRegen: 5
+      energyRegenPerExtraLevel: 1.5
+      moveSpeed: 5
       moveSpeedPerExtraLevel: 0.1
       accelerationCap: 0
       accelerationCapPerExtraLevel: 0
-      extraSpeedPercent: 0.25
-      extraSpeedPercentPerExtraLevel: 0
+      extraSpeedPercent: 0.3
+      extraSpeedPercentPerExtraLevel: 0.1
       extraSpeedEnergyDrain: 12
       extraSpeedEnergyDrainPerExtraLevel: 6
       turnSpeed: 0
@@ -1856,6 +1896,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: GalaxyRaptor_Gun
     partType: Weapon Bullet
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -1865,7 +1906,7 @@ MonoBehaviour:
     baseStats:
       firePower: 3
       firePowerPerExtraLevel: 0.75
-      bulletSpeed: 10
+      bulletSpeed: 12
       bulletSpeedPerExtraLevel: 1
       bulletRange: 20
       bulletRangePerExtraLevel: 2
@@ -1902,6 +1943,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: GalaxyRaptor_MainBody1
     partType: Hull
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -1948,6 +1990,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: GalaxyRaptor_MainBody2
     partType: Hull
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -1994,6 +2037,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: GalaxyRaptor_MainBody3
     partType: Hull
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -2040,6 +2084,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: GalaxyRaptor_MainBody4
     partType: Hull
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -2086,6 +2131,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: GalaxyRaptor_ThrustCover
     partType: Thruster
+    additionalPartTypes: []
     contributesAbilityStats: 0
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -2132,6 +2178,7 @@ MonoBehaviour:
     hasBaseStats: 0
   - discoveredName: GalaxyRaptor_Wing1
     partType: Wing
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -2167,17 +2214,18 @@ MonoBehaviour:
       extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 0
       turnSpeedPerExtraLevel: 0
-      maxGems: 10
-      maxGemsPerExtraLevel: 2
+      maxGems: 12
+      maxGemsPerExtraLevel: 6
       tractorBeamDistance: 3
       tractorBeamDistancePerExtraLevel: 0.75
       tractorBeamPower: 4
       tractorBeamPowerPerExtraLevel: 1
-      maxPeople: 4
+      maxPeople: 6
       maxPeoplePerExtraLevel: 1
     hasBaseStats: 1
   - discoveredName: GalaxyRaptor_Wing2
     partType: Wing
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -2213,17 +2261,18 @@ MonoBehaviour:
       extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 0
       turnSpeedPerExtraLevel: 0
-      maxGems: 15
-      maxGemsPerExtraLevel: 3
+      maxGems: 16
+      maxGemsPerExtraLevel: 8
       tractorBeamDistance: 6
       tractorBeamDistancePerExtraLevel: 1.5
       tractorBeamPower: 8
-      tractorBeamPowerPerExtraLevel: 2
-      maxPeople: 6
+      tractorBeamPowerPerExtraLevel: 3
+      maxPeople: 10
       maxPeoplePerExtraLevel: 2
     hasBaseStats: 1
   - discoveredName: GalaxyRaptor_Wing3
     partType: Wing
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -2260,16 +2309,17 @@ MonoBehaviour:
       turnSpeed: 0
       turnSpeedPerExtraLevel: 0
       maxGems: 20
-      maxGemsPerExtraLevel: 4
+      maxGemsPerExtraLevel: 10
       tractorBeamDistance: 9
       tractorBeamDistancePerExtraLevel: 2.25
       tractorBeamPower: 12
-      tractorBeamPowerPerExtraLevel: 3
-      maxPeople: 8
+      tractorBeamPowerPerExtraLevel: 5
+      maxPeople: 14
       maxPeoplePerExtraLevel: 3
     hasBaseStats: 1
   - discoveredName: GalaxyRaptor_Wing4
     partType: Wing
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -2305,17 +2355,18 @@ MonoBehaviour:
       extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 0
       turnSpeedPerExtraLevel: 0
-      maxGems: 25
-      maxGemsPerExtraLevel: 5
+      maxGems: 24
+      maxGemsPerExtraLevel: 12
       tractorBeamDistance: 12
       tractorBeamDistancePerExtraLevel: 3
       tractorBeamPower: 16
-      tractorBeamPowerPerExtraLevel: 4
-      maxPeople: 10
+      tractorBeamPowerPerExtraLevel: 7
+      maxPeople: 18
       maxPeoplePerExtraLevel: 4
     hasBaseStats: 1
   - discoveredName: GalaxyRaptor_WingHolder
     partType: Wing
+    additionalPartTypes: []
     contributesAbilityStats: 0
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -2362,6 +2413,7 @@ MonoBehaviour:
     hasBaseStats: 0
   - discoveredName: HyperFalcon_Cockpit
     partType: Cockpit
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -2369,16 +2421,16 @@ MonoBehaviour:
     notes: 
     includeInPopulate: 1
     baseStats:
-      firePower: 10
-      firePowerPerExtraLevel: 1.75
-      bulletSpeed: 10
-      bulletSpeedPerExtraLevel: 1
-      bulletRange: 25
-      bulletRangePerExtraLevel: 3
-      fireRate: 1
+      firePower: 0
+      firePowerPerExtraLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerExtraLevel: 0
+      bulletRange: 0
+      bulletRangePerExtraLevel: 0
+      fireRate: 0
       fireRatePerExtraLevel: 0
-      rammingPower: 4
-      rammingPowerPerExtraLevel: 0.65
+      rammingPower: 3
+      rammingPowerPerExtraLevel: 0.5
       healthCap: 6.3
       healthCapPerExtraLevel: 6.3
       healthRegen: 0.22500002
@@ -2397,17 +2449,18 @@ MonoBehaviour:
       extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 0
       turnSpeedPerExtraLevel: 0
-      maxGems: 8
-      maxGemsPerExtraLevel: 4
+      maxGems: 20
+      maxGemsPerExtraLevel: 10
       tractorBeamDistance: 0
       tractorBeamDistancePerExtraLevel: 0
       tractorBeamPower: 0
       tractorBeamPowerPerExtraLevel: 0
-      maxPeople: 10
-      maxPeoplePerExtraLevel: 2
+      maxPeople: 20
+      maxPeoplePerExtraLevel: 4
     hasBaseStats: 1
   - discoveredName: HyperFalcon_Core
     partType: Hull
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -2454,6 +2507,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: HyperFalcon_Engine
     partType: Engine
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -2477,14 +2531,14 @@ MonoBehaviour:
       healthRegenPerExtraLevel: 0
       energyCap: 18
       energyCapPerExtraLevel: 6
-      energyRegen: 3
-      energyRegenPerExtraLevel: 1
-      moveSpeed: 6
+      energyRegen: 5
+      energyRegenPerExtraLevel: 1.5
+      moveSpeed: 5
       moveSpeedPerExtraLevel: 0.1
       accelerationCap: 0
       accelerationCapPerExtraLevel: 0
-      extraSpeedPercent: 0.25
-      extraSpeedPercentPerExtraLevel: 0
+      extraSpeedPercent: 0.3
+      extraSpeedPercentPerExtraLevel: 0.1
       extraSpeedEnergyDrain: 12
       extraSpeedEnergyDrainPerExtraLevel: 6
       turnSpeed: 0
@@ -2500,6 +2554,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: HyperFalcon_Exhaust
     partType: Thruster
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 1
     propulsionVfxScale: 1
@@ -2546,6 +2601,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: HyperFalcon_Support
     partType: Hull
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -2592,6 +2648,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: HyperFalcon_Thruster
     partType: Thruster
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 1
     propulsionVfxScale: 1
@@ -2638,6 +2695,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: HyperFalcon_Tracks
     partType: Hull
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -2684,6 +2742,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: HyperFalcon_Vents
     partType: Hull
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -2730,6 +2789,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: HyperFalcon_Wing_1
     partType: Wing
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -2765,17 +2825,18 @@ MonoBehaviour:
       extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 0
       turnSpeedPerExtraLevel: 0
-      maxGems: 10
-      maxGemsPerExtraLevel: 2
+      maxGems: 12
+      maxGemsPerExtraLevel: 6
       tractorBeamDistance: 3
       tractorBeamDistancePerExtraLevel: 0.75
       tractorBeamPower: 4
       tractorBeamPowerPerExtraLevel: 1
-      maxPeople: 4
+      maxPeople: 6
       maxPeoplePerExtraLevel: 1
     hasBaseStats: 1
   - discoveredName: HyperFalcon_Wing_2
     partType: Wing
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -2811,17 +2872,18 @@ MonoBehaviour:
       extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 0
       turnSpeedPerExtraLevel: 0
-      maxGems: 15
-      maxGemsPerExtraLevel: 3
+      maxGems: 16
+      maxGemsPerExtraLevel: 8
       tractorBeamDistance: 6
       tractorBeamDistancePerExtraLevel: 1.5
       tractorBeamPower: 8
-      tractorBeamPowerPerExtraLevel: 2
-      maxPeople: 6
+      tractorBeamPowerPerExtraLevel: 3
+      maxPeople: 10
       maxPeoplePerExtraLevel: 2
     hasBaseStats: 1
   - discoveredName: LightFox_Body
     partType: Hull
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -2868,6 +2930,8 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: LightFox_Cockpit
     partType: Cockpit
+    additionalPartTypes:
+    - Weapon Bullet
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -2875,13 +2939,13 @@ MonoBehaviour:
     notes: 
     includeInPopulate: 1
     baseStats:
-      firePower: 0
-      firePowerPerExtraLevel: 0
-      bulletSpeed: 0
-      bulletSpeedPerExtraLevel: 0
-      bulletRange: 0
-      bulletRangePerExtraLevel: 0
-      fireRate: 0
+      firePower: 3
+      firePowerPerExtraLevel: 0.75
+      bulletSpeed: 12
+      bulletSpeedPerExtraLevel: 1
+      bulletRange: 20
+      bulletRangePerExtraLevel: 2
+      fireRate: 3
       fireRatePerExtraLevel: 0
       rammingPower: 3
       rammingPowerPerExtraLevel: 0.5
@@ -2889,8 +2953,8 @@ MonoBehaviour:
       healthCapPerExtraLevel: 6.3
       healthRegen: 0.22500002
       healthRegenPerExtraLevel: 0.225
-      energyCap: 0
-      energyCapPerExtraLevel: 0
+      energyCap: 18
+      energyCapPerExtraLevel: 9
       energyRegen: 0
       energyRegenPerExtraLevel: 0
       moveSpeed: 0
@@ -2903,17 +2967,18 @@ MonoBehaviour:
       extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 0
       turnSpeedPerExtraLevel: 0
-      maxGems: 8
-      maxGemsPerExtraLevel: 4
+      maxGems: 20
+      maxGemsPerExtraLevel: 10
       tractorBeamDistance: 0
       tractorBeamDistancePerExtraLevel: 0
       tractorBeamPower: 0
       tractorBeamPowerPerExtraLevel: 0
-      maxPeople: 10
-      maxPeoplePerExtraLevel: 2
+      maxPeople: 20
+      maxPeoplePerExtraLevel: 4
     hasBaseStats: 1
   - discoveredName: LightFox_CockpitCover
     partType: Cockpit
+    additionalPartTypes: []
     contributesAbilityStats: 0
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -2960,6 +3025,7 @@ MonoBehaviour:
     hasBaseStats: 0
   - discoveredName: LightFox_Engine1
     partType: Engine
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -2983,14 +3049,14 @@ MonoBehaviour:
       healthRegenPerExtraLevel: 0
       energyCap: 18
       energyCapPerExtraLevel: 6
-      energyRegen: 3
-      energyRegenPerExtraLevel: 1
-      moveSpeed: 6
+      energyRegen: 5
+      energyRegenPerExtraLevel: 1.5
+      moveSpeed: 5
       moveSpeedPerExtraLevel: 0.1
       accelerationCap: 0
       accelerationCapPerExtraLevel: 0
-      extraSpeedPercent: 0.25
-      extraSpeedPercentPerExtraLevel: 0
+      extraSpeedPercent: 0.3
+      extraSpeedPercentPerExtraLevel: 0.1
       extraSpeedEnergyDrain: 12
       extraSpeedEnergyDrainPerExtraLevel: 6
       turnSpeed: 0
@@ -3006,6 +3072,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: LightFox_Engine2
     partType: Engine
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -3029,14 +3096,14 @@ MonoBehaviour:
       healthRegenPerExtraLevel: 0
       energyCap: 24
       energyCapPerExtraLevel: 7
-      energyRegen: 4
-      energyRegenPerExtraLevel: 1.3333334
-      moveSpeed: 7
+      energyRegen: 6
+      energyRegenPerExtraLevel: 1.8333334
+      moveSpeed: 6
       moveSpeedPerExtraLevel: 0.15
       accelerationCap: 0
       accelerationCapPerExtraLevel: 0
-      extraSpeedPercent: 0.25
-      extraSpeedPercentPerExtraLevel: 0
+      extraSpeedPercent: 0.3
+      extraSpeedPercentPerExtraLevel: 0.1
       extraSpeedEnergyDrain: 12
       extraSpeedEnergyDrainPerExtraLevel: 6
       turnSpeed: 0
@@ -3052,6 +3119,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: LightFox_Weapon
     partType: Weapon Bullet
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -3061,7 +3129,7 @@ MonoBehaviour:
     baseStats:
       firePower: 3
       firePowerPerExtraLevel: 0.75
-      bulletSpeed: 10
+      bulletSpeed: 12
       bulletSpeedPerExtraLevel: 1
       bulletRange: 20
       bulletRangePerExtraLevel: 2
@@ -3098,6 +3166,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: LightFox_Wing_1
     partType: Wing
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -3133,17 +3202,18 @@ MonoBehaviour:
       extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 0
       turnSpeedPerExtraLevel: 0
-      maxGems: 10
-      maxGemsPerExtraLevel: 2
+      maxGems: 12
+      maxGemsPerExtraLevel: 6
       tractorBeamDistance: 3
       tractorBeamDistancePerExtraLevel: 0.75
       tractorBeamPower: 4
       tractorBeamPowerPerExtraLevel: 1
-      maxPeople: 4
+      maxPeople: 6
       maxPeoplePerExtraLevel: 1
     hasBaseStats: 1
   - discoveredName: LightFox_Wing_2
     partType: Wing
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -3179,17 +3249,18 @@ MonoBehaviour:
       extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 0
       turnSpeedPerExtraLevel: 0
-      maxGems: 15
-      maxGemsPerExtraLevel: 3
+      maxGems: 16
+      maxGemsPerExtraLevel: 8
       tractorBeamDistance: 6
       tractorBeamDistancePerExtraLevel: 1.5
       tractorBeamPower: 8
-      tractorBeamPowerPerExtraLevel: 2
-      maxPeople: 6
+      tractorBeamPowerPerExtraLevel: 3
+      maxPeople: 10
       maxPeoplePerExtraLevel: 2
     hasBaseStats: 1
   - discoveredName: LightFox_Wing_3
     partType: Wing
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -3226,16 +3297,17 @@ MonoBehaviour:
       turnSpeed: 0
       turnSpeedPerExtraLevel: 0
       maxGems: 20
-      maxGemsPerExtraLevel: 4
+      maxGemsPerExtraLevel: 10
       tractorBeamDistance: 9
       tractorBeamDistancePerExtraLevel: 2.25
       tractorBeamPower: 12
-      tractorBeamPowerPerExtraLevel: 3
-      maxPeople: 8
+      tractorBeamPowerPerExtraLevel: 5
+      maxPeople: 14
       maxPeoplePerExtraLevel: 3
     hasBaseStats: 1
   - discoveredName: LightFox_Wing_4
     partType: Wing
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -3271,17 +3343,18 @@ MonoBehaviour:
       extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 0
       turnSpeedPerExtraLevel: 0
-      maxGems: 25
-      maxGemsPerExtraLevel: 5
+      maxGems: 24
+      maxGemsPerExtraLevel: 12
       tractorBeamDistance: 12
       tractorBeamDistancePerExtraLevel: 3
       tractorBeamPower: 16
-      tractorBeamPowerPerExtraLevel: 4
-      maxPeople: 10
+      tractorBeamPowerPerExtraLevel: 7
+      maxPeople: 18
       maxPeoplePerExtraLevel: 4
     hasBaseStats: 1
   - discoveredName: MeteorMantis_Arm
     partType: Hull
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -3328,6 +3401,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: MeteorMantis_Body
     partType: Hull
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -3374,6 +3448,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: MeteorMantis_Cockpit
     partType: Cockpit
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -3409,17 +3484,18 @@ MonoBehaviour:
       extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 0
       turnSpeedPerExtraLevel: 0
-      maxGems: 8
-      maxGemsPerExtraLevel: 4
+      maxGems: 20
+      maxGemsPerExtraLevel: 10
       tractorBeamDistance: 0
       tractorBeamDistancePerExtraLevel: 0
       tractorBeamPower: 0
       tractorBeamPowerPerExtraLevel: 0
-      maxPeople: 10
-      maxPeoplePerExtraLevel: 2
+      maxPeople: 20
+      maxPeoplePerExtraLevel: 4
     hasBaseStats: 1
   - discoveredName: MeteorMantis_Cockpit_Base
     partType: Cockpit
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -3455,17 +3531,18 @@ MonoBehaviour:
       extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 0
       turnSpeedPerExtraLevel: 0
-      maxGems: 8
-      maxGemsPerExtraLevel: 4
+      maxGems: 20
+      maxGemsPerExtraLevel: 10
       tractorBeamDistance: 0
       tractorBeamDistancePerExtraLevel: 0
       tractorBeamPower: 0
       tractorBeamPowerPerExtraLevel: 0
-      maxPeople: 10
-      maxPeoplePerExtraLevel: 2
+      maxPeople: 20
+      maxPeoplePerExtraLevel: 4
     hasBaseStats: 1
   - discoveredName: MeteorMantis_Engine
     partType: Engine
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -3489,14 +3566,14 @@ MonoBehaviour:
       healthRegenPerExtraLevel: 0
       energyCap: 18
       energyCapPerExtraLevel: 6
-      energyRegen: 3
-      energyRegenPerExtraLevel: 1
-      moveSpeed: 6
+      energyRegen: 5
+      energyRegenPerExtraLevel: 1.5
+      moveSpeed: 5
       moveSpeedPerExtraLevel: 0.1
       accelerationCap: 0
       accelerationCapPerExtraLevel: 0
-      extraSpeedPercent: 0.25
-      extraSpeedPercentPerExtraLevel: 0
+      extraSpeedPercent: 0.3
+      extraSpeedPercentPerExtraLevel: 0.1
       extraSpeedEnergyDrain: 12
       extraSpeedEnergyDrainPerExtraLevel: 6
       turnSpeed: 0
@@ -3512,6 +3589,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: MeteorMantis_Joint
     partType: Hull
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -3558,6 +3636,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: MeteorMantis_Shell
     partType: Hull
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -3604,6 +3683,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: MeteorMantis_Tail
     partType: Tail
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -3650,6 +3730,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: MeteorMantis_Weapon
     partType: Weapon Bullet
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -3659,7 +3740,7 @@ MonoBehaviour:
     baseStats:
       firePower: 3
       firePowerPerExtraLevel: 0.75
-      bulletSpeed: 10
+      bulletSpeed: 12
       bulletSpeedPerExtraLevel: 1
       bulletRange: 20
       bulletRangePerExtraLevel: 2
@@ -3696,6 +3777,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: MeteorMantis_Wing
     partType: Wing
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -3731,17 +3813,18 @@ MonoBehaviour:
       extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 0
       turnSpeedPerExtraLevel: 0
-      maxGems: 10
-      maxGemsPerExtraLevel: 2
+      maxGems: 12
+      maxGemsPerExtraLevel: 6
       tractorBeamDistance: 3
       tractorBeamDistancePerExtraLevel: 0.75
       tractorBeamPower: 4
       tractorBeamPowerPerExtraLevel: 1
-      maxPeople: 4
+      maxPeople: 6
       maxPeoplePerExtraLevel: 1
     hasBaseStats: 1
   - discoveredName: NightAye_Cockpit
     partType: Cockpit
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -3777,17 +3860,19 @@ MonoBehaviour:
       extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 0
       turnSpeedPerExtraLevel: 0
-      maxGems: 8
-      maxGemsPerExtraLevel: 4
+      maxGems: 20
+      maxGemsPerExtraLevel: 10
       tractorBeamDistance: 0
       tractorBeamDistancePerExtraLevel: 0
       tractorBeamPower: 0
       tractorBeamPowerPerExtraLevel: 0
-      maxPeople: 10
-      maxPeoplePerExtraLevel: 2
+      maxPeople: 20
+      maxPeoplePerExtraLevel: 4
     hasBaseStats: 1
   - discoveredName: NightAye_Engine
     partType: Engine
+    additionalPartTypes:
+    - Thruster
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -3811,18 +3896,18 @@ MonoBehaviour:
       healthRegenPerExtraLevel: 0
       energyCap: 18
       energyCapPerExtraLevel: 6
-      energyRegen: 3
-      energyRegenPerExtraLevel: 1
-      moveSpeed: 6
+      energyRegen: 5
+      energyRegenPerExtraLevel: 1.5
+      moveSpeed: 5
       moveSpeedPerExtraLevel: 0.1
-      accelerationCap: 0
-      accelerationCapPerExtraLevel: 0
-      extraSpeedPercent: 0.25
-      extraSpeedPercentPerExtraLevel: 0
+      accelerationCap: 8
+      accelerationCapPerExtraLevel: 0.3
+      extraSpeedPercent: 0.3
+      extraSpeedPercentPerExtraLevel: 0.1
       extraSpeedEnergyDrain: 12
       extraSpeedEnergyDrainPerExtraLevel: 6
-      turnSpeed: 0
-      turnSpeedPerExtraLevel: 0
+      turnSpeed: 50
+      turnSpeedPerExtraLevel: 5
       maxGems: 0
       maxGemsPerExtraLevel: 0
       tractorBeamDistance: 0
@@ -3834,6 +3919,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: NightAye_Hood
     partType: Hull
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -3880,6 +3966,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: NightAye_Hull
     partType: Hull
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -3926,6 +4013,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: NightAye_Missile
     partType: Weapon Bullet
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -3935,7 +4023,7 @@ MonoBehaviour:
     baseStats:
       firePower: 3
       firePowerPerExtraLevel: 0.75
-      bulletSpeed: 10
+      bulletSpeed: 12
       bulletSpeedPerExtraLevel: 1
       bulletRange: 20
       bulletRangePerExtraLevel: 2
@@ -3971,9 +4059,10 @@ MonoBehaviour:
       maxPeoplePerExtraLevel: 0
     hasBaseStats: 1
   - discoveredName: NightAye_Spike
-    partType: Hull
+    partType: Thruster
+    additionalPartTypes: []
     contributesAbilityStats: 1
-    enablePropulsionVfx: 0
+    enablePropulsionVfx: 1
     propulsionVfxScale: 1
     seenInFamilies: NightAye
     notes: 
@@ -3989,10 +4078,10 @@ MonoBehaviour:
       fireRatePerExtraLevel: 0
       rammingPower: 0
       rammingPowerPerExtraLevel: 0
-      healthCap: 3.15
-      healthCapPerExtraLevel: 3.15
-      healthRegen: 0.11250001
-      healthRegenPerExtraLevel: 0.1125
+      healthCap: 0
+      healthCapPerExtraLevel: 0
+      healthRegen: 0
+      healthRegenPerExtraLevel: 0
       energyCap: 0
       energyCapPerExtraLevel: 0
       energyRegen: 0
@@ -4018,6 +4107,8 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: NightAye_WingMain
     partType: Wing
+    additionalPartTypes:
+    - Tail
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -4051,19 +4142,20 @@ MonoBehaviour:
       extraSpeedPercentPerExtraLevel: 0
       extraSpeedEnergyDrain: 0
       extraSpeedEnergyDrainPerExtraLevel: 0
-      turnSpeed: 0
-      turnSpeedPerExtraLevel: 0
-      maxGems: 10
-      maxGemsPerExtraLevel: 2
+      turnSpeed: 150
+      turnSpeedPerExtraLevel: 10
+      maxGems: 12
+      maxGemsPerExtraLevel: 6
       tractorBeamDistance: 3
       tractorBeamDistancePerExtraLevel: 0.75
       tractorBeamPower: 4
       tractorBeamPowerPerExtraLevel: 1
-      maxPeople: 4
+      maxPeople: 6
       maxPeoplePerExtraLevel: 1
     hasBaseStats: 1
   - discoveredName: NightAye_WingMini
     partType: Wing
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -4099,17 +4191,18 @@ MonoBehaviour:
       extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 0
       turnSpeedPerExtraLevel: 0
-      maxGems: 10
-      maxGemsPerExtraLevel: 2
+      maxGems: 12
+      maxGemsPerExtraLevel: 6
       tractorBeamDistance: 3
       tractorBeamDistancePerExtraLevel: 0.75
       tractorBeamPower: 4
       tractorBeamPowerPerExtraLevel: 1
-      maxPeople: 4
+      maxPeople: 6
       maxPeoplePerExtraLevel: 1
     hasBaseStats: 1
   - discoveredName: NightAye_WingTip
     partType: Wing
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -4145,17 +4238,18 @@ MonoBehaviour:
       extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 0
       turnSpeedPerExtraLevel: 0
-      maxGems: 10
-      maxGemsPerExtraLevel: 2
+      maxGems: 12
+      maxGemsPerExtraLevel: 6
       tractorBeamDistance: 3
       tractorBeamDistancePerExtraLevel: 0.75
       tractorBeamPower: 4
       tractorBeamPowerPerExtraLevel: 1
-      maxPeople: 4
+      maxPeople: 6
       maxPeoplePerExtraLevel: 1
     hasBaseStats: 1
   - discoveredName: NightAye_WingWide
     partType: Wing
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -4191,17 +4285,18 @@ MonoBehaviour:
       extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 0
       turnSpeedPerExtraLevel: 0
-      maxGems: 10
-      maxGemsPerExtraLevel: 2
+      maxGems: 12
+      maxGemsPerExtraLevel: 6
       tractorBeamDistance: 3
       tractorBeamDistancePerExtraLevel: 0.75
       tractorBeamPower: 4
       tractorBeamPowerPerExtraLevel: 1
-      maxPeople: 4
+      maxPeople: 6
       maxPeoplePerExtraLevel: 1
     hasBaseStats: 1
   - discoveredName: ProtonLegacy_Arm
     partType: Hull
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -4248,6 +4343,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: ProtonLegacy_Cockpit
     partType: Cockpit
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -4283,17 +4379,18 @@ MonoBehaviour:
       extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 0
       turnSpeedPerExtraLevel: 0
-      maxGems: 8
-      maxGemsPerExtraLevel: 4
+      maxGems: 20
+      maxGemsPerExtraLevel: 10
       tractorBeamDistance: 0
       tractorBeamDistancePerExtraLevel: 0
       tractorBeamPower: 0
       tractorBeamPowerPerExtraLevel: 0
-      maxPeople: 10
-      maxPeoplePerExtraLevel: 2
+      maxPeople: 20
+      maxPeoplePerExtraLevel: 4
     hasBaseStats: 1
   - discoveredName: ProtonLegacy_Core
     partType: Hull
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -4340,6 +4437,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: ProtonLegacy_Engine
     partType: Engine
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -4363,14 +4461,14 @@ MonoBehaviour:
       healthRegenPerExtraLevel: 0
       energyCap: 18
       energyCapPerExtraLevel: 6
-      energyRegen: 3
-      energyRegenPerExtraLevel: 1
-      moveSpeed: 6
+      energyRegen: 5
+      energyRegenPerExtraLevel: 1.5
+      moveSpeed: 5
       moveSpeedPerExtraLevel: 0.1
       accelerationCap: 0
       accelerationCapPerExtraLevel: 0
-      extraSpeedPercent: 0.25
-      extraSpeedPercentPerExtraLevel: 0
+      extraSpeedPercent: 0.3
+      extraSpeedPercentPerExtraLevel: 0.1
       extraSpeedEnergyDrain: 12
       extraSpeedEnergyDrainPerExtraLevel: 6
       turnSpeed: 0
@@ -4386,6 +4484,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: ProtonLegacy_Fin
     partType: Tail
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -4432,6 +4531,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: ProtonLegacy_Ring
     partType: Hull
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -4478,6 +4578,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: ProtonLegacy_Solar
     partType: Hull
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -4524,6 +4625,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: ProtonLegacy_Weapon
     partType: Weapon Bullet
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -4533,7 +4635,7 @@ MonoBehaviour:
     baseStats:
       firePower: 3
       firePowerPerExtraLevel: 0.75
-      bulletSpeed: 10
+      bulletSpeed: 12
       bulletSpeedPerExtraLevel: 1
       bulletRange: 20
       bulletRangePerExtraLevel: 2
@@ -4570,6 +4672,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: ProtonLegacy_Wing
     partType: Wing
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -4605,17 +4708,18 @@ MonoBehaviour:
       extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 0
       turnSpeedPerExtraLevel: 0
-      maxGems: 10
-      maxGemsPerExtraLevel: 2
+      maxGems: 12
+      maxGemsPerExtraLevel: 6
       tractorBeamDistance: 3
       tractorBeamDistancePerExtraLevel: 0.75
       tractorBeamPower: 4
       tractorBeamPowerPerExtraLevel: 1
-      maxPeople: 4
+      maxPeople: 6
       maxPeoplePerExtraLevel: 1
     hasBaseStats: 1
   - discoveredName: SpaceExcalibur_Ammunition
     partType: Weapon Bullet
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -4623,13 +4727,13 @@ MonoBehaviour:
     notes: 
     includeInPopulate: 1
     baseStats:
-      firePower: 0
-      firePowerPerExtraLevel: 0
-      bulletSpeed: 0
-      bulletSpeedPerExtraLevel: 0
-      bulletRange: 0
-      bulletRangePerExtraLevel: 0
-      fireRate: 0
+      firePower: 3
+      firePowerPerExtraLevel: 0.75
+      bulletSpeed: 12
+      bulletSpeedPerExtraLevel: 1
+      bulletRange: 20
+      bulletRangePerExtraLevel: 2
+      fireRate: 3
       fireRatePerExtraLevel: 0
       rammingPower: 0
       rammingPowerPerExtraLevel: 0
@@ -4662,6 +4766,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: SpaceExcalibur_Armor_01
     partType: Hull
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -4708,6 +4813,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: SpaceExcalibur_Armor_02
     partType: Hull
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -4754,6 +4860,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: SpaceExcalibur_Body_01
     partType: Hull
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -4800,6 +4907,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: SpaceExcalibur_Body_02
     partType: Hull
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -4846,6 +4954,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: SpaceExcalibur_Body_03
     partType: Hull
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -4892,6 +5001,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: SpaceExcalibur_Cockpit
     partType: Cockpit
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -4927,17 +5037,18 @@ MonoBehaviour:
       extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 0
       turnSpeedPerExtraLevel: 0
-      maxGems: 8
-      maxGemsPerExtraLevel: 4
+      maxGems: 20
+      maxGemsPerExtraLevel: 10
       tractorBeamDistance: 0
       tractorBeamDistancePerExtraLevel: 0
       tractorBeamPower: 0
       tractorBeamPowerPerExtraLevel: 0
-      maxPeople: 10
-      maxPeoplePerExtraLevel: 2
+      maxPeople: 20
+      maxPeoplePerExtraLevel: 4
     hasBaseStats: 1
   - discoveredName: SpaceExcalibur_Engine
     partType: Engine
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -4961,14 +5072,14 @@ MonoBehaviour:
       healthRegenPerExtraLevel: 0
       energyCap: 18
       energyCapPerExtraLevel: 6
-      energyRegen: 3
-      energyRegenPerExtraLevel: 1
-      moveSpeed: 6
+      energyRegen: 5
+      energyRegenPerExtraLevel: 1.5
+      moveSpeed: 5
       moveSpeedPerExtraLevel: 0.1
       accelerationCap: 0
       accelerationCapPerExtraLevel: 0
-      extraSpeedPercent: 0.25
-      extraSpeedPercentPerExtraLevel: 0
+      extraSpeedPercent: 0.3
+      extraSpeedPercentPerExtraLevel: 0.1
       extraSpeedEnergyDrain: 12
       extraSpeedEnergyDrainPerExtraLevel: 6
       turnSpeed: 0
@@ -4984,6 +5095,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: SpaceExcalibur_Engine_Grill
     partType: Engine
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -5007,14 +5119,14 @@ MonoBehaviour:
       healthRegenPerExtraLevel: 0
       energyCap: 18
       energyCapPerExtraLevel: 6
-      energyRegen: 3
-      energyRegenPerExtraLevel: 1
-      moveSpeed: 6
+      energyRegen: 5
+      energyRegenPerExtraLevel: 1.5
+      moveSpeed: 5
       moveSpeedPerExtraLevel: 0.1
       accelerationCap: 0
       accelerationCapPerExtraLevel: 0
-      extraSpeedPercent: 0.25
-      extraSpeedPercentPerExtraLevel: 0
+      extraSpeedPercent: 0.3
+      extraSpeedPercentPerExtraLevel: 0.1
       extraSpeedEnergyDrain: 12
       extraSpeedEnergyDrainPerExtraLevel: 6
       turnSpeed: 0
@@ -5030,6 +5142,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: SpaceExcalibur_Hatch
     partType: Hull
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -5076,6 +5189,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: SpaceExcalibur_Machinegun
     partType: Weapon Bullet
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -5085,7 +5199,7 @@ MonoBehaviour:
     baseStats:
       firePower: 3
       firePowerPerExtraLevel: 0.75
-      bulletSpeed: 10
+      bulletSpeed: 12
       bulletSpeedPerExtraLevel: 1
       bulletRange: 20
       bulletRangePerExtraLevel: 2
@@ -5122,6 +5236,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: SpaceExcalibur_Missile
     partType: Hull
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -5168,6 +5283,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: SpaceExcalibur_Missile_Launcher
     partType: Hull
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -5175,22 +5291,22 @@ MonoBehaviour:
     notes: 
     includeInPopulate: 1
     baseStats:
-      firePower: 3
-      firePowerPerExtraLevel: 0.75
-      bulletSpeed: 10
-      bulletSpeedPerExtraLevel: 1
-      bulletRange: 20
-      bulletRangePerExtraLevel: 2
-      fireRate: 3
+      firePower: 0
+      firePowerPerExtraLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerExtraLevel: 0
+      bulletRange: 0
+      bulletRangePerExtraLevel: 0
+      fireRate: 0
       fireRatePerExtraLevel: 0
       rammingPower: 0
       rammingPowerPerExtraLevel: 0
-      healthCap: 0
-      healthCapPerExtraLevel: 0
-      healthRegen: 0
-      healthRegenPerExtraLevel: 0
-      energyCap: 18
-      energyCapPerExtraLevel: 9
+      healthCap: 3.15
+      healthCapPerExtraLevel: 3.15
+      healthRegen: 0.11250001
+      healthRegenPerExtraLevel: 0.1125
+      energyCap: 0
+      energyCapPerExtraLevel: 0
       energyRegen: 0
       energyRegenPerExtraLevel: 0
       moveSpeed: 0
@@ -5214,6 +5330,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: SpaceExcalibur_Small_Wing
     partType: Wing
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -5249,17 +5366,18 @@ MonoBehaviour:
       extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 0
       turnSpeedPerExtraLevel: 0
-      maxGems: 10
-      maxGemsPerExtraLevel: 2
+      maxGems: 12
+      maxGemsPerExtraLevel: 6
       tractorBeamDistance: 3
       tractorBeamDistancePerExtraLevel: 0.75
       tractorBeamPower: 4
       tractorBeamPowerPerExtraLevel: 1
-      maxPeople: 4
+      maxPeople: 6
       maxPeoplePerExtraLevel: 1
     hasBaseStats: 1
   - discoveredName: SpaceExcalibur_Something
     partType: Hull
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -5306,6 +5424,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: SpaceExcalibur_Thrusters
     partType: Thruster
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 1
     propulsionVfxScale: 1
@@ -5352,6 +5471,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: SpaceExcalibur_Thrusters_Big
     partType: Thruster
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 1
     propulsionVfxScale: 1.5
@@ -5398,6 +5518,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: SpaceExcalibur_Thruster_Place
     partType: Thruster
+    additionalPartTypes: []
     contributesAbilityStats: 0
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -5444,6 +5565,7 @@ MonoBehaviour:
     hasBaseStats: 0
   - discoveredName: SpaceExcalibur_Tiny_Thrusters
     partType: Thruster
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 1
     propulsionVfxScale: 0.45
@@ -5490,6 +5612,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: SpaceExcalibur_Tiny_Wing
     partType: Wing
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -5525,17 +5648,18 @@ MonoBehaviour:
       extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 0
       turnSpeedPerExtraLevel: 0
-      maxGems: 10
-      maxGemsPerExtraLevel: 2
+      maxGems: 12
+      maxGemsPerExtraLevel: 6
       tractorBeamDistance: 3
       tractorBeamDistancePerExtraLevel: 0.75
       tractorBeamPower: 4
       tractorBeamPowerPerExtraLevel: 1
-      maxPeople: 4
+      maxPeople: 6
       maxPeoplePerExtraLevel: 1
     hasBaseStats: 1
   - discoveredName: SpaceExcalibur_Wing_01
     partType: Wing
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -5571,17 +5695,18 @@ MonoBehaviour:
       extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 0
       turnSpeedPerExtraLevel: 0
-      maxGems: 10
-      maxGemsPerExtraLevel: 2
+      maxGems: 12
+      maxGemsPerExtraLevel: 6
       tractorBeamDistance: 3
       tractorBeamDistancePerExtraLevel: 0.75
       tractorBeamPower: 4
       tractorBeamPowerPerExtraLevel: 1
-      maxPeople: 4
+      maxPeople: 6
       maxPeoplePerExtraLevel: 1
     hasBaseStats: 1
   - discoveredName: SpaceExcalibur_Wing_02
     partType: Wing
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -5617,17 +5742,18 @@ MonoBehaviour:
       extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 0
       turnSpeedPerExtraLevel: 0
-      maxGems: 15
-      maxGemsPerExtraLevel: 3
+      maxGems: 16
+      maxGemsPerExtraLevel: 8
       tractorBeamDistance: 6
       tractorBeamDistancePerExtraLevel: 1.5
       tractorBeamPower: 8
-      tractorBeamPowerPerExtraLevel: 2
-      maxPeople: 6
+      tractorBeamPowerPerExtraLevel: 3
+      maxPeople: 10
       maxPeoplePerExtraLevel: 2
     hasBaseStats: 1
   - discoveredName: SpaceExcalibur_Wing_03
     partType: Wing
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -5664,16 +5790,17 @@ MonoBehaviour:
       turnSpeed: 0
       turnSpeedPerExtraLevel: 0
       maxGems: 20
-      maxGemsPerExtraLevel: 4
+      maxGemsPerExtraLevel: 10
       tractorBeamDistance: 9
       tractorBeamDistancePerExtraLevel: 2.25
       tractorBeamPower: 12
-      tractorBeamPowerPerExtraLevel: 3
-      maxPeople: 8
+      tractorBeamPowerPerExtraLevel: 5
+      maxPeople: 14
       maxPeoplePerExtraLevel: 3
     hasBaseStats: 1
   - discoveredName: StarForce_Body1
     partType: Hull
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -5720,6 +5847,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: StarForce_Body2
     partType: Hull
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -5766,6 +5894,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: StarForce_Cockpit
     partType: Cockpit
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -5801,17 +5930,18 @@ MonoBehaviour:
       extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 0
       turnSpeedPerExtraLevel: 0
-      maxGems: 8
-      maxGemsPerExtraLevel: 4
+      maxGems: 20
+      maxGemsPerExtraLevel: 10
       tractorBeamDistance: 0
       tractorBeamDistancePerExtraLevel: 0
       tractorBeamPower: 0
       tractorBeamPowerPerExtraLevel: 0
-      maxPeople: 10
-      maxPeoplePerExtraLevel: 2
+      maxPeople: 20
+      maxPeoplePerExtraLevel: 4
     hasBaseStats: 1
   - discoveredName: StarForce_Engine
     partType: Engine
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -5835,14 +5965,14 @@ MonoBehaviour:
       healthRegenPerExtraLevel: 0
       energyCap: 18
       energyCapPerExtraLevel: 6
-      energyRegen: 3
-      energyRegenPerExtraLevel: 1
-      moveSpeed: 6
+      energyRegen: 5
+      energyRegenPerExtraLevel: 1.5
+      moveSpeed: 5
       moveSpeedPerExtraLevel: 0.1
       accelerationCap: 0
       accelerationCapPerExtraLevel: 0
-      extraSpeedPercent: 0.25
-      extraSpeedPercentPerExtraLevel: 0
+      extraSpeedPercent: 0.3
+      extraSpeedPercentPerExtraLevel: 0.1
       extraSpeedEnergyDrain: 12
       extraSpeedEnergyDrainPerExtraLevel: 6
       turnSpeed: 0
@@ -5858,6 +5988,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: StarForce_EngineComp1
     partType: Engine
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -5881,14 +6012,14 @@ MonoBehaviour:
       healthRegenPerExtraLevel: 0
       energyCap: 18
       energyCapPerExtraLevel: 6
-      energyRegen: 3
-      energyRegenPerExtraLevel: 1
-      moveSpeed: 6
+      energyRegen: 5
+      energyRegenPerExtraLevel: 1.5
+      moveSpeed: 5
       moveSpeedPerExtraLevel: 0.1
       accelerationCap: 0
       accelerationCapPerExtraLevel: 0
-      extraSpeedPercent: 0.25
-      extraSpeedPercentPerExtraLevel: 0
+      extraSpeedPercent: 0.3
+      extraSpeedPercentPerExtraLevel: 0.1
       extraSpeedEnergyDrain: 12
       extraSpeedEnergyDrainPerExtraLevel: 6
       turnSpeed: 0
@@ -5904,6 +6035,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: StarForce_EngineComp2
     partType: Engine
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -5927,14 +6059,14 @@ MonoBehaviour:
       healthRegenPerExtraLevel: 0
       energyCap: 24
       energyCapPerExtraLevel: 7
-      energyRegen: 4
-      energyRegenPerExtraLevel: 1.3333334
-      moveSpeed: 7
+      energyRegen: 6
+      energyRegenPerExtraLevel: 1.8333334
+      moveSpeed: 6
       moveSpeedPerExtraLevel: 0.15
       accelerationCap: 0
       accelerationCapPerExtraLevel: 0
-      extraSpeedPercent: 0.25
-      extraSpeedPercentPerExtraLevel: 0
+      extraSpeedPercent: 0.3
+      extraSpeedPercentPerExtraLevel: 0.1
       extraSpeedEnergyDrain: 12
       extraSpeedEnergyDrainPerExtraLevel: 6
       turnSpeed: 0
@@ -5950,6 +6082,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: StarForce_Flap
     partType: Hull
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -5996,6 +6129,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: StarForce_Thruster
     partType: Thruster
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 1
     propulsionVfxScale: 1
@@ -6042,6 +6176,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: StarForce_Weapon
     partType: Weapon Bullet
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -6051,7 +6186,7 @@ MonoBehaviour:
     baseStats:
       firePower: 3
       firePowerPerExtraLevel: 0.75
-      bulletSpeed: 10
+      bulletSpeed: 12
       bulletSpeedPerExtraLevel: 1
       bulletRange: 20
       bulletRangePerExtraLevel: 2
@@ -6088,6 +6223,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: StarForce_Wing
     partType: Wing
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -6123,17 +6259,18 @@ MonoBehaviour:
       extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 0
       turnSpeedPerExtraLevel: 0
-      maxGems: 10
-      maxGemsPerExtraLevel: 2
+      maxGems: 12
+      maxGemsPerExtraLevel: 6
       tractorBeamDistance: 3
       tractorBeamDistancePerExtraLevel: 0.75
       tractorBeamPower: 4
       tractorBeamPowerPerExtraLevel: 1
-      maxPeople: 4
+      maxPeople: 6
       maxPeoplePerExtraLevel: 1
     hasBaseStats: 1
   - discoveredName: StriderOx_Arm
     partType: Hull
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -6180,6 +6317,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: StriderOx_Cockpit
     partType: Cockpit
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -6215,17 +6353,18 @@ MonoBehaviour:
       extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 0
       turnSpeedPerExtraLevel: 0
-      maxGems: 8
-      maxGemsPerExtraLevel: 4
+      maxGems: 20
+      maxGemsPerExtraLevel: 10
       tractorBeamDistance: 0
       tractorBeamDistancePerExtraLevel: 0
       tractorBeamPower: 0
       tractorBeamPowerPerExtraLevel: 0
-      maxPeople: 10
-      maxPeoplePerExtraLevel: 2
+      maxPeople: 20
+      maxPeoplePerExtraLevel: 4
     hasBaseStats: 1
   - discoveredName: StriderOx_Core
     partType: Hull
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -6272,6 +6411,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: StriderOx_Cover
     partType: Hull
+    additionalPartTypes: []
     contributesAbilityStats: 0
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -6318,6 +6458,7 @@ MonoBehaviour:
     hasBaseStats: 0
   - discoveredName: StriderOx_Engine
     partType: Engine
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -6341,14 +6482,14 @@ MonoBehaviour:
       healthRegenPerExtraLevel: 0
       energyCap: 18
       energyCapPerExtraLevel: 6
-      energyRegen: 3
-      energyRegenPerExtraLevel: 1
-      moveSpeed: 6
+      energyRegen: 5
+      energyRegenPerExtraLevel: 1.5
+      moveSpeed: 5
       moveSpeedPerExtraLevel: 0.1
       accelerationCap: 0
       accelerationCapPerExtraLevel: 0
-      extraSpeedPercent: 0.25
-      extraSpeedPercentPerExtraLevel: 0
+      extraSpeedPercent: 0.3
+      extraSpeedPercentPerExtraLevel: 0.1
       extraSpeedEnergyDrain: 12
       extraSpeedEnergyDrainPerExtraLevel: 6
       turnSpeed: 0
@@ -6364,6 +6505,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: StriderOx_Fin
     partType: Tail
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -6410,6 +6552,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: StriderOx_Support
     partType: Hull
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -6456,6 +6599,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: StriderOx_Thruster
     partType: Thruster
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 1
     propulsionVfxScale: 1
@@ -6502,6 +6646,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: StriderOx_Weapon
     partType: Weapon Bullet
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -6511,7 +6656,7 @@ MonoBehaviour:
     baseStats:
       firePower: 3
       firePowerPerExtraLevel: 0.75
-      bulletSpeed: 10
+      bulletSpeed: 12
       bulletSpeedPerExtraLevel: 1
       bulletRange: 20
       bulletRangePerExtraLevel: 2
@@ -6548,6 +6693,7 @@ MonoBehaviour:
     hasBaseStats: 1
   - discoveredName: StriderOx_Wing
     partType: Wing
+    additionalPartTypes: []
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -6583,13 +6729,13 @@ MonoBehaviour:
       extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 0
       turnSpeedPerExtraLevel: 0
-      maxGems: 10
-      maxGemsPerExtraLevel: 2
+      maxGems: 12
+      maxGemsPerExtraLevel: 6
       tractorBeamDistance: 3
       tractorBeamDistancePerExtraLevel: 0.75
       tractorBeamPower: 4
       tractorBeamPowerPerExtraLevel: 1
-      maxPeople: 4
+      maxPeople: 6
       maxPeoplePerExtraLevel: 1
     hasBaseStats: 1
   partProfiles:
@@ -6624,14 +6770,14 @@ MonoBehaviour:
       extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 0
       turnSpeedPerExtraLevel: 0
-      maxGems: 8
-      maxGemsPerExtraLevel: 4
+      maxGems: 20
+      maxGemsPerExtraLevel: 10
       tractorBeamDistance: 0
       tractorBeamDistancePerExtraLevel: 0
       tractorBeamPower: 0
       tractorBeamPowerPerExtraLevel: 0
-      maxPeople: 10
-      maxPeoplePerExtraLevel: 2
+      maxPeople: 20
+      maxPeoplePerExtraLevel: 4
     perVersionIncrement:
       firePower: 0
       firePowerPerExtraLevel: 0
@@ -6661,13 +6807,13 @@ MonoBehaviour:
       extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 0
       turnSpeedPerExtraLevel: 0
-      maxGems: 4
-      maxGemsPerExtraLevel: 2
+      maxGems: 6
+      maxGemsPerExtraLevel: 3
       tractorBeamDistance: 0
       tractorBeamDistancePerExtraLevel: 0
       tractorBeamPower: 0
       tractorBeamPowerPerExtraLevel: 0
-      maxPeople: 3
+      maxPeople: 4
       maxPeoplePerExtraLevel: 1
     perLevelFractionOverride: 0
   - partType: Weapon Bullet
@@ -6675,7 +6821,7 @@ MonoBehaviour:
     baseAtVersion1:
       firePower: 3
       firePowerPerExtraLevel: 0.75
-      bulletSpeed: 10
+      bulletSpeed: 12
       bulletSpeedPerExtraLevel: 1
       bulletRange: 20
       bulletRangePerExtraLevel: 2
@@ -6778,13 +6924,13 @@ MonoBehaviour:
       extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 0
       turnSpeedPerExtraLevel: 0
-      maxGems: 10
-      maxGemsPerExtraLevel: 2
+      maxGems: 12
+      maxGemsPerExtraLevel: 6
       tractorBeamDistance: 3
       tractorBeamDistancePerExtraLevel: 0.75
       tractorBeamPower: 4
       tractorBeamPowerPerExtraLevel: 1
-      maxPeople: 4
+      maxPeople: 6
       maxPeoplePerExtraLevel: 1
     perVersionIncrement:
       firePower: 0
@@ -6815,13 +6961,13 @@ MonoBehaviour:
       extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 0
       turnSpeedPerExtraLevel: 0
-      maxGems: 5
-      maxGemsPerExtraLevel: 1
+      maxGems: 4
+      maxGemsPerExtraLevel: 2
       tractorBeamDistance: 3
       tractorBeamDistancePerExtraLevel: 0.75
       tractorBeamPower: 4
-      tractorBeamPowerPerExtraLevel: 1
-      maxPeople: 2
+      tractorBeamPowerPerExtraLevel: 2
+      maxPeople: 4
       maxPeoplePerExtraLevel: 1
     perLevelFractionOverride: 0
   - partType: Engine
@@ -6843,14 +6989,14 @@ MonoBehaviour:
       healthRegenPerExtraLevel: 0
       energyCap: 18
       energyCapPerExtraLevel: 6
-      energyRegen: 3
-      energyRegenPerExtraLevel: 1
-      moveSpeed: 6
+      energyRegen: 5
+      energyRegenPerExtraLevel: 1.5
+      moveSpeed: 5
       moveSpeedPerExtraLevel: 0.1
       accelerationCap: 0
       accelerationCapPerExtraLevel: 0
-      extraSpeedPercent: 0.25
-      extraSpeedPercentPerExtraLevel: 0
+      extraSpeedPercent: 0.3
+      extraSpeedPercentPerExtraLevel: 0.1
       extraSpeedEnergyDrain: 12
       extraSpeedEnergyDrainPerExtraLevel: 6
       turnSpeed: 0
@@ -6886,8 +7032,8 @@ MonoBehaviour:
       moveSpeedPerExtraLevel: 0.05
       accelerationCap: 0
       accelerationCapPerExtraLevel: 0
-      extraSpeedPercent: 0
-      extraSpeedPercentPerExtraLevel: 0
+      extraSpeedPercent: 0.2
+      extraSpeedPercentPerExtraLevel: 0.05
       extraSpeedEnergyDrain: 2
       extraSpeedEnergyDrainPerExtraLevel: 1
       turnSpeed: 0
@@ -7056,7 +7202,7 @@ MonoBehaviour:
       maxPeoplePerExtraLevel: 0
     perLevelFractionOverride: 0
   - partType: Hull
-    defaultCategories: 01000000
+    defaultCategories: 0100000004000000
     baseAtVersion1:
       firePower: 0
       firePowerPerExtraLevel: 0
@@ -7086,14 +7232,14 @@ MonoBehaviour:
       extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 0
       turnSpeedPerExtraLevel: 0
-      maxGems: 0
-      maxGemsPerExtraLevel: 0
+      maxGems: 6
+      maxGemsPerExtraLevel: 3
       tractorBeamDistance: 0
       tractorBeamDistancePerExtraLevel: 0
       tractorBeamPower: 0
       tractorBeamPowerPerExtraLevel: 0
-      maxPeople: 0
-      maxPeoplePerExtraLevel: 0
+      maxPeople: 5
+      maxPeoplePerExtraLevel: 1
     perVersionIncrement:
       firePower: 0
       firePowerPerExtraLevel: 0
@@ -7123,12 +7269,12 @@ MonoBehaviour:
       extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 0
       turnSpeedPerExtraLevel: 0
-      maxGems: 0
-      maxGemsPerExtraLevel: 0
+      maxGems: 2
+      maxGemsPerExtraLevel: 1
       tractorBeamDistance: 0
       tractorBeamDistancePerExtraLevel: 0
       tractorBeamPower: 0
       tractorBeamPowerPerExtraLevel: 0
-      maxPeople: 0
-      maxPeoplePerExtraLevel: 0
+      maxPeople: 2
+      maxPeoplePerExtraLevel: 1
     perLevelFractionOverride: 0

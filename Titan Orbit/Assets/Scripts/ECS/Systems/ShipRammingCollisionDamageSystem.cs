@@ -28,7 +28,8 @@ namespace TitanOrbit.ECS
     /// Bounce / PhysX still use <see cref="ShipMassLogic.ComputeRammingMass"/> elsewhere.
     /// </para>
     /// <para>
-    /// Targets: asteroids (impact + grind) and enemy ships (impact reciprocal damage).
+    /// Targets: asteroids (impact + grind) and enemy ships (impact on a new pair, then the
+    /// same 4 Hz grind chip while the hulls stay in contact).
     /// MEGA hulls plow asteroids: first contact instantly destroys the rock and applies
     /// remaining rock Health × <see cref="MegaShipCatalog.asteroidPlowDamageMultiplier"/>
     /// (default 1) — no grind, so a field does not stall the hull.
@@ -361,6 +362,17 @@ namespace TitanOrbit.ECS
                     MarkColliding(ref state, other, shipEntity, now);
                 }
 
+                // Enemy hulls use the same 4 Hz chip as a rock. The impact burst stays
+                // once per new pair — repeating it was the stepped hit.
+                if (otherIsShip &&
+                    ShipComponentRammingSuggestions.ShouldGrindFromMotion(
+                        input.Thrust, ReadPlanarSpeed(ref state, shipEntity)))
+                {
+                    TryPulseShipGrind(
+                        ref state, shipEntity, other, ramRating, taxedAccel,
+                        gemPrefab, spawnServerTime, ecb, now, ref contact);
+                }
+
                 // --- Asteroid grind: 4 Hz while in contact and moving / thrusting ---
                 // [TITAN-ORBIT] Nose alignment is not required. A jammed push often has
                 // velocity 0 and a glancing forward — those still grind when Thrust is held.
@@ -405,6 +417,19 @@ namespace TitanOrbit.ECS
                         contact.MissedTicks = 0;
                         contact.WasColliding = 1;
                         TryStickyAsteroidGrind(
+                            ref state, entity, contact.Target, gemPrefab, spawnServerTime,
+                            ecb, now, ref contact);
+                        contacts[c] = contact;
+                        continue;
+                    }
+
+                    // A quiet physics tick must not drop the pair and turn the next push
+                    // into a fresh impact. Overlap keeps the 4 Hz ship chip going.
+                    if (IsStillOverlappingEnemyShip(ref state, entity, contact.Target))
+                    {
+                        contact.MissedTicks = 0;
+                        contact.WasColliding = 1;
+                        TryStickyShipGrind(
                             ref state, entity, contact.Target, gemPrefab, spawnServerTime,
                             ecb, now, ref contact);
                         contacts[c] = contact;
@@ -895,6 +920,145 @@ namespace TitanOrbit.ECS
             contact.NextGrindTime = now + pulse;
         }
 
+        /// <summary>
+        /// One 4 Hz chip from this hull into the enemy it is still pushing.
+        /// Uses the grind rating, not the contact-enter ram burst.
+        /// </summary>
+        static void TryPulseShipGrind(
+            ref SystemState state,
+            Entity offender,
+            Entity victim,
+            float ramRating,
+            float taxedAccel,
+            Entity gemPrefab,
+            float spawnServerTime,
+            EntityCommandBuffer ecb,
+            double now,
+            ref ShipRamContactElement contact)
+        {
+            if (now < contact.NextGrindTime)
+                return;
+            if (!state.EntityManager.Exists(victim) ||
+                !state.EntityManager.HasComponent<ShipState>(victim) ||
+                !state.EntityManager.HasComponent<LocalTransform>(victim))
+                return;
+
+            var vicShip = state.EntityManager.GetComponentData<ShipState>(victim);
+            if (vicShip.IsDead || vicShip.AwaitingTeamSelection || IsMoonDockImmune(ref state, victim))
+                return;
+
+            float pulse = ShipComponentRammingSuggestions.GrindPulseIntervalSeconds;
+            float damage = ShipComponentRammingSuggestions.ComputeGrindDamagePerPulse(ramRating, pulse);
+            if (damage <= 0.01f)
+            {
+                contact.NextGrindTime = now + pulse;
+                return;
+            }
+
+            float intensity = ShipComponentRammingSuggestions.ComputeRamGrindGemExpulsionIntensity(
+                taxedAccel, damage);
+            float3 vicPos = state.EntityManager.GetComponentData<LocalTransform>(victim).Position;
+            int offenderNetworkId = 0;
+            if (state.EntityManager.HasComponent<GhostOwner>(offender))
+                offenderNetworkId = state.EntityManager.GetComponentData<GhostOwner>(offender).NetworkId;
+
+            float2 ramImpulse = float2.zero;
+            if (state.EntityManager.HasComponent<LocalTransform>(offender) &&
+                ToroidalMapEcs.TryGetMapSize(out float mapW, out float mapH))
+            {
+                float3 offPos = state.EntityManager.GetComponentData<LocalTransform>(offender).Position;
+                float3 off = ToroidalMapEcs.ShortestOffsetXZ(offPos, vicPos, mapW, mapH);
+                ramImpulse = new float2(off.x, off.z);
+            }
+
+            ApplyShipSelfDamage(
+                ref state, ref vicShip, victim, damage, intensity,
+                gemPrefab, vicPos, spawnServerTime, ecb, now,
+                damagerNetworkId: offenderNetworkId,
+                impulseXZ: ramImpulse,
+                impulsePower: damage,
+                sourceEntity: offender);
+            state.EntityManager.SetComponentData(victim, vicShip);
+            contact.NextGrindTime = now + pulse;
+        }
+
+        /// <summary>
+        /// Quiet-tick ship grind. Same motion gate as a rock, then one chip into the other hull.
+        /// </summary>
+        static void TryStickyShipGrind(
+            ref SystemState state,
+            Entity shipEntity,
+            Entity other,
+            Entity gemPrefab,
+            float spawnServerTime,
+            EntityCommandBuffer ecb,
+            double now,
+            ref ShipRamContactElement contact)
+        {
+            if (!state.EntityManager.HasComponent<ShipState>(shipEntity) ||
+                !state.EntityManager.HasComponent<ShipMotorConfig>(shipEntity) ||
+                !state.EntityManager.HasComponent<ShipInput>(shipEntity))
+                return;
+
+            var ship = state.EntityManager.GetComponentData<ShipState>(shipEntity);
+            if (ship.IsDead || ship.AwaitingTeamSelection)
+                return;
+            if (state.EntityManager.HasComponent<ShipTurretControlState>(shipEntity) &&
+                state.EntityManager.GetComponentData<ShipTurretControlState>(shipEntity).IsControlling)
+                return;
+            if (IsMoonDockImmune(ref state, shipEntity))
+                return;
+
+            var input = state.EntityManager.GetComponentData<ShipInput>(shipEntity);
+            if (!ShipComponentRammingSuggestions.ShouldGrindFromMotion(
+                    input.Thrust, ReadPlanarSpeed(ref state, shipEntity)))
+                return;
+
+            var motor = state.EntityManager.GetComponentData<ShipMotorConfig>(shipEntity);
+            ResolveMobilityRamInputs(in ship, in motor, out _, out float taxedAccel, out _, out _);
+            float familyRam = motor.RammingPower > 0.001f
+                ? motor.RammingPower
+                : ShipFamilyDefaultFallbackStats.CreateBaseline().rammingPower;
+            int ramBankIndex = 0;
+            if (state.EntityManager.HasComponent<ShipLoadoutState>(shipEntity))
+                ramBankIndex = BulletBankFireResolve.ResolveFireBankIndex(
+                    state.EntityManager.GetComponentData<ShipLoadoutState>(shipEntity));
+            familyRam *= BulletBankCombatLogic.GetRammingPowerMultiplier(ramBankIndex);
+            float ramRating = ShipComponentRammingSuggestions.ComputeDamageRatingFromFamilyPower(familyRam);
+            TryPulseShipGrind(
+                ref state, shipEntity, other, ramRating, taxedAccel,
+                gemPrefab, spawnServerTime, ecb, now, ref contact);
+        }
+
+        /// <summary>
+        /// True when both hulls are live enemies and their toroidal radii still overlap.
+        /// Map size comes from <see cref="ToroidalMapEcs"/> — unset size does not count as a hit.
+        /// </summary>
+        static bool IsStillOverlappingEnemyShip(ref SystemState state, Entity shipEntity, Entity other)
+        {
+            if (!state.EntityManager.Exists(other) ||
+                !state.EntityManager.HasComponent<ShipTag>(other) ||
+                !state.EntityManager.HasComponent<ShipState>(shipEntity) ||
+                !state.EntityManager.HasComponent<ShipState>(other) ||
+                !state.EntityManager.HasComponent<LocalTransform>(shipEntity) ||
+                !state.EntityManager.HasComponent<LocalTransform>(other))
+                return false;
+
+            var ship = state.EntityManager.GetComponentData<ShipState>(shipEntity);
+            var otherShip = state.EntityManager.GetComponentData<ShipState>(other);
+            if (ship.IsDead || otherShip.IsDead || ship.Team == otherShip.Team || ship.Team == TeamId.None)
+                return false;
+            if (!ToroidalMapEcs.TryGetMapSize(out float mapW, out float mapH))
+                return false;
+
+            var shipLt = state.EntityManager.GetComponentData<LocalTransform>(shipEntity);
+            var otherLt = state.EntityManager.GetComponentData<LocalTransform>(other);
+            float d = ToroidalMapEcs.ToroidalDistance(shipLt.Position, otherLt.Position, mapW, mapH);
+            float shipR = ReadShipGrindRadius(ref state, shipEntity, shipLt.Scale);
+            float otherR = ReadShipGrindRadius(ref state, other, otherLt.Scale);
+            return d <= shipR + otherR + ShipComponentRammingSuggestions.GrindOverlapSkin;
+        }
+
         static bool IsMoonDockImmune(ref SystemState state, Entity shipEntity)
         {
             if (!state.EntityManager.HasComponent<ShipMoonDockState>(shipEntity))
@@ -925,10 +1089,12 @@ namespace TitanOrbit.ECS
             int idx = FindContact(contacts, target);
             if (idx < 0)
             {
+                float pulse = ShipComponentRammingSuggestions.GrindPulseIntervalSeconds;
                 contacts.Add(new ShipRamContactElement
                 {
                     Target = target,
-                    NextGrindTime = now,
+                    // Match the owner's first-pulse delay so the enter impact is the only burst.
+                    NextGrindTime = now + pulse,
                     WasColliding = 1,
                     MissedTicks = 0,
                 });

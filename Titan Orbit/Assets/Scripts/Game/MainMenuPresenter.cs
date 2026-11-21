@@ -16,8 +16,9 @@ namespace TitanOrbit.Game
     ///
     /// Layout contract:
     ///   Sign in (top-right) · Logo (centered, below top edge) · Player name label+input (tight) ·
-    ///   Play / Join / Customize ship / Unlock Orbit / Local client (lower) · Status
-    /// Local host is omitted because Play already starts local host when local options are enabled.
+    ///   Join / Customize ship / Unlock Orbit (lower) · Status
+    /// Local play appears only when local-dev options are on.
+    /// The production Quick join button is not shown — players use Join game.
     /// </summary>
     public static class MainMenuPresenter
     {
@@ -55,7 +56,7 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Visual template copied from the scene Play button (Shift Cut Frame) and applied to
-        /// Join / Local client / Sign in so the whole menu shares one button look.
+        /// Join / Sign in so the whole menu shares one button look.
         /// </summary>
         struct MenuButtonStyle
         {
@@ -72,15 +73,13 @@ namespace TitanOrbit.Game
         /// Safe to call multiple times — finds-or-creates children and rewires listeners.
         /// </summary>
         /// <param name="panel">MainMenuPanel root (full-screen).</param>
-        /// <param name="playButton">Primary Play / Local play / Quick join button (scene-authored).</param>
+        /// <param name="playButton">Scene Play button. Shown as Local play only when local-dev options are on.</param>
         /// <param name="onJoinGame">Handler for Join game.</param>
-        /// <param name="onLocalClient">Handler for Local client (dev / MPPM only).</param>
         /// <param name="statusText">Optional out: status TMP created or found.</param>
         public static void Apply(
             GameObject panel,
             Button playButton,
             UnityEngine.Events.UnityAction onJoinGame,
-            UnityEngine.Events.UnityAction onLocalClient,
             out TextMeshProUGUI statusText)
         {
             statusText = null;
@@ -92,7 +91,7 @@ namespace TitanOrbit.Game
             // Sprite left null — designer can assign a new space art later.
             EnsureTransparentPanelBackdrop(panel);
 
-            // Play already covers "Local host" when ShowLocalPlayOptions is on.
+            // Local host and Local client are not on the menu. Local play covers the editor host.
             DestroyChildIfPresent(panel.transform, "LocalHostButton");
 
             // --- Hide text title (logo already says TITAN ORBIT) ---
@@ -122,11 +121,21 @@ namespace TitanOrbit.Game
             // --- Button column ---
             var stack = EnsureButtonStack(panel.transform);
 
+            // Quick join is the production caption on this scene button. Hide it.
+            // Local play stays when the editor test flag is on.
+            bool showLocalPlay = playButton != null && TitanOrbitMultiplayerConfig.ShowLocalPlayOptions;
             if (playButton != null)
             {
-                // Reparent Play into the stack so spacing is consistent with code-built buttons.
-                EnsureInStack(playButton.transform, stack, 0);
-                StyleButton(playButton.gameObject, GetPlayLabel(), buttonStyle, 48f, 340f);
+                if (showLocalPlay)
+                {
+                    EnsureInStack(playButton.transform, stack, 0);
+                    StyleButton(playButton.gameObject, GetPlayLabel(), buttonStyle, 48f, 340f);
+                    playButton.gameObject.SetActive(true);
+                }
+                else
+                {
+                    playButton.gameObject.SetActive(false);
+                }
             }
 
             CreateOrWireStackButton(
@@ -135,9 +144,9 @@ namespace TitanOrbit.Game
                 "Join game",
                 buttonStyle,
                 onJoinGame,
-                playButton != null ? 1 : 0);
+                showLocalPlay ? 1 : 0);
 
-            int customizeIndex = playButton != null ? 2 : 1;
+            int customizeIndex = showLocalPlay ? 2 : 1;
             CreateOrWireStackButton(
                 stack,
                 "CustomizeShipButton",
@@ -166,22 +175,8 @@ namespace TitanOrbit.Game
                 binder.Bind();
             }
 
-            if (TitanOrbitMultiplayerConfig.ShowLocalPlayOptions)
-            {
-                // Local client is for MPPM / LAN second window — keep it; Local host is redundant with Play.
-                CreateOrWireStackButton(
-                    stack,
-                    "LocalClientButton",
-                    "Local client",
-                    buttonStyle,
-                    onLocalClient,
-                    -1);
-            }
-            else
-            {
-                DestroyChildIfPresent(panel.transform, "LocalClientButton");
-                DestroyChildIfPresent(stack, "LocalClientButton");
-            }
+            DestroyChildIfPresent(panel.transform, "LocalClientButton");
+            DestroyChildIfPresent(stack, "LocalClientButton");
 
             LayoutStack(stack, ComputeStackYBelowName(panel.transform));
 
@@ -232,12 +227,12 @@ namespace TitanOrbit.Game
             return style;
         }
 
-        /// <summary>Play button caption depends on local-dev vs dedicated Quick join mode.</summary>
+        /// <summary>Caption for the local-dev Play button. Production hides this button.</summary>
         static string GetPlayLabel()
         {
             if (TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance())
                 return "Local client";
-            return TitanOrbitMultiplayerConfig.ShowLocalPlayOptions ? "Local play" : "Quick join";
+            return "Local play";
         }
 
         /// <summary>
@@ -504,7 +499,7 @@ namespace TitanOrbit.Game
             return go;
         }
 
-        /// <summary>Creates the centered vertical column that holds Play / Join / Local client.</summary>
+        /// <summary>Creates the centered vertical column that holds Play / Join / Customize ship.</summary>
         static Transform EnsureButtonStack(Transform panel)
         {
             Transform existing = panel.Find(ButtonStackObjectName);

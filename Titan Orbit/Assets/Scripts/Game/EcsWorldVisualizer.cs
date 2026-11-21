@@ -221,6 +221,12 @@ namespace TitanOrbit.Game
         readonly HashSet<Entity> _asteroidBurstFired = new HashSet<Entity>();
 
         /// <summary>
+        /// World-body proxies posed at least once. The camera-rect cull uses the GameObject
+        /// position, so a brand-new proxy is synced once before it can hide.
+        /// </summary>
+        readonly HashSet<Entity> _proxyViewPlaced = new HashSet<Entity>();
+
+        /// <summary>
         /// Last known asteroid pose/value so we can burst even if the ghost despawns before
         /// the client observes <see cref="AsteroidState.IsDestroyed"/>.
         /// </summary>
@@ -1307,8 +1313,35 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// Camera ground rectangle, not a circle around the ship. Static planets and rocks
+        /// outside it turn off. Gems and transports are not hidden from a stale GameObject.
+        /// </summary>
+        bool TrySkipWorldBodyOutsideCamera(Entity entity, GameObject go, ProxyVisualKind kind)
+        {
+            if (!_proxyViewPlaced.Contains(entity))
+                return false;
+
+            float margin = kind == ProxyVisualKind.Planet
+                ? CameraGroundView.PlanetMargin
+                : CameraGroundView.BodyMargin;
+            if (!CameraGroundView.IsOutside(go.transform.position, margin))
+                return false;
+
+            // Gems and transports move. A stale GameObject position would hide one
+            // that drifted into a still camera. Only planets and rocks use this path.
+            if (kind != ProxyVisualKind.Planet && kind != ProxyVisualKind.Asteroid)
+                return false;
+
+            if (go.activeSelf)
+                go.SetActive(false);
+            return true;
+        }
+
+        /// <summary>
         /// Updates poses for world-body proxies already in <see cref="_proxies"/> without scanning
-        /// every asteroid entity (safe during GhostSpawn Instantiates).
+        /// every asteroid entity (safe during GhostSpawn Instantiates). Planets and rocks
+        /// outside the camera ground rectangle skip the component read and turn off.
+        /// Gems still read their live position and skip tint. Transports skip the pose write.
         /// Gems use ghosted <see cref="GemKinematics"/> for a short presentation extrapolate + lerp
         /// so glide looks continuous between NetCode snapshot samples.
         /// <para>
@@ -1357,7 +1390,7 @@ namespace TitanOrbit.Game
             {
                 Entity entity = kv.Key;
                 GameObject go = kv.Value;
-                if (go == null || !em.Exists(entity) || !em.HasComponent<LocalTransform>(entity))
+                if (go == null)
                     continue;
 
                 // Ships/bullets have their own sync paths after settle.
@@ -1369,8 +1402,20 @@ namespace TitanOrbit.Game
                                    kind == ProxyVisualKind.Asteroid ||
                                    isGem ||
                                    kind == ProxyVisualKind.PeopleTransport;
+                if (isWorldBody && TrySkipWorldBodyOutsideCamera(entity, go, kind))
+                {
+                    alive.Add(entity);
+                    continue;
+                }
+
+                if (!em.Exists(entity) || !em.HasComponent<LocalTransform>(entity))
+                    continue;
+
                 if (!isWorldBody)
                     continue;
+
+                if (!go.activeSelf)
+                    go.SetActive(true);
 
                 var lt = em.GetComponentData<LocalTransform>(entity);
                 float scale = kind == ProxyVisualKind.Asteroid
@@ -1387,6 +1432,14 @@ namespace TitanOrbit.Game
                             go.SetActive(false);
                         continue;
                     }
+
+                    // Live position, not the GameObject. Off-screen gems skip tint and scale.
+                    if (CameraGroundView.IsOutside(lt.Position, CameraGroundView.BodyMargin))
+                    {
+                        alive.Add(entity);
+                        continue;
+                    }
+
                     gemValue = gemState.Value;
                     // [TITAN-ORBIT] Tint can arrive one snapshot after Instantiates — retint
                     // so a yellow / blue extra does not stay on the pooled red material.
@@ -1398,8 +1451,9 @@ namespace TitanOrbit.Game
                     float now = PlanetGemMoonOrbitClock.TryGetElapsedSeconds(out double tickNow, includeTickFraction: true)
                         ? (float)tickNow
                         : (float)Time.timeAsDouble;
-                    // Dim while this ship cannot pull: own spill penalty, or another ship's
-                    // asteroid-destroy first dibs. The reserved ship keeps the normal tint.
+                    // White while this ship cannot pull: own spill penalty, or another ship's
+                    // asteroid-destroy first dibs. Window length is GemExplosionSettings.
+                    // The reserved ship keeps the normal tint.
                     byte fade = 0;
                     if (localNetworkId > 0 &&
                         GemSelfPickupBlock.IsPickupBlockedForShip(gemState, localNetworkId, now))
@@ -1439,6 +1493,11 @@ namespace TitanOrbit.Game
 
                 alive.Add(entity);
 
+                // Live position. A still camera still sees a transport that flies into the rect.
+                if (kind == ProxyVisualKind.PeopleTransport &&
+                    CameraGroundView.IsOutside(lt.Position, CameraGroundView.BodyMargin))
+                    continue;
+
                 // --- World-body / gem pose ---
                 // Gems: GemClientMotionApplier copies interpolated LocalTransform (no second sim).
                 // Other bodies: snap to toroidal display of LocalTransform.
@@ -1460,6 +1519,7 @@ namespace TitanOrbit.Game
                 Transform t = go.transform;
                 if ((t.position - displayPos).sqrMagnitude > 0.0001f)
                     t.position = displayPos;
+                _proxyViewPlaced.Add(entity);
 
                 // --- Rotation: asteroids must NOT be overwritten ---
                 // [TITAN-ORBIT] AsteroidSpinVisualProxy tumbles a child pivot (SgtPlanet migrated
@@ -2175,8 +2235,8 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Applies NetCode presentation pose to the GameObject proxy. No extra lerp on the local owner —
-        /// prediction owns sim feel; proxies are render shells only. Remotes use the wrapped
-        /// chart; a wrap jump snaps so ghost interpolation does not streak across the map.
+        /// prediction owns sim feel; proxies are render shells only. Remotes copy the interpolated
+        /// snapshot. A second velocity step used to replace that pose near the map edge.
         /// </summary>
         void ApplyShipProxyTransform(
             Entity entity,
@@ -2187,8 +2247,6 @@ namespace TitanOrbit.Game
             float scale)
         {
             Vector3 pos = lt.Position;
-            if (!isLocalPlayerShip)
-                pos = ResolveRemoteWrappedPose(em, entity, go.position, lt.Position);
             Quaternion rot = lt.Rotation;
             go.SetPositionAndRotation(pos, rot);
             go.localScale = Vector3.one * scale;
@@ -2197,51 +2255,7 @@ namespace TitanOrbit.Game
                 ShipDisplayPose.SetLocalPose(pos, rot);
 
             MegaShipWeaponVisualSync.Apply(em, entity, go.gameObject);
-        }
-
-        /// <summary>
-        /// Remote ghosts interpolate <see cref="LocalTransform"/> in Euclidean space. A wrap
-        /// snapshot ( +edge → −edge ) would lerp across the whole map. Snap when the jump is
-        /// a wrap, or when interpolated motion fights velocity near an edge.
-        /// </summary>
-        static Vector3 ResolveRemoteWrappedPose(
-            EntityManager em,
-            Entity entity,
-            Vector3 previousDisplay,
-            float3 interpolated)
-        {
-            Vector3 raw = interpolated;
-            if (!ToroidalMapEcs.HasValidMapSize)
-                return raw;
-
-            if (ToroidalMapEcs.IsWrapJump(previousDisplay, raw))
-                return raw;
-
-            if (!em.HasComponent<ShipKinematics>(entity))
-                return raw;
-
-            float3 vel = em.GetComponentData<ShipKinematics>(entity).Velocity;
-            float3 planarVel = new float3(vel.x, 0f, vel.z);
-            float speedSq = math.lengthsq(planarVel);
-            if (speedSq < 4f)
-                return raw;
-
-            float3 delta = new float3(raw.x - previousDisplay.x, 0f, raw.z - previousDisplay.z);
-            if (math.lengthsq(delta) < 1f)
-                return raw;
-
-            float3 planarDir = math.normalize(planarVel);
-            float3 planarDelta = math.normalize(delta);
-            bool opposing = math.dot(planarDir, planarDelta) < -0.25f;
-            float halfW = ToroidalMapEcs.MapWidth * 0.5f;
-            float halfH = ToroidalMapEcs.MapHeight * 0.5f;
-            bool nearEdge = math.abs(previousDisplay.x) > halfW * 0.8f ||
-                            math.abs(previousDisplay.z) > halfH * 0.8f;
-            if (!opposing || !nearEdge)
-                return raw;
-
-            float3 predicted = (float3)previousDisplay + vel * UnityEngine.Time.deltaTime;
-            return ToroidalMapEcs.Wrap(predicted);
+            ShipWeaponManualAimVisual.Apply(em, entity, go.gameObject);
         }
 
         /// <summary>
@@ -2781,6 +2795,7 @@ namespace TitanOrbit.Game
                     if (isLocalPlayerShip)
                         ShipDisplayPose.SetLocalPose(go.transform.position, go.transform.rotation);
                     MegaShipWeaponVisualSync.Apply(em, entity, go);
+                    ShipWeaponManualAimVisual.Apply(em, entity, go);
                 }
 
                 if (em.HasComponent<ShipState>(entity))
@@ -3478,6 +3493,7 @@ namespace TitanOrbit.Game
             AsteroidClientEntityRegistry.NotifyDestroyed(entity);
             _asteroidBurstFired.Remove(entity);
             _asteroidLastKnown.Remove(entity);
+            _proxyViewPlaced.Remove(entity);
 
             if (_proxies.TryGetValue(entity, out var go))
             {

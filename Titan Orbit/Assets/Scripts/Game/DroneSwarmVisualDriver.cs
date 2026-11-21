@@ -384,10 +384,24 @@ namespace TitanOrbit.Game
 
                 ReadCoveringPresentation(em, shipEntity, out float coverEx, out float coverEz, out float coverCx, out float coverCz);
                 Vector3 formationHeading = Vector3.zero;
+                float3 formationOrigin = float3.zero;
+                byte centerSeeded = 0;
+                float3 simPos = new float3(shipPos.x, shipPos.y, shipPos.z);
+                if (em.HasComponent<LocalTransform>(shipEntity))
+                    simPos = em.GetComponentData<LocalTransform>(shipEntity).Position;
                 if (em.HasComponent<ShipKinematics>(shipEntity))
-                    formationHeading = (Vector3)em.GetComponentData<ShipKinematics>(shipEntity).FormationHeading;
+                {
+                    var kin = em.GetComponentData<ShipKinematics>(shipEntity);
+                    formationHeading = (Vector3)kin.FormationHeading;
+                    formationOrigin = kin.FormationOrigin;
+                    centerSeeded = kin.FormationCenterSeeded;
+                }
+
+                float3 present = new float3(shipPos.x, shipPos.y, shipPos.z);
+                Vector3 formationCenter = (Vector3)PeopleTransportMath.ApplyFormationLag(
+                    present, simPos, formationOrigin, centerSeeded, _mapW, _mapH);
                 UpdateGroupOrbit(
-                    group, buf, shipPos, shipRot, formationHeading, shipScale,
+                    group, buf, shipPos, shipRot, formationHeading, formationCenter, shipScale,
                     coverEx, coverEz, coverCx, coverCz,
                     shipState.Team, netId, timeSeconds, dt);
             }
@@ -780,6 +794,7 @@ namespace TitanOrbit.Game
             Vector3 shipPos,
             Quaternion shipRot,
             Vector3 formationHeading,
+            Vector3 formationCenter,
             float shipScale,
             float coveringExtentX,
             float coveringExtentZ,
@@ -797,7 +812,7 @@ namespace TitanOrbit.Game
             group.Hub.rotation = Quaternion.identity;
 
             DroneSwarmPositioning.GetFormationBasis(
-                shipPos, shipRot, formationHeading, out Vector3 basisPos, out Vector3 forward, out Vector3 right);
+                formationCenter, shipRot, formationHeading, out Vector3 basisPos, out Vector3 forward, out Vector3 right);
             float hullRadius = BodyCollisionMath.GetShipHullRadiusWorld(shipScale);
             float orbitRadius = DroneSwarmPositioning.GetDroneOrbitRadiusFromHull(hullRadius);
             float shieldOrbitRadius = DroneSwarmPositioning.GetShieldOrbitRadiusFromHull(hullRadius);
@@ -906,8 +921,9 @@ namespace TitanOrbit.Game
                     pose.WorldPosition.y = DroneSwarmLogic.FixedY;
                 }
 
-                // Hub-local: toroidal planar offset so a pad across a seam does not stretch the long way.
-                Vector3 local = DroneSwarmLogic.ToroidalOffsetXZ(basisPos, pose.WorldPosition, _mapW, _mapH);
+                // Hub stays on the presentation hull. Local XZ is the toroidal offset from that
+                // hull to the lagged formation pose, so a smoothed ship still carries the trail.
+                Vector3 local = DroneSwarmLogic.ToroidalOffsetXZ(shipPos, pose.WorldPosition, _mapW, _mapH);
                 float buzzY = Mathf.Sin((float)timeSeconds * DroneSwarmLogic.BuzzSpeed * 0.91f + v.BuzzPhase)
                     * DroneSwarmLogic.BuzzAmplitude * BuzzVerticalFraction;
                 local.y = DroneSwarmLogic.PresentationLiftY + buzzY;

@@ -166,6 +166,10 @@ namespace TitanOrbit.ECS
             for (int i = 0; i < valueAmounts.Length; i++)
                 ClientLocalGemSpawn.ApplyValueChanged(em, values[i].x, valueAmounts[i]);
 
+            // Lock first so a same-tick consume can keep the crystal for the suck-in.
+            for (int i = 0; i < locks.Length; i++)
+                ClientLocalGemSpawn.ApplyTractorLock(em, locks[i]);
+
             bool playCollectSfx = !state.WorldUnmanaged.IsThinClient();
             for (int i = 0; i < consumed.Length; i++)
             {
@@ -174,9 +178,6 @@ namespace TitanOrbit.ECS
                 if (playCollectSfx)
                     GemCollectSfxBuffer.Push(c.CollectorNetworkId, c.Tint, c.Amount);
             }
-
-            for (int i = 0; i < locks.Length; i++)
-                ClientLocalGemSpawn.ApplyTractorLock(em, locks[i]);
 
             spawns.Dispose();
             bursts.Dispose();
@@ -189,8 +190,9 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
-    /// Client: primary-wing tractor pull on hydrated gems (lock comes from RPC, not assignment).
-    /// Runs before client gem motion so velocity and pose stay same-tick coherent.
+    /// Client: legacy primary-wing velocity chase for an in-flight <see cref="GemMotionState.PhaseTractor"/>
+    /// snapshot. Committed locks (<see cref="GemMotionState.PhaseCommitted"/>) and
+    /// <see cref="GemCapturePresentation"/> gems are a no-op — the server already captured them.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
@@ -237,10 +239,13 @@ namespace TitanOrbit.ECS
 
             foreach (var (motion, gemState, transform, kinematics) in SystemAPI
                          .Query<RefRW<GemMotionState>, RefRO<GemState>, RefRO<LocalTransform>, RefRW<GemKinematics>>()
-                         .WithAll<GemTag, ClientSeedHydratedGem>())
+                         .WithAll<GemTag, ClientSeedHydratedGem>()
+                         .WithNone<GemCapturePresentation>())
             {
                 int shipId = motion.ValueRO.TractorShipId;
                 if (shipId == 0)
+                    continue;
+                if (motion.ValueRO.Phase == GemMotionState.PhaseCommitted)
                     continue;
                 if (gemState.ValueRO.IsConsumed)
                     continue;
@@ -322,6 +327,7 @@ namespace TitanOrbit.ECS
             foreach (var (kinematics, transform, entity) in SystemAPI
                          .Query<RefRW<GemKinematics>, RefRW<LocalTransform>>()
                          .WithAll<GemTag, ClientSeedHydratedGem>()
+                         .WithNone<GemCapturePresentation>()
                          .WithEntityAccess())
             {
                 var kin = kinematics.ValueRO;
@@ -331,6 +337,8 @@ namespace TitanOrbit.ECS
                 if (hasMotion)
                 {
                     motionRo = SystemAPI.GetComponent<GemMotionState>(entity);
+                    if (motionRo.Phase == GemMotionState.PhaseCommitted)
+                        continue;
                     underTractor = motionRo.Phase == GemMotionState.PhaseTractor &&
                                    motionRo.TractorShipId != 0;
                     if (motionRo.Phase == GemMotionState.PhaseTractor && motionRo.TractorShipId == 0)
@@ -383,11 +391,175 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
-    /// Client: expire hydrated gems after the same lifetime the server uses.
+    /// Client: slide a committed gem along the shortest toroidal offset to the locking wing,
+    /// then hide it. Cargo was already credited. No per-tick pose from the server.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     [UpdateAfter(typeof(GemClientMotionSystem))]
+    [UpdateBefore(typeof(GemClientLifetimeSystem))]
+    public partial struct GemCapturePresentationSystem : ISystem
+    {
+        NativeList<int> _finish;
+        NativeList<Entity> _finishWithoutId;
+        NativeHashMap<int, Entity> _ships;
+
+        /// <summary>Allocates the ship lookup and the finish lists once.</summary>
+        public void OnCreate(ref SystemState state)
+        {
+            _finish = new NativeList<int>(8, Allocator.Persistent);
+            _finishWithoutId = new NativeList<Entity>(4, Allocator.Persistent);
+            _ships = new NativeHashMap<int, Entity>(16, Allocator.Persistent);
+            state.RequireForUpdate<GemCapturePresentation>();
+        }
+
+        /// <summary>Releases the persistent lists.</summary>
+        public void OnDestroy(ref SystemState state)
+        {
+            if (_finish.IsCreated)
+                _finish.Dispose();
+            if (_finishWithoutId.IsCreated)
+                _finishWithoutId.Dispose();
+            if (_ships.IsCreated)
+                _ships.Dispose();
+        }
+
+        /// <summary>
+        /// Holds the gem still through the beam extend and cone widen, then slides it
+        /// along the open cone. Same ServerTick clock as <see cref="GemTractorBeamMath.ComputeDeployElapsedSeconds"/>.
+        /// </summary>
+        public void OnUpdate(ref SystemState state)
+        {
+            _finish.Clear();
+            _finishWithoutId.Clear();
+            _ships.Clear();
+
+            foreach (var (owner, shipEntity) in SystemAPI
+                         .Query<RefRO<GhostOwner>>()
+                         .WithAll<ShipTag, LocalTransform>()
+                         .WithEntityAccess())
+            {
+                int id = owner.ValueRO.NetworkId;
+                if (id > 0)
+                    _ships.TryAdd(id, shipEntity);
+            }
+
+            bool haveMap = ToroidalMapEcs.TryGetMapSize(out float mapW, out float mapH);
+            if (!haveMap &&
+                SystemAPI.TryGetSingleton<MapStateSingleton>(out var mapState) &&
+                ToroidalMapEcs.IsValidMapSize(mapState.MapWidth, mapState.MapHeight))
+            {
+                mapW = mapState.MapWidth;
+                mapH = mapState.MapHeight;
+                haveMap = true;
+                ToroidalMapEcs.SetMapSize(mapW, mapH);
+            }
+
+            float dt = SystemAPI.Time.DeltaTime;
+            var em = state.EntityManager;
+            int simHz = PlanetGemMoonOrbitClock.FallbackSimulationHz;
+            if (SystemAPI.TryGetSingleton<ClientServerTickRate>(out var tickRate) &&
+                tickRate.SimulationTickRate > 0)
+                simHz = tickRate.SimulationTickRate;
+            bool haveClock = PlanetGemMoonOrbitClock.TryGetElapsedSeconds(
+                em, out float nowServer, includeTickFraction: true);
+
+            foreach (var (presentation, transform, gemState, entity) in SystemAPI
+                         .Query<RefRW<GemCapturePresentation>, RefRW<LocalTransform>, RefRO<GemState>>()
+                         .WithAll<GemTag, ClientSeedHydratedGem>()
+                         .WithEntityAccess())
+            {
+                int spawnId = gemState.ValueRO.SpawnId;
+                var present = presentation.ValueRO;
+
+                if (!haveMap ||
+                    !_ships.TryGetValue(present.ShipNetworkId, out Entity shipEntity) ||
+                    !em.Exists(shipEntity))
+                {
+                    QueueFinish(spawnId, entity);
+                    continue;
+                }
+
+                float extend = present.Duration > 0.0001f
+                    ? present.Duration
+                    : GemTractorBeamMath.MinExtendDuration;
+                uint lockTick = 0;
+                if (em.HasComponent<GemMotionState>(entity))
+                {
+                    var motion = em.GetComponentData<GemMotionState>(entity);
+                    lockTick = motion.TractorLockTick;
+                    if (motion.TractorExtendDuration > 0.0001f)
+                        extend = motion.TractorExtendDuration;
+                }
+
+                // Beam line + cone use this same elapsed. Gem stays put until that animation finishes.
+                float elapsed;
+                if (haveClock && lockTick != 0)
+                    elapsed = GemTractorBeamMath.ComputeDeployElapsedSeconds(lockTick, nowServer, simHz);
+                else
+                {
+                    present.Elapsed += dt;
+                    elapsed = present.Elapsed;
+                }
+
+                float deployEnd = GemTractorBeamMath.ComputeDeployTotalDuration(extend);
+                float hold = GemTractorBeamMath.ComputeCaptureHoldSeconds(extend);
+                float suck = math.max(0.0001f, hold - deployEnd);
+                float travel = elapsed <= deployEnd
+                    ? 0f
+                    : math.saturate((elapsed - deployEnd) / suck);
+
+                var shipTransform = em.GetComponentData<LocalTransform>(shipEntity);
+                float3 target = shipTransform.Position;
+                if (em.HasBuffer<ShipWingTractorBeamElement>(shipEntity))
+                {
+                    var wings = em.GetBuffer<ShipWingTractorBeamElement>(shipEntity);
+                    int wingIndex = present.WingIndex;
+                    if (wingIndex >= 0 && wingIndex < wings.Length)
+                        target = ShipWingTractorBeamPose.GetWorldPosition(shipTransform, wings[wingIndex]);
+                }
+
+                float3 offset = ToroidalMapEcs.ShortestOffsetXZ(
+                    present.StartPosition, target, mapW, mapH);
+                float3 pos = present.StartPosition + offset * travel;
+                pos.y = present.StartPosition.y;
+                pos = ToroidalMapEcs.Wrap(pos, mapW, mapH);
+
+                var lt = transform.ValueRO;
+                lt.Position = pos;
+                transform.ValueRW = lt;
+                present.Elapsed = elapsed;
+                presentation.ValueRW = present;
+
+                if (elapsed >= hold - 0.0001f)
+                    QueueFinish(spawnId, entity);
+            }
+
+            for (int i = 0; i < _finish.Length; i++)
+                ClientLocalGemSpawn.FinishCapture(em, _finish[i]);
+            for (int i = 0; i < _finishWithoutId.Length; i++)
+            {
+                Entity entity = _finishWithoutId[i];
+                if (em.Exists(entity))
+                    em.DestroyEntity(entity);
+            }
+        }
+
+        void QueueFinish(int spawnId, Entity entity)
+        {
+            if (spawnId != 0)
+                _finish.Add(spawnId);
+            else
+                _finishWithoutId.Add(entity);
+        }
+    }
+
+    /// <summary>
+    /// Client: expire hydrated gems after the same lifetime the server uses.
+    /// </summary>
+    [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation)]
+    [UpdateInGroup(typeof(SimulationSystemGroup))]
+    [UpdateAfter(typeof(GemCapturePresentationSystem))]
     public partial struct GemClientLifetimeSystem : ISystem
     {
         /// <summary>Destroys local gems whose elapsed life exceeds settings.</summary>
@@ -403,7 +575,8 @@ namespace TitanOrbit.ECS
 
             foreach (var gemState in SystemAPI
                          .Query<RefRO<GemState>>()
-                         .WithAll<GemTag, ClientSeedHydratedGem>())
+                         .WithAll<GemTag, ClientSeedHydratedGem>()
+                         .WithNone<GemCapturePresentation>())
             {
                 if (gemState.ValueRO.IsConsumed)
                     continue;
@@ -517,7 +690,8 @@ namespace TitanOrbit.ECS
 
             foreach (var (gemState, gemTransform) in SystemAPI
                          .Query<RefRO<GemState>, RefRO<LocalTransform>>()
-                         .WithAll<GemTag, ClientSeedHydratedGem>())
+                         .WithAll<GemTag, ClientSeedHydratedGem>()
+                         .WithNone<GemCapturePresentation>())
             {
                 int spawnId = gemState.ValueRO.SpawnId;
                 if (spawnId == 0 || gemState.ValueRO.IsConsumed)

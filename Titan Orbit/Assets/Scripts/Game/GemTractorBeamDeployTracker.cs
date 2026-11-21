@@ -109,7 +109,7 @@ namespace TitanOrbit.Game
             if (motion.Phase == GemMotionState.PhaseTractor)
                 return true;
 
-            if (!TryGetServerElapsedSeconds(out double nowSec))
+            if (!TryGetServerElapsedSeconds(out double nowSec, out _))
                 return false;
 
             int hz = PlanetGemMoonOrbitClock.FallbackSimulationHz;
@@ -178,20 +178,17 @@ namespace TitanOrbit.Game
 
         static float GetElapsed(in DeployState state)
         {
-            if (state.LockTick != 0 && TryGetServerElapsedSeconds(out double nowSec))
-            {
-                int hz = PlanetGemMoonOrbitClock.FallbackSimulationHz;
-                double lockSec = state.LockTick / (double)hz;
-                return (float)math.max(0d, nowSec - lockSec);
-            }
+            if (state.LockTick == 0 || !TryGetServerElapsedSeconds(out double nowSec, out int hz))
+                return 0f;
 
-            return 0f;
+            return GemTractorBeamMath.ComputeDeployElapsedSeconds(state.LockTick, nowSec, hz);
         }
 
         /// <summary>ServerTick seconds from the client visualization world NetworkTime singleton.</summary>
-        static bool TryGetServerElapsedSeconds(out double elapsed)
+        static bool TryGetServerElapsedSeconds(out double elapsed, out int hz)
         {
             elapsed = 0d;
+            hz = PlanetGemMoonOrbitClock.FallbackSimulationHz;
             var world = EcsGameBridge.GetVisualizationWorld();
             if (world == null || !world.IsCreated)
                 return false;
@@ -202,7 +199,6 @@ namespace TitanOrbit.Game
                 return false;
 
             var networkTime = q.GetSingleton<NetworkTime>();
-            int hz = PlanetGemMoonOrbitClock.FallbackSimulationHz;
             using var rateQ = em.CreateEntityQuery(ComponentType.ReadOnly<ClientServerTickRate>());
             if (!rateQ.IsEmptyIgnoreFilter)
                 hz = math.max(1, rateQ.GetSingleton<ClientServerTickRate>().SimulationTickRate);

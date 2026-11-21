@@ -14,11 +14,13 @@ namespace TitanOrbit.Data
     /// </summary>
     public static class ShipComponentStoreData
     {
-        /// <summary>Gems charged per power point when pricing moon-dock components.</summary>
+        /// <summary>
+        /// Retired raw-stat rate. Live prices multiply each stat by <see cref="StatGemRates"/>.
+        /// </summary>
         public const float GemCostPerPowerPoint = 1.75f;
-        /// <summary>Price multiplier per ship level above 1 (12% per level).</summary>
+        /// <summary>Retired 12% per-level scale. Extra Level changes the stats, and the rate table prices those stats.</summary>
         public const float LevelPriceScalePerLevel = 0.12f;
-        /// <summary>Floor gem price so zero-stat placeholder parts still cost something.</summary>
+        /// <summary>Retired floor. The live floor is <see cref="StatGemRates.minimumPartGems"/>.</summary>
         public const int MinimumComponentGemPrice = 8;
 
         /// <summary>
@@ -160,38 +162,25 @@ namespace TitanOrbit.Data
                 effective, entry, family, planetOrHullBankIndex);
         }
 
-        /// <summary>Gem cost from power score × level multiplier, floored at <see cref="MinimumComponentGemPrice"/>.</summary>
+        /// <summary>
+        /// Gems to buy this gear part at <paramref name="shipLevel"/>.
+        /// The price is the gem value of the part's stats at that buy level, multiplied
+        /// by the level. Level 1 is the gem value alone. The orbit menu button and the
+        /// server debit both call this.
+        /// </summary>
         public static int GetComponentGemPrice(ShipFamilyComponentEntry entry, int shipLevel)
         {
-            float power = GetComponentPowerScore(entry, shipLevel);
-            if (power < 0.01f)
-                return MinimumComponentGemPrice;
-            float levelMult = 1f + Mathf.Max(0, shipLevel - 1) * LevelPriceScalePerLevel;
-            return Mathf.Max(MinimumComponentGemPrice, Mathf.RoundToInt(power * GemCostPerPowerPoint * levelMult));
+            return StatGemPricing.PriceFamilyPart(entry, shipLevel);
         }
 
         /// <summary>
-        /// Gem price of one frozen part, such as a single Titan component.
-        /// Uses the same gems-per-power rate as <see cref="GetComponentGemPrice"/>
-        /// and the same category total (offense + defense + energy + mobility + capacity).
-        /// Skips Extra Level growth and the ship-level price scale: Titan parts do not
-        /// gain stats as the hull levels, so the price is only what that part contributes.
-        /// A near-zero part still costs <see cref="MinimumComponentGemPrice"/>.
+        /// Gems for one Titan part. Same <see cref="StatGemRates"/> table as a family part.
+        /// Titans do not Extra-Level, so the catalog bases are the numbers that get priced.
         /// </summary>
         /// <param name="stats">Base stats of one copy. Per-extra fields are ignored.</param>
-        /// <returns>Contributed gems for one copy of this part.</returns>
         public static int GetFrozenPartGemPrice(in ShipComponentAbilityStats stats)
         {
-            // --- Power of this part alone ---
-            // [TITAN-ORBIT] Same Total the moon store uses for a gear card, but the
-            // numbers stay at the catalog bases. No ship-level ×1.12 and no Extra Level.
-            float power = ShipFamilyPowerScoreBreakdown.FromSummedShipStats(stats).Total;
-            if (power < 0.01f)
-                return MinimumComponentGemPrice;
-
-            return Mathf.Max(
-                MinimumComponentGemPrice,
-                Mathf.RoundToInt(power * GemCostPerPowerPoint));
+            return StatGemPricing.Price(stats);
         }
 
         /// <summary>
@@ -495,7 +484,8 @@ namespace TitanOrbit.Data
             }
 
             // [TITAN-ORBIT] Absolute OVERDRIVE energy/sec on engines (not a multiplier of ExtraSpeedPercent).
-            // More drain is worse. The percent stays in this row's energy colour — it is not recolored.
+            // The "OD/s" title stays the energy hue. The BONUS percent follows the sign
+            // printed in the cell: + is mint, - is red.
             if (isEngine)
                 Queue(
                     fullOriginal.extraSpeedEnergyDrain,
@@ -767,8 +757,8 @@ namespace TitanOrbit.Data
         /// <summary>
         /// One grid row. VAL is the part before this moon's fleet roll, BONUS is that
         /// roll's percent (or — when the moon does not change it), FINAL is the part after the roll.
-        /// <paramref name="higherIsBetter"/> stays so drain callers are explicit; the percent
-        /// uses the row colour either way.
+        /// <paramref name="higherIsBetter"/> stays so drain callers are explicit. The stat
+        /// name keeps the row colour. The BONUS percent is painted later: mint for +, red for -.
         /// </summary>
         static void TryQueueFleet(
             List<GearStatRow> lines,
@@ -953,8 +943,9 @@ namespace TitanOrbit.Data
         /// <summary>
         /// <c> → +11.5 +15%</c> when the fleet roll moves the number.
         /// Used by the extra-level hover and the short plain tooltip, not the gear grid.
-        /// The percent keeps the line's stat colour. <paramref name="higherIsBetter"/>
-        /// is retained so drain callers stay source-compatible; it no longer recolors.
+        /// Rich text paints only the percent mint or red. The stat name stays
+        /// the line colour. <paramref name="higherIsBetter"/> is retained so drain
+        /// callers stay source-compatible; the sign on the percent is what picks the hue.
         /// </summary>
         static bool TryBuildFleetArrow(
             float original,
@@ -969,7 +960,7 @@ namespace TitanOrbit.Data
 
             _ = higherIsBetter;
             if (richText)
-                arrow = " → +" + FormatStatValue(adjusted) + " " + percent;
+                arrow = " → +" + FormatStatValue(adjusted) + " " + FamilyStatHudCopy.TintSignedBonus(percent);
             else
                 arrow = " → +" + FormatStatValue(adjusted) + " (" + percent + ")";
 
@@ -1063,7 +1054,22 @@ namespace TitanOrbit.Data
                     if (showOldColumn)
                         sb.Append("<pos=").Append(oldPos).Append('>').Append(row.Old ?? GearStatEmptyCell);
                     sb.Append("<pos=").Append(valuePos).Append('>').Append(row.Value ?? GearStatEmptyCell);
-                    sb.Append("<pos=").Append(bonusPos).Append('>').Append(row.Bonus ?? GearStatEmptyCell);
+                    // Stat name, VAL, and FINAL stay this row's hue. A +% or -%
+                    // closes that hue, paints mint or red, then opens it again
+                    // so FINAL does not inherit the bonus colour. An em dash
+                    // or "hull" has no sign, so it stays in the row colour.
+                    string bonusRaw = row.Bonus ?? GearStatEmptyCell;
+                    string bonusShown = FamilyStatHudCopy.TintSignedBonus(bonusRaw);
+                    if (bonusShown != bonusRaw)
+                        sb.Append("</color>");
+                    sb.Append("<pos=").Append(bonusPos).Append('>').Append(bonusShown);
+                    if (bonusShown != bonusRaw)
+                    {
+                        Color rowColor = ResolveAbilityLineColor(row.ColorIndex);
+                        sb.Append("<color=#").Append(ColorUtility.ToHtmlStringRGB(rowColor)).Append('>');
+                        if (row.Dim)
+                            sb.Append("<alpha=#99>");
+                    }
                     // FINAL is the number the player came to compare — bold, full strength
                     // even on the quieter hull child row.
                     sb.Append("<pos=").Append(finalPos).Append("><alpha=#FF><b>");

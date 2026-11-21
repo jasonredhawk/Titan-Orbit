@@ -29,8 +29,10 @@ namespace TitanOrbit.ECS
 
     /// <summary>
     /// Ghosted MEGA identity on a ship. When <see cref="IsMega"/> is true the hull is a static
-    /// endgame ship: no attribute upgrades, no gems, auto-fire guns, unique occupancy.
+    /// endgame ship: no attribute upgrades, gem cargo from cockpit / wing / cargo, auto-fire guns, unique occupancy.
     /// Previous L6 family/level/branch are stored so death can restore that chassis.
+    /// The ten ability purchases from that hull live on <see cref="PreTitanAttributeSnapshot"/>
+    /// (server only) and come back with the chassis.
     /// <para>
     /// [NETCODE] Must be baked on StarshipGhost — runtime AddComponent does not replicate.
     /// </para>
@@ -74,6 +76,24 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
+    /// Server-only copy of the ten bottom-bar ability purchases from the hull this
+    /// player flew before boarding a Titan. Not a ghost — clients never read it, and
+    /// it is not written every tick. <see cref="MegaShipStatApplyLogic.ParkAttributesForTitan"/>
+    /// stores it once at purchase. <see cref="MegaShipStatApplyLogic.RestorePreviousHull"/>
+    /// copies it onto the ghosted <see cref="ShipAttributeUpgradeState"/> when the Titan
+    /// dies, then removes this component. A Titan-to-Titan swap must not overwrite it:
+    /// the live bar is already zero, and replacing the copy would forget the old hull.
+    /// </summary>
+    public struct PreTitanAttributeSnapshot : IComponentData
+    {
+        /// <summary>
+        /// Firepower through people-capacity levels, exactly as they were on the
+        /// pre-Titan hull. Zero in a field means that ability was not purchased.
+        /// </summary>
+        public ShipAttributeUpgradeState Attributes;
+    }
+
+    /// <summary>
     /// Server-only sticky auto-aim, one slot per weapon mount. Each muzzle searches
     /// when Fire is pressed (ships / turrets / moon shields first, asteroids only
     /// when no enemy is in range) and keeps an enemy lock until it dies, leaves
@@ -103,6 +123,14 @@ namespace TitanOrbit.ECS
         /// are not culled before they arrive.
         /// </summary>
         public float InterceptDistance;
+
+        /// <summary>
+        /// Cannon burn subject on a planet lock.
+        /// <see cref="CannonLaserHitApply.FocusMoon"/> or <c>pad slot + 1</c>.
+        /// Ships and asteroids stay <see cref="CannonLaserHitApply.FocusWholeEntity"/>.
+        /// Server only — this buffer is not ghosted.
+        /// </summary>
+        public int Focus;
     }
 
     /// <summary>

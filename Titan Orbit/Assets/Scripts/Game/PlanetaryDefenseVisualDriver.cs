@@ -561,6 +561,14 @@ namespace TitanOrbit.Game
                     continue;
                 }
 
+                // Pads are parented to the planet. Off-screen planets stay in the alive set
+                // so the grace counter does not tear the pads down, but the slot walk stops.
+                if (CameraGroundView.IsOutside(planetProxy.transform.position, CameraGroundView.PlanetMargin))
+                {
+                    _alivePlanetIds.Add(planet.PlanetId);
+                    continue;
+                }
+
                 var buffer = em.GetBuffer<PlanetaryDefenseSlotElement>(planetEntity);
                 // Owned planets always have slots on the server. Length 0 on the client is a
                 // snapshot blip (planet chunk lost the send budget, or a buffer resize between

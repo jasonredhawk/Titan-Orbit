@@ -47,7 +47,7 @@ namespace TitanOrbit.Data
             get
             {
 #if UNITY_WEBGL && !UNITY_EDITOR
-                // [TITAN-ORBIT] Shipped WebGL is production: Quick join only.
+                // [TITAN-ORBIT] Shipped WebGL is production: Join game only (no Quick join / Local play).
                 // The Resources flag stays free for Editor Test / MPPM.
                 return false;
 #else

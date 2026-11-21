@@ -135,6 +135,14 @@ namespace TitanOrbit.Simulation
         public const float EscortFollowCruiseMax = 6f;
 
         /// <summary>
+        /// Load and unload hops travel at 70% of drone formation speed.
+        /// The ship↔planet gap is only a few world units, so the ramp off the hull
+        /// sets the speed; acceleration scales with the square of this factor
+        /// inside the formation step so that ramp slows by the same 30%.
+        /// </summary>
+        public const float LoadUnloadSpeedMultiplier = 0.7f;
+
+        /// <summary>
         /// Magnet lerp rate toward cruise. Lower than the generic transport <c>4</c>
         /// so escorts ease on instead of snapping up to speed.
         /// </summary>
@@ -168,7 +176,26 @@ namespace TitanOrbit.Simulation
         /// they still settle behind the hull. Linear velocity is not part of this —
         /// a ram impulse must not swing the pack off the nose.
         /// </summary>
-        public const float EscortHeadingLagTau = 0.38f;
+        public const float EscortHeadingLagTau = 0.95f;
+
+        /// <summary>
+        /// Seconds for the shared formation center to catch ~63% of a hull translation.
+        /// Parked troops and equipment drones ease with the ship instead of sticking to the pivot.
+        /// Chases hull position, not velocity, so a ram that reverses speed does not fling the pack.
+        /// </summary>
+        public const float EscortPositionLagTau = 0.62f;
+
+        /// <summary>
+        /// Longest trail (world units) the formation center may sit off the hull.
+        /// A hard thrust eases out to this gap and no farther.
+        /// </summary>
+        public const float EscortPositionLagMax = 4.25f;
+
+        /// <summary>
+        /// Gap that snaps the center onto the hull (respawn, turret stow).
+        /// Larger than <see cref="EscortPositionLagMax"/> so cruise lag never snaps.
+        /// </summary>
+        public const float EscortPositionLagSnap = 24f;
 
         public static float EffectiveVisualTravelSeconds =>
             TargetVisualTravelSeconds * VisualTravelDurationMultiplier / VisualTravelSpeedBonus;
@@ -199,10 +226,34 @@ namespace TitanOrbit.Simulation
         /// <summary>
         /// True when an unload hop should abort and fly home. Ownership is latched at
         /// launch; a capture (or any other flip) recalls leftover capsules.
+        /// Hops that <see cref="ShouldKeepUnloadingAfterCapture"/> already re-latched
+        /// onto the new owner are not a flip, so they finish the unload.
         /// </summary>
         public static bool ShouldRecallUnloadHop(byte ownerAtSpawn, TeamId liveOwner)
         {
             return ownerAtSpawn != (byte)liveOwner;
+        }
+
+        /// <summary>
+        /// After a capture, keep flying the hop onto the planet while it is still
+        /// under the 49% garrison buffer. <paramref name="alreadyReserved"/> is people
+        /// on earlier hops that will also land and have not been counted in
+        /// <paramref name="population"/> yet.
+        /// </summary>
+        public static bool ShouldKeepUnloadingAfterCapture(
+            byte ownerAtSpawn,
+            TeamId liveOwner,
+            TeamId hopTeam,
+            int population,
+            int maxPopulation,
+            int alreadyReserved)
+        {
+            if (ownerAtSpawn == 255 || ownerAtSpawn == (byte)liveOwner)
+                return false;
+            if (liveOwner != hopTeam || liveOwner == TeamId.None)
+                return false;
+            int projected = population + math.max(0, alreadyReserved);
+            return PlanetPopulationMath.NeedsFriendlyGarrison(projected, maxPopulation);
         }
 
         /// <summary>Toroidal shortest-path lerp on XZ. Y is forced to 0.</summary>
@@ -716,6 +767,143 @@ namespace TitanOrbit.Simulation
             float tau = math.max(0.05f, EscortHeadingLagTau);
             float alpha = 1f - math.exp(-math.max(0f, dt) / tau);
             return PlanarSlerpDir(current, nose, alpha);
+        }
+
+        /// <summary>
+        /// Lag the shared drone/troop formation center toward the hull.
+        /// Position only — velocity is not an input, so a ram cannot fling the pack.
+        /// Map size comes from <c>MapStateSingleton</c> (0 when unset — euclidean, no invented period).
+        /// Same function on server and predicted client so hits match meshes.
+        /// Caller snaps an unseeded center onto the hull before the first step.
+        /// </summary>
+        public static float3 StepEscortFormationOrigin(
+            float3 current,
+            float3 shipPos,
+            float mapW,
+            float mapH,
+            float dt)
+        {
+            shipPos.y = 0f;
+            current.y = 0f;
+            bool validMap = ToroidalMapEcs.IsValidMapSize(mapW, mapH);
+            if (validMap)
+                shipPos = ToroidalMapEcs.Wrap(shipPos, mapW, mapH);
+
+            float3 toShip = PlanarOffset(current, shipPos, mapW, mapH);
+            float snap = math.max(EscortPositionLagMax + 1f, EscortPositionLagSnap);
+            if (math.lengthsq(toShip) > snap * snap)
+                return shipPos;
+
+            float tau = math.max(0.05f, EscortPositionLagTau);
+            float alpha = 1f - math.exp(-math.max(0f, dt) / tau);
+            float3 next = current + toShip * alpha;
+            next.y = 0f;
+
+            float3 trail = PlanarOffset(shipPos, next, mapW, mapH);
+            float trailLenSq = math.lengthsq(trail);
+            float max = math.max(0.05f, EscortPositionLagMax);
+            if (trailLenSq > max * max)
+            {
+                next = shipPos + trail * (max / math.sqrt(trailLenSq));
+                next.y = 0f;
+            }
+
+            if (validMap)
+                next = ToroidalMapEcs.Wrap(next, mapW, mapH);
+            return next;
+        }
+
+        /// <summary>
+        /// Planar point parked troops and equipment drones orbit.
+        /// Unseeded (<paramref name="centerSeeded"/> = 0) uses the hull so a fresh ship
+        /// does not ease in from the world origin. A seeded center that has jumped
+        /// farther than <see cref="EscortPositionLagSnap"/> also falls back to the hull.
+        /// </summary>
+        public static float3 ResolveFormationCenter(
+            float3 shipPos,
+            float3 formationOrigin,
+            byte centerSeeded,
+            float mapW,
+            float mapH)
+        {
+            shipPos.y = 0f;
+            if (centerSeeded == 0)
+                return shipPos;
+
+            formationOrigin.y = 0f;
+            float3 lag = PlanarOffset(shipPos, formationOrigin, mapW, mapH);
+            float snap = math.max(EscortPositionLagMax + 1f, EscortPositionLagSnap);
+            if (math.lengthsq(lag) > snap * snap)
+                return shipPos;
+
+            float3 center = shipPos + lag;
+            center.y = 0f;
+            if (ToroidalMapEcs.IsValidMapSize(mapW, mapH))
+                center = ToroidalMapEcs.Wrap(center, mapW, mapH);
+            return center;
+        }
+
+        /// <summary>
+        /// Shift a presentation hull by the sim formation lag.
+        /// <paramref name="presentationPos"/> may be the smoothed display pose; the lag is the
+        /// toroidal gap between the sim hull and <see cref="ResolveFormationCenter"/>.
+        /// Y is left on the presentation pose.
+        /// </summary>
+        public static float3 ApplyFormationLag(
+            float3 presentationPos,
+            float3 simPos,
+            float3 formationOrigin,
+            byte centerSeeded,
+            float mapW,
+            float mapH)
+        {
+            float3 center = ResolveFormationCenter(simPos, formationOrigin, centerSeeded, mapW, mapH);
+            float3 lag = PlanarOffset(simPos, center, mapW, mapH);
+            return new float3(presentationPos.x + lag.x, presentationPos.y, presentationPos.z + lag.z);
+        }
+
+        /// <summary>
+        /// Center and heading for troop meshes on the locally predicted hull.
+        /// Prediction steps the ghost origin on the same tick as that hull, so
+        /// <see cref="ApplyFormationLag"/> is the trail. Pass <paramref name="ownerPredicted"/>
+        /// false only as a fallback: remote packs must not read the ghost origin
+        /// (snapshot interpolation against the remote motor shuttles them). Their
+        /// trail is stepped from the presentation pose instead.
+        /// </summary>
+        public static void ResolveVisualFormation(
+            bool ownerPredicted,
+            float3 presentationPos,
+            float3 simPos,
+            float3 formationOrigin,
+            byte centerSeeded,
+            float3 formationHeading,
+            float mapW,
+            float mapH,
+            out float3 center,
+            out float3 heading)
+        {
+            presentationPos.y = 0f;
+            if (!ownerPredicted)
+            {
+                center = presentationPos;
+                heading = float3.zero;
+                return;
+            }
+
+            center = ApplyFormationLag(
+                presentationPos, simPos, formationOrigin, centerSeeded, mapW, mapH);
+            heading = formationHeading;
+        }
+
+        /// <summary>
+        /// Shortest planar offset from <paramref name="from"/> toward <paramref name="to"/>.
+        /// Euclidean when map size is unset — never invent a period.
+        /// </summary>
+        static float3 PlanarOffset(float3 from, float3 to, float mapW, float mapH)
+        {
+            if (ToroidalMapEcs.IsValidMapSize(mapW, mapH))
+                return ToroidalMapEcs.ShortestOffsetXZ(from, to, mapW, mapH);
+            return new float3(to.x - from.x, 0f, to.z - from.z);
         }
 
         /// <summary>

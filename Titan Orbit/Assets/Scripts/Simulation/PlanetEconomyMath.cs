@@ -14,10 +14,10 @@ namespace TitanOrbit.Simulation
         public const int MaxPlanetLevel = 6;
 
         /// <summary>[TITAN-ORBIT] Gem cap at level 1 before doubling per level.</summary>
-        public const float BaseMaxGemsLevel1 = 100f;
+        public const float BaseMaxGemsLevel1 = 200f;
 
         /// <summary>
-        /// Max gems storable at a given planet level. Level 1 = 100, level 2 = 200, etc. (×2 per level).
+        /// Max gems storable at a given planet level. Level 1 = 200, level 2 = 400, etc. (×2 per level).
         /// </summary>
         /// <param name="level">Planet level (clamped to at least 1).</param>
         public static float GetMaxGemsForLevel(int level)

@@ -73,6 +73,10 @@ namespace TitanOrbit.Game
             /// <summary>Last presentation hull used so Instantiates-skip can carry orbs with the ship.</summary>
             public Vector3 LastShipPos;
             public bool HasLastShipPos;
+            /// <summary>Remote-only trail. Stepped from the drawn hull, not the ghost origin.</summary>
+            public float3 PresentationOrigin;
+            public float3 PresentationHeading;
+            public bool HasPresentationFormation;
         }
 
         static PeopleTransportEscortPresenter s_Instance;
@@ -212,7 +216,8 @@ namespace TitanOrbit.Game
                 }
 
                 _aliveIds.Add(netId);
-                TickShipGroup(em, ship, netId, shipState.Team, pos, rot, scale, timeSeconds, mapW, mapH);
+                TickShipGroup(
+                    em, ship, netId, localId, shipState.Team, pos, rot, scale, timeSeconds, mapW, mapH);
             }
 
             _removeIds.Clear();
@@ -230,6 +235,7 @@ namespace TitanOrbit.Game
             EntityManager em,
             Entity ship,
             int netId,
+            int localId,
             TeamId team,
             Vector3 pos,
             Quaternion rot,
@@ -249,13 +255,50 @@ namespace TitanOrbit.Game
 
             PeopleTransportEscortLogic.GetEscortHullExtents(em, ship, scale, out float extX, out float extZ);
             float3 heading = float3.zero;
+            float3 formationOrigin = float3.zero;
+            byte centerSeeded = 0;
             if (em.HasComponent<ShipKinematics>(ship))
-                heading = em.GetComponentData<ShipKinematics>(ship).FormationHeading;
+            {
+                var kin = em.GetComponentData<ShipKinematics>(ship);
+                heading = kin.FormationHeading;
+                formationOrigin = kin.FormationOrigin;
+                centerSeeded = kin.FormationCenterSeeded;
+            }
+
+            float3 presentPlanar = new float3(pos.x, 0f, pos.z);
+            float3 simPos = presentPlanar;
+            if (em.HasComponent<LocalTransform>(ship))
+                simPos = em.GetComponentData<LocalTransform>(ship).Position;
+            // Owned hull: ghost origin is stepped with prediction, same trail the owner sees.
+            // Remote hull: that ghost origin is a snapshot clock and shuttles the pack.
+            // Step the same lag here from the drawn pose so other ships ease the same way.
+            bool ownerPredicted = localId > 0 && netId == localId;
+            float3 center;
+            float3 faceHeading;
+            if (ownerPredicted)
+            {
+                PeopleTransportMath.ResolveVisualFormation(
+                    true,
+                    presentPlanar,
+                    simPos,
+                    formationOrigin,
+                    centerSeeded,
+                    heading,
+                    mapW,
+                    mapH,
+                    out center,
+                    out faceHeading);
+            }
+            else
+            {
+                StepRemotePresentationFormation(group, presentPlanar, rot, mapW, mapH);
+                center = group.PresentationOrigin;
+                faceHeading = group.PresentationHeading;
+            }
 
             if (group.LayoutFingerprint != fingerprint)
-                SyncVisuals(group, seats, fingerprint, team, heading, rot);
+                SyncVisuals(group, seats, fingerprint, team, faceHeading, rot);
 
-            float3 shipPos = new float3(pos.x, 0f, pos.z);
             quaternion shipRot = rot;
             for (int i = 0; i < group.Visuals.Count; i++)
             {
@@ -268,16 +311,16 @@ namespace TitanOrbit.Game
                 // display-tile unwrap, and never flatten to world Y=0.28 (that parks orbs inside
                 // the planet while the camera is on the moon).
                 float3 home = PeopleTransportMath.EvaluateEscortSwarmPose(
-                    shipPos, shipRot, extX, extZ, vis.SeatId, vis.Amount, netId,
-                    timeSeconds, mapW, mapH, heading);
+                    center, shipRot, extX, extZ, vis.SeatId, vis.Amount, netId,
+                    timeSeconds, mapW, mapH, faceHeading);
                 Vector3 offset = DroneSwarmLogic.ToroidalOffsetXZ(
-                    new Vector3(shipPos.x, 0f, shipPos.z),
+                    new Vector3(presentPlanar.x, 0f, presentPlanar.z),
                     new Vector3(home.x, 0f, home.z),
                     mapW, mapH);
                 Vector3 display = pos + offset;
                 display.y = pos.y + LiftY;
                 vis.Instance.transform.position = display;
-                float3 face = PeopleTransportMath.ResolveFormationForward(shipRot, heading);
+                float3 face = PeopleTransportMath.ResolveFormationForward(shipRot, faceHeading);
                 vis.Instance.transform.rotation = DroneSwarmPositioning.SlerpIdleFacing(
                     vis.Instance.transform.rotation,
                     new Vector3(face.x, 0f, face.z),
@@ -288,6 +331,51 @@ namespace TitanOrbit.Game
 
             group.LastShipPos = pos;
             group.HasLastShipPos = true;
+        }
+
+        /// <summary>
+        /// Same position and heading lag the server steps onto <see cref="ShipKinematics"/>,
+        /// driven by the remote hull already on screen. A wrap or respawn is farther than
+        /// <see cref="PeopleTransportMath.EscortPositionLagSnap"/>, so the pack snaps
+        /// onto the hull instead of crossing the map.
+        /// </summary>
+        static void StepRemotePresentationFormation(
+            ShipEscortGroup group,
+            float3 hull,
+            quaternion hullRot,
+            float mapW,
+            float mapH)
+        {
+            float dt = math.min(0.1f, math.max(0f, Time.deltaTime));
+            if (!group.HasPresentationFormation)
+            {
+                group.PresentationOrigin = hull;
+                group.PresentationHeading = PeopleTransportMath.ResolveFormationForward(hullRot, float3.zero);
+                group.HasPresentationFormation = true;
+                return;
+            }
+
+            group.PresentationOrigin = PeopleTransportMath.StepEscortFormationOrigin(
+                group.PresentationOrigin, hull, mapW, mapH, dt);
+            group.PresentationHeading = PeopleTransportMath.StepEscortFormationHeading(
+                group.PresentationHeading, hullRot, dt);
+        }
+
+        /// <summary>
+        /// Lagged seat frame for a remote hull, after parked escorts have been posed
+        /// this session. In-flight hops read it so they join the orb on screen.
+        /// </summary>
+        public static bool TryGetVisualFormation(int networkId, out float3 center, out float3 heading)
+        {
+            center = default;
+            heading = default;
+            if (s_Instance == null || networkId <= 0)
+                return false;
+            if (!s_Instance._groups.TryGetValue(networkId, out var group) || !group.HasPresentationFormation)
+                return false;
+            center = group.PresentationOrigin;
+            heading = group.PresentationHeading;
+            return true;
         }
 
         /// <summary>

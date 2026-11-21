@@ -63,7 +63,9 @@ namespace TitanOrbit.Editor
                         continue;
                     }
 
-                    entry.statCategories = ShipFamilyComponentPartKey.InferDefaultStatCategories(entry.componentId);
+                    entry.statCategories = profileSet != null
+                        ? profileSet.GetAuthoringCategories(entry.componentId)
+                        : ShipFamilyComponentPartKey.InferDefaultStatCategories(entry.componentId);
 
                     if (profileSet != null)
                     {

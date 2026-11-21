@@ -294,12 +294,16 @@ namespace TitanOrbit.Game
             out LocalTransform transform,
             out float3 velocity,
             out float3 formationHeading,
+            out float3 formationOrigin,
+            out byte formationCenterSeeded,
             out float extentX,
             out float extentZ)
         {
             transform = default;
             velocity = float3.zero;
             formationHeading = float3.zero;
+            formationOrigin = float3.zero;
+            formationCenterSeeded = 0;
             extentX = 1f;
             extentZ = 1f;
             if (networkId <= 0 || ClientJoinSettleCache.ShouldSkipShipEntityQueries)
@@ -326,6 +330,8 @@ namespace TitanOrbit.Game
                 var kin = em.GetComponentData<ShipKinematics>(ship);
                 velocity = kin.Velocity;
                 formationHeading = kin.FormationHeading;
+                formationOrigin = kin.FormationOrigin;
+                formationCenterSeeded = kin.FormationCenterSeeded;
             }
 
             PeopleTransportEscortLogic.GetEscortHullExtents(em, ship, transform.Scale, out extentX, out extentZ);

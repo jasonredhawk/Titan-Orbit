@@ -84,9 +84,18 @@ namespace TitanOrbit
         /// <summary>
         /// When true, Titan projectile mounts auto-aim and fire on living asteroids (damage mode
         /// only, after ships / pads / moon shields). Published from GameManager on the Editor
-        /// host and on the dedicated server. Cannon lasers acquire rocks even when this is false.
+        /// host and on the dedicated server. Ignored unless <see cref="MegaShipProjectileAutoAim"/>
+        /// is also on. Cannon lasers acquire rocks even when this is false.
         /// </summary>
         public static bool MegaShipsAutoFireAsteroids;
+
+        /// <summary>
+        /// When true, Titan gun, missile, and sniper mounts auto-aim while Fire is held.
+        /// When false, those barrels stay on the nose and shots leave along the hull.
+        /// Cannon lasers always auto-aim. Shift mouse-aim is unchanged.
+        /// Written by GameManager (<c>Mega Ships — Guns</c>). Honored on the dedicated server.
+        /// </summary>
+        public static bool MegaShipProjectileAutoAim;
 
         /// <summary>
         /// When true, <c>MegaShipAutoFireSystem</c> returns immediately (no auto-aim / MEGA
@@ -135,7 +144,8 @@ namespace TitanOrbit
         public static bool IsolateDisableAsteroidShipCollision;
 
         /// <summary>
-        /// Skip soft-track / cruise-correct on local ship presentation — raw NetCode pose only.
+        /// Unused. Local and remote hulls always copy the motor pose. Kept so the
+        /// stutter-isolator key does not shift.
         /// </summary>
         public static bool IsolateDisableShipSoftTrack;
 
@@ -148,6 +158,17 @@ namespace TitanOrbit
         /// from GameManager when done.
         /// </summary>
         public static bool ShowMapSeamLines = true;
+
+        /// <summary>
+        /// When true, a regular ship with the move button released aims guns and shots
+        /// at the cursor or bot target while that point is in front of the nose,
+        /// including while the hull is still gliding. When false, guns stay on
+        /// the nose. Holding the move button stays on the nose either way, and a
+        /// point behind the hull never flips the barrels. Written by GameManager
+        /// (<c>Regular Ships — Guns</c>). Honored on the dedicated server so client
+        /// meshes and server shots use the same mode. MEGA hulls ignore this.
+        /// </summary>
+        public static bool RegularShipGunsPoint;
 
         /// <summary>
         /// When true, the server spawns generalist AI ships for each team that has a home planet.

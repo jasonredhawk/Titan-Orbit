@@ -19,9 +19,9 @@ namespace TitanOrbit.Simulation
         /// Fallback ship-bullet tracer reference when <see cref="BulletVfxBank"/> is missing.
         /// The live value is <see cref="BulletVfxBank.BulletReferenceFirePower"/> on
         /// Resources/BulletVfxBank (default 4). Guns divide by it.
-        /// Snipers use <see cref="SniperVisualReferenceFirePower"/>. Missiles follow the
-        /// store-rocket size curve (<see cref="ComputeMissileShotScale"/>). Lasers, turrets,
-        /// and ramming do not use it.
+        /// Snipers use <see cref="SniperVisualReferenceFirePower"/>. Missiles use the
+        /// store-rocket fire-power curve (<see cref="ComputeMissileShotScale"/>).
+        /// Lasers, turrets, and ramming do not use it.
         /// </summary>
         public const float FixedBulletReferenceDamage = 4f;
 
@@ -40,15 +40,17 @@ namespace TitanOrbit.Simulation
         /// <summary>
         /// Size divisor for a sniper only. Guns divide fire power by
         /// <see cref="BulletVfxBank.BulletReferenceFirePower"/> on the bullet bank asset.
-        /// Missiles do not — a rocket mesh at that divisor is enormous.
+        /// Missiles do not — a rocket mesh at that divisor is about half a Titan hull.
         /// </summary>
         public const float SniperVisualReferenceFirePower = 50f;
 
         /// <summary>
         /// Rocket mesh scale before the bank global multiply.
-        /// <paramref name="curveScale"/> is the store-rocket size for this fire power
-        /// (1.1 at fire power 50). <paramref name="authoredBankScale"/> is the MEGA
-        /// Weapon Missile bank scale (1 = that curve unchanged).
+        /// <paramref name="curveScale"/> is <see cref="RocketShotMath.ShotVisualScale"/>
+        /// (catalog curve × <see cref="RocketShotMath.GlobalMeshScale"/>: 2 at 40, 4 at 240).
+        /// <paramref name="authoredBankScale"/> is the MEGA Weapon Missile bank scale.
+        /// 1 matches a purchased rocket of that fire power.
+        /// Do not multiply by a hull or camera factor — that desyncs titan missiles from store rockets.
         /// </summary>
         [BurstCompile]
         public static float ComputeMissileShotScale(float curveScale, float authoredBankScale)

@@ -1,11 +1,17 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+#if !UNITY_SERVER
+using Unity.Services.Analytics;
+#endif
 using Unity.Services.Authentication;
 using Unity.Services.Authentication.PlayerAccounts;
 using Unity.Services.Core;
 using System.Linq;
 using UnityEngine;
+#if !UNITY_SERVER
+using UnityEngine.UnityConsent;
+#endif
 
 namespace TitanOrbit.Services
 {
@@ -45,6 +51,9 @@ namespace TitanOrbit.Services
         const string GooglePlayerIdPrefsKey = "TitanOrbit_GooglePlayerId_v1";
 
         static bool _authEventsHooked;
+#if !UNITY_SERVER
+        static bool _organicAcquisitionRecorded;
+#endif
         static bool _playerAccountHooksHooked;
         static TaskCompletionSource<bool> _pendingUnityAuthCompletion;
         static bool _pendingLinkInsteadOfSignIn;
@@ -105,11 +114,66 @@ namespace TitanOrbit.Services
         public static async Task InitializeUnityServicesAsync()
         {
             // --- InitializeUnityServicesAsync ---
-            if (UnityServices.State == ServicesInitializationState.Initialized)
-                return;
-            await UnityServices.InitializeAsync();
-            RegisterCoreAuthEventsOnce();
+            // Unity 6.4 Developer Data framework. Grant AnalyticsIntent before init so the
+            // Analytics SDK starts collection during InitializeAsync. StartDataCollection is
+            // obsolete on this editor and throws if mixed with EndUserConsent.
+            // The dedicated server must not count as a player.
+#if !UNITY_SERVER
+            GrantAnalyticsConsent();
+#endif
+            if (UnityServices.State != ServicesInitializationState.Initialized)
+            {
+                await UnityServices.InitializeAsync();
+                RegisterCoreAuthEventsOnce();
+            }
+#if !UNITY_SERVER
+            RecordOrganicAcquisitionOnce();
+#endif
         }
+
+#if !UNITY_SERVER
+        /// <summary>
+        /// Opts this player into UGS Analytics. Stored locally by the Developer Data framework,
+        /// so later launches collect during <see cref="UnityServices.InitializeAsync"/>.
+        /// The SDK then records session events (sdkStart, gameStarted) on its own.
+        /// </summary>
+        static void GrantAnalyticsConsent()
+        {
+            // --- GrantAnalyticsConsent ---
+            ConsentState consent = EndUserConsent.GetConsentState();
+            if (consent.AnalyticsIntent == ConsentStatus.Granted)
+                return;
+            consent.AnalyticsIntent = ConsentStatus.Granted;
+            EndUserConsent.SetConsentState(consent);
+        }
+
+        /// <summary>
+        /// User Acquisition daily users are counted from the manual <c>acquisitionSource</c> event.
+        /// There is no ad network in this project, so the player's own sessions are organic.
+        /// </summary>
+        static void RecordOrganicAcquisitionOnce()
+        {
+            // --- RecordOrganicAcquisitionOnce ---
+            if (_organicAcquisitionRecorded || UnityServices.State != ServicesInitializationState.Initialized)
+                return;
+            try
+            {
+                AnalyticsService.Instance.RecordEvent(new AcquisitionSourceEvent
+                {
+                    AcquisitionChannel = "organic",
+                    AcquisitionCampaignId = "none",
+                    AcquisitionCreativeId = "none",
+                    AcquisitionCampaignName = "organic",
+                    AcquisitionProvider = "none"
+                });
+                _organicAcquisitionRecorded = true;
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning("[UnityGameServicesBootstrap] Analytics acquisition event was not recorded. " + e.Message);
+            }
+        }
+#endif
 
         /// <summary>
         /// Uses <see cref="AuthenticationService.Instance.SignInAnonymouslyAsync"/> to create a guest session or

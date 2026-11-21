@@ -64,6 +64,8 @@ namespace TitanOrbit.Entities
             var go = new GameObject("BulletTracerPool");
             Object.DontDestroyOnLoad(go);
             go.SetActive(false);
+            if (go.GetComponent<TitanOrbit.Core.VfxUrpCompat.VfxPoolRootMarker>() == null)
+                go.AddComponent<TitanOrbit.Core.VfxUrpCompat.VfxPoolRootMarker>();
             s_root = go.transform;
         }
 
@@ -184,6 +186,7 @@ namespace TitanOrbit.Entities
             var root = new GameObject("BulletTracer_Pooled");
             // Inactive before the visual exists, so playOnAwake waits for the muzzle pose.
             root.SetActive(false);
+            root.AddComponent<TitanOrbit.Core.VfxUrpCompat.TracerShellMarker>();
             if (projectilePrefab != null)
             {
                 var visual = Object.Instantiate(projectilePrefab, root.transform);

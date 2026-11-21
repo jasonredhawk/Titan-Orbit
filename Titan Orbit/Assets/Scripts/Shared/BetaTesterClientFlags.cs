@@ -32,6 +32,14 @@ namespace TitanOrbit
         /// <summary>Toggle bits the server will honor. Zero until the session reply.</summary>
         public static byte ConfirmedFlags { get; private set; }
 
+        /// <summary>
+        /// True when this process's signed-in account owns the beta item.
+        /// The local-host server reads it so Editor play can skip gem prices
+        /// without the Cloud Save admin secret. A dedicated server process
+        /// never sets this; remote clients still need the lookup.
+        /// </summary>
+        public static bool LocalAccountOwned { get; private set; }
+
         /// <summary>What the player last asked for. Saved in PlayerPrefs by the menu.</summary>
         public static byte RequestedFlags;
 
@@ -53,6 +61,17 @@ namespace TitanOrbit
         {
             ClearVerified();
             RequestedFlags = 0;
+            LocalAccountOwned = false;
+        }
+
+        /// <summary>
+        /// Publishes the account flag for the local-host server in this process.
+        /// Called even when the value did not change, so a domain-reload reset of
+        /// this static still catches an entitlement that was already true.
+        /// </summary>
+        public static void SetLocalAccountOwned(bool owned)
+        {
+            LocalAccountOwned = owned;
         }
 
         /// <summary>Stores the server's answer. Prices follow <see cref="ConfirmedFlags"/>.</summary>

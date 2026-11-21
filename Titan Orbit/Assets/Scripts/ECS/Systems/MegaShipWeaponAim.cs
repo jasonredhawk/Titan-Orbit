@@ -1,5 +1,6 @@
 using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
+using TitanOrbit.Simulation;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.NetCode;
@@ -76,14 +77,18 @@ namespace TitanOrbit.ECS
         /// <param name="hull">MEGA hull transform (yaw-only sim, unbounded).</param>
         /// <param name="mount">Mount to rotate (written back by the caller).</param>
         /// <param name="desiredWorldDir">World XZ aim (already toroidal-shortest if from a target).</param>
-        /// <param name="dt">Unused; kept so existing callers do not change.</param>
+        /// <param name="dt">Tick step. Used only when <paramref name="maxDegPerSec"/> is set.</param>
+        /// <param name="maxDegPerSec">
+        /// Turn cap. 0 snaps (projectile guns). Cannon lasers pass
+        /// <see cref="CannonLaserMath.SlewDegPerSec"/>.
+        /// </param>
         public static void RotateMountTowardWorldDir(
             in LocalTransform hull,
             ref ShipWeaponMountElement mount,
             float3 desiredWorldDir,
-            float dt)
+            float dt,
+            float maxDegPerSec = 0f)
         {
-            _ = dt;
             desiredWorldDir.y = 0f;
             if (!math.isfinite(desiredWorldDir.x) || !math.isfinite(desiredWorldDir.z)
                 || math.lengthsq(desiredWorldDir) < MinDirectionSq)
@@ -102,7 +107,18 @@ namespace TitanOrbit.ECS
             hullFwd = math.normalize(hullFwd);
 
             float desiredLocalYaw = SignedPlanarYawDeg(hullFwd, desiredWorldDir);
-            mount.LocalRotation = quaternion.AxisAngle(math.up(), math.radians(desiredLocalYaw));
+            float yaw = desiredLocalYaw;
+            if (maxDegPerSec > 0f)
+            {
+                float current = GetLocalYawDeg(mount.LocalRotation);
+                float delta = DeltaAngleDeg(current, desiredLocalYaw);
+                float step = maxDegPerSec * math.max(0f, dt);
+                if (math.abs(delta) > step)
+                    delta = math.sign(delta) * step;
+                yaw = current + delta;
+            }
+
+            mount.LocalRotation = quaternion.AxisAngle(math.up(), math.radians(yaw));
         }
 
         /// <summary>Signed yaw degrees from planar <paramref name="fromFwd"/> to <paramref name="toFwd"/> (Unity +Y, +Z forward).</summary>
@@ -170,6 +186,41 @@ namespace TitanOrbit.ECS
         {
             aimPoint = new float3(slot.AimWorldX, y, slot.AimWorldZ);
             return IsTrackingAim(in slot);
+        }
+
+        /// <summary>
+        /// True when regular-ship guns may leave the nose. The move button is
+        /// <see cref="ShipInput.Thrust"/>. Holding it keeps every barrel forward.
+        /// Releasing it tracks the cursor or bot target even while the hull is
+        /// still gliding, including with space brakes off. Speed does not decide this.
+        /// </summary>
+        public static bool AllowsPointWeaponAim(bool thrustHeld) => !thrustHeld;
+
+        /// <summary>
+        /// True when <paramref name="aimPoint"/> is in the forward half-plane of the hull.
+        /// Dot of hull forward and the toroidal offset is at least 0, so a barrel can
+        /// aim up to straight off the beam and no further. A missing map size uses a
+        /// raw offset (callers skip toroidal math until the map exists).
+        /// </summary>
+        public static bool IsInFrontOfHull(
+            in LocalTransform hull,
+            float3 aimPoint,
+            float mapW,
+            float mapH)
+        {
+            float3 hullFwd = math.mul(hull.Rotation, new float3(0f, 0f, 1f));
+            hullFwd.y = 0f;
+            if (math.lengthsq(hullFwd) < MinDirectionSq)
+                return false;
+            hullFwd = math.normalize(hullFwd);
+
+            float3 offset = ToroidalMapEcs.IsValidMapSize(mapW, mapH)
+                ? ToroidalMapEcs.ShortestOffsetXZ(hull.Position, aimPoint, mapW, mapH)
+                : aimPoint - hull.Position;
+            offset.y = 0f;
+            if (math.lengthsq(offset) < MinDirectionSq)
+                return true;
+            return math.dot(hullFwd, offset) >= 0f;
         }
 
         /// <summary>

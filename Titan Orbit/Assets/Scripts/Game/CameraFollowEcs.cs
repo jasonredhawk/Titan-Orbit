@@ -1120,8 +1120,8 @@ namespace TitanOrbit.Game
         /// <summary>
         /// Live pose of the last-hit ship, asteroid, or defense turret pad from visualizer
         /// proxies (no extra map-body EntityQuery). Turret kills frame the gun, not the
-        /// planet. Mines and missing ghosts use the packed logical point. Map size from
-        /// ToroidalMapEcs.
+        /// planet. Mines and missing ghosts use the packed logical point. A killer ship
+        /// uses the presentation pose the mesh is drawn at. Map size from ToroidalMapEcs.
         /// </summary>
         void RefreshDeathSource(World world, Entity localShip, Vector3 localShipPos)
         {
@@ -1379,7 +1379,16 @@ namespace TitanOrbit.Game
             displayPos = default;
             radius = 3f;
             float3 logical;
-            if (em.HasComponent<LocalTransform>(found))
+            // Killer hulls are drawn from the presentation cache. LocalTransform is still
+            // the interpolated ghost, and on frames with no prediction tick that snapshot
+            // is a different pose than the mesh. Framing it makes the ship slide in shot.
+            bool shipPose = em.HasComponent<ShipTag>(found);
+            if (shipPose && GhostPresentationTransformCache.TryGetShip(found, out var presented))
+            {
+                logical = presented.Position;
+                radius = BodyCollisionMath.GetShipHullRadiusWorld(math.max(0.25f, presented.Scale));
+            }
+            else if (em.HasComponent<LocalTransform>(found))
             {
                 var lt = em.GetComponentData<LocalTransform>(found);
                 logical = lt.Position;
@@ -1404,7 +1413,10 @@ namespace TitanOrbit.Game
 
             logical.y = 0f;
             float3 display = logical;
-            if (ToroidalMapEcs.TryGetMapSize(out float mapW, out float mapH) &&
+            // Ships stay on the canonical pose the proxy uses. Nearest-tile retile against
+            // the wreck aims the camera at an empty copy and flips near a map edge.
+            if (!shipPose &&
+                ToroidalMapEcs.TryGetMapSize(out float mapW, out float mapH) &&
                 ToroidalMapEcs.IsValidMapSize(mapW, mapH))
             {
                 float3 reference = new float3(localShipPos.x, 0f, localShipPos.z);

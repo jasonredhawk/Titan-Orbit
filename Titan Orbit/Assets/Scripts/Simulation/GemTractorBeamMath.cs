@@ -278,6 +278,9 @@ namespace TitanOrbit.Simulation
             return (float)math.max(0d, nowServerSeconds - lockSec);
         }
 
+        /// <summary>Shortest time the open cone stays up while the gem slides in.</summary>
+        public const float MinSuckDuration = 0.28f;
+
         /// <summary>
         /// Thin-line extend plus cone widen. Pull must not start before this elapses.
         /// </summary>
@@ -285,6 +288,17 @@ namespace TitanOrbit.Simulation
         {
             float extend = extendDuration > 0.0001f ? extendDuration : MinExtendDuration;
             return extend + WidthExpandDuration;
+        }
+
+        /// <summary>
+        /// How long one wing stays on a committed gem: extend, cone widen, then the suck-in.
+        /// The wing must not lock another crystal until this elapses.
+        /// </summary>
+        public static float ComputeCaptureHoldSeconds(float extendDuration)
+        {
+            float extend = extendDuration > 0.0001f ? extendDuration : MinExtendDuration;
+            float suck = math.max(extend, MinSuckDuration);
+            return ComputeDeployTotalDuration(extend) + suck;
         }
 
         /// <summary>

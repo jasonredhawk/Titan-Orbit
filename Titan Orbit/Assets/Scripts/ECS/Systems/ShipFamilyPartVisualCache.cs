@@ -12,8 +12,9 @@ namespace TitanOrbit.ECS
     /// <para>
     /// [TITAN-ORBIT] Templates keep authored colliders so hull-bake remaps can measure
     /// the foreign silhouette. Live proxies strip those colliders after clone.
-    /// Weapon child <c>localScale</c> comes from the lowest-tier prefab so a
-    /// swapped barrel keeps its designed size.
+    /// Weapon templates still come from the lowest-tier prefab so a high-tier
+    /// hull's already-grown barrel is not the mesh. The swap places that mesh
+    /// at the host hardpoint's scale.
     /// </para>
     /// </summary>
     public static class ShipFamilyPartVisualCache
@@ -34,9 +35,9 @@ namespace TitanOrbit.ECS
         /// <summary>
         /// Returns a hidden template for <paramref name="componentId"/> on
         /// <paramref name="sourceFamily"/>, or null when no upgrade-tree prefab contains it.
-        /// Weapon templates use the lowest-tier authored size so a swapped barrel
-        /// keeps its designed localScale. Other parts still prefer
-        /// <paramref name="shipLevel"/>.
+        /// Weapon templates use the lowest-tier hull so the mesh is not a pre-grown
+        /// high-tier barrel. Placed scale comes from the host hardpoint, not this
+        /// template. Other parts still prefer <paramref name="shipLevel"/>.
         /// </summary>
         public static GameObject GetOrCreateTemplate(
             ShipFamilyDefinition sourceFamily,
@@ -97,10 +98,11 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Instantiates <paramref name="template"/> under the host slot's parent,
-        /// copies the host hardpoint pose, and applies the source part's authored
-        /// localScale (every family weapon shares one designed size). Attribute grow
-        /// runs afterward from that base — do not copy the live grown host scale.
+        /// Instantiates <paramref name="template"/> under the host slot's parent and
+        /// copies the host hardpoint position and rotation. The template's own
+        /// <c>localScale</c> is only a placeholder — <see cref="ShipComponentVisualSwapLogic"/>
+        /// replaces it with the hardpoint's authored scale (the size of the part
+        /// being upgraded). Do not copy a live attribute-grown scale here.
         /// </summary>
         /// <param name="stripColliders">
         /// True on hybrid proxies (ECS covering box is the collider). False on bake clones.

@@ -75,6 +75,13 @@ namespace TitanOrbit.Game
             LastPeopleTransportSnapshots.Remove(entity);
         }
 
+        /// <summary>Drops last-known pose when a hull despawns (stops unbounded Last* growth).</summary>
+        internal static void ForgetShip(Entity entity)
+        {
+            Ships.Remove(entity);
+            LastShipSnapshots.Remove(entity);
+        }
+
         /// <summary>
         /// Lookup ship presentation pose by entity. Returns false if not published this frame.
         /// </summary>
@@ -136,6 +143,43 @@ namespace TitanOrbit.Game
             if (PeopleTransports.TryGetValue(entity, out snapshot))
                 return true;
             return LastPeopleTransportSnapshots.TryGetValue(entity, out snapshot);
+        }
+    }
+
+    /// <summary>
+    /// Mesh pose for one ship, already built by <see cref="ShipVisualSyncSystem"/>.
+    /// The minimap lives in another assembly and cannot see
+    /// <see cref="GhostPresentationTransformCache"/> (that cache is internal).
+    /// This is the public read of the same numbers the ship mesh uses.
+    /// </summary>
+    public static class ShipPresentationPose
+    {
+        /// <summary>
+        /// Latest published mesh pose for <paramref name="entity"/>.
+        /// False only when this hull has never been published (the spawn frame).
+        /// A pose from the previous frame still counts — falling back to the
+        /// simulation <c>LocalTransform</c> in that case shakes the icon, because
+        /// that transform steps once per tick while the mesh coasts between ticks.
+        /// </summary>
+        /// <param name="entity">Ship ghost this client is drawing.</param>
+        /// <param name="position">Canonical world position (already wrapped on the torus).</param>
+        /// <param name="rotation">Mesh rotation, including any display yaw.</param>
+        /// <param name="scale">Uniform hull scale copied from the ghost.</param>
+        public static bool TryGetShip(Entity entity, out float3 position, out quaternion rotation, out float scale)
+        {
+            // --- Prefer the pose the mesh already published ---
+            if (GhostPresentationTransformCache.TryGetShip(entity, out GhostPresentationTransformCache.Snapshot snap))
+            {
+                position = snap.Position;
+                rotation = snap.Rotation;
+                scale = snap.Scale;
+                return true;
+            }
+
+            position = default;
+            rotation = quaternion.identity;
+            scale = 1f;
+            return false;
         }
     }
 }

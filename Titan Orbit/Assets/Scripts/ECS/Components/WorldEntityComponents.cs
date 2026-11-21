@@ -1,5 +1,7 @@
+using System.Collections.Generic;
 using TitanOrbit.Core;
 using TitanOrbit.Simulation;
+using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.NetCode;
@@ -303,9 +305,8 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
-    /// [NETCODE] Replicated gem-moon shield reservoir. Shield absorbs bullet damage; leftover
-    /// hits knock <see cref="CurrentMoonGems"/> out as pickups. While the shield stays down,
-    /// the combat drain can also siphon the planet bank into loose gems.
+    /// [NETCODE] Replicated gem-moon shield. Shield absorbs hits first; leftover
+    /// damage knocks <see cref="PlanetState.CurrentGems"/> out as pickups.
     /// </summary>
     public struct PlanetGemMoonState : IComponentData
     {
@@ -393,11 +394,10 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
-    /// Server-only running total of health removed from one asteroid by one ship.
-    /// Not ghosted — added at spawn after ghost identity is stripped. Overkill past
-    /// 0 HP is not counted; only health the rock actually lost.
+    /// One ship's running total of health removed from one asteroid.
+    /// Overkill past 0 HP is not counted; only health the rock actually lost.
     /// </summary>
-    public struct AsteroidDamageCreditElement : IBufferElementData
+    public struct AsteroidDamageCreditElement
     {
         /// <summary><see cref="GhostOwner.NetworkId"/> of the attacker. Bots count.</summary>
         public int NetworkId;
@@ -407,13 +407,84 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
+    /// Server-only mirror of <see cref="AsteroidDamageCredit"/> for one asteroid.
+    /// Not ghosted — added at spawn. Combat must not treat this component as the
+    /// running total: bullet and burn loops drop component writes after the first
+    /// ship's opening hit. The live sums live in the credit ledger.
+    /// </summary>
+    public struct AsteroidDamageCreditState : IComponentData
+    {
+        /// <summary>One row per ship. When the list is full, a new ship replaces the smallest total.</summary>
+        public FixedList128Bytes<AsteroidDamageCreditElement> Entries;
+    }
+
+    /// <summary>
     /// Accumulates per-ship asteroid health damage and names the top contributor
     /// when the rock bursts its gems.
+    /// <para>
+    /// Totals live in a per-world ledger, not on the asteroid. Writing them with
+    /// <c>SetComponentData</c> or a dynamic buffer inside bullet, burn, and ram
+    /// loops kept only the first ship's opening hit, so that ship reserved the
+    /// burst even when someone else removed more health.
+    /// </para>
     /// </summary>
     public static class AsteroidDamageCredit
     {
+        /// <summary>Ships remembered per rock. A new ship replaces the smallest total when full.</summary>
+        const int MaxShipsPerRock = 16;
+
+        sealed class RockTotals
+        {
+            public int Count;
+            public readonly int[] NetworkIds = new int[MaxShipsPerRock];
+            public readonly float[] Damage = new float[MaxShipsPerRock];
+
+            public void Reset() => Count = 0;
+        }
+
+        sealed class WorldLedger
+        {
+            public readonly Dictionary<Entity, RockTotals> Rocks = new Dictionary<Entity, RockTotals>(128);
+            public readonly Stack<RockTotals> Pool = new Stack<RockTotals>(32);
+
+            public RockTotals Rent()
+            {
+                if (Pool.Count > 0)
+                {
+                    RockTotals rock = Pool.Pop();
+                    rock.Reset();
+                    return rock;
+                }
+
+                return new RockTotals();
+            }
+
+            public void Return(RockTotals rock)
+            {
+                rock.Reset();
+                Pool.Push(rock);
+            }
+        }
+
+        static readonly Dictionary<ulong, WorldLedger> s_ByWorld = new Dictionary<ulong, WorldLedger>(4);
+
         /// <summary>
-        /// Empty credit buffer on a freshly spawned rock. Clears a copied buffer so a
+        /// Drops every rock total in this world. Call once at map spawn so a new
+        /// match cannot inherit the previous match's ledger.
+        /// </summary>
+        public static void ClearWorld(EntityManager em)
+        {
+            if (!TryGetWorldKey(em, out ulong key))
+                return;
+            if (!s_ByWorld.TryGetValue(key, out WorldLedger ledger))
+                return;
+
+            ledger.Rocks.Clear();
+            ledger.Pool.Clear();
+        }
+
+        /// <summary>
+        /// Empty credit table on a freshly spawned rock. Clears a copied table so a
         /// respawn cannot inherit the previous life's totals.
         /// </summary>
         public static void Ensure(EntityManager em, Entity asteroid)
@@ -421,62 +492,159 @@ namespace TitanOrbit.ECS
             if (!em.Exists(asteroid))
                 return;
 
-            if (!em.HasBuffer<AsteroidDamageCreditElement>(asteroid))
-                em.AddBuffer<AsteroidDamageCreditElement>(asteroid);
+            Forget(em, asteroid);
+            if (!em.HasComponent<AsteroidDamageCreditState>(asteroid))
+                em.AddComponentData(asteroid, default(AsteroidDamageCreditState));
             else
-                em.GetBuffer<AsteroidDamageCreditElement>(asteroid).Clear();
+                em.SetComponentData(asteroid, default(AsteroidDamageCreditState));
         }
 
         /// <summary>
         /// Adds health this hit actually removed. No-op for unknown attackers
-        /// (<paramref name="networkId"/> ≤ 0) or when the rock has no credit buffer.
-        /// Does not add the buffer — that would be a structural change inside combat queries.
+        /// (<paramref name="networkId"/> ≤ 0). Does not add components — that would
+        /// be a structural change inside combat queries.
         /// </summary>
         public static void Record(EntityManager em, Entity asteroid, int networkId, float appliedDamage)
         {
             if (networkId <= 0 || appliedDamage <= 0.0001f || !em.Exists(asteroid))
                 return;
-            if (!em.HasBuffer<AsteroidDamageCreditElement>(asteroid))
+            if (!TryGetLedger(em, out WorldLedger ledger))
                 return;
 
-            var credits = em.GetBuffer<AsteroidDamageCreditElement>(asteroid);
-            for (int i = 0; i < credits.Length; i++)
+            if (!ledger.Rocks.TryGetValue(asteroid, out RockTotals rock))
             {
-                if (credits[i].NetworkId != networkId)
-                    continue;
-
-                var row = credits[i];
-                row.Damage += appliedDamage;
-                credits[i] = row;
-                return;
+                rock = ledger.Rent();
+                ledger.Rocks.Add(asteroid, rock);
             }
 
-            credits.Add(new AsteroidDamageCreditElement
-            {
-                NetworkId = networkId,
-                Damage = appliedDamage,
-            });
+            AddDamage(rock, networkId, appliedDamage);
+            MirrorOntoAsteroid(em, asteroid, rock);
         }
 
         /// <summary>
-        /// Highest accumulated health damage. Exact ties keep the earlier contributor
-        /// (first ship to reach that total). 0 when nobody has credit.
+        /// Highest accumulated health damage on this rock. Exact ties go to the
+        /// ship that most recently matched that total, not the first hit.
+        /// 0 when nobody has credit.
         /// </summary>
-        public static int ResolveTop(DynamicBuffer<AsteroidDamageCreditElement> credits)
+        public static int ResolveTop(EntityManager em, Entity asteroid)
         {
+            if (!TryGetLedger(em, out WorldLedger ledger) ||
+                !ledger.Rocks.TryGetValue(asteroid, out RockTotals rock))
+                return 0;
+
             int bestId = 0;
             float best = 0f;
-            for (int i = 0; i < credits.Length; i++)
+            for (int i = 0; i < rock.Count; i++)
             {
-                var row = credits[i];
-                if (row.NetworkId <= 0 || row.Damage <= best)
+                if (rock.NetworkIds[i] <= 0 || rock.Damage[i] < best)
                     continue;
 
-                best = row.Damage;
-                bestId = row.NetworkId;
+                best = rock.Damage[i];
+                bestId = rock.NetworkIds[i];
             }
 
             return bestId;
+        }
+
+        /// <summary>Drops this rock's totals. Call when the asteroid is destroyed.</summary>
+        public static void Forget(EntityManager em, Entity asteroid)
+        {
+            if (!TryGetLedger(em, out WorldLedger ledger))
+                return;
+            if (!ledger.Rocks.TryGetValue(asteroid, out RockTotals rock))
+                return;
+
+            ledger.Rocks.Remove(asteroid);
+            ledger.Return(rock);
+        }
+
+        static void AddDamage(RockTotals rock, int networkId, float appliedDamage)
+        {
+            for (int i = 0; i < rock.Count; i++)
+            {
+                if (rock.NetworkIds[i] != networkId)
+                    continue;
+
+                rock.Damage[i] += appliedDamage;
+                return;
+            }
+
+            if (rock.Count < MaxShipsPerRock)
+            {
+                rock.NetworkIds[rock.Count] = networkId;
+                rock.Damage[rock.Count] = appliedDamage;
+                rock.Count++;
+                return;
+            }
+
+            // Full table: keep the ships that have actually removed the most health.
+            int smallest = 0;
+            float smallestDamage = float.MaxValue;
+            for (int i = 0; i < rock.Count; i++)
+            {
+                if (rock.Damage[i] >= smallestDamage)
+                    continue;
+                smallestDamage = rock.Damage[i];
+                smallest = i;
+            }
+
+            if (appliedDamage <= smallestDamage)
+                return;
+
+            rock.NetworkIds[smallest] = networkId;
+            rock.Damage[smallest] = appliedDamage;
+        }
+
+        /// <summary>
+        /// Copies the ledger onto the asteroid for inspection. The burst claim does
+        /// not read this — combat can still drop the component write.
+        /// </summary>
+        static void MirrorOntoAsteroid(EntityManager em, Entity asteroid, RockTotals rock)
+        {
+            if (!em.HasComponent<AsteroidDamageCreditState>(asteroid))
+                return;
+
+            var state = default(AsteroidDamageCreditState);
+            var entries = state.Entries;
+            int count = rock.Count;
+            if (count > entries.Capacity)
+                count = entries.Capacity;
+            for (int i = 0; i < count; i++)
+            {
+                entries.Add(new AsteroidDamageCreditElement
+                {
+                    NetworkId = rock.NetworkIds[i],
+                    Damage = rock.Damage[i],
+                });
+            }
+
+            state.Entries = entries;
+            em.SetComponentData(asteroid, state);
+        }
+
+        static bool TryGetWorldKey(EntityManager em, out ulong key)
+        {
+            key = 0;
+            World world = em.World;
+            if (world == null || !world.IsCreated)
+                return false;
+
+            key = (ulong)world.SequenceNumber;
+            return true;
+        }
+
+        static bool TryGetLedger(EntityManager em, out WorldLedger ledger)
+        {
+            ledger = null;
+            if (!TryGetWorldKey(em, out ulong key))
+                return false;
+            if (!s_ByWorld.TryGetValue(key, out ledger))
+            {
+                ledger = new WorldLedger();
+                s_ByWorld.Add(key, ledger);
+            }
+
+            return true;
         }
     }
 }

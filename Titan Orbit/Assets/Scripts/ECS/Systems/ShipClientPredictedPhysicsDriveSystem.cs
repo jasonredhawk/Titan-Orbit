@@ -1,3 +1,4 @@
+using TitanOrbit;
 using TitanOrbit.Core;
 using TitanOrbit.Data;
 using TitanOrbit.Generation;
@@ -154,6 +155,7 @@ namespace TitanOrbit.ECS
                 // Running the motor here applies empty input, then the snapshot yanks
                 // the pose back. Leave the interpolated transform alone.
                 SkipBots = 1,
+                PointGuns = TitanOrbitDebugFlags.RegularShipGunsPoint ? (byte)1 : (byte)0,
             };
             state.Dependency = job.ScheduleParallel(state.Dependency);
             state.Dependency = planets.Dispose(state.Dependency);

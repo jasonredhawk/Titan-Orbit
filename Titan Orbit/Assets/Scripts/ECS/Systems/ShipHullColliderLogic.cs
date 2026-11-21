@@ -272,13 +272,12 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Measures chassis part colliders (with attribute grow and optional store grow),
-        /// caches a covering ellipsoid, and applies it. Uses <paramref name="cachedExtents"/>
+        /// Measures chassis part colliders after attribute grow, caches a covering ellipsoid,
+        /// and applies it. GEAR purchases do not resize parts. Uses <paramref name="cachedExtents"/>
         /// when the prefab walk fails so a prior bake is not lost.
         /// </summary>
         /// <param name="storeFactors">
-        /// Moon-store visual grow from <see cref="ShipComponentStoreVisualScaleLogic"/>.
-        /// Default = attribute-only size.
+        /// Equipped GEAR scale. Purchases are identity, so the bake stays at attribute size.
         /// </param>
         public static bool TryApplyCoveringHull(
             EntityManager em,
@@ -390,7 +389,7 @@ namespace TitanOrbit.ECS
         /// <summary>
         /// Presentation-space ellipsoid that fits every enabled non-trigger collider on the
         /// chassis after <see cref="ShipComponentAttributeScaleLogic.ApplyToHierarchy"/>.
-        /// Instantiates once (nested MEGA modules + attribute / store grow). Call only when
+        /// Instantiates once (nested MEGA modules + attribute grow). Call only when
         /// <see cref="NeedsCoveringRecompute"/> is true.
         /// </summary>
         public static bool TryComputeCoveringHull(
@@ -409,7 +408,7 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Same as <see cref="TryComputeCoveringHull(GameObject, in ShipAttributeUpgradeState, string, bool, out float3, out float3)"/>
-        /// plus moon-store grow and cross-family part remaps so covering colliders match
+        /// plus cross-family part remaps so covering colliders match
         /// the hybrid proxy silhouette.
         /// </summary>
         public static bool TryComputeCoveringHull(

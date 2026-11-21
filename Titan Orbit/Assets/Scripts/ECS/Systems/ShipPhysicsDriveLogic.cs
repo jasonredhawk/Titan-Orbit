@@ -35,8 +35,12 @@ namespace TitanOrbit.ECS
     /// drop so the return to cruise is immediate — ram overspeed above the old cap still decays.
     /// Drain rate = <see cref="ShipMotorConfig.ThrustEnergyDrainPerSecond"/>
     /// (ExtraSpeedEnergyDrain summed across engines).
-    /// MEGA hulls never engage overdrive. Shift instead locks yaw (heading stays put
-    /// while the mouse moves) so unoccupied auto-guns can fire at the cursor.
+    /// MEGA hulls never engage overdrive. Shift locks MEGA yaw only (heading stays
+    /// put while the mouse moves) so guns can fire at the cursor. Regular hulls
+    /// keep turning toward the cursor and still burst. Their guns follow
+    /// Game Manager → Regular Ships — Guns: Forward stays on the nose, Point
+    /// ghosts the mouse point while the move button is released and that point
+    /// is in front of the hull, including a glide with the brakes off.
     /// Live subtractive mass tax (<see cref="ShipMobilityResolution"/>) converts untaxed motor
     /// baselines into MaxSpeed / accel / turn from current gems/people + ComponentSize.
     /// While <see cref="ShipAsteroidContactState"/> reports contact from the previous physics
@@ -112,9 +116,15 @@ namespace TitanOrbit.ECS
         /// <param name="skipMassTax">True for MEGA hulls — keep chassis speed / accel / turn.</param>
         /// <param name="isMegaShip">
         /// True while <see cref="MegaShipState.IsMega"/>. Disables overdrive and treats
-        /// Shift as a heading lock instead of a speed burst.
+        /// Shift as a heading lock instead of a speed burst. Regular hulls always yaw.
         /// </param>
         /// <param name="shipPhysicsRadius">Live PhysX covering radius for moon-dock attach only.</param>
+        /// <param name="pointGuns">
+        /// True when Game Manager regular-ship guns are Point. Holding the move
+        /// button still clears the ghosted aim point so barrels stay on the nose.
+        /// Releasing it writes the aim point so each muzzle can converge on the
+        /// cursor or bot target, including while the hull is still gliding.
+        /// </param>
         public static void Step(
             in ShipInput input,
             in ShipMotorConfig motor,
@@ -144,7 +154,8 @@ namespace TitanOrbit.ECS
             float minTurn,
             bool skipMassTax = false,
             bool isMegaShip = false,
-            float shipPhysicsRadius = -1f)
+            float shipPhysicsRadius = -1f,
+            bool pointGuns = false)
         {
             // --- Guard: fixed-step dt only ---
             if (dt <= 0f)
@@ -286,8 +297,9 @@ namespace TitanOrbit.ECS
             float rotationSpeed = taxed.RotationSpeed;
 
             // --- Yaw: dt-capped slerp toward aim (never snap to mouse in one frame) ---
-            // [TITAN-ORBIT] MEGA + Shift: lock heading. Mouse still aims unoccupied
-            // auto-guns (MegaShipAutoFireSystem); the hull keeps flying the last facing.
+            // [TITAN-ORBIT] MEGA + Shift: lock heading. Regular hulls always yaw
+            // toward the cursor. Gun meshes stay on that nose while moving, and
+            // converge on the aim point only after the hull stops.
             if (!(isMegaShip && input.Overdrive))
             {
                 AimWorldPoint(in transform.Position, in transform.Rotation, in input.AimPlanarDir, out float2 aimWorldXz);
@@ -451,6 +463,12 @@ namespace TitanOrbit.ECS
             }
             else
             {
+                // [TITAN-ORBIT] Frictionless coast (auto-brakes toggle off) never drops under
+                // ShipMoonDockSystem.MaxLandingSpeed, so the dock trigger keeps resetting.
+                // Free-fall inside a friendly moon shell applies the same brake curve so
+                // landing can start. Toggle already on: do not override — the player brakes.
+                bool moonZoneFreeFallBrake =
+                    input.DisableSpaceBrakes && !input.Thrust && inFriendlyMoonZone;
                 ApplyThrustCoastAndBrakes(
                     ref vel,
                     in transform.Rotation,
@@ -459,7 +477,7 @@ namespace TitanOrbit.ECS
                     motor.BrakeDeceleration,
                     movementMass,
                     input.Thrust,
-                    !input.DisableSpaceBrakes,
+                    !input.DisableSpaceBrakes || moonZoneFreeFallBrake,
                     dt);
 
                 ApplyRecoilDecay(ref vel, maxSpeed, motor.RecoilDecayPerSecond, dt);
@@ -482,6 +500,18 @@ namespace TitanOrbit.ECS
             // Keep the bounced linear; only the motor delta above changed it.
             physicsVelocity.Linear = vel;
             physicsVelocity.Angular = float3.zero;
+
+            // Nose while the move button is held. Releasing it ghosts the aim point
+            // (cursor, or the bot's target) even while the hull is still gliding, so
+            // wide barrels can meet on a small asteroid. mapW/mapH come from the drive tick.
+            if (isMegaShip || !pointGuns
+                || !MegaShipWeaponAim.AllowsPointWeaponAim(input.Thrust))
+                ClearManualAim(ref shipState);
+            else if (MegaShipWeaponAim.TryGetOwnerMouseAimPoint(in transform, in input, out float3 mousePoint)
+                     && MegaShipWeaponAim.IsInFrontOfHull(in transform, mousePoint, mapW, mapH))
+                WriteManualAim(ref shipState, in transform, in input);
+            else
+                ClearManualAim(ref shipState);
 
             // [PHYSICS] Motor owns cruise feel — clear package damping so it cannot fight our curves.
             physicsDamping = default;
@@ -590,6 +620,8 @@ namespace TitanOrbit.ECS
         /// bounce overspeed for <see cref="ApplyRecoilDecay"/>.
         /// When <paramref name="spaceBrakes"/> is false and the player is not thrusting,
         /// velocity is left alone (frictionless coast — Left Ctrl / AIR BRAKES toggle).
+        /// Callers may still pass true while that toggle is off if the hull is free-falling
+        /// inside a friendly moon dock shell, so moon landing can accumulate.
         /// </summary>
         static void ApplyThrustCoastAndBrakes(
             ref float3 vel,
@@ -1002,6 +1034,31 @@ namespace TitanOrbit.ECS
             float decay = recoilDecayPerSecond > 0f ? recoilDecayPerSecond : 6f;
             float targetMag = math.clamp(mag - decay * dt, maxSpeed, mag);
             vel = math.normalize(vel) * targetMag;
+        }
+
+        /// <summary>
+        /// Ghosts the regular-ship mouse point so remote weapon meshes can converge on it.
+        /// Inactive when the owner has no usable aim sample.
+        /// </summary>
+        public static void WriteManualAim(ref ShipState shipState, in LocalTransform hull, in ShipInput input)
+        {
+            if (!MegaShipWeaponAim.TryGetOwnerMouseAimPoint(in hull, in input, out float3 aim))
+            {
+                ClearManualAim(ref shipState);
+                return;
+            }
+
+            shipState.ManualAimActive = true;
+            shipState.ManualAimWorldX = aim.x;
+            shipState.ManualAimWorldZ = aim.z;
+        }
+
+        /// <summary>Parks ghosted regular-ship mouse aim (MEGA, shock, turret).</summary>
+        public static void ClearManualAim(ref ShipState shipState)
+        {
+            shipState.ManualAimActive = false;
+            shipState.ManualAimWorldX = 0f;
+            shipState.ManualAimWorldZ = 0f;
         }
 
         /// <summary>

@@ -60,17 +60,18 @@ namespace TitanOrbit.Game
         static Material s_sharedMinerTintedGemMaterial;
 
         /// <summary>
-        /// Alpha while the local ship cannot scoop a gem it just expelled.
-        /// Shared per tint so grind dumps do not allocate a material per crystal.
+        /// Colour while this viewer cannot scoop the crystal yet (own spill penalty, or
+        /// another ship's asteroid-destroy first dibs). One shared material — grind dumps
+        /// must not allocate a material per crystal.
         /// </summary>
-        public const float SelfPickupBlockedAlpha = 0.3f;
+        public static readonly Color DisabledGemColor = Color.white;
 
         /// <summary>Alpha once that same gem may be scooped again.</summary>
         public const float SelfPickupReadyAlpha = 1f;
 
-        static Material s_blockedStandard;
-        static Material s_blockedBonus;
-        static Material s_blockedMiner;
+        /// <summary>Shared white material for crystals this viewer cannot scoop yet.</summary>
+        static Material s_disabledWhite;
+
         static Material s_readyStandard;
         static Material s_readyBonus;
         static Material s_readyMiner;
@@ -96,9 +97,7 @@ namespace TitanOrbit.Game
             s_sharedTintedGemMaterial = null;
             s_sharedBonusTintedGemMaterial = null;
             s_sharedMinerTintedGemMaterial = null;
-            s_blockedStandard = null;
-            s_blockedBonus = null;
-            s_blockedMiner = null;
+            s_disabledWhite = null;
             s_readyStandard = null;
             s_readyBonus = null;
             s_readyMiner = null;
@@ -182,9 +181,10 @@ namespace TitanOrbit.Game
             ApplyGemTint(root, tint);
 
         /// <summary>
-        /// Local view of a gem this ship expelled. Blocked crystals use
-        /// <see cref="SelfPickupBlockedAlpha"/>; once the scoop delay ends they use
-        /// <see cref="SelfPickupReadyAlpha"/>. Other gems stay on the shared tint.
+        /// Local view of a gem this ship cannot scoop yet. Blocked crystals are
+        /// <see cref="DisabledGemColor"/>; once the delay on
+        /// <see cref="GemExplosionSettings"/> elapses they return to their tint at
+        /// <see cref="SelfPickupReadyAlpha"/>. Ships that may already pull stay on the shared tint.
         /// </summary>
         public static void ApplySelfPickupConsumeAlpha(GameObject root, GemVisualTint tint, bool blocked)
         {
@@ -416,12 +416,13 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// One shared 0.3 and one shared 1.0 material per tint. Built once from the
-        /// prefab shader so a grind burst does not clone a material per gem.
+        /// One shared white material, plus one full-alpha material per tint for when the
+        /// delay ends. Built once from the prefab shader so a grind burst does not clone
+        /// a material per gem.
         /// </summary>
         static void EnsureConsumeAlphaMaterials(Renderer renderer)
         {
-            if (s_blockedStandard != null && s_readyStandard != null)
+            if (s_disabledWhite != null && s_readyStandard != null)
                 return;
 
             Material source = s_sharedTintedGemMaterial != null
@@ -430,12 +431,8 @@ namespace TitanOrbit.Game
             if (source == null)
                 return;
 
-            if (s_blockedStandard == null)
-                s_blockedStandard = CreateSharedTint(source, "TitanOrbit_GemTinted_SelfBlocked", WithAlpha(StandardGemTintColor, SelfPickupBlockedAlpha));
-            if (s_blockedBonus == null)
-                s_blockedBonus = CreateSharedTint(source, "TitanOrbit_GemBonusTinted_SelfBlocked", WithAlpha(BonusGemTintColor, SelfPickupBlockedAlpha));
-            if (s_blockedMiner == null)
-                s_blockedMiner = CreateSharedTint(source, "TitanOrbit_GemMinerTinted_SelfBlocked", WithAlpha(MinerCommanderTintColor, SelfPickupBlockedAlpha));
+            if (s_disabledWhite == null)
+                s_disabledWhite = CreateSharedTint(source, "TitanOrbit_GemTinted_DisabledWhite", DisabledGemColor);
             if (s_readyStandard == null)
                 s_readyStandard = CreateSharedTint(source, "TitanOrbit_GemTinted_SelfReady", WithAlpha(StandardGemTintColor, SelfPickupReadyAlpha));
             if (s_readyBonus == null)
@@ -447,13 +444,7 @@ namespace TitanOrbit.Game
         static Material ResolveConsumeAlphaMaterial(GemVisualTint tint, bool blocked)
         {
             if (blocked)
-            {
-                if (tint == GemVisualTint.MinerCommander)
-                    return s_blockedMiner;
-                if (tint == GemVisualTint.TerritoryBonus)
-                    return s_blockedBonus;
-                return s_blockedStandard;
-            }
+                return s_disabledWhite;
 
             if (tint == GemVisualTint.MinerCommander)
                 return s_readyMiner;
@@ -483,8 +474,6 @@ namespace TitanOrbit.Game
 
             if (s_sharedTintedGemMaterial != null)
                 ConfigureUrpTransparentTint(s_sharedTintedGemMaterial, tint);
-            if (s_blockedStandard != null)
-                ConfigureUrpTransparentTint(s_blockedStandard, WithAlpha(tint, SelfPickupBlockedAlpha));
             if (s_readyStandard != null)
                 ConfigureUrpTransparentTint(s_readyStandard, WithAlpha(tint, SelfPickupReadyAlpha));
 

@@ -13,12 +13,19 @@ namespace TitanOrbit.UI
     /// <summary>
     /// In-match card for a beta tester. Escape → BETA opens it. Two switches
     /// put ship upgrades and gear back to free for this player only, and NOTES
-    /// opens the existing field-notes card. Prices stay normal until the server
-    /// confirms the switches. Client presentation only.
+    /// opens the existing field-notes card. The switch positions are saved on
+    /// this device and sent again each match. Prices stay normal until the server
+    /// confirms them. Client presentation only.
     /// </summary>
     [DefaultExecutionOrder(66320)]
     public class BetaTesterMenuPanel : MonoBehaviour
     {
+        /// <summary>
+        /// Device copy. Awake runs before Unity sign-in, so this key is what the
+        /// next launch can read immediately. The account key wins once the player id exists.
+        /// </summary>
+        const string DeviceToggleKey = "TitanOrbit_BetaTesterToggles_v1";
+
         const string ToggleKeyPrefix = "TitanOrbit_BetaTesterToggles_v1_";
 
         static readonly Color FillColor = new Color(0.012f, 0.016f, 0.028f, 0.96f);
@@ -35,6 +42,7 @@ namespace TitanOrbit.UI
         bool _open;
         int _sentNetworkId = -1;
         byte _sentFlags = 255;
+        string _loadedAccountKey;
 
         /// <summary>[UNITY] One overlay for the whole app. Headless builds skip it.</summary>
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
@@ -62,7 +70,7 @@ namespace TitanOrbit.UI
             scaler.matchWidthOrHeight = 0.5f;
             gameObject.AddComponent<GraphicRaycaster>();
 
-            LoadRequestedFlags();
+            LoadDeviceFlags();
             BuildCard();
             _card.SetActive(false);
         }
@@ -83,6 +91,10 @@ namespace TitanOrbit.UI
         /// </summary>
         void LateUpdate()
         {
+            // Sign-in often finishes after Awake. Pull the account's saved switches
+            // before the match send, or a guest "off" would overwrite them.
+            RefreshAccountFlags();
+
             if (!EcsGameBridge.IsNetworkInGame())
             {
                 _sentNetworkId = -1;
@@ -162,8 +174,7 @@ namespace TitanOrbit.UI
             else
                 flags = (byte)(flags | bit);
             BetaTesterClientFlags.RequestedFlags = flags;
-            PlayerPrefs.SetInt(ToggleKey(), flags);
-            PlayerPrefs.Save();
+            SaveFlags(flags);
             _sentFlags = 255;
             RefreshLabels();
         }
@@ -195,23 +206,79 @@ namespace TitanOrbit.UI
             _status.color = BetaTesterClientFlags.IsConfirmed ? ReadyColor : MutedColor;
         }
 
-        void LoadRequestedFlags()
+        /// <summary>
+        /// Restores the last switches from this device. Also checks the old
+        /// guest key so a choice saved before the device key existed still returns.
+        /// </summary>
+        void LoadDeviceFlags()
         {
-            int stored = PlayerPrefs.GetInt(ToggleKey(), 0);
-            BetaTesterClientFlags.RequestedFlags = (byte)(stored & BetaTesterClientFlags.Mask);
-        }
-
-        static string ToggleKey()
-        {
-            string id = "local";
-            if (UnityGameServicesBootstrap.HasDurablePlayerAccount())
+            if (PlayerPrefs.HasKey(DeviceToggleKey))
             {
-                string playerId = UnityGameServicesBootstrap.PlayerId;
-                if (!string.IsNullOrEmpty(playerId))
-                    id = playerId;
+                ApplyStoredFlags(ReadFlags(DeviceToggleKey));
+                return;
             }
 
-            return ToggleKeyPrefix + id;
+            string legacy = ToggleKeyPrefix + "local";
+            if (PlayerPrefs.HasKey(legacy))
+                ApplyStoredFlags(ReadFlags(legacy));
+        }
+
+        /// <summary>
+        /// Once the Unity account is known, its own saved bits replace the device copy.
+        /// A first sign-in with no account key keeps what this device already restored.
+        /// </summary>
+        void RefreshAccountFlags()
+        {
+            if (!UnityGameServicesBootstrap.HasDurablePlayerAccount())
+                return;
+
+            string playerId = UnityGameServicesBootstrap.PlayerId;
+            if (string.IsNullOrEmpty(playerId))
+                return;
+
+            string accountKey = ToggleKeyPrefix + playerId;
+            if (accountKey == _loadedAccountKey)
+                return;
+
+            _loadedAccountKey = accountKey;
+            if (!PlayerPrefs.HasKey(accountKey))
+            {
+                SaveFlags(BetaTesterClientFlags.RequestedFlags);
+                return;
+            }
+
+            byte flags = ReadFlags(accountKey);
+            ApplyStoredFlags(flags);
+            // Next launch reads this before sign-in, so it must match the account.
+            if (!PlayerPrefs.HasKey(DeviceToggleKey) || ReadFlags(DeviceToggleKey) != flags)
+            {
+                PlayerPrefs.SetInt(DeviceToggleKey, flags);
+                PlayerPrefs.Save();
+            }
+        }
+
+        void ApplyStoredFlags(byte flags)
+        {
+            flags = (byte)(flags & BetaTesterClientFlags.Mask);
+            if (BetaTesterClientFlags.RequestedFlags == flags)
+                return;
+
+            BetaTesterClientFlags.RequestedFlags = flags;
+            _sentFlags = 255;
+        }
+
+        static byte ReadFlags(string key)
+        {
+            return (byte)(PlayerPrefs.GetInt(key, 0) & BetaTesterClientFlags.Mask);
+        }
+
+        /// <summary>Writes the device key, and the account key when sign-in has finished.</summary>
+        void SaveFlags(byte flags)
+        {
+            PlayerPrefs.SetInt(DeviceToggleKey, flags);
+            if (!string.IsNullOrEmpty(_loadedAccountKey))
+                PlayerPrefs.SetInt(_loadedAccountKey, flags);
+            PlayerPrefs.Save();
         }
 
         void BuildCard()

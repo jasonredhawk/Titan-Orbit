@@ -477,23 +477,67 @@ namespace TitanOrbit.ECS
                                      shipState.ValueRO.Team, ghostOwner.ValueRO.NetworkId);
 
                 // --- Spawn each planned barrel with that mount’s own damage ---
+                // Holding the move button leaves the baked nose pose so wide barrels
+                // stay parallel. Releasing it yaws a spawn copy at the aim point
+                // (cursor, or the bot target) even while the hull is still gliding,
+                // and only while that point and the barrel sit in front of the nose.
+                // The mount buffer keeps its rest pose either way.
+                bool pointGuns = TitanOrbitDebugFlags.RegularShipGunsPoint
+                                 && MegaShipWeaponAim.AllowsPointWeaponAim(input.ValueRO.Thrust);
                 for (int shot = 0; shot < shotCount; shot++)
                 {
                     var planned = s_ShotScratch[shot];
                     planned.Damage = TeamCommandRoleRules.ScaleFirePower(planned.Damage, topKiller);
                     int mountIdx = planned.MountIndex;
                     var mount = mounts[mountIdx];
-                    ResolveFirePose(transform.ValueRO, in mount, out float3 fireOrigin, out float3 fireForward);
+                    var fireMount = mount;
+                    float interceptDistance = 0f;
+                    bool aimedAtCursor = false;
+                    float3 mousePoint = default;
+                    if (pointGuns
+                        && MegaShipWeaponAim.TryGetOwnerMouseAimPoint(
+                            in transform.ValueRO, in input.ValueRO, out mousePoint)
+                        && MegaShipWeaponAim.IsInFrontOfHull(
+                            in transform.ValueRO, mousePoint, mapW, mapH)
+                        && MegaShipWeaponAim.TryGetMuzzleDirToMousePoint(
+                            in transform.ValueRO, in fireMount, in input.ValueRO, mapW, mapH,
+                            out float3 toCursor))
+                    {
+                        MegaShipWeaponAim.RotateMountTowardWorldDir(
+                            in transform.ValueRO, ref fireMount, toCursor, 0f);
+                        fireMount.DirectionAngleDeg = 0f;
+                        aimedAtCursor = true;
+                    }
+
+                    ResolveFirePose(transform.ValueRO, in fireMount, out float3 fireOrigin, out float3 fireForward);
+                    if (aimedAtCursor && !ShotLeavesForward(in transform.ValueRO, fireForward))
+                    {
+                        fireMount = mount;
+                        aimedAtCursor = false;
+                        ResolveFirePose(
+                            transform.ValueRO, in fireMount, out fireOrigin, out fireForward);
+                    }
+
+                    if (aimedAtCursor)
+                    {
+                        float3 toMouse = ToroidalMapEcs.ShortestOffsetXZ(
+                            fireOrigin, mousePoint, mapW, mapH);
+                        toMouse.y = 0f;
+                        interceptDistance = math.length(toMouse);
+                        if (!math.isfinite(interceptDistance))
+                            interceptDistance = 0f;
+                    }
 
                     float fireRateMul = SpawnAndCollideShipBullet(
                         ref state, ref ecb, bulletEntity, mountIdx,
                         fireOrigin, fireForward, planned.Damage,
-                        weaponCfg.ValueRO, in mount, bankIndex, firePowerExtras,
+                        weaponCfg.ValueRO, in fireMount, bankIndex, firePowerExtras,
                         categoryUpgradeScale, shipVel,
                         ghostOwner.ValueRO.NetworkId, (byte)shipState.ValueRO.Team,
                         shipState.ValueRO.ShipLevel,
                         dt, gemPrefab, gemSpawnServerTime, mapW, mapH,
-                        moonElapsed, serverElapsed);
+                        moonElapsed, serverElapsed,
+                        interceptDistance);
 
                     // The planner already spent the shot and restarted this barrel's delay.
                     _ = fireRateMul;
@@ -781,6 +825,20 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
+        /// True when a shot direction is not behind the hull nose.
+        /// Straight off the beam still counts as forward.
+        /// </summary>
+        static bool ShotLeavesForward(in LocalTransform hull, float3 fireForward)
+        {
+            float3 hullFwd = math.mul(hull.Rotation, new float3(0f, 0f, 1f));
+            hullFwd.y = 0f;
+            fireForward.y = 0f;
+            if (math.lengthsq(hullFwd) < 0.0001f || math.lengthsq(fireForward) < 0.0001f)
+                return true;
+            return math.dot(math.normalize(hullFwd), math.normalize(fireForward)) >= 0f;
+        }
+
+        /// <summary>
         /// Writes the server ready timers into the ghost buffer the arsenal HUD reads.
         /// Re-reads the mount buffer so a laser pulse written earlier this tick is included.
         /// </summary>
@@ -885,8 +943,8 @@ namespace TitanOrbit.ECS
                 : weaponCfg.BulletLifetime;
 
             // Guns: fire power ÷ the Bullet VFX Bank reference. Snipers divide by 50.
-            // Missiles lerp the live store-rocket size curve from this shot's fire power
-            // (50 sits halfway from 40 to 60, so size 1.1). Damage is unchanged.
+            // Missiles use the store-rocket size for this shot's fire power
+            // (40 → 1, 60 → 1.2). Damage is unchanged.
             bool sniperVisual = mount.WeaponKind == ShipWeaponKind.Sniper;
             bool missileVisual = mount.WeaponKind == ShipWeaponKind.Missile;
             float authoredScale = missileVisual
@@ -1568,9 +1626,11 @@ namespace TitanOrbit.ECS
 
                     var moon = state.EntityManager.GetComponentData<PlanetGemMoonState>(bestEntity);
                     var planet = state.EntityManager.GetComponentData<PlanetState>(bestEntity);
-                    // Body hits (shield already spent) knock moon gems out at the impact.
+                    // Body hits (shield already spent) knock the planet's stored gems out.
+                    float planetGems = planet.CurrentGems;
                     PlanetGemMoonCombatLogic.ApplyBulletDamage(
                         ref moon,
+                        ref planetGems,
                         hitDamage,
                         (TeamId)b.OwnerTeam,
                         planet.Ownership,
@@ -1580,6 +1640,8 @@ namespace TitanOrbit.ECS
                         hitPoint,
                         b.Sequence ^ (uint)bestEntity.Index,
                         gemSpawnServerTime);
+                    planet.CurrentGems = planetGems;
+                    state.EntityManager.SetComponentData(bestEntity, planet);
                     state.EntityManager.SetComponentData(bestEntity, moon);
                     TrySpawnWell(ref state, hitPoint, profile, serverElapsed, mapW, mapH, in b, ecb, gemPrefab, hitDamage, bestEntity);
                     return true;

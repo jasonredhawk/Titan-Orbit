@@ -80,6 +80,43 @@ namespace TitanOrbit.Data
         public static string[] GetInspectorChoices(bool includeUnmappedAndIgnore) =>
             includeUnmappedAndIgnore ? InspectorChoices : CoreProfiles;
 
+        /// <summary>
+        /// Extra part types on a Name Mapping. Unmapped and Ignore stay on the primary popup only.
+        /// </summary>
+        public static readonly string[] AdditionalInspectorChoices =
+        {
+            Cockpit,
+            WeaponBullet,
+            Wing,
+            Cargo,
+            Engine,
+            Thruster,
+            Tail,
+            Hull,
+        };
+
+        /// <summary>
+        /// True for a Part Profile that contributes stats. Unmapped, Ignore, and blanks do not.
+        /// Unknown labels normalize to Hull and count as contributing.
+        /// </summary>
+        public static bool IsContributingProfile(string partType)
+        {
+            if (string.IsNullOrWhiteSpace(partType))
+                return false;
+            string normalized = Normalize(partType, null);
+            return !string.Equals(normalized, Unmapped, StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(normalized, Ignore, StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>True when this profile authors turn (Thruster accel+turn, or Tail turn).</summary>
+        public static bool ContributesTurn(string partType)
+        {
+            if (!IsContributingProfile(partType))
+                return false;
+            string normalized = Normalize(partType, null);
+            return IsThrusterProfile(normalized) || IsTurn(normalized);
+        }
+
         /// <summary>True for Engine, Thruster, and legacy Engine/Thrust labels.</summary>
         public static bool IsPropulsion(string partType)
         {

@@ -236,7 +236,8 @@ namespace TitanOrbit.ECS
                 var kinematics = EntityManager.GetComponentData<ShipKinematics>(entity);
                 var weaponCfg = EntityManager.GetComponentData<ShipWeaponConfig>(entity);
 
-                Vector3 shipPos = (Vector3)transform.Position;
+                Vector3 shipPos = (Vector3)PeopleTransportMath.ResolveFormationCenter(
+                    transform.Position, kinematics.FormationOrigin, kinematics.FormationCenterSeeded, mapW, mapH);
                 Quaternion shipRot = (Quaternion)transform.Rotation;
                 Vector3 formationHeading = (Vector3)kinematics.FormationHeading;
                 DroneSwarmPositioning.GetFormationBasis(

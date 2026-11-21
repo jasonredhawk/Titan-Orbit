@@ -14,7 +14,8 @@ namespace TitanOrbit.ECS
     /// Writes MEGA / Titan motor / weapon / vitals onto a ship. Hull parts stay frozen
     /// (no Extra Level, no attribute upgrades). Equipped moon-store ship components in
     /// LOADOUT slots add PerExtra × shipLevel only (no Base) onto those frozen totals.
-    /// Gem cap stays 0. Cannon / missile / sniper mounts fire the catalog unique-component
+    /// Gem cargo uses the same cockpit / wing / cargo formula as a regular hull at this
+    /// ship level, with no gem-ability purchases. Cannon / missile / sniper mounts fire the catalog unique-component
     /// (or type-table) bank. Titan Bullet mounts follow the B-key hull cycle
     /// (<see cref="ShipLoadoutState.RuntimeBulletIndex"/>): original catalog
     /// "Bullets" keep that barrel's catalog firepower (no Extra Level). The
@@ -213,14 +214,13 @@ namespace TitanOrbit.ECS
             if (em.HasComponent<ShipState>(shipEntity))
                 shipLevel = math.max(1, em.GetComponentData<ShipState>(shipEntity).ShipLevel);
             MegaShipStatsCalculator.SumFromEntry(
-                entry, catalog, out ShipComponentAbilityStats effective);
+                entry, catalog, extraComponentIds: null, shipLevel, out ShipComponentAbilityStats effective);
             ShipFamilySpecialBonuses fleet = MegaShipStatsCalculator.ResolveFleetBonuses(familyIndex);
             effective = fleet.Apply(effective);
             ShipComponentStoreVisualScaleLogic.CollectExtraComponents(
                 em, shipEntity, out List<string> extraIds, out List<int> gearFamilies);
             MegaShipStatsCalculator.AddEquippedStoreComponents(
                 ref effective, extraIds, shipLevel, gearFamilies);
-            effective.maxGems = 0f;
 
             // --- Caps (server / authoritative only) ---
             if (writeGhostedShipState && em.HasComponent<ShipState>(shipEntity))
@@ -229,16 +229,18 @@ namespace TitanOrbit.ECS
                 float prevHealthRatio = ship.MaxHealth > 0.01f ? ship.Health / ship.MaxHealth : 1f;
                 float prevEnergyRatio = ship.MaxEnergy > 0.01f ? ship.CurrentEnergy / ship.MaxEnergy : 1f;
                 ship.MaxHealth = Mathf.Max(1f, effective.healthCap);
-                ship.GemCapacity = 0f;
-                ship.CurrentGems = 0f;
-                // Widen the catalog energy band by the family roll so a 2× energy
-                // family is not clipped back to MaxHullEnergy, and a 0.5× family
-                // can sit under MinHullEnergy. A 1× home world keeps the old band.
+                // Clamp cargo into the new hold. Wiping CurrentGems here dumped gems on every stat refresh.
+                ship.GemCapacity = Mathf.Max(0f, effective.maxGems);
+                ship.CurrentGems = Mathf.Min(ship.CurrentGems, ship.GemCapacity);
+                // No energy floor. The part sum (already fleet-multiplied) is the battery,
+                // including values under the old 800. A 2× energy family still widens the
+                // stale-sum ceiling; a 1× home world stays at MaxHullEnergy.
                 float energyMul = FleetMul(fleet.energyCapMul);
-                ship.MaxEnergy = Mathf.Clamp(
-                    effective.energyCap > 0.01f ? effective.energyCap : MegaShipCatalog.DefaultHullEnergy,
-                    MegaShipCatalog.MinHullEnergy * math.min(1f, energyMul),
-                    MegaShipCatalog.MaxHullEnergy * math.max(1f, energyMul));
+                float energyCap = effective.energyCap > 0.01f
+                    ? effective.energyCap
+                    : MegaShipCatalog.DefaultHullEnergy;
+                float energyCeiling = MegaShipCatalog.MaxHullEnergy * math.max(1f, energyMul);
+                ship.MaxEnergy = Mathf.Min(energyCap, energyCeiling);
                 // SumFromEntry already resolved catalog defaults/mins. Do not clamp
                 // to MinHullPeople (400) — that hid cockpit+wing sums of 40–300.
                 ship.PeopleCapacity = Mathf.Max(0, Mathf.RoundToInt(effective.maxPeople));
@@ -633,6 +635,8 @@ namespace TitanOrbit.ECS
         {
             // Unique-row firePower stays raw (0 = authored unarmed). Type-table fallback
             // uses the resolved type numbers so dedicated barrels are never mute.
+            // Family stat scale is health and energy only — a barrel keeps its
+            // catalog damage, cadence, speed, and range.
             MegaShipPartStats resolved = catalog.ResolveRuntimeStats(raw);
             var mount = mounts[mountIndex];
             mount.FirePower = math.max(0f, raw.firePower);
@@ -714,11 +718,12 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Leaves a live MEGA for a regular family hull (debug tree pick or same-tier family
-        /// swap after L7). Frees the unique planet slot and clears
+        /// Leaves a live MEGA for a regular family hull (debug tree pick or a non-Titan
+        /// hull after L7). Frees the unique planet slot, clears
         /// <see cref="MegaShipState.IsMega"/> so <see cref="ShipStatApplyLogic.ApplyToShip"/>
-        /// writes the new chassis instead of stamping ShipLevel 7 / MEGA stats again.
-        /// Death uses <see cref="RestorePreviousHull"/> instead — that path keeps the old L6.
+        /// writes the new chassis instead of stamping ShipLevel 7 / MEGA stats again,
+        /// and drops the parked ability bar. Death uses <see cref="RestorePreviousHull"/>
+        /// instead — that path keeps the old L6 and writes those purchases back.
         /// </summary>
         /// <param name="em">Server entity manager (occupancy is authoritative).</param>
         /// <param name="shipEntity">The ship that is leaving its MEGA hull.</param>
@@ -742,11 +747,75 @@ namespace TitanOrbit.ECS
             mega.MegaSlotIndex = 0;
             em.SetComponentData(shipEntity, mega);
             ClearLeftoverMegaMotor(em, shipEntity);
+
+            // --- Drop the parked ability bar ---
+            // [TITAN-ORBIT] This exit picks a new regular hull on purpose (debug tree,
+            // or any non-death leave). Death uses RestorePreviousHull, which writes
+            // the parked purchases back. Leaving them here would resurrect the old
+            // bar the next time this same entity dies as a Titan.
+            DiscardParkedTitanAttributes(em, shipEntity);
+        }
+
+        /// <summary>
+        /// Copies the ten bottom-bar ability purchases onto
+        /// <see cref="PreTitanAttributeSnapshot"/> before a Titan purchase zeros the
+        /// live ghosted bar. Call only when this hull is not already a Titan.
+        /// A Titan-to-Titan swap must keep the original copy — the live bar is
+        /// already zero, and parking it again would forget the old hull.
+        /// </summary>
+        /// <param name="em">Server entity manager.</param>
+        /// <param name="shipEntity">Hull that is about to become a Titan.</param>
+        public static void ParkAttributesForTitan(EntityManager em, Entity shipEntity)
+        {
+            if (!em.Exists(shipEntity) || !em.HasComponent<ShipAttributeUpgradeState>(shipEntity))
+                return;
+
+            // One write at purchase time. Not a per-tick copy, and not a ghost field.
+            var parked = new PreTitanAttributeSnapshot
+            {
+                Attributes = em.GetComponentData<ShipAttributeUpgradeState>(shipEntity),
+            };
+
+            if (em.HasComponent<PreTitanAttributeSnapshot>(shipEntity))
+                em.SetComponentData(shipEntity, parked);
+            else
+                em.AddComponentData(shipEntity, parked);
+        }
+
+        /// <summary>
+        /// Removes a parked pre-Titan ability bar without writing it back.
+        /// Used when the player leaves a Titan for a different regular hull
+        /// instead of dying on it.
+        /// </summary>
+        public static void DiscardParkedTitanAttributes(EntityManager em, Entity shipEntity)
+        {
+            if (em.Exists(shipEntity) && em.HasComponent<PreTitanAttributeSnapshot>(shipEntity))
+                em.RemoveComponent<PreTitanAttributeSnapshot>(shipEntity);
+        }
+
+        /// <summary>
+        /// Writes the parked pre-Titan ability purchases onto the live ghosted bar,
+        /// then removes the server-only copy so a later hull cannot apply them twice.
+        /// No-op when this Titan was bought with no snapshot (nothing was purchased).
+        /// </summary>
+        static void RestoreParkedTitanAttributes(EntityManager em, Entity shipEntity)
+        {
+            if (!em.HasComponent<PreTitanAttributeSnapshot>(shipEntity))
+                return;
+
+            var parked = em.GetComponentData<PreTitanAttributeSnapshot>(shipEntity);
+            if (em.HasComponent<ShipAttributeUpgradeState>(shipEntity))
+                em.SetComponentData(shipEntity, parked.Attributes);
+            else
+                em.AddComponentData(shipEntity, parked.Attributes);
+
+            em.RemoveComponent<PreTitanAttributeSnapshot>(shipEntity);
         }
 
         /// <summary>
         /// Restores the previous L6 hull after MEGA death: frees the planet slot (idempotent),
-        /// clears MEGA flags, and reapplies regular chassis stats.
+        /// clears MEGA flags, writes the parked ability purchases back onto the live bar,
+        /// and reapplies regular chassis stats so those levels affect the old hull.
         /// </summary>
         public static void RestorePreviousHull(EntityManager em, Entity shipEntity)
         {
@@ -776,6 +845,14 @@ namespace TitanOrbit.ECS
             ship.BranchIndex = prevBranch;
             ship.ShipFamilyConfigIndex = prevFamily;
             em.SetComponentData(shipEntity, ship);
+
+            // --- Ability bar from before this Titan ---
+            // [TITAN-ORBIT] Purchase zeroed the ghosted bar because Titans do not
+            // spend ability levels. The server copy still has firepower and the
+            // other nine. Write it back before ApplyToShip so the restored chassis
+            // is born with those levels, not zeros. Must run while IsMega is
+            // already false — ApplyToShip routes to Titan stats while that flag is set.
+            RestoreParkedTitanAttributes(em, shipEntity);
 
             ShipStatApplyLogic.ApplyToShip(em, shipEntity, ship.Team, prevLevel, prevBranch);
         }

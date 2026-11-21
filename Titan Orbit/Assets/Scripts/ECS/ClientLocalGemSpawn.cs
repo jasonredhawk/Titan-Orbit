@@ -5,6 +5,7 @@ using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
 using Unity.Entities;
 using Unity.Mathematics;
+using Unity.NetCode;
 using Unity.Transforms;
 
 namespace TitanOrbit.ECS
@@ -14,6 +15,28 @@ namespace TitanOrbit.ECS
     /// These are not NetCode ghosts.
     /// </summary>
     public struct ClientSeedHydratedGem : IComponentData { }
+
+    /// <summary>
+    /// Client-only suck-in after the server commits a tractor lock.
+    /// Start pose is fixed; the wing target is read live. Cargo is already credited.
+    /// </summary>
+    public struct GemCapturePresentation : IComponentData
+    {
+        /// <summary>Gem position when the committed lock arrived.</summary>
+        public float3 StartPosition;
+
+        /// <summary>Collector ship <c>GhostOwner.NetworkId</c>.</summary>
+        public int ShipNetworkId;
+
+        /// <summary>Wing index on that ship. Hull center when the ship has no wings.</summary>
+        public byte WingIndex;
+
+        /// <summary>Suck-in length in seconds (the beam extend duration).</summary>
+        public float Duration;
+
+        /// <summary>Seconds elapsed since the lock was applied on this client.</summary>
+        public float Elapsed;
+    }
 
     /// <summary>
     /// Instantiates gem prefabs on the client without registering them as ghosts.
@@ -328,16 +351,38 @@ namespace TitanOrbit.ECS
             em.SetComponentData(e, LocalTransform.FromPositionRotationScale(lt.Position, lt.Rotation, scale));
         }
 
-        /// <summary>Hides and destroys a scooped or expired local gem.</summary>
+        /// <summary>
+        /// Hides and destroys a scooped or expired local gem.
+        /// A committed tractor suck-in keeps the entity until <see cref="FinishCapture"/>.
+        /// The spawn id is still recorded so catch-up cannot resurrect the crystal.
+        /// </summary>
         public static void Consume(EntityManager em, int spawnId)
         {
             if (spawnId == 0)
                 return;
-            ConsumedSpawnIds.Add(spawnId);
-            PendingLocks.Remove(spawnId);
+            NoteConsumed(spawnId);
+            if (!TryGet(spawnId, out Entity e))
+                return;
+            if (em.Exists(e) && em.HasComponent<GemCapturePresentation>(e))
+                return;
+            DestroyLocal(em, e, spawnId);
+        }
+
+        /// <summary>Destroys a gem after its committed suck-in finishes or the collector leaves view.</summary>
+        public static void FinishCapture(EntityManager em, int spawnId)
+        {
+            if (spawnId == 0)
+                return;
+            NoteConsumed(spawnId);
             if (!TryGet(spawnId, out Entity e))
                 return;
             DestroyLocal(em, e, spawnId);
+        }
+
+        static void NoteConsumed(int spawnId)
+        {
+            ConsumedSpawnIds.Add(spawnId);
+            PendingLocks.Remove(spawnId);
         }
 
         static readonly List<int> CullScratch = new List<int>(32);
@@ -421,6 +466,46 @@ namespace TitanOrbit.ECS
             }
 
             em.SetComponentData(e, motion);
+            if (rpc.Phase == GemMotionState.PhaseCommitted && rpc.TractorShipId != 0)
+                TryBeginCapturePresentation(em, e, rpc);
+        }
+
+        /// <summary>
+        /// Starts the local suck-in for a committed lock. Thin clients skip it and let
+        /// <see cref="Consume"/> destroy the crystal immediately.
+        /// </summary>
+        public static void TryBeginCapturePresentation(EntityManager em, Entity gem, in GemTractorLockRpc rpc)
+        {
+            if (rpc.Phase != GemMotionState.PhaseCommitted || rpc.TractorShipId == 0)
+                return;
+            if (!em.Exists(gem) || em.WorldUnmanaged.IsThinClient())
+                return;
+            if (em.HasComponent<GemCapturePresentation>(gem))
+                return;
+
+            float3 start = float3.zero;
+            if (em.HasComponent<LocalTransform>(gem))
+                start = em.GetComponentData<LocalTransform>(gem).Position;
+
+            float duration = rpc.TractorExtendDuration;
+            if (duration < 0.0001f)
+                duration = GemTractorBeamMath.MinExtendDuration;
+
+            em.AddComponentData(gem, new GemCapturePresentation
+            {
+                StartPosition = start,
+                ShipNetworkId = rpc.TractorShipId,
+                WingIndex = rpc.TractorWingIndex,
+                Duration = duration,
+                Elapsed = 0f,
+            });
+
+            if (em.HasComponent<GemKinematics>(gem))
+            {
+                var kin = em.GetComponentData<GemKinematics>(gem);
+                kin.Velocity = float3.zero;
+                em.SetComponentData(gem, kin);
+            }
         }
 
         static Entity InstantiateResolved(

@@ -89,7 +89,7 @@ namespace TitanOrbit.Game
             DrawFlag("F2 Floating counts OFF", TitanOrbitDebugFlags.IsolateDisableFloatingCounts);
             DrawFlag("F3 Asteroid toroidal collision OFF",
                 TitanOrbitDebugFlags.IsolateDisableAsteroidShipCollision);
-            DrawFlag("F4 Ship soft-track OFF (raw pose)", TitanOrbitDebugFlags.IsolateDisableShipSoftTrack);
+            DrawFlag("F4 unused (hull copies the motor pose)", TitanOrbitDebugFlags.IsolateDisableShipSoftTrack);
             DrawFlag("F5 Gem burst OFF", TitanOrbitDebugFlags.IsolateDisableGemBurst);
             GUILayout.Label("Disable master switch on GameManager to turn this off.");
             GUILayout.EndArea();

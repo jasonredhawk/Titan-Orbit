@@ -30,9 +30,11 @@ namespace TitanOrbit.Editor
             EditorGUILayout.HelpBox(
                 "Refresh Family List finds every ShipFamilyDefinition under Assets/Prefabs/Ships " +
                 "and assigns the shared Profile Set when a family field is empty.\n\n" +
-                "Recalculate All runs the same pipeline as each family's " +
-                "Recalculate Component Stats From Part Profiles, then " +
-                "Resort Upgrade Tree & Recalculate Power Scores — one pass, one save.",
+                "Recalculate All rewrites each family's component stats from part profiles, " +
+                "then resorts unlocked upgrade-tree tiers by total gem cost. That order is the " +
+                "same one as TitanOrbit → Ship Families → Resort All Upgrade Trees: cheapest hulls " +
+                "unlock earlier, and branch 0 is the cheapest ship at that level. The price is " +
+                "prefab scale, then base + Per Extra at that ship level, then the family bonuses, then Stat Gem Rates.",
                 MessageType.Info);
 
             if (GUILayout.Button("Refresh Family List From Project", GUILayout.Height(28)))
@@ -200,7 +202,9 @@ namespace TitanOrbit.Editor
                     "Recalculate All Families",
                     $"Recalculate component stats from part profiles, then resort upgrade trees, " +
                     $"for {families.Count} family asset(s)?\n\n" +
-                    "This rewrites components[] and reorders unlocked upgrade-tree tiers.",
+                    "This rewrites components[] and reorders unlocked tiers by total gem cost " +
+                    "(prefab scale, then Extra Level, then family bonuses). Cheapest unlocks first. " +
+                    "Same order as TitanOrbit → Ship Families → Resort All Upgrade Trees.",
                     "Update All",
                     "Cancel"))
             {
@@ -290,7 +294,7 @@ namespace TitanOrbit.Editor
                 $"Part profiles refreshed: {profilesUpdated}.\n" +
                 $"Updated {succeeded} family asset(s).\n" +
                 $"Components with ability stats: {componentsUpdated}. Cosmetics zeroed: {cosmetics}.\n" +
-                $"Unlocked tiers resorted: {resorted}.{failBlock}",
+                $"Unlocked tiers resorted by total gem cost (scale, Extra Level, family bonuses): {resorted}.{failBlock}",
                 "OK");
 
             Debug.Log(

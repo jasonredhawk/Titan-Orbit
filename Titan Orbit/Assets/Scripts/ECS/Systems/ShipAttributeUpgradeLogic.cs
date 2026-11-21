@@ -103,7 +103,12 @@ namespace TitanOrbit.ECS
             }
         }
 
-        /// <summary>Clears all upgrade levels (e.g. on chassis level-up).</summary>
+        /// <summary>
+        /// Clears all ten upgrade levels. Used when the player pays for the next
+        /// chassis, and when a Titan purchase zeros the live bar after
+        /// <see cref="MegaShipStatApplyLogic.ParkAttributesForTitan"/> has copied them.
+        /// A free same-slot family swap does not call this.
+        /// </summary>
         public static void Reset(ref ShipAttributeUpgradeState state) => state = default;
 
         /// <summary>

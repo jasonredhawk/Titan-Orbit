@@ -301,45 +301,75 @@ namespace TitanOrbit.Game
             PresentationJoinWarmupGate.Publish(true, 1f, status);
         }
 
-        /// <summary>Honest 0–1 fill + "Warming graphics  done / total" for the loading bar.</summary>
+        /// <summary>
+        /// Honest 0–1 fill + "Warming up graphics.." for the loading bar.
+        /// Planet meshes and the proxy scan used to sit outside this fraction, so the
+        /// overlay could already read 100% while those were still running.
+        /// </summary>
         static void PublishProgress()
         {
             int materialTotal = s_MaterialsRendered + s_MaterialQueue.Count;
             int vfxShellTotal = s_VfxShellPrefabs.Count;
-            int done =
-                s_MaterialsRendered +
-                (s_HullDone ? 1 : 0) +
-                s_VfxShellsRendered +
-                (BulletOneShotVfxPool.PrewarmComplete ? 1 : 0);
-            int total =
-                Mathf.Max(1, materialTotal) +
-                1 +
-                Mathf.Max(1, vfxShellTotal) +
-                1;
 
             float vfxPool = BulletOneShotVfxPool.PrewarmProgress;
             float materialFrac = materialTotal > 0
                 ? (float)s_MaterialsRendered / materialTotal
                 : (s_GemTintsEnqueued ? 1f : 0f);
             float hullFrac = s_HullDone ? 1f : (s_HullProbe != null ? 0.5f : 0f);
-            float sgtFrac = s_SgtPlanetsWarmed ? 1f : 0.4f;
             float shieldFrac = s_MoonShieldsQueued
                 ? (s_MoonShieldPrefabs.Count > 0
                     ? (float)s_MoonShieldsWarmed / s_MoonShieldPrefabs.Count
                     : 1f)
                 : 0f;
-            float combined = Mathf.Clamp01(
-                0.30f * materialFrac +
-                0.18f * hullFrac +
-                0.20f * vfxPool +
-                0.08f * (vfxShellTotal > 0 ? (float)s_VfxShellsRendered / vfxShellTotal : 0f) +
-                0.16f * sgtFrac +
-                0.08f * shieldFrac);
 
-            PresentationJoinWarmupGate.Publish(
-                false,
-                combined,
-                "Warming graphics  " + done + " / " + total);
+            // --- Planet meshes: count warmed homes, not a flat 0.4 until the last one ---
+            int planetTotal = s_PlanetEntityScratch.Count;
+            int planetDone = 0;
+            if (!s_SgtPlanetsWarmed && planetTotal > 0)
+            {
+                for (int i = 0; i < planetTotal; i++)
+                {
+                    if (s_SgtWarmedPlanets.Contains(s_PlanetEntityScratch[i]))
+                        planetDone++;
+                }
+            }
+
+            float sgtFrac = s_SgtPlanetsWarmed
+                ? 1f
+                : (planetTotal > 0 ? Mathf.Clamp01((float)planetDone / planetTotal) : 0f);
+
+            // Proxy material scan is part of IsWorkComplete but used to be absent here,
+            // so the bar filled while HaveScannedAllProxies was still false.
+            float scanFrac = 1f;
+            if (!s_ProxyScanClosed)
+            {
+                int live = EcsWorldVisualizer.MapLoadingProxyCount;
+                scanFrac = live > 0
+                    ? Mathf.Clamp01((float)s_ScannedProxyEntities.Count / live)
+                    : 0f;
+            }
+
+            float vfxShellFrac = vfxShellTotal > 0
+                ? (float)s_VfxShellsRendered / vfxShellTotal
+                : 0f;
+            float combined = Mathf.Clamp01(
+                0.28f * materialFrac +
+                0.16f * hullFrac +
+                0.18f * vfxPool +
+                0.06f * vfxShellFrac +
+                0.20f * sgtFrac +
+                0.06f * shieldFrac +
+                0.06f * scanFrac);
+
+            // A finished "N / N" reads as done. Keep the phase name, and only add a
+            // count while that slice is still climbing.
+            string status = "Warming up graphics..";
+            if (!s_SgtPlanetsWarmed && planetTotal > 0 && planetDone < planetTotal)
+                status = "Warming up graphics..  " + planetDone + " / " + planetTotal;
+            else if (materialTotal > 0 && s_MaterialsRendered < materialTotal)
+                status = "Warming up graphics..  " + s_MaterialsRendered + " / " + materialTotal;
+
+            PresentationJoinWarmupGate.Publish(false, combined, status);
         }
 
         /// <summary>

@@ -72,6 +72,11 @@ namespace TitanOrbit.Game
         const float MinIdleBlend = 0.05f;
         /// <summary>Caps jet size so a bad hierarchy cannot balloon flames.</summary>
         const float MaxVfxSizeMul = 6f;
+        /// <summary>
+        /// One-frame size jumps (OVERDRIVE bloom) must recache every particle system.
+        /// Territory ease steps stay under this, so they do not toggle scaling each frame.
+        /// </summary>
+        const float HierarchyScaleRefreshRelative = 0.12f;
         /// <summary>Studio jets sit a bit small vs the match follow-cam; +10% on the hull.</summary>
         const float PreviewJetScaleMul = 1.1f;
 
@@ -1919,10 +1924,8 @@ namespace TitanOrbit.Game
                     if (ps == null)
                         continue;
 
-                    var main = ps.main;
                     // Toggle through Local so a stale Hierarchy cache from the inactive hull drops.
-                    main.scalingMode = ParticleSystemScalingMode.Local;
-                    main.scalingMode = ParticleSystemScalingMode.Hierarchy;
+                    RecacheHierarchyScaling(ps);
                     if (ps.isPlaying)
                         RestartParticleSystem(ps);
                 }
@@ -1976,9 +1979,11 @@ namespace TitanOrbit.Game
                 sizeMul = MaxVfxSizeMul;
             // Ignore sub-percent hierarchy noise (bank / interpolation) so Z length
             // is not rewritten every frame while the player is holding thrust.
-            if (jet.appliedSizeMul > 0.01f &&
-                Mathf.Abs(sizeMul - jet.appliedSizeMul) < jet.appliedSizeMul * 0.01f)
-                sizeMul = jet.appliedSizeMul;
+            float previousSizeMul = jet.appliedSizeMul;
+            bool sizeStep = previousSizeMul <= 0.01f
+                || Mathf.Abs(sizeMul - previousSizeMul) >= previousSizeMul * 0.01f;
+            if (!sizeStep)
+                sizeMul = previousSizeMul;
             else
                 jet.appliedSizeMul = sizeMul;
             Vector3 authored = jet.authoredLocalScale;
@@ -1998,6 +2003,44 @@ namespace TitanOrbit.Game
             // hitch Hierarchy-scaled ParticleSystems (reads as a blink).
             if ((go.transform.localScale - nextScale).sqrMagnitude > 1e-8f)
                 go.transform.localScale = nextScale;
+
+            // [UNITY] Hierarchy scaling stores lossyScale per system. A single parent
+            // localScale write (OVERDRIVE snap) updates whichever systems observe
+            // Transform.hasChanged before it is cleared; Fire / Dust siblings stay
+            // at the old size until a later Play(). Recache every system on a real
+            // size step. Do not Stop/Clear — that is the thruster blink.
+            if (sizeStep && previousSizeMul > 0.01f &&
+                Mathf.Abs(sizeMul - previousSizeMul) >= previousSizeMul * HierarchyScaleRefreshRelative)
+                RecacheJetHierarchyScaling(jet);
+        }
+
+        /// <summary>
+        /// Forces every particle system on a jet to sample the current hierarchy scale.
+        /// Local → Hierarchy is enough; <see cref="RestartParticleSystem"/> would clear the flame.
+        /// </summary>
+        static void RecacheJetHierarchyScaling(JetBind jet)
+        {
+            if (jet == null)
+                return;
+
+            ParticleSystem[] systems = jet.particles;
+            if ((systems == null || systems.Length == 0) && jet.instance != null)
+                systems = jet.instance.GetComponentsInChildren<ParticleSystem>(true);
+            if (systems == null)
+                return;
+
+            for (int i = 0; i < systems.Length; i++)
+                RecacheHierarchyScaling(systems[i]);
+        }
+
+        static void RecacheHierarchyScaling(ParticleSystem ps)
+        {
+            if (ps == null)
+                return;
+
+            var main = ps.main;
+            main.scalingMode = ParticleSystemScalingMode.Local;
+            main.scalingMode = ParticleSystemScalingMode.Hierarchy;
         }
 
         Vector3 ResolveShipAft()

@@ -9,16 +9,21 @@ namespace TitanOrbit.ECS
     /// </summary>
     public struct GemMotionState : IComponentData
     {
-        /// <summary>Coast (burst / nudge), Tractor (server pull active), or Idle (stopped).</summary>
+        /// <summary>Coast (burst / nudge), Tractor (legacy pull), Idle (stopped), or Committed (capture locked).</summary>
         public const byte PhaseCoast = 0;
 
-        /// <summary>Server is actively overwriting velocity toward a wing tip.</summary>
+        /// <summary>Legacy: server was overwriting velocity toward a wing tip. New locks use <see cref="PhaseCommitted"/>.</summary>
         public const byte PhaseTractor = 1;
 
         /// <summary>Below stop-speed and not under tractor — coast finished.</summary>
         public const byte PhaseIdle = 2;
 
-        /// <summary>Motion phase (coast / tractor / idle).</summary>
+        /// <summary>
+        /// Lock committed the capture. Cargo is already credited; clients only play the suck-in.
+        /// </summary>
+        public const byte PhaseCommitted = 3;
+
+        /// <summary>Motion phase (coast / tractor / idle / committed).</summary>
         public byte Phase;
 
         /// <summary>

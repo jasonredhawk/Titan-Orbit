@@ -29,6 +29,7 @@ Transform:
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
+  - {fileID: 6433924038210938426}
   - {fileID: 4801121023311785218}
   - {fileID: 5044767639493451835}
   - {fileID: 4848981235828249378}
@@ -794,6 +795,88 @@ PrefabInstance:
 Transform:
   m_CorrespondingSourceObject: {fileID: 4321588058825320, guid: 8be3ccf56dee2144f8bbc0d50df9dbc5, type: 3}
   m_PrefabInstance: {fileID: 6321088667430924042}
+  m_PrefabAsset: {fileID: 0}
+--- !u!1001 &6438309778187039810
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 8714319060191044611}
+    m_Modifications:
+    - target: {fileID: 1367225953952306, guid: 40d8370d303eb9244af67c5370b8e0da, type: 3}
+      propertyPath: m_Name
+      value: AstroEagle_Weapon
+      objectReference: {fileID: 0}
+    - target: {fileID: 4674516704547448, guid: 40d8370d303eb9244af67c5370b8e0da, type: 3}
+      propertyPath: m_LocalScale.x
+      value: 3
+      objectReference: {fileID: 0}
+    - target: {fileID: 4674516704547448, guid: 40d8370d303eb9244af67c5370b8e0da, type: 3}
+      propertyPath: m_LocalScale.y
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 4674516704547448, guid: 40d8370d303eb9244af67c5370b8e0da, type: 3}
+      propertyPath: m_LocalScale.z
+      value: 1.5
+      objectReference: {fileID: 0}
+    - target: {fileID: 4674516704547448, guid: 40d8370d303eb9244af67c5370b8e0da, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4674516704547448, guid: 40d8370d303eb9244af67c5370b8e0da, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0.025
+      objectReference: {fileID: 0}
+    - target: {fileID: 4674516704547448, guid: 40d8370d303eb9244af67c5370b8e0da, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0.381
+      objectReference: {fileID: 0}
+    - target: {fileID: 4674516704547448, guid: 40d8370d303eb9244af67c5370b8e0da, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 4674516704547448, guid: 40d8370d303eb9244af67c5370b8e0da, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0.00000008146034
+      objectReference: {fileID: 0}
+    - target: {fileID: 4674516704547448, guid: 40d8370d303eb9244af67c5370b8e0da, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4674516704547448, guid: 40d8370d303eb9244af67c5370b8e0da, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4674516704547448, guid: 40d8370d303eb9244af67c5370b8e0da, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4674516704547448, guid: 40d8370d303eb9244af67c5370b8e0da, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4674516704547448, guid: 40d8370d303eb9244af67c5370b8e0da, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4674516704547448, guid: 40d8370d303eb9244af67c5370b8e0da, type: 3}
+      propertyPath: m_ConstrainProportionsScale
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 23555992224148556, guid: 40d8370d303eb9244af67c5370b8e0da, type: 3}
+      propertyPath: 'm_Materials.Array.data[0]'
+      value: 
+      objectReference: {fileID: 2100000, guid: 5af35815ff13dd845b060b36317fa90a, type: 2}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: 40d8370d303eb9244af67c5370b8e0da, type: 3}
+--- !u!4 &6433924038210938426 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 4674516704547448, guid: 40d8370d303eb9244af67c5370b8e0da, type: 3}
+  m_PrefabInstance: {fileID: 6438309778187039810}
   m_PrefabAsset: {fileID: 0}
 --- !u!1001 &6451376217608814872
 PrefabInstance:

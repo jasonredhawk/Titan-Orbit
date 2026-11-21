@@ -36,6 +36,7 @@ namespace TitanOrbit.ECS
             var inputLookup = SystemAPI.GetComponentLookup<ShipInput>(true);
             var latchLookup = SystemAPI.GetComponentLookup<ShipTerritoryBoostLatch>(true);
             var moonLookup = SystemAPI.GetComponentLookup<ShipMoonDockState>(true);
+            var kinematicsLookup = SystemAPI.GetComponentLookup<ShipKinematics>(false);
             var orbitLookup = SystemAPI.GetComponentLookup<ShipOrbitState>(true);
             float dt = SystemAPI.Time.DeltaTime;
             bool hasMap = ToroidalMapEcs.TryGetMapSize(out float mapW, out float mapH);
@@ -65,9 +66,9 @@ namespace TitanOrbit.ECS
                              .WithAll<ShipTag, Simulate, PredictedGhost>()
                              .WithEntityAccess())
                 {
-                    ApplyPlanar(transform, velocity, shipState, entity, inputLookup, latchLookup, moonLookup);
+                    ApplyPlanar(transform, velocity, shipState, entity, inputLookup, latchLookup, moonLookup, kinematicsLookup);
                     if (hasMap)
-                        HoldOrbitRail(transform, velocity, entity, orbitLookup, moonLookup, anchors, mapW, mapH, dt);
+                        HoldOrbitRail(transform, velocity, entity, orbitLookup, moonLookup, kinematicsLookup, anchors, mapW, mapH, dt);
                 }
             }
             else
@@ -77,9 +78,9 @@ namespace TitanOrbit.ECS
                              .WithAll<ShipTag, Simulate>()
                              .WithEntityAccess())
                 {
-                    ApplyPlanar(transform, velocity, shipState, entity, inputLookup, latchLookup, moonLookup);
+                    ApplyPlanar(transform, velocity, shipState, entity, inputLookup, latchLookup, moonLookup, kinematicsLookup);
                     if (hasMap)
-                        HoldOrbitRail(transform, velocity, entity, orbitLookup, moonLookup, anchors, mapW, mapH, dt);
+                        HoldOrbitRail(transform, velocity, entity, orbitLookup, moonLookup, kinematicsLookup, anchors, mapW, mapH, dt);
                 }
             }
         }
@@ -104,6 +105,7 @@ namespace TitanOrbit.ECS
             Entity entity,
             ComponentLookup<ShipOrbitState> orbitLookup,
             ComponentLookup<ShipMoonDockState> moonLookup,
+            ComponentLookup<ShipKinematics> kinematicsLookup,
             NativeList<OrbitRailAnchor> anchors,
             float mapW,
             float mapH,
@@ -128,7 +130,9 @@ namespace TitanOrbit.ECS
                     continue;
 
                 float3 pos = transform.ValueRO.Position;
-                float3 linear = velocity.ValueRO.Linear;
+                float3 linear = kinematicsLookup.HasComponent(entity)
+                    ? kinematicsLookup[entity].Velocity
+                    : velocity.ValueRO.Linear;
                 PlanetOrbitMath.StabilizeOrbitRail(
                     ref pos,
                     ref linear,
@@ -141,7 +145,14 @@ namespace TitanOrbit.ECS
                 pos.y = 0f;
                 linear.y = 0f;
                 transform.ValueRW.Position = pos;
-                velocity.ValueRW.Linear = linear;
+                if (kinematicsLookup.HasComponent(entity))
+                {
+                    var kin = kinematicsLookup[entity];
+                    kin.Velocity = linear;
+                    kinematicsLookup[entity] = kin;
+                }
+
+                velocity.ValueRW = PhysicsVelocity.Zero;
                 return;
             }
         }
@@ -154,7 +165,8 @@ namespace TitanOrbit.ECS
             Entity entity,
             ComponentLookup<ShipInput> inputLookup,
             ComponentLookup<ShipTerritoryBoostLatch> latchLookup,
-            ComponentLookup<ShipMoonDockState> moonLookup)
+            ComponentLookup<ShipMoonDockState> moonLookup,
+            ComponentLookup<ShipKinematics> kinematicsLookup)
         {
             if (shipState.ValueRO.IsDead || shipState.ValueRO.AwaitingTeamSelection)
                 return;
@@ -182,7 +194,9 @@ namespace TitanOrbit.ECS
                 transform.ValueRW.Position = pos;
             }
 
-            float3 linear = velocity.ValueRO.Linear;
+            float3 linear = kinematicsLookup.HasComponent(entity)
+                ? kinematicsLookup[entity].Velocity
+                : velocity.ValueRO.Linear;
             linear.y = 0f;
 
             // --- Thrust cruise cap (after the solver) ---
@@ -204,12 +218,14 @@ namespace TitanOrbit.ECS
                     ShipPhysicsDriveLogic.ClampPlanarSpeed(ref linear, cap);
             }
 
-            float yawRate = velocity.ValueRO.Angular.y;
-            velocity.ValueRW = new PhysicsVelocity
+            if (kinematicsLookup.HasComponent(entity))
             {
-                Linear = linear,
-                Angular = new float3(0f, yawRate, 0f),
-            };
+                var kin = kinematicsLookup[entity];
+                kin.Velocity = linear;
+                kinematicsLookup[entity] = kin;
+            }
+
+            velocity.ValueRW = PhysicsVelocity.Zero;
         }
     }
 }

@@ -12,23 +12,16 @@ using Unity.Transforms;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Server-only gem tractor beam: assigns gems in wing search radii to ship wings, then
-    /// sets gem velocity toward wing pull targets on the same tick the lock starts.
-    /// Writes <see cref="GemMotionState"/> lock fields and broadcasts <see cref="GemTractorLockRpc"/>
-    /// on change so clients present the same pull without inventing wing assignment.
-    /// Runs <b>before</b> <see cref="GemMotionSystem"/> so
-    /// velocity and pose integrate in the same tick.
-    /// Matching uses <see cref="GemTractorBeamAssignment"/> + <see cref="TractorBeamSettings"/>:
-    /// sticky primary locks (assists re-target when PrimaryStickyOnly), primary fill so many gems
-    /// keep many wings busy, and spare-wing assists capped by MaxCooperatingBeams. Stacked pull
-    /// uses diminishing assists (<see cref="GemTractorBeamMath.StackedBeamPullScale"/>): primary
-    /// 100%, each extra AssistPullScale (default 25%). Range/power multipliers apply via
-    /// <see cref="ShipWingTractorBeamPose.GetTractorParams"/>.
-    /// Nearby gem scans use <see cref="GemSpatialHash"/> so 100 ships do not walk every gem.
-    /// Deploy extend/widen is gameplay timing: lock + beam VFX start immediately, pull velocity
-    /// waits until the thin line reaches the gem and the cone has widened (distance-scaled).
-    /// Burst gems keep Coast damping during that wait. Clients draw beams from ghost lock
-    /// fields only; they must not invent a second wing assignment.
+    /// Server-only gem tractor beam. Assigns gems in wing search radii, then commits the
+    /// capture on that same tick: cargo is credited, the crystal is destroyed, and one
+    /// <see cref="GemTractorLockRpc"/> with <see cref="GemMotionState.PhaseCommitted"/> plus
+    /// <see cref="GemConsumedRpc"/> tell clients to play the suck-in. There is no world-space
+    /// pull chase, so ship speed cannot drag a locked gem or drop the capture.
+    /// Matching uses <see cref="GemTractorBeamAssignment"/> + <see cref="TractorBeamSettings"/>.
+    /// Nearby gem scans use <see cref="GemSpatialHash"/> so ships do not walk every gem.
+    /// Each wing holds one gem until that beam's extend, cone, and suck-in finish, then
+    /// may lock the next crystal. Clients must not invent a second wing assignment.
+    /// Flying over a gem that never locked still uses <see cref="GemPickupSystem"/>.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
@@ -56,9 +49,6 @@ namespace TitanOrbit.ECS
         readonly Dictionary<long, int> _gemBeamCountScratch = new Dictionary<long, int>(32);
         /// <summary>Packed gem key → Entity for the current ship assignment pass.</summary>
         readonly Dictionary<long, Entity> _gemEntityByKey = new Dictionary<long, Entity>(32);
-        /// <summary>Gems locked or pulled this frame — others clear tractor ghost fields.</summary>
-        readonly HashSet<int> _gemsLockedThisFrame = new HashSet<int>();
-
         /// <summary>Entities locked this tick (for unlock when a ship becomes ineligible).</summary>
         readonly HashSet<Entity> _lockedEntitiesThisFrame = new HashSet<Entity>();
 
@@ -67,6 +57,9 @@ namespace TitanOrbit.ECS
 
         /// <summary>Live gems for the spatial hash (built once per tick).</summary>
         EntityQuery _gemSpatialQuery;
+
+        /// <summary>Ships that can commit a tractor capture. Snapshotted so cargo writes are safe.</summary>
+        EntityQuery _shipQuery;
         /// <summary>
         /// Sticky wing→gem locks per ship entity index. Survives ship rotation until the gem
         /// leaves that wing's search radius. When TractorBeamSettings.PrimaryStickyOnly is on,
@@ -74,6 +67,12 @@ namespace TitanOrbit.ECS
         /// </summary>
         readonly Dictionary<int, Dictionary<int, long>> _stickyLocksByShip =
             new Dictionary<int, Dictionary<int, long>>(16);
+        /// <summary>
+        /// Wing is busy until this server-clock time. One capture per wing; the next gem
+        /// waits until the beam animation for the current gem has finished.
+        /// </summary>
+        readonly Dictionary<int, Dictionary<int, float>> _wingBusyUntilByShip =
+            new Dictionary<int, Dictionary<int, float>>(16);
         /// <summary>Scratch: gem key → primary wing for ghost TractorWingIndex.</summary>
         readonly Dictionary<long, int> _primaryWingByGem = new Dictionary<long, int>(16);
         /// <summary>Scratch: gem key → all wing indices pulling it this tick (primary + assists).</summary>
@@ -92,9 +91,15 @@ namespace TitanOrbit.ECS
                 ComponentType.ReadOnly<GemTag>(),
                 ComponentType.ReadOnly<GemState>(),
                 ComponentType.ReadOnly<LocalTransform>());
+            _shipQuery = GetEntityQuery(
+                ComponentType.ReadOnly<ShipTag>(),
+                ComponentType.ReadOnly<LocalTransform>(),
+                ComponentType.ReadOnly<ShipState>(),
+                ComponentType.ReadOnly<ShipOrbitState>(),
+                ComponentType.ReadOnly<ShipMoonDockState>());
         }
 
-        /// <summary>Assigns gems, writes lock state, applies pull velocity before motion integrate.</summary>
+        /// <summary>Assigns gems and commits cargo on the first lock. No pull-velocity chase.</summary>
         protected override void OnUpdate()
         {
             // --- Map period for seam reach ---
@@ -125,16 +130,11 @@ namespace TitanOrbit.ECS
 
             _activePairsScratch.Clear();
             var activePairs = _activePairsScratch;
-            _gemsLockedThisFrame.Clear();
             _lockedEntitiesThisFrame.Clear();
 
             // --- Same timeline as GemState.SpawnServerTime / self-pickup block stamps ---
             float nowServerTime = PlanetGemMoonOrbitClock.GetElapsedSecondsOrFallback(
                 EntityManager, now);
-            int simHz = PlanetGemMoonOrbitClock.FallbackSimulationHz;
-            if (SystemAPI.TryGetSingleton<ClientServerTickRate>(out var tickRate) &&
-                tickRate.SimulationTickRate > 0)
-                simHz = tickRate.SimulationTickRate;
 
             NativeArray<Entity> gemEntities = default;
             NativeArray<LocalTransform> gemTransforms = default;
@@ -151,61 +151,63 @@ namespace TitanOrbit.ECS
                 seenScratch = new NativeHashSet<int>(32, Allocator.Temp);
             }
 
-            // --- Per ship: assign gems to wings, write locks, apply pull velocity ---
-            foreach (var (shipTransform, shipState, shipOrbit, moonDock, shipEntity) in SystemAPI
-                         .Query<RefRO<LocalTransform>, RefRO<ShipState>, RefRO<ShipOrbitState>, RefRO<ShipMoonDockState>>()
-                         .WithAll<ShipTag>()
-                         .WithEntityAccess())
+            // --- Per ship: assign gems, commit cargo on first lock (snapshot so writes are safe) ---
+            if (!_shipQuery.IsEmptyIgnoreFilter)
             {
-                if (!IsShipEligibleForPull(shipState.ValueRO, moonDock.ValueRO))
+                var shipEntities = _shipQuery.ToEntityArray(Allocator.Temp);
+                for (int s = 0; s < shipEntities.Length; s++)
                 {
-                    _stickyLocksByShip.Remove(shipEntity.Index);
-                    continue;
+                    Entity shipEntity = shipEntities[s];
+                    var shipState = EntityManager.GetComponentData<ShipState>(shipEntity);
+                    var moonDock = EntityManager.GetComponentData<ShipMoonDockState>(shipEntity);
+                    if (!IsShipEligibleForPull(shipState, moonDock))
+                    {
+                        _stickyLocksByShip.Remove(shipEntity.Index);
+                        _wingBusyUntilByShip.Remove(shipEntity.Index);
+                        continue;
+                    }
+
+                    int shipNetworkId = 0;
+                    if (EntityManager.HasComponent<GhostOwner>(shipEntity))
+                        shipNetworkId = EntityManager.GetComponentData<GhostOwner>(shipEntity).NetworkId;
+                    if (shipNetworkId == 0)
+                    {
+                        _stickyLocksByShip.Remove(shipEntity.Index);
+                        _wingBusyUntilByShip.Remove(shipEntity.Index);
+                        continue;
+                    }
+
+                    // [TITAN-ORBIT] Orbit ring widens tractor search radius via GemTractorBeamMath.
+                    var shipTransform = EntityManager.GetComponentData<LocalTransform>(shipEntity);
+                    bool inOrbit = EntityManager.GetComponentData<ShipOrbitState>(shipEntity).InOrbitRing;
+                    int shipLevel = math.max(1, shipState.ShipLevel);
+                    var wings = EntityManager.GetBuffer<ShipWingTractorBeamElement>(shipEntity);
+                    BuildAssignment(
+                        hash,
+                        nearby,
+                        seenScratch,
+                        shipEntity,
+                        shipNetworkId,
+                        nowServerTime,
+                        shipTransform,
+                        inOrbit,
+                        shipLevel,
+                        wings,
+                        mapW,
+                        mapH,
+                        now,
+                        serverTick,
+                        activePairs);
+
+                    CommitLockedGems(
+                        ref rpcEcb,
+                        shipEntity,
+                        shipNetworkId,
+                        nowServerTime,
+                        serverTick);
                 }
 
-                int shipNetworkId = 0;
-                if (EntityManager.HasComponent<GhostOwner>(shipEntity))
-                    shipNetworkId = EntityManager.GetComponentData<GhostOwner>(shipEntity).NetworkId;
-                if (shipNetworkId == 0)
-                {
-                    _stickyLocksByShip.Remove(shipEntity.Index);
-                    continue;
-                }
-
-                // [TITAN-ORBIT] Orbit ring widens tractor search radius via GemTractorBeamMath.
-                bool inOrbit = shipOrbit.ValueRO.InOrbitRing;
-                int shipLevel = math.max(1, shipState.ValueRO.ShipLevel);
-                var wings = EntityManager.GetBuffer<ShipWingTractorBeamElement>(shipEntity);
-                BuildAssignment(
-                    hash,
-                    nearby,
-                    seenScratch,
-                    shipEntity,
-                    shipNetworkId,
-                    nowServerTime,
-                    shipTransform.ValueRO,
-                    inOrbit,
-                    shipLevel,
-                    wings,
-                    mapW,
-                    mapH,
-                    now,
-                    serverTick,
-                    activePairs);
-
-                ApplyLockAndPull(
-                    ref rpcEcb,
-                    shipEntity,
-                    shipNetworkId,
-                    nowServerTime,
-                    shipTransform.ValueRO,
-                    inOrbit,
-                    shipLevel,
-                    wings,
-                    mapW,
-                    mapH,
-                    serverTick,
-                    simHz);
+                shipEntities.Dispose();
             }
 
             // --- Clear lock on gems no longer assigned to any ship ---
@@ -241,37 +243,24 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Writes <see cref="GemMotionState"/> lock fields for assigned gems and applies pull
-        /// velocity from every wing on that gem (primary + spare assists) after deploy finishes.
-        /// Primary contributes full wing pull; each assist adds AssistPullScale (settings,
-        /// default 25%) of its own strength so three equal beams ≈ 150% rather than 300%.
-        /// <para>
-        /// Lock + beam VFX start immediately. Pull waits until the thin extend line reaches
-        /// the gem and the cone has widened (<see cref="GemTractorBeamMath.IsDeployPullReady"/>).
-        /// Duration scales with wing→gem distance. During the wait the gem stays
-        /// <see cref="GemMotionState.PhaseCoast"/> so burst damping still applies.
-        /// <see cref="GemMotionState.PhaseTractor"/> is applied only after a non-zero pull
-        /// velocity replaces <see cref="GemKinematics"/>.
-        /// </para>
+        /// Credits cargo and destroys every gem assigned to this ship this tick.
+        /// The lock is the capture: no pull velocity, no later scoop test.
+        /// A second ship later in this tick sees <see cref="GemState.IsConsumed"/> and skips.
+        /// Gems that do not fit in the remaining hold are left unlocked.
         /// </summary>
-        void ApplyLockAndPull(
+        void CommitLockedGems(
             ref EntityCommandBuffer rpcEcb,
             Entity shipEntity,
             int shipNetworkId,
             float nowServerTime,
-            in LocalTransform shipTransform,
-            bool inOrbit,
-            int shipLevel,
-            DynamicBuffer<ShipWingTractorBeamElement> wings,
-            float mapW,
-            float mapH,
-            uint serverTick,
-            int simHz)
+            uint serverTick)
         {
             if (_pairScratch.Count == 0)
                 return;
+            if (!EntityManager.HasComponent<ShipState>(shipEntity))
+                return;
 
-            // --- Group pairs by gem (one ghost lock, possibly many wing forces) ---
+            // --- Group pairs by gem (one capture, primary wing is the beam target) ---
             _primaryWingByGem.Clear();
             _wingsByGem.Clear();
 
@@ -289,22 +278,26 @@ namespace TitanOrbit.ECS
                     _primaryWingByGem[pair.GemKey] = pair.WingIndex;
             }
 
+            var ship = EntityManager.GetComponentData<ShipState>(shipEntity);
+            float capacityLeft = ship.GemCapacity - ship.CurrentGems;
+            bool cargoChanged = false;
+
             foreach (var kv in _wingsByGem)
             {
+                if (capacityLeft <= 0.001f)
+                    break;
+
                 if (!_gemEntityByKey.TryGetValue(kv.Key, out Entity gemEntity))
                     continue;
                 if (!EntityManager.Exists(gemEntity) ||
                     !EntityManager.HasComponent<GemState>(gemEntity) ||
-                    !EntityManager.HasComponent<LocalTransform>(gemEntity) ||
-                    !EntityManager.HasComponent<GemKinematics>(gemEntity))
+                    !EntityManager.HasComponent<LocalTransform>(gemEntity))
                     continue;
 
                 var gemState = EntityManager.GetComponentData<GemState>(gemEntity);
-                var gemTransform = EntityManager.GetComponentData<LocalTransform>(gemEntity);
-                var gemKinematics = EntityManager.GetComponentData<GemKinematics>(gemEntity);
                 var wingList = kv.Value;
 
-                // Re-check self-pickup block (BuildAssignment already filtered; keep Apply safe).
+                // Re-check self-pickup block (BuildAssignment already filtered; keep commit safe).
                 if (!PassesGemEligibility(gemState, shipNetworkId, nowServerTime))
                     continue;
                 if (wingList == null || wingList.Count == 0)
@@ -314,107 +307,53 @@ namespace TitanOrbit.ECS
                 if (!_deployByPair.TryGetValue(pairKey, out DeployState deploy))
                     continue;
 
+                // Whole crystal, even when cargo cannot hold it. Same waste rule as pickup.
+                float take = math.min(gemState.Value, capacityLeft);
+                if (take <= 0.001f)
+                    break;
+
                 int primaryWing = _primaryWingByGem.TryGetValue(MakeGemKey(gemEntity), out int pw)
                     ? pw
                     : wingList[0];
-                _gemsLockedThisFrame.Add(gemEntity.Index);
-                _lockedEntitiesThisFrame.Add(gemEntity);
 
-                // --- Ghost lock fields (beam VFX) — always while assigned ---
-                // [TITAN-ORBIT] PhaseTractor is set ONLY after we overwrite GemKinematics with a
-                // real pull velocity. Setting Tractor phase first then failing the pull left
-                // damage-spill burst speed intact while GemMotionSystem skipped damping → gems
-                // flew forever with "no friction."
-                if (EntityManager.HasComponent<GemMotionState>(gemEntity))
-                {
-                    var motion = EntityManager.GetComponentData<GemMotionState>(gemEntity);
-                    int prevShip = motion.TractorShipId;
-                    byte prevWing = motion.TractorWingIndex;
-                    uint prevTick = motion.TractorLockTick;
-                    motion.TractorShipId = shipNetworkId;
-                    motion.TractorWingIndex = (byte)math.clamp(primaryWing, 0, 255);
-                    motion.TractorLockTick = deploy.LockTick != 0 ? deploy.LockTick : serverTick;
-                    motion.TractorExtendDuration = deploy.ExtendDuration;
-                    EntityManager.SetComponentData(gemEntity, motion);
-                    if (prevShip != motion.TractorShipId ||
-                        prevWing != motion.TractorWingIndex ||
-                        prevTick != motion.TractorLockTick)
-                    {
-                        NotifyTractorLock(ref rpcEcb, gemEntity, motion);
-                    }
-                }
-
-                // --- Wait for extend + widen before pull ---
-                // Lock is live (beam VFX). Coast damping still runs. Pull starts when the
-                // thin line has reached the gem and the cone has opened.
-                uint lockTick = deploy.LockTick != 0 ? deploy.LockTick : serverTick;
-                if (!GemTractorBeamMath.IsDeployPullReady(
-                        lockTick, deploy.ExtendDuration, nowServerTime, simHz))
-                    continue;
-
-                // --- Stacked pull — after deploy ---
-                var beamSettings = TractorBeamSettingsCache.ResolveOrDefault();
-                float assistScale = beamSettings.AssistPullScale;
-                float3 gemPos = gemTransform.Position;
-                float3 velocity = float3.zero;
-                float3 primaryTarget = ResolvePullTarget(shipTransform, wings, primaryWing);
+                // One beam per wing until this gem's extend, cone, and suck-in finish.
+                float hold = GemTractorBeamMath.ComputeCaptureHoldSeconds(deploy.ExtendDuration);
+                float busyUntil = nowServerTime + hold;
                 for (int wi = 0; wi < wingList.Count; wi++)
-                {
-                    int wingIndex = wingList[wi];
-                    float pullSpeed = ResolveWingPullSpeed(
-                        wingIndex, wings, shipLevel, inOrbit,
-                        gemState.Value, gemState.Size);
-                    bool isPrimary = wingIndex == primaryWing;
-                    float stackScale = GemTractorBeamMath.StackedBeamPullScale(isPrimary, assistScale);
-                    float3 pullTarget = ResolvePullTarget(shipTransform, wings, wingIndex);
-                    float3 toWing = GemTractorBeamMath.ToroidalDirection(gemPos, pullTarget, mapW, mapH);
-                    if (math.lengthsq(toWing) < 0.0001f)
-                        continue;
-                    velocity += toWing * (pullSpeed * stackScale);
-                }
+                    MarkWingBusy(shipEntity.Index, wingList[wi], busyUntil);
 
-                float distToPrimary = GemTractorBeamMath.ToroidalDistance(
-                    gemPos, primaryTarget, mapW, mapH);
-                float absorbRadius = wings.Length > 0
-                    ? GemCollectMath.ResolveWingCollectRadius(
-                        beamSettings, gemState.Value, gemState.Size)
-                    : GemCollectMath.ResolveHullCollectRadius(
-                        beamSettings, gemState.Value, gemState.Size, shipTransform.Scale);
+                ship.CurrentGems = math.min(ship.GemCapacity, ship.CurrentGems + take);
+                capacityLeft = ship.GemCapacity - ship.CurrentGems;
+                cargoChanged = true;
 
-                if (math.lengthsq(velocity) < 0.0001f && distToPrimary > absorbRadius)
-                {
-                    float3 dir = GemTractorBeamMath.ToroidalDirection(
-                        gemPos, primaryTarget, mapW, mapH);
-                    if (math.lengthsq(dir) >= 0.0001f)
-                        velocity = dir * GemTractorBeamMath.MinGameplayPullSpeed;
-                }
+                // Mark before the next ship in this tick runs assignment.
+                gemState.IsConsumed = true;
+                EntityManager.SetComponentData(gemEntity, gemState);
 
-                if (math.lengthsq(velocity) < 0.0001f)
-                {
-                    // Already on the absorb point — lock stays; pickup consumes this tick.
-                    if (EntityManager.HasComponent<GemMotionState>(gemEntity))
-                    {
-                        var motion = EntityManager.GetComponentData<GemMotionState>(gemEntity);
-                        if (motion.Phase == GemMotionState.PhaseTractor)
-                        {
-                            motion.Phase = GemMotionState.PhaseCoast;
-                            EntityManager.SetComponentData(gemEntity, motion);
-                        }
-                    }
-
-                    continue;
-                }
-
-                gemKinematics.Velocity = velocity;
-                EntityManager.SetComponentData(gemEntity, gemKinematics);
-
+                var motion = EntityManager.HasComponent<GemMotionState>(gemEntity)
+                    ? EntityManager.GetComponentData<GemMotionState>(gemEntity)
+                    : default;
+                motion.TractorShipId = shipNetworkId;
+                motion.TractorWingIndex = (byte)math.clamp(primaryWing, 0, 255);
+                motion.TractorLockTick = deploy.LockTick != 0 ? deploy.LockTick : serverTick;
+                motion.TractorExtendDuration = deploy.ExtendDuration;
+                motion.Phase = GemMotionState.PhaseCommitted;
                 if (EntityManager.HasComponent<GemMotionState>(gemEntity))
-                {
-                    var motion = EntityManager.GetComponentData<GemMotionState>(gemEntity);
-                    motion.Phase = GemMotionState.PhaseTractor;
                     EntityManager.SetComponentData(gemEntity, motion);
-                }
+
+                NotifyTractorLock(ref rpcEcb, gemEntity, motion);
+                GemNetNotify.SendConsumed(
+                    ref rpcEcb,
+                    gemState.SpawnId,
+                    EntityManager.GetComponentData<LocalTransform>(gemEntity).Position,
+                    shipNetworkId,
+                    gemState.Tint,
+                    take);
+                rpcEcb.DestroyEntity(gemEntity);
             }
+
+            if (cargoChanged)
+                EntityManager.SetComponentData(shipEntity, ship);
         }
 
         /// <summary>
@@ -435,6 +374,9 @@ namespace TitanOrbit.ECS
                     continue;
 
                 var m = EntityManager.GetComponentData<GemMotionState>(entity);
+                // Committed captures are already consumed. Never unlock them.
+                if (m.Phase == GemMotionState.PhaseCommitted)
+                    continue;
                 if (m.TractorShipId == 0 && m.Phase != GemMotionState.PhaseTractor)
                     continue;
 
@@ -480,44 +422,9 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Resolves gameplay pull speed for the wing assigned to this gem.
-        /// Falls back to default max-gems tier when the ship has no wing buffer.
-        /// </summary>
-        static float ResolveWingPullSpeed(
-            int wingIndex,
-            DynamicBuffer<ShipWingTractorBeamElement> wings,
-            int shipLevel,
-            bool inOrbit,
-            float gemValue,
-            float gemSize)
-        {
-            float wingAttraction;
-            if (wingIndex >= 0 && wingIndex < wings.Length)
-            {
-                ShipWingTractorBeamPose.GetTractorParams(
-                    wings[wingIndex], shipLevel, inOrbit, out _, out wingAttraction);
-            }
-            else
-            {
-                // --- No wing buffer: legacy max-gems tier + designer power multiplier ---
-                GemTractorBeamMath.GetTractorBeamFromMaxGems(8f, inOrbit, out _, out wingAttraction);
-                TractorBeamSettingsCache.ApplyPower(ref wingAttraction);
-            }
-
-            return GemTractorBeamMath.ResolvePullSpeedFromWing(wingAttraction, gemValue, gemSize);
-        }
-
-        static float3 ResolvePullTarget(in LocalTransform shipTransform, DynamicBuffer<ShipWingTractorBeamElement> wings, int wingIndex)
-        {
-            if (wingIndex >= 0 && wingIndex < wings.Length)
-                return ShipWingTractorBeamPose.GetWorldPosition(shipTransform, wings[wingIndex]);
-            return shipTransform.Position;
-        }
-
-        /// <summary>
         /// Scans gems within each wing's search radius via the spatial hash, then runs
         /// sticky/primary/assist matching. Fills <see cref="_pairScratch"/> for
-        /// <see cref="ApplyLockAndPull"/>.
+        /// <see cref="CommitLockedGems"/>.
         /// </summary>
         void BuildAssignment(
             in GemSpatialHash hash,
@@ -567,6 +474,10 @@ namespace TitanOrbit.ECS
             // --- Collect in-range wing↔gem samples (spatial cells, not every gem on the map) ---
             for (int wi = 0; wi < wingCount; wi++)
             {
+                // This wing is still playing the previous capture.
+                if (IsWingBusy(shipIndex, wi, nowServerTime))
+                    continue;
+
                 var wing = wings[wi];
                 ShipWingTractorBeamPose.GetTractorParams(wing, shipLevel, inOrbit, out float searchRadius, out _);
                 float3 wingPos = ShipWingTractorBeamPose.GetWorldPosition(shipTransform, wing);
@@ -653,6 +564,10 @@ namespace TitanOrbit.ECS
             uint serverTick,
             HashSet<long> activePairs)
         {
+            // Hull has one beam. Wait until the previous capture animation finishes.
+            if (IsWingBusy(shipEntity.Index, 0, nowServerTime))
+                return;
+
             // --- Hull-center fallback reach (legacy ships without wing buffers) ---
             GemTractorBeamMath.GetTractorBeamFromMaxGems(8f, inOrbit, out float searchRadius, out _);
             TractorBeamSettingsCache.ApplyReach(ref searchRadius);
@@ -708,8 +623,7 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Starts the deploy clock for a new ship–gem pair. Extend duration scales with
-        /// wing→gem distance so far crystals take longer for the thin line to arrive.
-        /// Pull waits on this clock (<see cref="GemTractorBeamMath.IsDeployPullReady"/>).
+        /// wing→gem distance and is the client's suck-in length. Capture does not wait on it.
         /// </summary>
         void EnsureDeployState(
             long pairKey,
@@ -761,6 +675,32 @@ namespace TitanOrbit.ECS
             gem.Value > 0.001f &&
             gem.DepositTeam == TeamId.None &&
             !GemSelfPickupBlock.IsTractorBlockedForShip(gem, shipNetworkId, nowServerTime);
+
+        bool IsWingBusy(int shipIndex, int wingIndex, float nowServerTime)
+        {
+            if (!_wingBusyUntilByShip.TryGetValue(shipIndex, out var wings))
+                return false;
+            if (!wings.TryGetValue(wingIndex, out float until))
+                return false;
+            if (nowServerTime < until)
+                return true;
+            wings.Remove(wingIndex);
+            if (wings.Count == 0)
+                _wingBusyUntilByShip.Remove(shipIndex);
+            return false;
+        }
+
+        void MarkWingBusy(int shipIndex, int wingIndex, float busyUntil)
+        {
+            if (!_wingBusyUntilByShip.TryGetValue(shipIndex, out var wings))
+            {
+                wings = new Dictionary<int, float>(4);
+                _wingBusyUntilByShip[shipIndex] = wings;
+            }
+
+            if (!wings.TryGetValue(wingIndex, out float prev) || busyUntil > prev)
+                wings[wingIndex] = busyUntil;
+        }
 
         static long MakeGemKey(Entity e) => ((long)(uint)e.Version << 32) | (uint)e.Index;
 

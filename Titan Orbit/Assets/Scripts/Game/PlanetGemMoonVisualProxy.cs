@@ -128,6 +128,11 @@ namespace TitanOrbit.Game
             EnsureOrbitZoneVisual();
             EnsureMatrixShieldVisual();
             EnsureStatsLabel();
+            // Level-up reaches this Configure from WorldBodyVisualApplier. The stats
+            // label reads PlanetState.PlanetLevel inside Configure, so the moon gem
+            // line matches the planet label painted in that same refresh.
+            if (_statsLabel != null)
+                _statsLabel.RefreshGemRequirement();
             if (_planetId > 0 && isActiveAndEnabled)
                 PlanetGemMoonVisualRegistry.Register(this);
         }

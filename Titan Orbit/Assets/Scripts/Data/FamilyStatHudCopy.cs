@@ -17,7 +17,9 @@ namespace TitanOrbit.Data
     /// <see cref="ShipFamilySpecialBonuses"/> field can be listed, including 1×
     /// baselines (shown as <c>1.00×</c>). Hovering a spoke uses
     /// <see cref="FormatSpokeHoverBody"/>: the lineage percent plus a one-line
-    /// description of what that multiplier changes. Hull and Energy are separate
+    /// description of what that multiplier changes. A plus percent is mint and a
+    /// minus percent is red; the stat name beside it keeps its own colour.
+    /// Hull and Energy are separate
     /// groups so defense and power are not mixed. Bullet-bank vs-target damage
     /// is a weapon stat and is not part of this plate.
     /// </para>
@@ -98,11 +100,17 @@ namespace TitanOrbit.Data
         /// </summary>
         public const float ExtremeLossSignedPercent = 20f;
 
-        /// <summary>TMP hex for a bullet-bank gain. Fleet bonuses do not use this.</summary>
+        /// <summary>
+        /// TMP hex for a positive bonus value (<c>+12%</c>). Bright mint so a gain
+        /// pops on the dark dock glass without recoloring the stat name beside it.
+        /// </summary>
         public const string HexBoost = "59FA9E";
 
-        /// <summary>TMP hex for a bullet-bank trade-off. Fleet bonuses do not use this.</summary>
-        public const string HexPenalty = "F2B852";
+        /// <summary>
+        /// TMP hex for a negative bonus value (<c>-12%</c>). Bright red so a loss
+        /// reads at a glance. The stat title keeps its own hue.
+        /// </summary>
+        public const string HexPenalty = "FF5B6E";
 
         /// <summary>TMP hex for camera / zoom (ice blue).</summary>
         public const string HexNeutral = "7EC8FF";
@@ -230,14 +238,11 @@ namespace TitanOrbit.Data
                 if (sb.Length > 0)
                     sb.AppendLine();
 
-                // Full name stays muted; the signed percent carries the colour.
+                // Full name stays ice. Only the signed percent turns green or red.
                 sb.Append("<color=#").Append(HexNeutral).Append('>')
                     .Append(row.FullLabel)
-                    .Append("</color>  <color=#")
-                    .Append(HexForRow(row))
-                    .Append('>')
-                    .Append(FormatSignedPercent(row))
-                    .Append("</color>");
+                    .Append("</color>  ");
+                AppendTintedSignedBonus(sb, row);
             }
 
             return sb.ToString();
@@ -387,7 +392,8 @@ namespace TitanOrbit.Data
 
             // --- Lineage value ---
             // Stock 1× still prints a value so the card is not title-only.
-            // Drain already flipped SignedPercent: green +% means less energy spent.
+            // Drain already flipped SignedPercent: a green +% means less energy spent.
+            // The card caption above this line is the stat name and stays its own colour.
             string value = row.IsIdentity ? "STOCK " + NeutralBaseText : FormatSignedPercent(row);
             s_HoverBody.Append("<color=#").Append(HexForRow(row)).Append("><b>")
                 .Append(value)
@@ -458,8 +464,9 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// TMP hex for a cell value. Stock is muted, camera zoom stays ice,
-        /// and a live bonus keeps its stat colour (Fire Power stays offense orange).
+        /// TMP hex for a bonus value. Stock <c>1.00×</c> stays muted, camera zoom
+        /// stays ice (height is not a gain or a loss), a plus is mint, and a minus
+        /// is red. The stat title is coloured by the caller, not by this hex.
         /// </summary>
         public static string HexForRow(in BonusRow row)
         {
@@ -467,7 +474,45 @@ namespace TitanOrbit.Data
                 return HexMuted;
             if (row.IsNeutral)
                 return HexNeutral;
-            return HexForCategory(row.Category);
+            if (row.IsBoost)
+                return HexBoost;
+            if (row.IsPenalty)
+                return HexPenalty;
+            return HexMuted;
+        }
+
+        /// <summary>
+        /// Writes one signed bonus in mint or red. Stock and camera zoom keep
+        /// <see cref="HexForRow"/> (muted / ice) because they are not a +/- trade.
+        /// Caller supplies the gap before the value; this does not add a newline.
+        /// </summary>
+        public static void AppendTintedSignedBonus(StringBuilder sb, in BonusRow row)
+        {
+            if (sb == null)
+                return;
+
+            sb.Append("<color=#").Append(HexForRow(row)).Append('>')
+                .Append(FormatSignedPercent(row))
+                .Append("</color>");
+        }
+
+        /// <summary>
+        /// Wraps a bonus token that already starts with <c>+</c> or <c>-</c>.
+        /// Anything else (a title, <c>1.00×</c>, an em dash) is returned as-is
+        /// so it keeps the colour of the text around it.
+        /// </summary>
+        public static string TintSignedBonus(string value)
+        {
+            if (string.IsNullOrEmpty(value))
+                return value;
+
+            char sign = value[0];
+            if (sign == '+')
+                return "<color=#" + HexBoost + ">" + value + "</color>";
+            // ASCII hyphen and the unicode minus both mean a loss on these plates.
+            if (sign == '-' || sign == '\u2212')
+                return "<color=#" + HexPenalty + ">" + value + "</color>";
+            return value;
         }
 
         /// <summary>

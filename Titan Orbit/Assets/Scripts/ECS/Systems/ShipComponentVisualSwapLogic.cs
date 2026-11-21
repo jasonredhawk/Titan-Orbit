@@ -10,8 +10,9 @@ namespace TitanOrbit.ECS
 {
     /// <summary>
     /// Replaces host chassis children with cached meshes from another ship family,
-    /// keeping the host slot pose. Used by the hybrid proxy applier and by covering-collider
-    /// bake so the unique silhouette matches what the player sees.
+    /// keeping the host slot pose and the hardpoint's authored scale. A wing placed
+    /// at 1.5× stays 1.5× when Wing_5 replaces it. Used by the hybrid proxy applier
+    /// and by covering-collider bake so the unique silhouette matches what the player sees.
     /// <para>
     /// Store extras remap cockpit / engine / wing / thruster / tail / hull — and any
     /// other non-weapon part type — by matching type, not a fixed list of slots.
@@ -386,7 +387,8 @@ namespace TitanOrbit.ECS
             Transform originalStash,
             bool stripColliders)
         {
-            // Templates always pull L1 authored weapon scale; shipLevel is unused here.
+            // Weapon meshes still come from the L1 hull. Placed scale is the host
+            // hardpoint, so shipLevel is unused here.
             _ = shipLevel;
             CollectHostSlots(root, hostFamilyPrefix, HostSlots);
             var weaponSlots = new List<ShipFamilyPartMatch.Slot>(8);
@@ -642,19 +644,27 @@ namespace TitanOrbit.ECS
                 if (clone == null)
                     continue;
 
+                // [TITAN-ORBIT] Match the part being replaced. Bind stamps this before
+                // attribute grow, so the new mesh does not pick up a live grown scale
+                // and the next Apply does not multiply it again. Collider bake has no
+                // stamp — the prefab child's localScale is that same authored size.
+                Vector3 originalScale = ResolveOriginalComponentScale(hostSlot, authoredEntry);
+
                 Transform liveParent = hostSlot.parent;
                 bool sameParent = parent == null || parent == liveParent;
                 if (!sameParent)
                 {
                     // Keep the host barrel's world pose. Copying its local offset
                     // onto BankPivot or the proxy root (outside the scaled hull)
-                    // slings the gun far off the hardpoint.
+                    // slings the gun far off the hardpoint. Scale still matches the
+                    // hardpoint so a 1.5× wing stays 1.5× under the new parent.
                     clone.transform.SetParent(parent, true);
+                    clone.transform.localScale = originalScale;
                     StampPose(clone, occurrence, new AuthoredSlotPose
                     {
                         Position = clone.transform.localPosition,
                         Rotation = clone.transform.localRotation,
-                        Scale = clone.transform.localScale,
+                        Scale = originalScale,
                     });
                 }
                 else
@@ -662,8 +672,13 @@ namespace TitanOrbit.ECS
                     PlaceCloneOnHostParent(clone.transform, parent, null);
                     if (TryResolveAuthoredPose(hostSlot, occurrence, authoredEntry, out AuthoredSlotPose pose))
                     {
-                        ApplyAuthoredPose(clone.transform, pose, keepSourceScaleMagnitude: true);
+                        pose.Scale = originalScale;
+                        ApplyAuthoredPose(clone.transform, pose);
                         StampPose(clone, occurrence, pose);
+                    }
+                    else
+                    {
+                        clone.transform.localScale = originalScale;
                     }
                 }
 
@@ -928,7 +943,7 @@ namespace TitanOrbit.ECS
 
             if (TryResolveAuthoredPose(liveSlot, occurrence, exactEntry, out AuthoredSlotPose pose))
             {
-                ApplyAuthoredPose(restored.transform, pose, keepSourceScaleMagnitude: false);
+                ApplyAuthoredPose(restored.transform, pose);
                 StampPose(restored, occurrence, pose);
             }
 
@@ -1514,34 +1529,48 @@ namespace TitanOrbit.ECS
             return TryGetPrefabPose(slotName, occurrence, out pose);
         }
 
-        static void ApplyAuthoredPose(Transform clone, AuthoredSlotPose pose, bool keepSourceScaleMagnitude)
+        static void ApplyAuthoredPose(Transform clone, AuthoredSlotPose pose)
         {
             if (clone == null)
                 return;
 
             clone.localPosition = pose.Position;
             clone.localRotation = pose.Rotation;
-            clone.localScale = keepSourceScaleMagnitude
-                ? ScaleWithHostMirror(clone.localScale, pose.Scale)
-                : pose.Scale;
+            clone.localScale = pose.Scale;
         }
 
         /// <summary>
-        /// Purchased mesh keeps its authored size. A host hardpoint that is mirrored
-        /// with a negative axis keeps that sign so the opposite side stays opposite.
+        /// Authored scale of the hardpoint the purchase replaces, including a
+        /// negative axis that mirrors the opposite wing or gun. Prefers the Bind
+        /// stamp (before attribute grow) over the live transform.
         /// </summary>
-        static Vector3 ScaleWithHostMirror(Vector3 sourceScale, Vector3 hostScale)
+        static Vector3 ResolveOriginalComponentScale(
+            Transform hostSlot,
+            ShipPartOriginalStashEntry stashEntry)
         {
-            return new Vector3(
-                MirrorAxis(sourceScale.x, hostScale.x),
-                MirrorAxis(sourceScale.y, hostScale.y),
-                MirrorAxis(sourceScale.z, hostScale.z));
+            if (hostSlot != null)
+            {
+                var stamped = hostSlot.GetComponent<ShipPartSlotPose>();
+                if (stamped != null && stamped.Stamped && IsUsableScale(stamped.AuthoredLocalScale))
+                    return stamped.AuthoredLocalScale;
+            }
+
+            if (stashEntry != null
+                && stashEntry.PoseIsAuthored
+                && IsUsableScale(stashEntry.transform.localScale))
+                return stashEntry.transform.localScale;
+
+            if (hostSlot != null && IsUsableScale(hostSlot.localScale))
+                return hostSlot.localScale;
+
+            return Vector3.one;
         }
 
-        static float MirrorAxis(float source, float host)
+        static bool IsUsableScale(Vector3 scale)
         {
-            float sign = host < 0f ? -1f : 1f;
-            return Mathf.Abs(source) * sign;
+            return Mathf.Abs(scale.x) > 0.0001f
+                && Mathf.Abs(scale.y) > 0.0001f
+                && Mathf.Abs(scale.z) > 0.0001f;
         }
 
         static bool TryGetPrefabPose(string slotName, int occurrence, out AuthoredSlotPose pose)

@@ -128,11 +128,20 @@ namespace TitanOrbit.ECS
 
                 var transform = em.GetComponentData<LocalTransform>(ship);
                 var ghost = em.GetComponentData<GhostOwner>(ship);
-                Vector3 shipPos = (Vector3)transform.Position;
-                Quaternion shipRot = (Quaternion)transform.Rotation;
+                float3 formationOrigin = float3.zero;
+                byte centerSeeded = 0;
                 Vector3 formationHeading = Vector3.zero;
                 if (em.HasComponent<ShipKinematics>(ship))
-                    formationHeading = (Vector3)em.GetComponentData<ShipKinematics>(ship).FormationHeading;
+                {
+                    var kin = em.GetComponentData<ShipKinematics>(ship);
+                    formationHeading = (Vector3)kin.FormationHeading;
+                    formationOrigin = kin.FormationOrigin;
+                    centerSeeded = kin.FormationCenterSeeded;
+                }
+
+                Vector3 shipPos = (Vector3)PeopleTransportMath.ResolveFormationCenter(
+                    transform.Position, formationOrigin, centerSeeded, mapW, mapH);
+                Quaternion shipRot = (Quaternion)transform.Rotation;
                 DroneSwarmPositioning.GetFormationBasis(
                     shipPos, shipRot, formationHeading, out shipPos, out Vector3 forward, out Vector3 right);
                 float hullRadius = BodyCollisionMath.GetShipHullRadiusWorld(transform.Scale);

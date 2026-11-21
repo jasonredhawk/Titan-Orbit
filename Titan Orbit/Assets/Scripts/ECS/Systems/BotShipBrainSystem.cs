@@ -13,9 +13,21 @@ namespace TitanOrbit.ECS
     /// <summary>
     /// Server brain for AI ships. Decides a task about twice a second, then writes
     /// <see cref="ShipInput"/> every tick so the existing motor, guns, moon dock,
-    /// deposit, and troop systems do the work. Asteroids, deposits, and level-ups
-    /// stay the goal. An enemy inside <see cref="SecondaryShotRange"/> is only a
-    /// gun target while mining or scooping; the hull does not chase.
+    /// deposit, and troop systems do the work. Home-planet mining stays the goal until
+    /// this hull matches the highest level that planet can sell right now (its planet
+    /// level, and never past <see cref="MaxShipLevel"/>). Gems deposited there fill the
+    /// bank that buys the next hull. Each bot rolls one level-6 branch once and only
+    /// buys a tree step that can still reach it, so the fleet does not pile onto the
+    /// cheap side of the ladder. A nearby capture starts only after that hull is
+    /// reached. A Comms Matrix order still retasks immediately. Loot from a rock that
+    /// just broke is followed every tick so the hull does not sit out the scan
+    /// while the gems coast away. An enemy inside
+    /// <see cref="SecondaryShotRange"/> is only a gun target while mining; during a
+    /// scoop the hull keeps flying until it is on the crystal. An attack intercept
+    /// cycles <see cref="BotEngagePhase"/> (acquire, approach, commit, re-evaluate).
+    /// Each tick is a distance and deadline compare. A missed window thrusts off the
+    /// orbit ring, then takes a new side or a new target. Guns stay locked while
+    /// <see cref="ShipOrbitState.InOrbitRing"/> is set, so commit does not fire there.
     /// <para>
     /// Runs inside the predicted fixed step, after NetCode copies the command buffer
     /// into <see cref="ShipInput"/> and before <see cref="ShipPhysicsDriveSystem"/>.
@@ -26,9 +38,9 @@ namespace TitanOrbit.ECS
     /// </para>
     /// Map width and height come from <see cref="MapStateSingleton"/> via
     /// <see cref="ToroidalMapEcs.TryGetMapSize"/>. Missing size skips the tick.
-    /// Asteroids are indexed on decision ticks into the same 16-unit grid bullets use
-    /// (<see cref="BulletObstacleSpatialHash"/>). Steering each tick only reads the
-    /// cells around that hull. Ship and planet lists are small and refreshed every tick.
+    /// A live mine target is kept until the half-second scan. Once that rock is gone,
+    /// gems from the wreck are followed every tick. Ship and planet lists stay small
+    /// and refresh every tick.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(PredictedFixedStepSimulationSystemGroup), OrderFirst = true)]
@@ -43,22 +55,65 @@ namespace TitanOrbit.ECS
         /// </summary>
         const float EngageRange = 14f;
         /// <summary>
+        /// Attack intercept counts as closed inside this distance. Still inside
+        /// <see cref="EngageRange"/>, so a hull that only skims the leash has to
+        /// come in or the approach window expires.
+        /// </summary>
+        const float EngageCommitRange = 11f;
+        /// <summary>
+        /// Seconds an approach or an in-ring commit may spend without a shot.
+        /// One float compare per ship against <see cref="SystemAPI.Time.ElapsedTime"/>.
+        /// </summary>
+        const float EngageWindow = 4f;
+        /// <summary>How long re-evaluate thrusts out of a ring before it retargets anyway.</summary>
+        const float OrbitBreakWindow = 1.5f;
+        /// <summary>Lateral offset of the approach aim, in world units. Sign is <see cref="BotShipBrain.ApproachSide"/>.</summary>
+        const float ApproachLateral = 8f;
+        /// <summary>After two failed approaches, ignore that hull this long so the next scan picks someone else.</summary>
+        const float EngageAvoidSeconds = 6f;
+        /// <summary>
         /// While the goal is still a rock or a loose gem, guns answer an enemy
         /// inside this reach and the hull does not follow them. Bullet range is ~30.
         /// Past this, the asteroid stays the only target.
         /// </summary>
         const float SecondaryShotRange = 22f;
         /// <summary>
-        /// Extra reach past the farthest a jam blast can still carry a gem.
-        /// Coast of <see cref="BulletBankHitEffects.MaxGemBlastImpulse"/> (8) at drag 0.5
-        /// is 15.9. Padding keeps that crystal inside the search.
+        /// Crystals counted as this kill's drop. Destroy bursts coast about 8u and a
+        /// jam can shove one farther; past this the gem belongs to some other wreck.
+        /// Measured from the rock, so a hull that fired from <see cref="MineShotReach"/>
+        /// still acquires the drop and flies in.
         /// </summary>
-        const float GemSearchPadding = 2f;
+        const float WreckGemRadius = 24f;
+        /// <summary>
+        /// Keep the same crystal while it drifts. Two gems in one burst must not swap
+        /// the nose every tick.
+        /// </summary>
+        const float GemStickRadius = 6f;
         const float DepositFill = 0.75f;
+        /// <summary>
+        /// Room left in the hold when a mine order is finished. Matches the scoop cutoff:
+        /// closer than this, the tractor will not take another gem, so the ship should
+        /// deposit instead of shooting another rock.
+        /// </summary>
+        const float MineOrderFullGap = 0.5f;
+        /// <summary>
+        /// Auto-capture only considers planets inside this toroidal distance.
+        /// Homes sit about 90 apart and neutrals clear them by about 40, so this
+        /// reaches the next worlds over on a 300–1000 map without a map-wide raid.
+        /// A capture already in progress ignores the range so the haul home for
+        /// troops does not cancel the target. Map size comes from
+        /// <see cref="MapStateSingleton"/> via <see cref="ToroidalMapEcs.TryGetMapSize"/>.
+        /// </summary>
+        const float CaptureNearbyRange = 180f;
         const float FollowDistance = 8f;
         const float HoldDistance = 6f;
+        /// <summary>
+        /// Highest regular hull a planet can sell. Planet level caps the next purchase
+        /// at the home world's current level, and planets themselves stop at 6, so a
+        /// ship at this level has nothing left to buy from the planet it spawned at.
+        /// </summary>
         const int MaxShipLevel = 6;
-        /// <summary>Server-only coin flip for the next hull. Not ghosted.</summary>
+        /// <summary>Server-only roll for the level-6 goal and a fork that still reaches it. Not ghosted.</summary>
         static uint _upgradeRoll = 0xC001D00Du;
         const float DockShipRadius = 0.8f;
         const float DockZoneMultiplier = 1.05f;
@@ -66,18 +121,22 @@ namespace TitanOrbit.ECS
         const float MineSurfaceGap = 1.75f;
         /// <summary>Open fire once the rock surface is within this distance. Bullet range is ~30.</summary>
         const float MineShotReach = 20f;
-        /// <summary>Hull pickup is about 2.5. Coast onto the crystal inside this distance.</summary>
-        const float CollectArrive = 1.6f;
+        /// <summary>
+        /// Stop inside the hull scoop. The live tractor settings use a hull range of 1,
+        /// and a burst has more crystals than beams, so parking at 1.6 never absorbed
+        /// the ones the tractor was not already pulling.
+        /// </summary>
+        const float CollectArrive = 0.45f;
+        /// <summary>
+        /// Collect has to finish the last units. <see cref="CruiseResumeGap"/> (7) parks
+        /// the hull outside pickup and leaves thrust latched off while the gem sits there.
+        /// </summary>
+        const float CollectResumeGap = 0.45f;
 
         /// <summary>
-        /// Loose-gem search. Reaches past the jam shove so a crystal pushed to the
-        /// end of that coast is still found, and the hull keeps flying to it.
-        /// </summary>
-        static float GemSearchRange =>
-            GemExplosionMath.DefaultCoastDistance(BulletBankHitEffects.MaxGemBlastImpulse) + GemSearchPadding;
-        /// <summary>
         /// After thrust latches off, the hull must drift this far past the hold before
-        /// thrust comes back. Stops the arrive-and-reverse twitch.
+        /// thrust comes back. Stops the arrive-and-reverse twitch at a mine or escort hold.
+        /// Scooping uses <see cref="CollectResumeGap"/> instead.
         /// </summary>
         const float CruiseResumeGap = 7f;
 
@@ -91,6 +150,7 @@ namespace TitanOrbit.ECS
             public int Level;
             public int Population;
             public int HalfPopulation;
+            public int MaxPopulation;
             public byte IsHome;
         }
 
@@ -120,8 +180,6 @@ namespace TitanOrbit.ECS
         NativeList<int> _nearbyRocks;
         NativeHashSet<int> _nearbySeen;
         BulletObstacleSpatialHash _asteroidHash;
-        /// <summary>Loose gems, rebuilt on decision ticks only. Steering does not read it.</summary>
-        GemSpatialHash _gemHash;
 
         public void OnCreate(ref SystemState state)
         {
@@ -157,8 +215,6 @@ namespace TitanOrbit.ECS
         {
             if (_asteroidHash.IsCreated)
                 _asteroidHash.Dispose();
-            if (_gemHash.IsCreated)
-                _gemHash.Dispose();
             if (_mineRocks.IsCreated)
                 _mineRocks.Dispose();
             if (_nearbyRocks.IsCreated)
@@ -198,6 +254,7 @@ namespace TitanOrbit.ECS
             }
 
             bool anyDecide = false;
+            bool anyLoot = false;
             for (int i = 0; i < bots.Length; i++)
             {
                 if (!em.HasComponent<BotShipBrain>(bots[i]) || !em.HasComponent<ShipState>(bots[i]))
@@ -205,10 +262,12 @@ namespace TitanOrbit.ECS
                 if (em.GetComponentData<ShipState>(bots[i]).IsDead)
                     continue;
                 var earlyBrain = em.GetComponentData<BotShipBrain>(bots[i]);
+                if (earlyBrain.Task == BotTaskKind.Mine || earlyBrain.Task == BotTaskKind.Collect)
+                    anyLoot = true;
                 if (earlyBrain.NextDecisionTime <= now)
                 {
                     anyDecide = true;
-                    break;
+                    continue;
                 }
 
                 if (!haveOrders || !em.HasComponent<GhostOwner>(bots[i]))
@@ -217,21 +276,26 @@ namespace TitanOrbit.ECS
                 int earlyId = em.GetComponentData<GhostOwner>(bots[i]).NetworkId;
                 BotTeamOrder earlyOrder = orders.Get(earlyShip.Team);
                 if (earlyOrder.IsActive(now) && earlyOrder.Includes(earlyId) &&
-                    OrderNeedsRetask(earlyOrder, earlyBrain))
-                {
+                    !OrderAlreadyFinished(earlyOrder, earlyBrain) &&
+                    (OrderNeedsRetask(earlyOrder, earlyBrain) ||
+                     CommanderTaskDone(earlyOrder, earlyShip)))
                     anyDecide = true;
-                    break;
-                }
             }
 
             using var planets = GatherPlanets(em);
             using var ships = GatherShips(em);
+            // Rocks every loot tick so a kill is noticed on the next tick, not half a
+            // second later. The bullet hash stays on the decision scan. Gems are built
+            // only once a wreck actually needs a scoop (one shared hash, not per ship).
             if (anyDecide)
-            {
                 RefreshAsteroidHash(mapW, mapH);
-                RefreshGemHash(mapW, mapH);
-            }
+            else if (anyLoot)
+                RefreshMineRocks();
             NativeArray<RockSnap> rocks = _mineRocks.AsArray();
+            GemSpatialHash lootGems = default;
+            if (anyDecide)
+                lootGems = BuildGemHash(mapW, mapH);
+            float claimNow = (float)orbitElapsed;
             using var commanderShips = _ships.ToEntityArray(Allocator.Temp);
             using var commanderOwners = _ships.ToComponentDataArray<GhostOwner>(Allocator.Temp);
 
@@ -264,6 +328,10 @@ namespace TitanOrbit.ECS
                 if (em.HasComponent<Simulate>(shipEntity) && !em.IsComponentEnabled<Simulate>(shipEntity))
                     em.SetComponentEnabled<Simulate>(shipEntity, true);
 
+                // One level-6 hull, chosen the first tick this bot is alive. Death and
+                // idle park keep the same branch so the ladder is not re-rolled.
+                EnsureLevel6Goal(ref brain, ship.ShipLevel, ship.BranchIndex);
+
                 float3 pos = em.GetComponentData<LocalTransform>(shipEntity).Position;
                 int networkId = em.GetComponentData<GhostOwner>(shipEntity).NetworkId;
                 bool landed = false;
@@ -280,8 +348,20 @@ namespace TitanOrbit.ECS
                 if (!landed)
                     brain.AttributeBoughtWhileLanded = 0;
 
-                bool inOrbit = em.HasComponent<ShipOrbitState>(shipEntity) &&
-                               em.GetComponentData<ShipOrbitState>(shipEntity).InOrbitRing;
+                bool inOrbit = false;
+                int orbitPlanetId = 0;
+                if (em.HasComponent<ShipOrbitState>(shipEntity))
+                {
+                    var orbit = em.GetComponentData<ShipOrbitState>(shipEntity);
+                    inOrbit = orbit.InOrbitRing;
+                    if (inOrbit)
+                        orbitPlanetId = orbit.OrbitPlanetId;
+                }
+
+                int inbound = 0;
+                if (em.HasComponent<ShipPeopleTransferState>(shipEntity))
+                    inbound = math.max(0, (int)math.round(
+                        em.GetComponentData<ShipPeopleTransferState>(shipEntity).PeopleInTransit));
 
                 if ((brain.Task == BotTaskKind.Follow || brain.Task == BotTaskKind.Attack) &&
                     brain.GoalNetworkId != 0 &&
@@ -289,9 +369,23 @@ namespace TitanOrbit.ECS
                     brain.Goal = tracked;
 
                 BotTeamOrder liveOrder = haveOrders ? orders.Get(ship.Team) : default;
-                bool orderNow = liveOrder.IsActive(now) && liveOrder.Includes(networkId)
-                                && OrderNeedsRetask(liveOrder, brain);
-                if (brain.NextDecisionTime <= now || orderNow)
+                bool orderOpen = liveOrder.IsActive(now) && liveOrder.Includes(networkId)
+                                 && !OrderAlreadyFinished(liveOrder, brain);
+                // A finished mine or deposit order must not wait out the half-second
+                // scan. The hold is full, or already empty, on this tick.
+                bool orderNow = orderOpen &&
+                                (OrderNeedsRetask(liveOrder, brain) ||
+                                 CommanderTaskDone(liveOrder, ship));
+                // A hull still short of the level its home planet sells should not finish
+                // a capture that started before the level check. Transport orders are
+                // the exception.
+                bool originGrind = HullBelowOriginCap(ship, planets.AsArray(), out _);
+                bool captureTask = brain.Task == BotTaskKind.LoadTroops ||
+                                   brain.Task == BotTaskKind.UnloadTroops;
+                bool transportOrder = liveOrder.IsActive(now) && liveOrder.Includes(networkId) &&
+                                      liveOrder.Task == BotTaskKind.Transport;
+                if (brain.NextDecisionTime <= now || orderNow ||
+                    (originGrind && captureTask && !transportOrder))
                 {
                     BotTeamOrder order = liveOrder.IsActive(now) && liveOrder.Includes(networkId)
                         ? liveOrder
@@ -299,13 +393,20 @@ namespace TitanOrbit.ECS
                     int taskBefore = (int)brain.Task;
                     float3 goalBefore = brain.Goal;
                     Choose(
-                        ref brain, ship, networkId, pos, landed, dockedPlanetId, order,
+                        ref brain, ship, networkId, pos, inbound, landed, dockedPlanetId, order,
                         planets.AsArray(), ships.AsArray(),
                         rocks,
-                        in _gemHash, _nearbyRocks, _nearbySeen,
-                        mapW, mapH, em, now);
+                        in lootGems, _nearbyRocks, _nearbySeen,
+                        mapW, mapH, em, now, claimNow);
                     if (landed && (brain.Task == BotTaskKind.Deposit || brain.Task == BotTaskKind.Upgrade))
-                        TryBuy(em, shipEntity, ref ship, ref brain);
+                    {
+                        // Hull buys adopt the moon they are purchased on. Only the home
+                        // moon sells the tree this ship spawned with.
+                        bool originDock = dockedPlanetId != 0 &&
+                                          TryHome(planets.AsArray(), ship.Team, out PlanetSnap buyHome) &&
+                                          buyHome.PlanetId == dockedPlanetId;
+                        TryBuy(em, shipEntity, ref ship, ref brain, originDock);
+                    }
                     if (!orderNow)
                         brain.NextDecisionTime = now + DecisionInterval;
                     // A new goal starts from thrust-on. The latch then coasts once
@@ -313,6 +414,50 @@ namespace TitanOrbit.ECS
                     if ((int)brain.Task != taskBefore ||
                         math.distancesq(goalBefore, brain.Goal) > 16f)
                         brain.ThrustHeld = 1;
+                }
+                else if (brain.Task == BotTaskKind.LoadTroops || brain.Task == BotTaskKind.UnloadTroops)
+                {
+                    // The half-second scan left a full hold sitting on the friendly ring.
+                    // Leave for the capture as soon as the gather step is done.
+                    int taskBefore = (int)brain.Task;
+                    float3 goalBefore = brain.Goal;
+                    bool transport = liveOrder.IsActive(now) && liveOrder.Includes(networkId) &&
+                                     liveOrder.Task == BotTaskKind.Transport;
+                    if (!AdvanceTroops(
+                            ref brain, ship, pos, planets.AsArray(), mapW, mapH, inbound,
+                            transport, transport ? liveOrder.PlanetId : 0))
+                    {
+                        ClearCapture(ref brain);
+                        if (TryHome(planets.AsArray(), ship.Team, out PlanetSnap home))
+                            SetPlanet(ref brain, BotTaskKind.Hold, home);
+                        else
+                        {
+                            brain.Task = BotTaskKind.None;
+                            brain.GoalPlanetId = 0;
+                            brain.GoalNetworkId = 0;
+                        }
+                    }
+
+                    if ((int)brain.Task != taskBefore ||
+                        math.distancesq(goalBefore, brain.Goal) > 16f)
+                        brain.ThrustHeld = 1;
+                }
+                else if (!landed &&
+                         (brain.Task == BotTaskKind.Mine || brain.Task == BotTaskKind.Collect))
+                {
+                    // The half-second scan is what left miners parked on a dead rock.
+                    // Follow the burst as soon as the rock is gone, then the next rock.
+                    bool rockHeld = brain.Task == BotTaskKind.Mine &&
+                                    TryKeepMineRock(ref brain, rocks, mapW, mapH);
+                    if (!rockHeld)
+                    {
+                        if (!lootGems.IsCreated)
+                            lootGems = BuildGemHash(mapW, mapH);
+                        TickLoot(
+                            ref brain, ship, networkId, pos, rocks,
+                            in lootGems, _nearbyRocks, _nearbySeen,
+                            mapW, mapH, em, claimNow);
+                    }
                 }
 
                 float speed = 0f;
@@ -325,8 +470,9 @@ namespace TitanOrbit.ECS
                 quaternion rotation = em.GetComponentData<LocalTransform>(shipEntity).Rotation;
                 var input = BuildInput(
                     ref brain, ship, networkId, pos, rotation, speed, landed, docking, inOrbit,
+                    orbitPlanetId, inbound,
                     planets.AsArray(), ships.AsArray(),
-                    mapW, mapH, orbitElapsed);
+                    mapW, mapH, orbitElapsed, now);
                 BotShipPresentation.ApplyCommanderSkin(
                     em, shipEntity, networkId, liveOrder, now, commanderShips, commanderOwners);
                 em.SetComponentData(shipEntity, input);
@@ -338,6 +484,9 @@ namespace TitanOrbit.ECS
                 else if (wantDeposit)
                     em.AddComponentData(shipEntity, new ShipDepositIntent { WantDepositGems = true });
             }
+
+            if (lootGems.IsCreated)
+                lootGems.Dispose();
         }
 
         static void ClearDeposit(EntityManager em, Entity ship)
@@ -383,7 +532,7 @@ namespace TitanOrbit.ECS
                 {
                     BotShipBrain brain = em.GetComponentData<BotShipBrain>(ship);
                     if (brain.Task != BotTaskKind.None || brain.GoalNetworkId != 0 || brain.GoalPlanetId != 0)
-                        em.SetComponentData(ship, new BotShipBrain());
+                        em.SetComponentData(ship, brain.ClearedKeepingGoal());
                 }
 
                 ClearDeposit(em, ship);
@@ -396,6 +545,7 @@ namespace TitanOrbit.ECS
             in ShipState ship,
             int networkId,
             float3 pos,
+            int inbound,
             bool landed,
             int dockedPlanetId,
             in BotTeamOrder order,
@@ -408,8 +558,21 @@ namespace TitanOrbit.ECS
             float mapW,
             float mapH,
             EntityManager em,
-            float now)
+            float now,
+            float claimNow)
         {
+            // A mine order ends when the hold cannot take another gem. A deposit order
+            // ends when the hold is empty. This ship then uses its own program. The
+            // team order stays up so a hull that is not done yet keeps following it.
+            // A new sentence has a new ExpireTime and retasks this ship.
+            if (order.Task != BotTaskKind.None && order.Includes(networkId) &&
+                !OrderAlreadyFinished(order, brain) &&
+                CommanderTaskDone(order, ship))
+            {
+                brain.FinishedOrderExpireTime = order.ExpireTime;
+                brain.FinishedOrderTask = order.Task;
+            }
+
             // Cargo leaves only through GemDepositSystem: one shipLevel × planetLevel
             // chunk per beat, same as a player holding deposit. Stay on this moon until
             // the hold is empty so an order or a nearby enemy cannot cut the metronome.
@@ -418,16 +581,40 @@ namespace TitanOrbit.ECS
                 TryPlanet(planets, dockedPlanetId, out PlanetSnap docked) &&
                 docked.Ownership == ship.Team)
             {
-                SetPlanet(ref brain, BotTaskKind.Deposit, docked);
+                ClearCapture(ref brain);
+                SetDeposit(ref brain, docked);
                 NoteTask(ref brain, ship.CurrentPeople, now);
                 return;
             }
 
-            if (order.Task != BotTaskKind.None && order.Includes(networkId))
+            if (order.Task != BotTaskKind.None && order.Includes(networkId) &&
+                !OrderAlreadyFinished(order, brain))
             {
                 ApplyOrder(
-                    ref brain, ship, networkId, pos, order, planets, ships, rocks,
-                    gems, nearby, seen, mapW, mapH);
+                    ref brain, ship, networkId, pos, inbound, order, planets, ships, rocks,
+                    gems, nearby, seen, mapW, mapH, em, claimNow, now);
+                NoteTask(ref brain, ship.CurrentPeople, now);
+                return;
+            }
+
+            // The home planet sells hulls up to its own level, and never past
+            // MaxShipLevel. Until this ship is there, it mines and buys. Captures
+            // wait, including one already picked.
+            bool grinding = HullBelowOriginCap(ship, planets, out PlanetSnap origin);
+            if (!grinding &&
+                AdvanceTroops(ref brain, ship, pos, planets, mapW, mapH, inbound, false, 0))
+            {
+                NoteTask(ref brain, ship.CurrentPeople, now);
+                return;
+            }
+
+            ClearCapture(ref brain);
+
+            if (grinding &&
+                ContinueOriginGrind(
+                    ref brain, ship, networkId, pos, in origin, rocks, in gems, nearby, seen,
+                    mapW, mapH, em, claimNow))
+            {
                 NoteTask(ref brain, ship.CurrentPeople, now);
                 return;
             }
@@ -435,16 +622,7 @@ namespace TitanOrbit.ECS
             bool nearFull = ship.GemCapacity > 1f && ship.CurrentGems >= ship.GemCapacity * DepositFill;
             if (nearFull && TryNearestFriendly(planets, pos, ship.Team, mapW, mapH, out PlanetSnap depositMoon))
             {
-                SetPlanet(ref brain, BotTaskKind.Deposit, depositMoon);
-                NoteTask(ref brain, ship.CurrentPeople, now);
-                return;
-            }
-
-            bool troopHoldFull = ship.PeopleCapacity > 0 && ship.CurrentPeople >= ship.PeopleCapacity;
-            if (troopHoldFull &&
-                TryNearestHostile(planets, pos, ship.Team, mapW, mapH, out PlanetSnap dump))
-            {
-                SetPlanet(ref brain, BotTaskKind.UnloadTroops, dump);
+                SetDeposit(ref brain, depositMoon);
                 NoteTask(ref brain, ship.CurrentPeople, now);
                 return;
             }
@@ -457,7 +635,7 @@ namespace TitanOrbit.ECS
                 return;
             }
 
-            if (TryCollectBurst(ref brain, ship, networkId, pos, gems, nearby, seen, mapW, mapH))
+            if (TryCollectBurst(ref brain, ship, networkId, pos, gems, nearby, seen, mapW, mapH, em, claimNow))
             {
                 NoteTask(ref brain, ship.CurrentPeople, now);
                 return;
@@ -472,8 +650,10 @@ namespace TitanOrbit.ECS
 
             // No rock or gem left. A close enemy is the fallback task. A miner who still
             // has a rock keeps that goal; BuildInput only turns to fire inside
-            // SecondaryShotRange and does not chase.
-            if (TryNearestEnemy(ships, pos, ship.Team, networkId, EngageRange, mapW, mapH, out ShipSnap enemy))
+            // SecondaryShotRange and does not chase. A hull that just failed two
+            // approaches is skipped until AvoidUntil so the scan can name someone else.
+            int skip = brain.AvoidUntil > now ? brain.AvoidNetworkId : 0;
+            if (TryNearestEnemy(ships, pos, ship.Team, networkId, EngageRange, mapW, mapH, out ShipSnap enemy, skip))
             {
                 SetAttack(ref brain, enemy);
                 NoteTask(ref brain, ship.CurrentPeople, now);
@@ -485,6 +665,22 @@ namespace TitanOrbit.ECS
             NoteTask(ref brain, ship.CurrentPeople, now);
         }
 
+        /// <summary>
+        /// True while <paramref name="ship"/> can still buy a higher hull from its
+        /// team's home planet. That moon sells up to its current level, and planets
+        /// stop at <see cref="MaxShipLevel"/>, so a matching hull is done.
+        /// </summary>
+        static bool HullBelowOriginCap(in ShipState ship, NativeArray<PlanetSnap> planets, out PlanetSnap origin)
+        {
+            origin = default;
+            if (ship.ShipLevel >= MaxShipLevel)
+                return false;
+            if (!TryHome(planets, ship.Team, out origin))
+                return false;
+            int cap = math.min(MaxShipLevel, math.max(1, origin.Level));
+            return ship.ShipLevel < cap;
+        }
+
         static void NoteTask(ref BotShipBrain brain, int people, float now)
         {
             if (brain.TaskClock <= 0f || people != brain.PeopleSnapshot)
@@ -494,11 +690,75 @@ namespace TitanOrbit.ECS
             }
         }
 
+        /// <summary>
+        /// Mine asteroids and bring the gems home until <paramref name="ship"/> can buy
+        /// the next hull <paramref name="origin"/> already sells. A deposit fills the
+        /// bank that purchase spends. When that hull is unlocked and the last landing
+        /// did not refuse it, the ship goes home before it starts another rock.
+        /// </summary>
+        static bool ContinueOriginGrind(
+            ref BotShipBrain brain,
+            in ShipState ship,
+            int networkId,
+            float3 pos,
+            in PlanetSnap origin,
+            NativeArray<RockSnap> rocks,
+            in GemSpatialHash gems,
+            NativeList<int> nearby,
+            NativeHashSet<int> seen,
+            float mapW,
+            float mapH,
+            EntityManager em,
+            float claimNow)
+        {
+            if (ship.ShipLevel < origin.Level && brain.LevelBuyBlocked == 0)
+            {
+                if (ship.CurrentGems > 0.05f)
+                    SetDeposit(ref brain, origin);
+                else
+                    SetPlanet(ref brain, BotTaskKind.Upgrade, origin);
+                return true;
+            }
+
+            bool nearFull = ship.GemCapacity > 1f && ship.CurrentGems >= ship.GemCapacity * DepositFill;
+            if (nearFull)
+            {
+                SetDeposit(ref brain, origin);
+                return true;
+            }
+
+            if (TryKeepMineRock(ref brain, rocks, mapW, mapH))
+                return true;
+
+            if (TryCollectBurst(ref brain, ship, networkId, pos, gems, nearby, seen, mapW, mapH, em, claimNow))
+                return true;
+
+            if (TryNearestRock(rocks, pos, networkId, mapW, mapH, out RockSnap rock))
+            {
+                SetMine(ref brain, rock);
+                return true;
+            }
+
+            // No rock left. A partial hold still belongs on the home moon, where it
+            // becomes the bank the next hull is bought with.
+            if (ship.CurrentGems > 0.05f)
+            {
+                SetDeposit(ref brain, origin);
+                return true;
+            }
+
+            // Nothing left to shoot. Sit on the home moon so a planet that levels up
+            // under this ship can be bought without wandering into a capture.
+            SetPlanet(ref brain, BotTaskKind.Hold, origin);
+            return true;
+        }
+
         static void ApplyOrder(
             ref BotShipBrain brain,
             in ShipState ship,
             int networkId,
             float3 pos,
+            int inbound,
             in BotTeamOrder order,
             NativeArray<PlanetSnap> planets,
             NativeArray<ShipSnap> ships,
@@ -507,15 +767,21 @@ namespace TitanOrbit.ECS
             NativeList<int> nearby,
             NativeHashSet<int> seen,
             float mapW,
-            float mapH)
+            float mapH,
+            EntityManager em,
+            float claimNow,
+            float now)
         {
+            if (order.Task != BotTaskKind.Transport)
+                ClearCapture(ref brain);
+
             float3 ping = order.HasWaypoint != 0 ? order.Waypoint : pos;
             switch (order.Task)
             {
                 case BotTaskKind.Mine:
                     if (TryKeepMineRock(ref brain, rocks, mapW, mapH))
                         return;
-                    if (TryCollectBurst(ref brain, ship, networkId, pos, gems, nearby, seen, mapW, mapH))
+                    if (TryCollectBurst(ref brain, ship, networkId, pos, gems, nearby, seen, mapW, mapH, em, claimNow))
                         return;
                     if (TryNearestRock(rocks, pos, networkId, mapW, mapH, out RockSnap rock))
                     {
@@ -531,16 +797,19 @@ namespace TitanOrbit.ECS
                     return;
                 case BotTaskKind.Deposit:
                     if (TryNearestFriendly(planets, pos, ship.Team, mapW, mapH, out PlanetSnap moon))
-                        SetPlanet(ref brain, BotTaskKind.Deposit, moon);
+                        SetDeposit(ref brain, moon);
                     return;
                 case BotTaskKind.Transport:
-                    if (ship.CurrentPeople > 0 &&
-                        TryNearestHostile(planets, pos, ship.Team, mapW, mapH, out PlanetSnap dump))
-                        SetPlanet(ref brain, BotTaskKind.UnloadTroops, dump);
-                    else if (TryFriendlySurplus(planets, pos, ship.Team, mapW, mapH, out PlanetSnap source))
-                        SetPlanet(ref brain, BotTaskKind.LoadTroops, source);
-                    else if (TryNearestFriendly(planets, pos, ship.Team, mapW, mapH, out PlanetSnap wait))
-                        SetPlanet(ref brain, BotTaskKind.LoadTroops, wait);
+                    if (!AdvanceTroops(
+                            ref brain, ship, pos, planets, mapW, mapH, inbound,
+                            true, order.PlanetId))
+                    {
+                        ClearCapture(ref brain);
+                        brain.Task = BotTaskKind.Advance;
+                        brain.Goal = ping;
+                        brain.GoalPlanetId = 0;
+                        brain.GoalNetworkId = 0;
+                    }
                     return;
                 case BotTaskKind.Attack:
                     if (order.SubjectNetworkId > 0 &&
@@ -554,7 +823,8 @@ namespace TitanOrbit.ECS
                         return;
                     }
 
-                    if (TryNearestEnemy(ships, pos, ship.Team, networkId, EngageRange, mapW, mapH, out ShipSnap enemy))
+                    int skip = brain.AvoidUntil > now ? brain.AvoidNetworkId : 0;
+                    if (TryNearestEnemy(ships, pos, ship.Team, networkId, EngageRange, mapW, mapH, out ShipSnap enemy, skip))
                     {
                         SetAttack(ref brain, enemy);
                         return;
@@ -564,6 +834,10 @@ namespace TitanOrbit.ECS
                     brain.Goal = ping;
                     brain.GoalPlanetId = order.PlanetId;
                     brain.GoalNetworkId = 0;
+                    brain.EngagePhase = BotEngagePhase.Acquire;
+                    brain.EngageTries = 0;
+                    brain.ApproachSide = 0;
+                    brain.EngageDeadline = 0f;
                     return;
                 case BotTaskKind.Defend:
                     if (order.PlanetId != 0 && TryPlanet(planets, order.PlanetId, out PlanetSnap planet))
@@ -609,7 +883,12 @@ namespace TitanOrbit.ECS
             }
         }
 
-        static void TryBuy(EntityManager em, Entity shipEntity, ref ShipState ship, ref BotShipBrain brain)
+        static void TryBuy(
+            EntityManager em,
+            Entity shipEntity,
+            ref ShipState ship,
+            ref BotShipBrain brain,
+            bool allowHullUpgrade)
         {
             if (!em.HasComponent<ShipMoonDockState>(shipEntity))
                 return;
@@ -617,9 +896,13 @@ namespace TitanOrbit.ECS
             if (storePlanetId == 0)
                 return;
 
+            EnsureLevel6Goal(ref brain, ship.ShipLevel, ship.BranchIndex);
             int nextLevel = ship.ShipLevel + 1;
-            if (nextLevel <= MaxShipLevel &&
-                TryRollUpgradeBranch(ship.ShipLevel, ship.BranchIndex, out int branch) &&
+            if (allowHullUpgrade &&
+                nextLevel <= MaxShipLevel &&
+                brain.GoalLevel6Chosen != 0 &&
+                TryStepTowardLevel6Goal(
+                    ship.ShipLevel, ship.BranchIndex, brain.GoalLevel6Branch, out int branch) &&
                 UpgradeTree.IsValidUpgradeStep(ship.ShipLevel, ship.BranchIndex, nextLevel, branch))
             {
                 if (MoonOrbitStoreSystem.TryPurchaseShipUpgradeForNetworkId(
@@ -628,10 +911,20 @@ namespace TitanOrbit.ECS
                         storePlanetId,
                         nextLevel,
                         branch,
-                        out _))
+                        out FixedString128Bytes message))
                 {
                     ship = em.GetComponentData<ShipState>(shipEntity);
                     brain.AttributeBoughtWhileLanded = 0;
+                    brain.LevelBuyBlocked = 0;
+                }
+                else if (ship.CurrentGems <= 0.05f &&
+                         message.ToString() != "Planet level too low.")
+                {
+                    // The hold is already in the bank and this moon still will not
+                    // sell the next hull. Leave and mine. A planet-level rejection
+                    // does not set this: the next scan buys as soon as a deposit
+                    // raises the home world.
+                    brain.LevelBuyBlocked = 1;
                 }
             }
 
@@ -656,47 +949,109 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Picks a legal next hull. Levels 1–5 can step to the current branch or the
-        /// next one; both are a fair coin flip. A single legal hull is taken as-is.
+        /// Rolls <see cref="BotShipBrain.GoalLevel6Branch"/> once, among level-6 branches
+        /// this hull can still reach. A branch already on file is kept while the tree
+        /// can still get there. Level 6 remembers the hull it is already flying.
         /// </summary>
-        static bool TryRollUpgradeBranch(int fromLevel, int fromBranch, out int branch)
+        static void EnsureLevel6Goal(ref BotShipBrain brain, int shipLevel, int branchIndex)
         {
-            branch = fromBranch;
-            if (fromLevel < 1 || fromLevel > 5)
-                return false;
-            if (fromBranch < 0 || fromBranch >= UpgradeTree.GetShipCountForLevel(fromLevel))
-                return false;
+            int goal = brain.GoalLevel6Branch;
+            if (brain.GoalLevel6Chosen != 0 && Level6GoalReachable(shipLevel, branchIndex, goal))
+                return;
 
-            int nextCount = UpgradeTree.GetShipCountForLevel(fromLevel + 1);
-            int first = -1;
-            int second = -1;
-            int count = 0;
-            for (int j = fromBranch; j <= fromBranch + 1; j++)
+            if (shipLevel >= MaxShipLevel)
             {
-                if (j < 0 || j >= nextCount)
-                    continue;
-                if (count == 0)
-                    first = j;
-                else
-                    second = j;
-                count++;
+                int count = UpgradeTree.GetShipCountForLevel(MaxShipLevel);
+                if (branchIndex < 0 || branchIndex >= count)
+                    return;
+                brain.GoalLevel6Chosen = 1;
+                brain.GoalLevel6Branch = (byte)branchIndex;
+                return;
             }
 
-            if (count <= 0)
+            if (!TryRollReachableLevel6(shipLevel, branchIndex, out int rolled))
+                return;
+            brain.GoalLevel6Chosen = 1;
+            brain.GoalLevel6Branch = (byte)rolled;
+        }
+
+        /// <summary>
+        /// True when <paramref name="goal"/> is a level-6 branch this hull can still
+        /// reach. Each step stays on the current branch or moves one higher, so the
+        /// goal has to sit between the current branch and that branch plus the steps left.
+        /// </summary>
+        static bool Level6GoalReachable(int shipLevel, int branchIndex, int goal)
+        {
+            int count = UpgradeTree.GetShipCountForLevel(MaxShipLevel);
+            if (goal < 0 || goal >= count || branchIndex < 0)
                 return false;
-            if (count == 1)
+            if (shipLevel >= MaxShipLevel)
+                return shipLevel == MaxShipLevel && branchIndex == goal;
+            if (shipLevel < 1)
+                return false;
+            int steps = MaxShipLevel - shipLevel;
+            return goal >= branchIndex && goal <= branchIndex + steps;
+        }
+
+        /// <summary>Uniform pick among level-6 branches still reachable from this hull.</summary>
+        static bool TryRollReachableLevel6(int shipLevel, int branchIndex, out int goal)
+        {
+            goal = 0;
+            if (shipLevel < 1 || shipLevel >= MaxShipLevel || branchIndex < 0)
+                return false;
+            int steps = MaxShipLevel - shipLevel;
+            int min = branchIndex;
+            int max = branchIndex + steps;
+            int cap = UpgradeTree.GetShipCountForLevel(MaxShipLevel) - 1;
+            if (max > cap)
+                max = cap;
+            if (min > max)
+                return false;
+            int span = max - min + 1;
+            goal = min + (int)(NextUpgradeRoll() % (uint)span);
+            return true;
+        }
+
+        /// <summary>
+        /// Next hull on the way to <paramref name="goal"/>. A step is legal when the
+        /// tree allows it and the goal is still reachable afterward. When staying and
+        /// moving up both still arrive, either purchase is taken.
+        /// </summary>
+        static bool TryStepTowardLevel6Goal(int fromLevel, int fromBranch, int goal, out int branch)
+        {
+            branch = fromBranch;
+            bool stay = StepReachesLevel6Goal(fromLevel, fromBranch, fromBranch, goal);
+            bool rise = StepReachesLevel6Goal(fromLevel, fromBranch, fromBranch + 1, goal);
+            if (!stay && !rise)
+                return false;
+            if (stay && rise)
             {
-                branch = first;
+                branch = (NextUpgradeRoll() & 1u) == 0u ? fromBranch : fromBranch + 1;
                 return true;
             }
 
+            branch = stay ? fromBranch : fromBranch + 1;
+            return true;
+        }
+
+        static bool StepReachesLevel6Goal(int fromLevel, int fromBranch, int nextBranch, int goal)
+        {
+            int nextLevel = fromLevel + 1;
+            if (!UpgradeTree.IsValidUpgradeStep(fromLevel, fromBranch, nextLevel, nextBranch))
+                return false;
+            return Level6GoalReachable(nextLevel, nextBranch, goal);
+        }
+
+        static uint NextUpgradeRoll()
+        {
             uint x = _upgradeRoll;
             x ^= x << 13;
             x ^= x >> 17;
             x ^= x << 5;
-            _upgradeRoll = x == 0u ? 0xC001D00Du : x;
-            branch = (_upgradeRoll >> 31) == 0u ? first : second;
-            return true;
+            if (x == 0u)
+                x = 0xC001D00Du;
+            _upgradeRoll = x;
+            return x;
         }
 
         static bool TryPickAttribute(in ShipAttributeUpgradeState attrs, int shipLevel, float gems, out int index)
@@ -729,11 +1084,14 @@ namespace TitanOrbit.ECS
             bool landed,
             bool docking,
             bool inOrbit,
+            int orbitPlanetId,
+            int inbound,
             NativeArray<PlanetSnap> planets,
             NativeArray<ShipSnap> ships,
             float mapW,
             float mapH,
-            double orbitElapsed)
+            double orbitElapsed,
+            float now)
         {
             // Heading and thrust are separate, same as a player. AimPlanarDir is the
             // direction to face. ShipPhysicsDriveLogic turns the hull toward it at the
@@ -776,10 +1134,30 @@ namespace TitanOrbit.ECS
                     if (TryPlanet(planets, brain.GoalPlanetId, out PlanetSnap orbitPlanet))
                     {
                         aim = RingPoint(pos, orbitPlanet, mapW, mapH);
-                        bool atGoalRing = inOrbit && brain.GoalPlanetId == orbitPlanet.PlanetId;
-                        bool stayForTransfer = atGoalRing &&
-                            ((brain.Task == BotTaskKind.LoadTroops && ship.CurrentPeople < ship.PeopleCapacity) ||
-                             (brain.Task == BotTaskKind.UnloadTroops && ship.CurrentPeople > 0));
+                        // InOrbitRing alone is not arrival. The old check compared the goal
+                        // id to itself, so a hull still on the friendly ring cut thrust and
+                        // never flew on to the planet it was supposed to capture.
+                        bool atGoalRing = inOrbit && orbitPlanetId != 0 && orbitPlanetId == orbitPlanet.PlanetId;
+                        // Stay through every pickup, not the first sphere. Thrust in the ring
+                        // ends the dwell, so a shortfall has to keep the jets off until the
+                        // people aboard cover the garrison. Inbound crew is still on the way.
+                        bool gatheringShort = brain.Task == BotTaskKind.LoadTroops &&
+                                              brain.CapturePeopleNeeded > 0 &&
+                                              ship.CurrentPeople < brain.CapturePeopleNeeded;
+                        bool stayForLoad = gatheringShort &&
+                                           atGoalRing &&
+                                           orbitPlanet.Ownership == ship.Team;
+                        // Hostile worlds drain until they flip. A friendly world under 49%
+                        // keeps the jets off so the drop can finish; thrust would end the dwell.
+                        bool garrisonDrop = orbitPlanet.Ownership == ship.Team &&
+                                            ship.CurrentPeople > 0 &&
+                                            PlanetPopulationMath.NeedsFriendlyGarrison(
+                                                orbitPlanet.Population, orbitPlanet.MaxPopulation);
+                        bool stayForUnload = brain.Task == BotTaskKind.UnloadTroops &&
+                                             atGoalRing &&
+                                             ship.CurrentPeople > 0 &&
+                                             (orbitPlanet.Ownership != ship.Team || garrisonDrop);
+                        bool stayForTransfer = stayForLoad || stayForUnload;
                         thrust = !stayForTransfer;
                         releaseThrust = stayForTransfer;
                     }
@@ -794,35 +1172,53 @@ namespace TitanOrbit.ECS
                 }
                 case BotTaskKind.Collect:
                     aim = brain.Goal;
-                    {
-                        float dist = ToroidalMapEcs.ToroidalDistance(pos, aim, mapW, mapH);
-                        // Past the jam coast the crystal is not one this search can own.
-                        // Inside it, keep flying — stopping here waits out the gem lifetime.
-                        if (dist > GemSearchRange)
-                        {
-                            thrust = false;
-                            brain.ThrustHeld = 0;
-                        }
-                        else
-                            thrust = CruiseToward(dist, CollectArrive, speed, ref brain.ThrustHeld);
-                    }
+                    // Keep closing. The mine-hold gap (7u) latches thrust off outside
+                    // pickup range, and the old range check did the same once a crystal
+                    // coasted past ~18u. Hull scoop is about 1u.
+                    thrust = CruiseToward(
+                        ToroidalMapEcs.ToroidalDistance(pos, aim, mapW, mapH),
+                        CollectArrive, speed, ref brain.ThrustHeld, CollectResumeGap);
                     break;
                 case BotTaskKind.Attack:
                     aim = brain.Goal;
                     {
                         float dist = ToroidalMapEcs.ToroidalDistance(pos, aim, mapW, mapH);
+                        TickEngage(ref brain, now, dist, inOrbit);
                         bool trackingEnemy = brain.GoalNetworkId != 0;
-                        bool close = dist <= EngageRange;
-                        // A runner who leaves close range is dropped. A waypoint with no
-                        // hull is still flown to; guns stay off until an enemy is close.
-                        if (trackingEnemy && !close)
+                        // A ping with no hull still flies to the goal. A tracked hull
+                        // uses the engage phase. Coasting inside a ring hands the ship
+                        // to the passive orbit motor, and guns stay locked there.
+                        if (!trackingEnemy)
                         {
-                            thrust = false;
-                            brain.ThrustHeld = 0;
+                            brain.EngagePhase = BotEngagePhase.Acquire;
+                            if (inOrbit && TryPlanet(planets, orbitPlanetId, out PlanetSnap ring))
+                                aim = HoldOutsideRing(pos, ring, mapW, mapH);
+                            thrust = inOrbit || CruiseToward(dist, 10f, speed, ref brain.ThrustHeld);
+                            fire = false;
+                            break;
+                        }
+
+                        PlanetSnap orbiting = default;
+                        bool leavingRing = inOrbit && TryPlanet(planets, orbitPlanetId, out orbiting);
+                        if (leavingRing)
+                            aim = HoldOutsideRing(pos, orbiting, mapW, mapH);
+                        else if (brain.EngagePhase == BotEngagePhase.Approach ||
+                                 brain.EngagePhase == BotEngagePhase.Reevaluate)
+                            aim = ApproachAim(pos, brain.Goal, brain.ApproachSide, mapW, mapH);
+                        else
+                            aim = brain.Goal;
+
+                        if (inOrbit ||
+                            brain.EngagePhase == BotEngagePhase.Approach ||
+                            brain.EngagePhase == BotEngagePhase.Reevaluate)
+                        {
+                            thrust = true;
+                            brain.ThrustHeld = 1;
                         }
                         else
-                            thrust = CruiseToward(dist, 10f, speed, ref brain.ThrustHeld);
-                        fire = trackingEnemy && close && !inOrbit;
+                            thrust = CruiseToward(dist, 8f, speed, ref brain.ThrustHeld);
+
+                        fire = brain.EngagePhase == BotEngagePhase.Commit && dist <= EngageRange && !inOrbit;
                     }
                     break;
                 case BotTaskKind.Defend:
@@ -887,11 +1283,20 @@ namespace TitanOrbit.ECS
             else if (landed && brain.Task != BotTaskKind.Deposit && brain.Task != BotTaskKind.Upgrade)
                 thrust = true;
 
-            // Secondary target. The mine or collect goal stays put. Guns turn onto a
-            // close enemy and thrust stays off so the hull brakes instead of chasing.
-            // Deposit, docking, and orbit are left alone so a level-up is not cut short.
+            // Secondary target. The mine goal stays put. Guns turn onto a close enemy
+            // and thrust stays off so the hull brakes instead of chasing.
+            // A scoop is the exception: braking here left the drop on the ground while
+            // the hull waited out the next scan. Deposit, docking, and orbit are left
+            // alone so a level-up is not cut short.
+            bool chasingLoot = false;
+            if (brain.Task == BotTaskKind.Collect)
+            {
+                float lootDist = ToroidalMapEcs.ToroidalDistance(pos, brain.Goal, mapW, mapH);
+                chasingLoot = lootDist > CollectArrive + CollectResumeGap;
+            }
+
             bool shootShip = false;
-            if (!landed && !docking && !inOrbit && !unloadCargo &&
+            if (!chasingLoot && !landed && !docking && !inOrbit && !unloadCargo &&
                 (brain.Task == BotTaskKind.Mine || brain.Task == BotTaskKind.Collect) &&
                 TrySecondaryShip(
                     ref brain, ships, pos, ship.Team, networkId, mapW, mapH, out ShipSnap threat))
@@ -929,7 +1334,11 @@ namespace TitanOrbit.ECS
                                   new float2(offset.x / len, offset.z / len),
                                   new float2(toRock.x / rockDist, toRock.z / rockDist)) > 0.8f;
                 // Guns use the same aim the hull is facing. A dodge or a brake-out
-                // points elsewhere, so those ticks do not shoot.
+                // points elsewhere, so those ticks do not shoot. While thrust is
+                // held those barrels stay parallel to the nose. Once the move
+                // button is released they converge on this rock, including while
+                // the hull is still gliding, so a small asteroid between the
+                // muzzles can be hit.
                 fire = facing && rockDist <= stop + MineShotReach;
             }
 
@@ -949,7 +1358,7 @@ namespace TitanOrbit.ECS
         /// then stays off until the hull is <see cref="CruiseResumeGap"/> past the hold.
         /// A raw <c>dist &gt; hold</c> test flips every tick as the hull crosses the line.
         /// </summary>
-        static bool CruiseToward(float dist, float hold, float speed, ref byte held)
+        static bool CruiseToward(float dist, float hold, float speed, ref byte held, float resumeGap = CruiseResumeGap)
         {
             bool thrusting = held != 0;
             if (thrusting)
@@ -959,7 +1368,7 @@ namespace TitanOrbit.ECS
                 if (dist <= hold + brakeDist)
                     thrusting = false;
             }
-            else if (dist > hold + CruiseResumeGap)
+            else if (dist > hold + resumeGap)
                 thrusting = true;
 
             held = (byte)(thrusting ? 1 : 0);
@@ -1124,12 +1533,45 @@ namespace TitanOrbit.ECS
             brain.GoalNetworkId = 0;
         }
 
+        /// <summary>
+        /// Deposit, and allow another hull purchase. The gems about to land in the bank
+        /// are why the previous buy was refused.
+        /// </summary>
+        static void SetDeposit(ref BotShipBrain brain, in PlanetSnap planet)
+        {
+            brain.LevelBuyBlocked = 0;
+            SetPlanet(ref brain, BotTaskKind.Deposit, planet);
+        }
+
         static bool OrderNeedsRetask(in BotTeamOrder order, in BotShipBrain brain)
         {
             if (order.Task == brain.Task)
                 return false;
             // Scooping the burst is still the Mining order, not a new command.
             return !(order.Task == BotTaskKind.Mine && brain.Task == BotTaskKind.Collect);
+        }
+
+        /// <summary>
+        /// True when this hull already finished <paramref name="order"/> and should
+        /// be on its own program until that sentence is replaced.
+        /// </summary>
+        static bool OrderAlreadyFinished(in BotTeamOrder order, in BotShipBrain brain) =>
+            order.ExpireTime > 0f &&
+            brain.FinishedOrderExpireTime == order.ExpireTime &&
+            brain.FinishedOrderTask == order.Task;
+
+        /// <summary>
+        /// Mine is done when the hold cannot take another scoop. Deposit is done when
+        /// the hold is empty. Other commander tasks stay in force until they expire.
+        /// </summary>
+        static bool CommanderTaskDone(in BotTeamOrder order, in ShipState ship)
+        {
+            if (order.Task == BotTaskKind.Mine)
+                return ship.GemCapacity > 1f &&
+                       ship.CurrentGems >= ship.GemCapacity - MineOrderFullGap;
+            if (order.Task == BotTaskKind.Deposit)
+                return ship.CurrentGems <= 0.05f;
+            return false;
         }
 
         static void SetMine(ref BotShipBrain brain, in RockSnap rock)
@@ -1153,10 +1595,146 @@ namespace TitanOrbit.ECS
 
         static void SetAttack(ref BotShipBrain brain, in ShipSnap enemy)
         {
+            bool same = brain.Task == BotTaskKind.Attack && brain.GoalNetworkId == enemy.NetworkId;
             brain.Task = BotTaskKind.Attack;
             brain.Goal = enemy.Position;
             brain.GoalNetworkId = enemy.NetworkId;
             brain.GoalPlanetId = 0;
+            if (same)
+                return;
+
+            brain.EngagePhase = BotEngagePhase.Acquire;
+            brain.EngageTries = 0;
+            brain.ApproachSide = 0;
+            brain.EngageDeadline = 0f;
+        }
+
+        /// <summary>
+        /// One compare pass for an attack intercept. No scans. Acquire stamps an
+        /// approach, approach becomes commit once the range closes, and a missed
+        /// window becomes re-evaluate: leave the ring, then a new side or a new target.
+        /// </summary>
+        static void TickEngage(ref BotShipBrain brain, float now, float dist, bool inOrbit)
+        {
+            if (brain.GoalNetworkId == 0)
+            {
+                brain.EngagePhase = BotEngagePhase.Acquire;
+                return;
+            }
+
+            // Leash. Acquire still uses EngageRange. An intercept already in progress
+            // may step this far past it while thrusting off a ring, then has to close
+            // again. Farther than this is a chase, so the hull drops the target.
+            const float EngageLeash = EngageRange + 8f;
+            if (dist > EngageLeash && !inOrbit)
+            {
+                brain.AvoidNetworkId = brain.GoalNetworkId;
+                brain.AvoidUntil = now + OrbitBreakWindow + 0.5f;
+                brain.GoalNetworkId = 0;
+                brain.EngagePhase = BotEngagePhase.Acquire;
+                brain.EngageTries = 0;
+                brain.ApproachSide = 0;
+                brain.EngageDeadline = 0f;
+                brain.NextDecisionTime = now;
+                return;
+            }
+
+            switch (brain.EngagePhase)
+            {
+                case BotEngagePhase.None:
+                case BotEngagePhase.Acquire:
+                    BeginApproach(ref brain, now);
+                    break;
+                case BotEngagePhase.Approach:
+                    if (dist <= EngageCommitRange)
+                    {
+                        brain.EngagePhase = BotEngagePhase.Commit;
+                        brain.EngageDeadline = now + EngageWindow;
+                    }
+                    else if (brain.EngageDeadline > 0f && now >= brain.EngageDeadline)
+                        EnterReevaluate(ref brain, now, inOrbit);
+                    break;
+                case BotEngagePhase.Commit:
+                    // Guns work in this band once the hull is off the ring. Refresh the
+                    // window so a shot in progress is not treated as a failed approach.
+                    if (!inOrbit && dist <= EngageRange)
+                    {
+                        brain.EngageTries = 0;
+                        brain.EngageDeadline = now + EngageWindow;
+                    }
+                    else if (brain.EngageDeadline > 0f && now >= brain.EngageDeadline)
+                        EnterReevaluate(ref brain, now, inOrbit);
+                    break;
+                case BotEngagePhase.Reevaluate:
+                    if (!inOrbit || now >= brain.EngageDeadline)
+                        FinishReevaluate(ref brain, now);
+                    break;
+            }
+        }
+
+        static void BeginApproach(ref BotShipBrain brain, float now)
+        {
+            if (brain.ApproachSide == 0)
+                brain.ApproachSide = 1;
+            brain.EngagePhase = BotEngagePhase.Approach;
+            brain.EngageDeadline = now + EngageWindow;
+        }
+
+        static void EnterReevaluate(ref BotShipBrain brain, float now, bool inOrbit)
+        {
+            brain.EngageTries++;
+            if (!inOrbit)
+            {
+                FinishReevaluate(ref brain, now);
+                return;
+            }
+
+            brain.EngagePhase = BotEngagePhase.Reevaluate;
+            brain.EngageDeadline = now + OrbitBreakWindow;
+        }
+
+        /// <summary>
+        /// First miss flips the approach side. The second drops the hull and asks
+        /// the next decision scan to pick someone else.
+        /// </summary>
+        static void FinishReevaluate(ref BotShipBrain brain, float now)
+        {
+            if (brain.EngageTries >= 2)
+            {
+                brain.AvoidNetworkId = brain.GoalNetworkId;
+                brain.AvoidUntil = now + EngageAvoidSeconds;
+                brain.GoalNetworkId = 0;
+                brain.EngagePhase = BotEngagePhase.Acquire;
+                brain.EngageTries = 0;
+                brain.ApproachSide = 0;
+                brain.EngageDeadline = 0f;
+                brain.NextDecisionTime = now;
+                return;
+            }
+
+            brain.ApproachSide = (sbyte)(brain.ApproachSide >= 0 ? -1 : 1);
+            brain.EngagePhase = BotEngagePhase.Approach;
+            brain.EngageDeadline = now + EngageWindow;
+        }
+
+        /// <summary>
+        /// Point beside the target so the intercept is not a straight tangent into a ring.
+        /// The offset is world XZ; steering wraps it with the toroidal shortest path.
+        /// </summary>
+        static float3 ApproachAim(float3 pos, float3 target, sbyte side, float mapW, float mapH)
+        {
+            float3 toTarget = ToroidalMapEcs.ShortestOffsetXZ(pos, target, mapW, mapH);
+            float2 flat = new float2(toTarget.x, toTarget.z);
+            float len = math.length(flat);
+            if (len < 0.05f)
+                return target;
+
+            float2 dir = flat / len;
+            float sign = side >= 0 ? 1f : -1f;
+            float2 perp = new float2(-dir.y, dir.x) * sign;
+            float3 aim = target + new float3(perp.x, 0f, perp.y) * ApproachLateral;
+            aim.y = 0f;
+            return aim;
         }
 
         NativeList<PlanetSnap> GatherPlanets(EntityManager em)
@@ -1171,8 +1749,9 @@ namespace TitanOrbit.ECS
                 if (em.HasComponent<PlanetGrowthState>(entities[i]))
                     bonus = em.GetComponentData<PlanetGrowthState>(entities[i]).ConnectionBonusFraction;
                 float scale = math.max(0.5f, transforms[i].Scale);
-                int half = math.max(1, PlanetPopulationMath.GetEffectiveMaxPopulation(
-                    scale, states[i].PlanetLevel, bonus) / 2);
+                int maxPop = PlanetPopulationMath.GetEffectiveMaxPopulation(
+                    scale, states[i].PlanetLevel, bonus);
+                int half = math.max(1, maxPop / 2);
                 list.Add(new PlanetSnap
                 {
                     Entity = entities[i],
@@ -1183,6 +1762,7 @@ namespace TitanOrbit.ECS
                     Level = states[i].PlanetLevel,
                     Population = states[i].Population,
                     HalfPopulation = half,
+                    MaxPopulation = maxPop,
                     IsHome = (byte)(states[i].IsHomePlanet ? 1 : 0),
                 });
             }
@@ -1239,24 +1819,53 @@ namespace TitanOrbit.ECS
                     Kind = BulletObstacleKind.Asteroid,
                 });
 
-                if (states[i].RemainingGems <= 0.01f)
-                    continue;
-                // Drawn mesh puffs past the physics sphere. Stop outside that puff.
-                float visual = scale * (BodyCollisionMath.AsteroidMeshBaseRadius +
-                                        BodyCollisionMath.AsteroidVisualDisplacementLocal);
-                _mineRocks.Add(new RockSnap
-                {
-                    Position = transforms[i].Position,
-                    Radius = visual + MineSurfaceGap,
-                });
+                if (TryMineSnap(states[i], transforms[i], out RockSnap rock))
+                    _mineRocks.Add(rock);
             }
         }
 
-        void RefreshGemHash(float mapW, float mapH)
+        /// <summary>
+        /// Gem-bearing rocks only. Used between decision scans so a destroyed mine
+        /// target is noticed on the next tick. Does not rebuild the bullet hash.
+        /// </summary>
+        void RefreshMineRocks()
         {
-            if (_gemHash.IsCreated)
-                _gemHash.Dispose();
+            using var states = _rocks.ToComponentDataArray<AsteroidState>(Allocator.Temp);
+            using var transforms = _rocks.ToComponentDataArray<LocalTransform>(Allocator.Temp);
+            _mineRocks.Clear();
+            for (int i = 0; i < states.Length; i++)
+            {
+                if (TryMineSnap(states[i], transforms[i], out RockSnap rock))
+                    _mineRocks.Add(rock);
+            }
+        }
 
+        /// <summary>
+        /// Drawn mesh puffs past the physics sphere. The stop radius sits outside that puff.
+        /// </summary>
+        static bool TryMineSnap(in AsteroidState state, in LocalTransform transform, out RockSnap rock)
+        {
+            rock = default;
+            if (!state.IsAliveForCombat || state.RemainingGems <= 0.01f)
+                return false;
+
+            float scale = math.max(0.1f, transform.Scale);
+            float visual = scale * (BodyCollisionMath.AsteroidMeshBaseRadius +
+                                    BodyCollisionMath.AsteroidVisualDisplacementLocal);
+            rock = new RockSnap
+            {
+                Position = transform.Position,
+                Radius = visual + MineSurfaceGap,
+            };
+            return true;
+        }
+
+        /// <summary>
+        /// One shared gem hash for this tick. TempJob so it can outlive the scratch
+        /// lists (Temp is a stack). Caller disposes before <c>OnUpdate</c> returns.
+        /// </summary>
+        GemSpatialHash BuildGemHash(float mapW, float mapH)
+        {
             using var states = _gems.ToComponentDataArray<GemState>(Allocator.Temp);
             using var transforms = _gems.ToComponentDataArray<LocalTransform>(Allocator.Temp);
             using var motions = _gems.ToComponentDataArray<GemMotionState>(Allocator.Temp);
@@ -1274,12 +1883,13 @@ namespace TitanOrbit.ECS
             }
 
             source.Dispose();
-            _gemHash = GemSpatialHash.Build(
+            GemSpatialHash hash = GemSpatialHash.Build(
                 entities.AsArray(), poses.AsArray(), default, liveMotions.AsArray(),
-                mapW, mapH, Allocator.Persistent);
-            entities.Dispose();
-            poses.Dispose();
+                mapW, mapH, Allocator.TempJob);
             liveMotions.Dispose();
+            poses.Dispose();
+            entities.Dispose();
+            return hash;
         }
 
         /// <summary>
@@ -1301,10 +1911,51 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// After the mine target is gone, scoop loose gems already within <see cref="GemSearchRange"/>.
-        /// That reach sits past the farthest a jam can shove a gem. Crystals farther out are
-        /// left behind. A gem locked by another ship is left alone.
-        /// The same nearby gem is kept until it is scooped or leaves that range.
+        /// Rock is already gone. Chase this wreck's gems, then the next rock.
+        /// Runs every tick so the hull does not wait out <see cref="DecisionInterval"/>
+        /// parked on the old stop radius.
+        /// </summary>
+        static void TickLoot(
+            ref BotShipBrain brain,
+            in ShipState ship,
+            int networkId,
+            float3 pos,
+            NativeArray<RockSnap> rocks,
+            in GemSpatialHash gems,
+            NativeList<int> nearby,
+            NativeHashSet<int> seen,
+            float mapW,
+            float mapH,
+            EntityManager em,
+            float claimNow)
+        {
+            BotTaskKind before = brain.Task;
+            if (TryCollectBurst(
+                    ref brain, ship, networkId, pos, gems, nearby, seen, mapW, mapH, em, claimNow))
+            {
+                if (brain.Task != before)
+                    brain.ThrustHeld = 1;
+                return;
+            }
+
+            // Hold is full enough that the next scan will deposit. Don't peel off to a new rock.
+            if (ship.GemCapacity > 1f && ship.CurrentGems >= ship.GemCapacity * DepositFill)
+                return;
+
+            if (!TryNearestRock(rocks, pos, networkId, mapW, mapH, out RockSnap rock))
+                return;
+
+            SetMine(ref brain, rock);
+            if (brain.Task != before)
+                brain.ThrustHeld = 1;
+        }
+
+        /// <summary>
+        /// After the mine target is gone, scoop loose gems within <see cref="WreckGemRadius"/>
+        /// of that rock. The search is around the wreck, not the hull, so a kill from
+        /// <see cref="MineShotReach"/> still counts. A gem reserved for another ship, or
+        /// already tractored by one, is left alone. The same crystal is kept until it
+        /// is scooped or leaves the wreck.
         /// </summary>
         static bool TryCollectBurst(
             ref BotShipBrain brain,
@@ -1315,7 +1966,9 @@ namespace TitanOrbit.ECS
             NativeList<int> nearby,
             NativeHashSet<int> seen,
             float mapW,
-            float mapH)
+            float mapH,
+            EntityManager em,
+            float claimNow)
         {
             bool gathering = brain.Task == BotTaskKind.Collect;
             bool wreck = brain.Task == BotTaskKind.Mine;
@@ -1328,14 +1981,17 @@ namespace TitanOrbit.ECS
 
             float3 origin = gathering ? brain.CollectOrigin : brain.Goal;
             if (gathering &&
-                TryGemNear(gems, brain.Goal, GemSearchRange, networkId, nearby, seen, mapW, mapH, out float3 kept) &&
-                ToroidalMapEcs.ToroidalDistance(pos, kept, mapW, mapH) <= GemSearchRange)
+                TryGemNear(
+                    gems, brain.Goal, GemStickRadius, networkId, nearby, seen, mapW, mapH,
+                    em, claimNow, out float3 kept) &&
+                ToroidalMapEcs.ToroidalDistance(origin, kept, mapW, mapH) <= WreckGemRadius)
             {
                 SetCollect(ref brain, kept, origin);
                 return true;
             }
 
-            if (!TryNearestGem(gems, pos, networkId, nearby, seen, mapW, mapH, out float3 gem))
+            if (!TryNearestGem(
+                    gems, origin, pos, networkId, nearby, seen, mapW, mapH, em, claimNow, out float3 gem))
                 return false;
 
             SetCollect(ref brain, gem, origin);
@@ -1351,6 +2007,8 @@ namespace TitanOrbit.ECS
             NativeHashSet<int> seen,
             float mapW,
             float mapH,
+            EntityManager em,
+            float claimNow,
             out float3 match)
         {
             match = default;
@@ -1360,7 +2018,7 @@ namespace TitanOrbit.ECS
             for (int n = 0; n < nearby.Length; n++)
             {
                 GemSpatialEntry gem = gems.Entries[nearby[n]];
-                if (gem.TractorShipId != 0 && gem.TractorShipId != networkId)
+                if (SkipLootGem(em, gem, networkId, claimNow))
                     continue;
                 float dist = ToroidalMapEcs.ToroidalDistance(goal, gem.Position, mapW, mapH);
                 if (dist > best)
@@ -1375,25 +2033,30 @@ namespace TitanOrbit.ECS
 
         static bool TryNearestGem(
             in GemSpatialHash gems,
+            float3 origin,
             float3 pos,
             int networkId,
             NativeList<int> nearby,
             NativeHashSet<int> seen,
             float mapW,
             float mapH,
+            EntityManager em,
+            float claimNow,
             out float3 match)
         {
             match = default;
-            gems.GatherNearby(pos, GemSearchRange, nearby, seen);
-            float best = GemSearchRange;
+            gems.GatherNearby(origin, WreckGemRadius, nearby, seen);
+            float best = float.MaxValue;
             bool found = false;
             for (int n = 0; n < nearby.Length; n++)
             {
                 GemSpatialEntry gem = gems.Entries[nearby[n]];
-                if (gem.TractorShipId != 0 && gem.TractorShipId != networkId)
+                if (SkipLootGem(em, gem, networkId, claimNow))
+                    continue;
+                if (ToroidalMapEcs.ToroidalDistance(origin, gem.Position, mapW, mapH) > WreckGemRadius)
                     continue;
                 float fromShip = ToroidalMapEcs.ToroidalDistance(pos, gem.Position, mapW, mapH);
-                if (fromShip > best)
+                if (fromShip >= best)
                     continue;
                 best = fromShip;
                 match = gem.Position;
@@ -1401,6 +2064,21 @@ namespace TitanOrbit.ECS
             }
 
             return found;
+        }
+
+        /// <summary>
+        /// True when this hull should not fly to the crystal: another ship already has
+        /// the tractor, or first-dibs / a self-spill block would reject the pickup.
+        /// Chasing those is what left the bot sitting on a gem it could not take.
+        /// </summary>
+        static bool SkipLootGem(EntityManager em, in GemSpatialEntry gem, int networkId, float claimNow)
+        {
+            if (gem.TractorShipId != 0 && gem.TractorShipId != networkId)
+                return true;
+            if (networkId <= 0 || !em.Exists(gem.Entity) || !em.HasComponent<GemState>(gem.Entity))
+                return true;
+            return GemSelfPickupBlock.IsPickupBlockedForShip(
+                em.GetComponentData<GemState>(gem.Entity), networkId, claimNow);
         }
 
         static bool TryRockAt(
@@ -1468,7 +2146,8 @@ namespace TitanOrbit.ECS
             float range,
             float mapW,
             float mapH,
-            out ShipSnap best)
+            out ShipSnap best,
+            int skipNetworkId = 0)
         {
             best = default;
             float bestDist = range;
@@ -1479,6 +2158,8 @@ namespace TitanOrbit.ECS
                 if (other.Dead != 0 || other.Landed != 0)
                     continue;
                 if (other.NetworkId == selfId || other.Team == TeamId.None || other.Team == team)
+                    continue;
+                if (skipNetworkId != 0 && other.NetworkId == skipNetworkId)
                     continue;
                 float dist = ToroidalMapEcs.ToroidalDistance(from, other.Position, mapW, mapH);
                 if (dist > bestDist)
@@ -1543,6 +2224,267 @@ namespace TitanOrbit.ECS
 
             home = default;
             return false;
+        }
+
+        static void ClearCapture(ref BotShipBrain brain)
+        {
+            brain.SeekTroops = 0;
+            brain.CapturePlanetId = 0;
+            brain.CapturePeopleNeeded = 0;
+        }
+
+        /// <summary>
+        /// Load until the people aboard can zero <see cref="BotShipBrain.CapturePlanetId"/>,
+        /// then fly there and unload. A short crew stays on the friendly ring.
+        /// Distances are toroidal on the map size from <see cref="ToroidalMapEcs.TryGetMapSize"/>
+        /// (passed in as <paramref name="mapW"/> and <paramref name="mapH"/>).
+        /// </summary>
+        static bool AdvanceTroops(
+            ref BotShipBrain brain,
+            in ShipState ship,
+            float3 pos,
+            NativeArray<PlanetSnap> planets,
+            float mapW,
+            float mapH,
+            int inbound,
+            bool orderedTransport,
+            int forcedPlanetId)
+        {
+            int forced = orderedTransport ? forcedPlanetId : 0;
+            return TryCommitCapture(
+                ref brain, ship, pos, planets, mapW, mapH, inbound, forced);
+        }
+
+        static bool TryCommitCapture(
+            ref BotShipBrain brain,
+            in ShipState ship,
+            float3 pos,
+            NativeArray<PlanetSnap> planets,
+            float mapW,
+            float mapH,
+            int inbound,
+            int forcedPlanetId)
+        {
+            // Just captured, or still sitting on a friendly world under the buffer.
+            // Keep unloading until the planet reaches 49% so the 50% load line does
+            // not pick the same crew back up.
+            if (brain.Task == BotTaskKind.UnloadTroops &&
+                brain.CapturePlanetId != 0 &&
+                (forcedPlanetId == 0 || forcedPlanetId == brain.CapturePlanetId) &&
+                TryPlanet(planets, brain.CapturePlanetId, out PlanetSnap reinforcing) &&
+                reinforcing.Ownership == ship.Team &&
+                ship.CurrentPeople > 0 &&
+                PlanetPopulationMath.NeedsFriendlyGarrison(
+                    reinforcing.Population, reinforcing.MaxPopulation))
+            {
+                brain.SeekTroops = 1;
+                SetPlanet(ref brain, BotTaskKind.UnloadTroops, reinforcing);
+                return true;
+            }
+
+            // A haul already on the way keeps going only while the people aboard can
+            // still zero the live garrison. One sphere is not a reason to finish the trip.
+            if (brain.Task == BotTaskKind.UnloadTroops &&
+                brain.CapturePlanetId != 0 &&
+                (forcedPlanetId == 0 || forcedPlanetId == brain.CapturePlanetId) &&
+                TryPlanet(planets, brain.CapturePlanetId, out PlanetSnap dropping) &&
+                dropping.Ownership != ship.Team &&
+                dropping.Population > 0 &&
+                ship.CurrentPeople >= CaptureQuota(dropping, ship.PeopleCapacity))
+            {
+                brain.SeekTroops = 1;
+                brain.CapturePeopleNeeded = CaptureQuota(dropping, ship.PeopleCapacity);
+                SetPlanet(ref brain, BotTaskKind.UnloadTroops, dropping);
+                return true;
+            }
+
+            int held = ship.CurrentPeople + math.max(0, inbound);
+            if (!TryPickCaptureTarget(
+                    planets, pos, ship.Team, ship.PeopleCapacity, held, mapW, mapH,
+                    brain.CapturePlanetId, forcedPlanetId,
+                    out PlanetSnap target, out int needed))
+                return false;
+
+            return BeginCaptureTrip(
+                ref brain, ship, pos, planets, mapW, mapH, inbound, in target, needed);
+        }
+
+        /// <summary>
+        /// People who must be aboard before the hull may leave for <paramref name="target"/>.
+        /// Two extra bodies when the hold has room, so the garrison can tick up on the flight.
+        /// </summary>
+        static int CaptureQuota(in PlanetSnap target, int capacity)
+        {
+            int pop = math.max(1, target.Population);
+            if (capacity <= pop)
+                return pop;
+            return math.min(capacity, pop + 2);
+        }
+
+        /// <summary>
+        /// Point the hull at a friendly surplus world until the capture load is aboard,
+        /// then at the enemy ring. Departs only when <see cref="ShipState.CurrentPeople"/>
+        /// covers the live garrison. A sphere still in flight does not count.
+        /// </summary>
+        static bool BeginCaptureTrip(
+            ref BotShipBrain brain,
+            in ShipState ship,
+            float3 pos,
+            NativeArray<PlanetSnap> planets,
+            float mapW,
+            float mapH,
+            int inbound,
+            in PlanetSnap target,
+            int needed)
+        {
+            int boarded = math.max(0, ship.CurrentPeople);
+            int incoming = math.max(0, inbound);
+            bool holdFull = ship.PeopleCapacity > 0 && boarded + incoming >= ship.PeopleCapacity;
+            int stickSource = brain.Task == BotTaskKind.LoadTroops ? brain.GoalPlanetId : 0;
+            bool canLoad = false;
+            PlanetSnap source = default;
+            if (!holdFull && ship.PeopleCapacity > 0)
+                canLoad = TryLoadSource(planets, pos, ship.Team, mapW, mapH, stickSource, out source);
+
+            int pop = math.max(0, target.Population);
+            // Pad when the hold and the surplus can spare it. Otherwise the live garrison is the bar.
+            bool haveEnough = pop > 0 && boarded >= needed;
+            bool canZeroNow = pop > 0 && boarded >= pop && !canLoad && incoming == 0;
+            bool waitingToBoard = !haveEnough && !canZeroNow && needed > 0 && incoming > 0 &&
+                                  boarded + incoming >= math.max(pop, needed);
+
+            brain.SeekTroops = 1;
+            brain.CapturePlanetId = target.PlanetId;
+            brain.CapturePeopleNeeded = math.max(1, needed);
+
+            if (haveEnough || canZeroNow)
+            {
+                SetPlanet(ref brain, BotTaskKind.UnloadTroops, target);
+                return true;
+            }
+
+            if (waitingToBoard && brain.Task == BotTaskKind.LoadTroops && brain.GoalPlanetId != 0)
+                return true;
+
+            if (canLoad)
+            {
+                SetPlanet(ref brain, BotTaskKind.LoadTroops, source);
+                return true;
+            }
+
+            // Surplus is dry this tick. Hold the friendly ring so the next person
+            // above the reserve loads, instead of attacking with a short crew.
+            if (TryNearestFriendly(planets, pos, ship.Team, mapW, mapH, out PlanetSnap wait))
+            {
+                if (brain.Task != BotTaskKind.LoadTroops || brain.GoalPlanetId != wait.PlanetId)
+                    SetPlanet(ref brain, BotTaskKind.LoadTroops, wait);
+                return true;
+            }
+
+            return false;
+        }
+
+        static bool TryPickCaptureTarget(
+            NativeArray<PlanetSnap> planets,
+            float3 from,
+            TeamId team,
+            int capacity,
+            int held,
+            float mapW,
+            float mapH,
+            int stickId,
+            int forcedPlanetId,
+            out PlanetSnap best,
+            out int needed)
+        {
+            best = default;
+            needed = 0;
+            int pool = FriendlySurplus(planets, team);
+            if (forcedPlanetId != 0 &&
+                TryPlanet(planets, forcedPlanetId, out PlanetSnap forced) &&
+                CanAffordCapture(forced, team, capacity, held, pool))
+            {
+                best = forced;
+                needed = CaptureQuota(forced, capacity);
+                return true;
+            }
+
+            if (stickId != 0 &&
+                TryPlanet(planets, stickId, out PlanetSnap sticky) &&
+                CanAffordCapture(sticky, team, capacity, held, pool))
+            {
+                best = sticky;
+                needed = CaptureQuota(sticky, capacity);
+                return true;
+            }
+
+            // 100 floor reaches the next world past a ~90 home separation. The cap
+            // keeps a small map from treating the far side as nearby.
+            float span = math.max(1f, math.min(mapW, mapH));
+            float range = math.min(CaptureNearbyRange, math.max(100f, span * 0.34f));
+            float bestDist = range;
+            bool found = false;
+            for (int i = 0; i < planets.Length; i++)
+            {
+                PlanetSnap planet = planets[i];
+                if (!CanAffordCapture(planet, team, capacity, held, pool))
+                    continue;
+                float dist = ToroidalMapEcs.ToroidalDistance(from, planet.Position, mapW, mapH);
+                if (dist > range || dist >= bestDist)
+                    continue;
+                bestDist = dist;
+                best = planet;
+                found = true;
+            }
+
+            if (!found)
+                return false;
+            needed = CaptureQuota(best, capacity);
+            return true;
+        }
+
+        static bool CanAffordCapture(in PlanetSnap planet, TeamId team, int capacity, int held, int surplus)
+        {
+            if (planet.Ownership == team || planet.Population <= 0 || capacity < planet.Population)
+                return false;
+            return held >= planet.Population || held + surplus >= planet.Population;
+        }
+
+        static int FriendlySurplus(NativeArray<PlanetSnap> planets, TeamId team)
+        {
+            int sum = 0;
+            for (int i = 0; i < planets.Length; i++)
+            {
+                PlanetSnap planet = planets[i];
+                if (planet.Ownership != team)
+                    continue;
+                int extra = planet.Population - planet.HalfPopulation;
+                if (extra > 0)
+                    sum += extra;
+            }
+
+            return sum;
+        }
+
+        static bool TryLoadSource(
+            NativeArray<PlanetSnap> planets,
+            float3 from,
+            TeamId team,
+            float mapW,
+            float mapH,
+            int stickPlanetId,
+            out PlanetSnap best)
+        {
+            if (stickPlanetId != 0 &&
+                TryPlanet(planets, stickPlanetId, out PlanetSnap stick) &&
+                stick.Ownership == team &&
+                stick.Population > stick.HalfPopulation)
+            {
+                best = stick;
+                return true;
+            }
+
+            return TryFriendlySurplus(planets, from, team, mapW, mapH, out best);
         }
 
         static bool TryNearestFriendly(

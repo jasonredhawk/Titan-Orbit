@@ -239,6 +239,10 @@ namespace TitanOrbit.ECS
                 var kinematics = em.GetComponentData<ShipKinematics>(ship);
                 kinematics.Velocity = float3.zero;
                 kinematics.FormationHeading = float3.zero;
+                float3 origin = spawnPos;
+                origin.y = 0f;
+                kinematics.FormationOrigin = origin;
+                kinematics.FormationCenterSeeded = 1;
                 em.SetComponentData(ship, kinematics);
             }
 
@@ -273,7 +277,10 @@ namespace TitanOrbit.ECS
                 em.SetComponentData(ship, new ShipInput());
 
             if (em.HasComponent<BotShipBrain>(ship))
-                em.SetComponentData(ship, new BotShipBrain());
+            {
+                BotShipBrain brain = em.GetComponentData<BotShipBrain>(ship);
+                em.SetComponentData(ship, brain.ClearedKeepingGoal());
+            }
 
             PeopleTransportEscortLogic.ClearAll(em, ship);
 

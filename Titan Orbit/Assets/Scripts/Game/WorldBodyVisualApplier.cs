@@ -141,6 +141,7 @@ namespace TitanOrbit.Game
 
             // --- Moon (orbit radius uses level; shield/tint uses team) ---
             // [HYBRID] Pass null material on level-only refresh so Configure keeps the existing mat.
+            // moon.Configure also repaints the moon gem requirement from this planetLevel.
             var moon = instance.GetComponent<PlanetGemMoonVisualProxy>();
             if (moon != null)
             {
@@ -149,6 +150,13 @@ namespace TitanOrbit.Game
                     : null;
                 moon.Configure(worldScale, planetLevel, isHome, planetId, moonMaterial, team);
             }
+
+            // --- Gem requirement on the planet label ---
+            // Same level-up pass as the moon. LateUpdate would catch it a frame later;
+            // this call paints NEXT / 3200 in the frame the ghost level changes.
+            var planetStats = instance.GetComponent<PlanetWorldStatsLabel>();
+            if (planetStats != null)
+                planetStats.RefreshGemRequirement();
 
             // --- Decorative level bands + people-transfer orbit ring (under scaled body) ---
             EnsureOrbitRingVisual(instance, visualBody, worldScale, planetLevel, team, isHome, planetId);
@@ -346,9 +354,14 @@ namespace TitanOrbit.Game
             public override int GetHashCode() => (SourceId * 397) ^ Team;
         }
 
-        /// <summary>[UNITY] Domain reload drops runtime team-material instances.</summary>
+        /// <summary>[UNITY] Domain reload drops runtime team-material instances and shared asteroid meshes.</summary>
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-        static void ResetAsteroidTeamMaterials() => s_AsteroidTeamMaterials.Clear();
+        static void ResetAsteroidTeamMaterials()
+        {
+            s_AsteroidTeamMaterials.Clear();
+            s_WebGlAsteroidMeshes = null;
+            RegisterWebGlSharedMeshHooks();
+        }
 
         public static bool TryCreateAsteroidVisual(
             GameObject asteroidPrefab,
@@ -426,7 +439,7 @@ namespace TitanOrbit.Game
             if (cache == null)
                 cache = root.AddComponent<AsteroidTerritoryTintCache>();
 
-            var sgt = root.GetComponentInChildren<SgtPlanet>(true);
+            var sgt = FindLiveAsteroidPlanet(root);
             if (sgt == null || sgt.Material == null)
                 return false;
 
@@ -521,6 +534,46 @@ namespace TitanOrbit.Game
             return copy;
         }
 
+        /// <summary>
+        /// The spin migrate leaves the prefab <see cref="SgtPlanet"/> on the root until
+        /// end of frame, and adds the one that actually draws under AsteroidBody.
+        /// <see cref="GameObject.GetComponentInChildren{T}"/> hits the doomed root first
+        /// and would bind the share onto a component that is about to be destroyed.
+        /// The body then LateUpdates with no bucket and Instantiates its own mesh.
+        /// </summary>
+        static SgtPlanet FindLiveAsteroidPlanet(GameObject root)
+        {
+            if (root == null)
+                return null;
+
+            Transform body = FindNamedChild(root.transform, "AsteroidBody");
+            if (body != null)
+            {
+                SgtPlanet onBody = body.GetComponent<SgtPlanet>();
+                if (onBody != null)
+                    return onBody;
+            }
+
+            return root.GetComponentInChildren<SgtPlanet>(true);
+        }
+
+        static Transform FindNamedChild(Transform root, string childName)
+        {
+            if (root == null)
+                return null;
+            if (root.name == childName)
+                return root;
+
+            for (int i = 0; i < root.childCount; i++)
+            {
+                Transform found = FindNamedChild(root.GetChild(i), childName);
+                if (found != null)
+                    return found;
+            }
+
+            return null;
+        }
+
         /// <summary>Same Barren asteroid texture for every rock; vary UV scale, normals, and displacement per instance.</summary>
         static void ApplyAsteroidSurfaceVariation(GameObject root, Vector3 worldPosition, float rawSize)
         {
@@ -528,7 +581,7 @@ namespace TitanOrbit.Game
             if (rawSize < 0.01f)
                 return;
 
-            var sgt = root.GetComponentInChildren<SgtPlanet>(true);
+            var sgt = FindLiveAsteroidPlanet(root);
             if (sgt == null)
                 return;
 
@@ -579,14 +632,74 @@ namespace TitanOrbit.Game
         static Mesh[] s_WebGlAsteroidMeshes;
 
         /// <summary>
+        /// SgtPlanet asks here when a WebGL asteroid loses its share. One mesh per bucket.
+        /// A private Geosphere per rock is the abort("OOM") path.
+        /// </summary>
+        static void RegisterWebGlSharedMeshHooks()
+        {
+            SgtPlanet.ResolveWebGlSharedBucket = ResolveWebGlSharedBucket;
+            SgtPlanet.NotifySharedMeshDestroyed = ClearWebGlBucketForMesh;
+            TitanOrbit.NetCode.TitanOrbitClientNetDiagnostics.CountPrivateMeshes =
+                SgtPlanet.CountPrivateGeneratedMeshes;
+        }
+
+        static void EnsureWebGlAsteroidMeshSlots()
+        {
+            RegisterWebGlSharedMeshHooks();
+            if (s_WebGlAsteroidMeshes == null)
+                s_WebGlAsteroidMeshes = new Mesh[WebGlAsteroidMeshBuckets];
+        }
+
+        /// <summary>
+        /// Returns the bucket mesh, building it once when the slot was cleared or never filled.
+        /// </summary>
+        static Mesh ResolveWebGlSharedBucket(SgtPlanet body, int bucket)
+        {
+            if (body == null)
+                return null;
+
+            EnsureWebGlAsteroidMeshSlots();
+            if ((uint)bucket >= (uint)s_WebGlAsteroidMeshes.Length)
+                return null;
+
+            Mesh shared = s_WebGlAsteroidMeshes[bucket];
+            if (shared != null)
+                return shared;
+
+            float t = WebGlAsteroidMeshBuckets <= 1
+                ? 0f
+                : bucket / (float)(WebGlAsteroidMeshBuckets - 1);
+            body.Displacement = Mathf.Lerp(
+                DisplacementMin, BodyCollisionMath.AsteroidVisualDisplacementLocal, t);
+            shared = body.RebuildAsSharedMesh();
+            s_WebGlAsteroidMeshes[bucket] = shared;
+            return shared;
+        }
+
+        /// <summary>
+        /// Drops a destroyed shared mesh from its slot. Called before Destroy so the
+        /// reference still matches the live mesh.
+        /// </summary>
+        static void ClearWebGlBucketForMesh(Mesh mesh)
+        {
+            if (s_WebGlAsteroidMeshes == null || mesh == null)
+                return;
+
+            for (int i = 0; i < s_WebGlAsteroidMeshes.Length; i++)
+            {
+                if (ReferenceEquals(s_WebGlAsteroidMeshes[i], mesh))
+                    s_WebGlAsteroidMeshes[i] = null;
+            }
+        }
+
+        /// <summary>
         /// Reuses one displaced mesh per bucket. The prefab material stays Barren5.
         /// <see cref="SgtPlanet.Displacement"/> marks the mesh dirty, so the write happens
         /// only while building a bucket, and never after the share is locked.
         /// </summary>
         static void AssignSharedAsteroidMesh(SgtPlanet sgt, System.Random rng)
         {
-            if (s_WebGlAsteroidMeshes == null)
-                s_WebGlAsteroidMeshes = new Mesh[WebGlAsteroidMeshBuckets];
+            EnsureWebGlAsteroidMeshSlots();
 
             int bucket = rng.Next(WebGlAsteroidMeshBuckets);
             sgt.BindSharedMeshBucket(bucket);

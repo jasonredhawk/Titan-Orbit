@@ -10,8 +10,8 @@ namespace TitanOrbit.Audio
     /// shared <see cref="AudioManager"/> sources are not placed in the world, so
     /// Unity spatial blend cannot hear "nearby" correctly.
     /// Full volume inside <see cref="FullVolumeRange"/>, then a linear falloff to
-    /// silence at <see cref="HearRange"/> (same distances as gem-deposit beats and
-    /// remote hull-collision one-shots). Your own guns sit on the ship, so they
+    /// silence at <see cref="HearRange"/> (same distances as remote hull-collision
+    /// one-shots). Your own guns sit on the ship, so they
     /// stay full volume. A fight on the other side of the map stays silent.
     /// </summary>
     public static class GameplaySfxProximity

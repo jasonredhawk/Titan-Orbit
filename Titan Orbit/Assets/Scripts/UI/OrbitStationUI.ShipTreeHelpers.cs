@@ -119,10 +119,27 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
+        /// Last <see cref="ComputeTreeVisualSignature"/> applied to the visible cards.
+        /// The 0.35s store poll and the Bank RPC both call
+        /// <see cref="RefreshShipTreeVisualStateOnly"/>. Repainting all 24 cards
+        /// (chassis lookup plus a power breakdown each) was about 25ms, and gem
+        /// deposits changed the totals often enough that the hitch never stopped.
+        /// </summary>
+        int _treeVisualSignature;
+
+        /// <summary>False until a paint has stored <see cref="_treeVisualSignature"/>.</summary>
+        bool _hasTreeVisualSignature;
+
+        /// <summary>
         /// Repaints colors, prices, power bars, and screenshots on the existing tree
         /// nodes. Does not Instantiate. Landing-delay prepare already did this for the
         /// docked moon — Show skips this when <see cref="IsLandedMoonTreePreparedForCurrentPlanet"/>
         /// is true so the first visible frame is not a 24-card hitch.
+        /// A later poll skips again while the hull, moon, planet level, loadout, and
+        /// which next-tier hulls the Bank can afford are unchanged. Bank and cargo
+        /// labels still update. Planet level is copied from the ghost first — the
+        /// adapter otherwise keeps the level from when the menu opened, and a 5→6
+        /// level-up leaves the two next hulls gray.
         /// </summary>
         internal void RefreshShipTreeVisualStateOnly()
         {
@@ -130,13 +147,128 @@ namespace TitanOrbit.UI
             if (shipUpgradeTree == null)
                 return;
 
+            // [NETCODE] Ghost PlanetLevel → adapter, before the signature hash.
+            // Without this, a level-up changes the header and not the cards.
+            SyncDockedPlanetLevelsFromEcs();
+
             if (!IsTreeDataAvailable())
             {
                 shipUpgradeTree.HideHint();
+                _hasTreeVisualSignature = false;
                 return;
             }
 
+            int signature = ComputeTreeVisualSignature();
+            if (_hasTreeVisualSignature && signature == _treeVisualSignature)
+                return;
+
             shipUpgradeTree.RefreshVisualState();
+            _treeVisualSignature = signature;
+            _hasTreeVisualSignature = true;
+        }
+
+        /// <summary>
+        /// Stores the signature after the hidden landing prepare paints the cards,
+        /// so the first visible poll does not paint them again.
+        /// </summary>
+        void RememberTreeVisualSignature()
+        {
+            if (!IsTreeDataAvailable())
+            {
+                _hasTreeVisualSignature = false;
+                return;
+            }
+
+            _treeVisualSignature = ComputeTreeVisualSignature();
+            _hasTreeVisualSignature = true;
+        }
+
+        /// <summary>
+        /// Identity of what the 24 cards show. Gem totals are not included — only
+        /// which next-tier hulls the Bank can currently buy — so a deposit beat does
+        /// not redo every power bar. Each fork target has its own bit: the two ships
+        /// you can upgrade into often cost different amounts, and one shared
+        /// "next hull is affordable" flag left the dearer button grey after the
+        /// cheaper one had already unlocked. The beta free-ship switch is included:
+        /// without it the poll keeps the paid labels and leaves the other cards locked.
+        /// </summary>
+        int ComputeTreeVisualSignature()
+        {
+            int level = currentShip != null ? currentShip.ShipLevel : 0;
+            int branch = currentShip != null ? currentShip.BranchIndex : 0;
+            int chassis = currentShip != null && !string.IsNullOrEmpty(currentShip.CurrentChassisId)
+                ? currentShip.CurrentChassisId.GetHashCode()
+                : 0;
+            int loadout = currentShip != null ? currentShip.LoadoutFingerprint : 0;
+
+            Planet store = GetShipUpgradeStorePlanet();
+            int planetId = store != null ? store.PlanetId : 0;
+            int planetLevel = store != null ? Mathf.Max(1, store.PlanetLevel) : 0;
+            int homeLevel = currentHomePlanet != null ? Mathf.Max(1, currentHomePlanet.HomePlanetLevel) : 0;
+
+            int nextAffordMask = ComputeNextHullAffordMask(store, level, branch);
+
+            // One bit for the Titan column: level 6 and the planet gem bank at its cap.
+            // Ordinary deposits under that cap do not flip the bit, so this poll does not
+            // repaint the 24 cards. Crossing the cap — or moon damage dropping the bank —
+            // does, and the cards lock or unlock on that frame.
+            bool megaOpen = false;
+            if (store != null &&
+                EcsGameBridge.TryGetPlanetStateByPlanetId(store.PlanetId, out var planetBank))
+                megaOpen = MegaShipPlanetLogic.IsMegaPurchaseUnlocked(
+                    planetBank.PlanetLevel, planetBank.CurrentGems);
+
+            unchecked
+            {
+                int hash = 17;
+                hash = hash * 31 + level;
+                hash = hash * 31 + branch;
+                hash = hash * 31 + chassis;
+                hash = hash * 31 + loadout;
+                hash = hash * 31 + planetId;
+                hash = hash * 31 + planetLevel;
+                hash = hash * 31 + homeLevel;
+                hash = hash * 31 + nextAffordMask;
+                hash = hash * 31 + (megaOpen ? 1 : 0);
+                hash = hash * 31 + (GameManager.IsDebugFreeShipUpgradeTreeActive ? 1 : 0);
+                hash = hash * 31 + (int)ShipFamilyMatchBonuses.ActiveMatchSeed;
+                return hash;
+            }
+        }
+
+        /// <summary>
+        /// One bit per legal next-tier branch from (<paramref name="shipLevel"/>,
+        /// <paramref name="shipBranch"/>). Bit 0 is the first target
+        /// <see cref="UpgradeTree.GetNextLevelBranchTargets"/> returns. A bit is set
+        /// when Bank covers that hull's price — the same test the price chip uses
+        /// before it becomes a buy button.
+        /// </summary>
+        int ComputeNextHullAffordMask(Planet store, int shipLevel, int shipBranch)
+        {
+            // --- Per-fork gem gate ---
+            // [TITAN-ORBIT] Levels 1–5 offer two next hulls (this branch and the next).
+            // Their part totals differ. Folding both into one boolean meant the poll
+            // stopped repainting once the cheaper chip turned on.
+            if (CardShopSystem.Instance == null || currentShip == null || store == null)
+                return 0;
+            if (shipLevel < 1 || shipLevel > 6)
+                return 0;
+
+            UpgradeTree.GetNextLevelBranchTargets(shipLevel, shipBranch, _shipTreeNextTargets);
+            int nextLevel = shipLevel + 1;
+            int mask = 0;
+            int count = _shipTreeNextTargets.Count;
+            if (count > 8)
+                count = 8;
+            for (int i = 0; i < count; i++)
+            {
+                int cost = CardShopSystem.Instance.GetPurchaseGemCostForUpgradeSlot(
+                    currentShip, store.PlanetId, nextLevel, _shipTreeNextTargets[i]);
+                if (contributedGems >= cost)
+                    mask |= 1 << i;
+            }
+
+            return mask;
         }
 
         /// <summary>
@@ -167,15 +299,22 @@ namespace TitanOrbit.UI
             if (_landPrepareComplete && _landPreparePlanetId == storePlanetId)
             {
                 // --- Same moon as last dock ---
-                // Screenshots are already assigned, so we skip the 24-card paint.
-                // Hide() still SetActive(false) the backdrop; after a long inactive
-                // stretch those power-bar trays are 0×0. Re-arm once at alpha 0 and
-                // flush layout so the second land's hover math has real rects.
+                // Screenshots are already assigned. Hide() deactivated the backdrop, so
+                // re-arm it once at alpha 0. Doing this every delay frame, plus
+                // Canvas.ForceUpdateCanvases, rebuilt the HUD on each of those frames.
+                if (_landPrepareRearmed)
+                    return;
+
                 if (moonDockCenterBackdrop == null || !moonDockCenterBackdrop.activeSelf)
-                {
                     ArmHiddenLandPrepareHierarchy();
-                    Canvas.ForceUpdateCanvases();
-                }
+                else
+                    SetMoonDockOverlayRendering(true);
+                // If Bank crossed another hull's price while we were away, paint that
+                // chip. Remembering the new signature without a paint left the dearer
+                // button grey, and the later poll then thought the cards were current.
+                RefreshShipTreeVisualStateOnly();
+                RebuildMoonDockBackdropLayout();
+                _landPrepareRearmed = true;
                 return;
             }
 
@@ -184,6 +323,7 @@ namespace TitanOrbit.UI
                 _landPreparePlanetId = storePlanetId;
                 _landPrepareNodeIndex = 0;
                 _landPrepareComplete = false;
+                _landPrepareRearmed = false;
             }
 
             if (!IsTreeDataAvailable() || shipUpgradeTree == null)
@@ -201,18 +341,21 @@ namespace TitanOrbit.UI
                 PopulateTreeNode(nodes[i], maxes);
             _landPrepareNodeIndex = end;
 
-            // [UNITY] Flush the batch so textures upload while the overlay is still invisible.
-            Canvas.ForceUpdateCanvases();
-
             if (_landPrepareNodeIndex < nodes.Count)
                 return;
 
             // --- Last batch: header + Your Ship hero ---
+            // One layout of this backdrop, not Canvas.ForceUpdateCanvases. The global
+            // flush was rebuilding HUD text meshes on the landing frames.
             UpdateShipTreeHintText();
             if (orbitDockSidebar != null)
                 orbitDockSidebar.RefreshCurrentShip(PopulateTreeNode, maxes);
-            Canvas.ForceUpdateCanvases();
+            RebuildMoonDockBackdropLayout();
             _landPrepareComplete = true;
+            _landPrepareRearmed = true;
+            // The cards are already this moon's hulls. Remember that so the first
+            // store poll after the menu appears does not paint all 24 again.
+            RememberTreeVisualSignature();
         }
 
         /// <summary>
@@ -245,6 +388,7 @@ namespace TitanOrbit.UI
             _moonDockBackdropGroup.blocksRaycasts = false;
             _moonDockBackdropGroup.interactable = false;
             moonDockCenterBackdrop.SetActive(true);
+            SetMoonDockOverlayRendering(true);
             if (moonDockCenterShipsHost != null)
                 moonDockCenterShipsHost.gameObject.SetActive(true);
             if (shipsTabContent != null)
@@ -385,9 +529,9 @@ namespace TitanOrbit.UI
                 if (MoonOrbitStationUI.TryResolveMegaOccupancy(
                         storePlanet.PlanetId, view.BranchIndex, out megaOccupiedBy, out megaUnarmed))
                     megaOccupied = megaOccupiedBy != 0;
-                if (!EcsGameBridge.TryGetPlanetGemMoonStateByPlanetId(storePlanet.PlanetId, out var moon)
+                if (!EcsGameBridge.TryGetPlanetStateByPlanetId(storePlanet.PlanetId, out var planetBank)
                     || !MegaShipPlanetLogic.IsMegaPurchaseUnlocked(
-                        storePlanet.PlanetLevel, moon.CurrentMoonGems, moon.MaxMoonGems))
+                        planetBank.PlanetLevel, planetBank.CurrentGems))
                     megaUnlockBlocked = true;
             }
 
@@ -476,8 +620,8 @@ namespace TitanOrbit.UI
                 view.SetPrice("NO WEAPONS");
             else if (megaUnlockBlocked)
             {
-                // The moon gate still blocks the buy. The pill shows what this
-                // Titan's parts cost, not the old "MOON FULL" status word.
+                // The planet gem bank is not full yet (or the world is under level 6).
+                // The pill still shows what this Titan's parts cost.
                 view.SetPrice(FormatTitanCardGemCost(viewChassisId));
             }
             else if (canSwapHull)
@@ -499,6 +643,19 @@ namespace TitanOrbit.UI
                 GetPowerBreakdownForTreeNode(view.Level, view.BranchIndex),
                 ShipFamilyPowerBarNorm.ResolveForTreeLevel(view.Level, maxes, viewChassisId),
                 viewChassisId);
+
+            // --- Price chip is the only buy / swap control ---
+            // [TITAN-ORBIT] Spawn wires this once, before EnsurePriceButton may rebuild the
+            // pill. Repaint attaches it again so the "Free" same-slot chip actually clicks.
+            // The card body stays a picture. Capture level and branch so a later rebind of
+            // this view cannot purchase a different slot.
+            int clickLevel = view.Level;
+            int clickBranch = view.BranchIndex;
+            view.SetPriceClickHandler(clickable
+                ? () => OnUpgradeTreeNodeClicked(clickLevel, clickBranch)
+                : null);
+            if (megaOccupied)
+                view.SetOwnedOccupantStyle();
         }
 
         private void PopulateTreeNodeDebug(ShipUpgradeTreeNodeUI view, ShipPowerBarStatMaxes maxes)
@@ -774,13 +931,21 @@ namespace TitanOrbit.UI
                     return;
                 }
 
+                // Same ladder slot on this moon is another family's hull (or another Titan).
+                // The chip says "Free" — send this level, not level+1. The server skips the
+                // gem debit when the card value matches. A zero store id used to drop the
+                // click before that RPC (next-level buys already fell back to _ecsStorePlanetId).
                 if (nodeLevel == currentShip.ShipLevel && targetBranchIndex == currentShip.BranchIndex)
                 {
                     if (!CardShopSystem.Instance.CanSwapShipAtSameTreeSlot(
                             currentShip, storePlanet, nodeLevel, targetBranchIndex, out _))
                         return;
-                    MoonOrbitRpcClient.PurchaseShipUpgrade(
-                        OrbitStationEcsContext.StorePlanetId, nodeLevel, targetBranchIndex);
+
+                    int swapPlanetId = OrbitStationEcsContext.StorePlanetId;
+                    if (swapPlanetId <= 0)
+                        swapPlanetId = _ecsStorePlanetId;
+
+                    MoonOrbitRpcClient.PurchaseShipUpgrade(swapPlanetId, nodeLevel, targetBranchIndex);
                 }
 
                 return;

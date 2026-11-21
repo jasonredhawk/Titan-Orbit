@@ -153,6 +153,17 @@ namespace SpaceGraphicsToolkit
 
 		private static Dictionary<Mesh, int> sharedGeneratedUsers = new Dictionary<Mesh, int>();
 
+		static readonly List<SgtPlanet> s_LivePlanets = new List<SgtPlanet>();
+
+		[System.NonSerialized]
+		bool trackedInLiveList;
+
+		[RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+		static void ResetLivePlanetList()
+		{
+			s_LivePlanets.Clear();
+		}
+
 		private static Dictionary<Mesh, Geom> meshToGeom = new Dictionary<Mesh, Geom>();
 
 		private static Dictionary<Vector3, Seam> tempPoints = new Dictionary<Vector3, Seam>();
@@ -216,6 +227,54 @@ namespace SpaceGraphicsToolkit
 		}
 
 		/// <summary>
+		/// WebGL asteroid copies call this before the shared mesh is assigned.
+		/// LateUpdate must not Instantiate a private Geosphere while this is set.
+		/// </summary>
+		public void HoldWebGlSharedMesh()
+		{
+			lockSharedMesh = true;
+			dirtyMesh = false;
+		}
+
+		/// <summary>
+		/// WebGL asteroid buckets. Game code returns the shared mesh for a bucket so
+		/// <see cref="LateUpdate"/> never <c>Instantiate</c>s a private Geosphere.
+		/// The callback may build the bucket when the slot is empty.
+		/// </summary>
+		public static System.Func<SgtPlanet, int, Mesh> ResolveWebGlSharedBucket;
+
+		/// <summary>
+		/// Fired when the last user of a shared mesh releases it, before that mesh is destroyed.
+		/// Game code clears the matching bucket slot so the next rock builds one shared mesh.
+		/// </summary>
+		public static System.Action<Mesh> NotifySharedMeshDestroyed;
+
+		/// <summary>
+		/// Bodies that own a private generated mesh (not a locked share). Planets count.
+		/// Asteroids should stay at zero after the share is locked.
+		/// </summary>
+		public static int CountPrivateGeneratedMeshes()
+		{
+			int count = 0;
+			for (int i = s_LivePlanets.Count - 1; i >= 0; i--)
+			{
+				SgtPlanet planet = s_LivePlanets[i];
+				if (planet == null)
+				{
+					s_LivePlanets.RemoveAt(i);
+					continue;
+				}
+
+				if (planet.lockSharedMesh)
+					continue;
+				if (planet.generatedMesh != null)
+					count++;
+			}
+
+			return count;
+		}
+
+		/// <summary>
 		/// Copies authored mesh settings without property setters.
 		/// Those setters call <see cref="DirtyMesh"/>, and LateUpdate would then Instantiate a private mesh.
 		/// On WebGL the copy locks the mesh so that LateUpdate waits for the shared assign.
@@ -241,6 +300,13 @@ namespace SpaceGraphicsToolkit
 			sentWaterLevel = float.NaN;
 			sentNightValid = false;
 			webGlDrawMaterialReady = false;
+			// The spin migrate builds a new component, then the caller assigns the share.
+			// Copying the bucket (often still -1) and holding the lock stops that new
+			// component from Instantiate-ing its own Geosphere in the same LateUpdate.
+			sharedMeshBucket = source.sharedMeshBucket;
+			if (Application.platform == RuntimePlatform.WebGLPlayer &&
+			    (source.lockSharedMesh || source.sharedMeshBucket >= 0))
+				lockSharedMesh = true;
 		}
 
 		/// <summary>Writes a texture onto the WebGL draw material. Shared asteroid meshes skip this.</summary>
@@ -317,6 +383,7 @@ namespace SpaceGraphicsToolkit
 			dirtyMesh = false;
 			usesSharedGeneratedMesh = true;
 			lockSharedMesh = true;
+			ReleaseGeneratedVertexLists();
 			if (sharedGeneratedUsers.TryGetValue(shared, out int users))
 				sharedGeneratedUsers[shared] = users + 1;
 			else
@@ -343,6 +410,11 @@ namespace SpaceGraphicsToolkit
 			if (users <= 0)
 			{
 				sharedGeneratedUsers.Remove(shared);
+				// Clear the bucket while this reference still compares as the live mesh.
+				// After Destroy, Unity treats the object as null and the slot would look empty
+				// only by accident — a later rock would then Instantiate its own Geosphere.
+				if (NotifySharedMeshDestroyed != null)
+					NotifySharedMeshDestroyed(shared);
 				CwHelper.Destroy(shared);
 			}
 			else
@@ -365,6 +437,9 @@ namespace SpaceGraphicsToolkit
 		[ContextMenu("Rebuild")]
 		public void Rebuild()
 		{
+			// Locked bodies keep the shared mesh. RebuildAsSharedMesh clears the lock
+			// before the one legitimate build, then locks again. Calling TryRebind from
+			// here would recurse: rebind builds the bucket by calling Rebuild.
 			if (lockSharedMesh)
 			{
 				dirtyMesh = false;
@@ -463,6 +538,33 @@ namespace SpaceGraphicsToolkit
 					meshCollider.sharedMesh = generatedMesh;
 				}
 			}
+
+			// Vertex lists are only needed while displacing. Leaving a Geosphere50
+			// on every body pins the managed arrays after the mesh is destroyed,
+			// and the WebGL mono heap does not shrink.
+			ReleaseGeneratedVertexLists();
+		}
+
+		/// <summary>Drops displaced vertex buffers so a rebuilt mesh cannot pin them.</summary>
+		void ReleaseGeneratedVertexLists()
+		{
+			if (generatedPositions != null)
+			{
+				generatedPositions.Clear();
+				generatedPositions.TrimExcess();
+			}
+
+			if (generatedNormals != null)
+			{
+				generatedNormals.Clear();
+				generatedNormals.TrimExcess();
+			}
+
+			if (generatedTangents != null)
+			{
+				generatedTangents.Clear();
+				generatedTangents.TrimExcess();
+			}
 		}
 
 		private static Geom GetGeom(Mesh mesh)
@@ -530,26 +632,61 @@ namespace SpaceGraphicsToolkit
 		{
 			SgtCamera.OnCameraDraw        += HandleCameraDraw;
 			SgtCommon.OnCalculateDistance += HandleCalculateDistance;
+			if (trackedInLiveList == false)
+			{
+				s_LivePlanets.Add(this);
+				trackedInLiveList = true;
+			}
 		}
 
 		protected virtual void OnDisable()
 		{
 			SgtCamera.OnCameraDraw        -= HandleCameraDraw;
 			SgtCommon.OnCalculateDistance -= HandleCalculateDistance;
+			if (trackedInLiveList)
+			{
+				s_LivePlanets.Remove(this);
+				trackedInLiveList = false;
+			}
+		}
+
+		/// <summary>
+		/// Points this body at the shared mesh for <see cref="sharedMeshBucket"/>.
+		/// Does not <see cref="Rebuild"/> when the callback is missing — a private copy is the OOM.
+		/// </summary>
+		void TryRebindWebGlSharedBucket()
+		{
+			if (ResolveWebGlSharedBucket == null || sharedMeshBucket < 0)
+				return;
+
+			Mesh shared = ResolveWebGlSharedBucket(this, sharedMeshBucket);
+			if (shared != null)
+				AssignSharedGeneratedMesh(shared);
 		}
 
 		protected virtual void LateUpdate()
 		{
-			// A locked share must survive Displacement / WaterLevel dirties. Rebuilding
-			// would Release the share and Instantiate a private Geosphere per rock.
-			// A lock with no mesh draws nothing. Drop that lock and build a mesh.
-			if (lockSharedMesh && generatedMesh == null)
-				lockSharedMesh = false;
-
-			if (lockSharedMesh && generatedMesh != null)
+			// WebGL asteroids either carry a bucket id or are held until the share is
+			// assigned. Rebuild() would Instantiate a private Geosphere per rock (~2 GB)
+			// and the tab dies in abort("OOM") / abortOnCannotGrowMemory.
+			// A hold with no bucket yet draws nothing for one frame; that is the migrate
+			// window. Dropping the hold and building a private mesh is the leak.
+			if (Application.platform == RuntimePlatform.WebGLPlayer &&
+			    (sharedMeshBucket >= 0 || lockSharedMesh))
+			{
+				if (sharedMeshBucket >= 0 && (lockSharedMesh == false || generatedMesh == null))
+					TryRebindWebGlSharedBucket();
 				dirtyMesh = false;
-			else if (generatedMesh == null || dirtyMesh == true)
-				Rebuild();
+			}
+			else
+			{
+				// A locked share must survive Displacement / WaterLevel dirties. Rebuilding
+				// would Release the share and Instantiate a private Geosphere per rock.
+				if (lockSharedMesh && generatedMesh != null)
+					dirtyMesh = false;
+				else if (generatedMesh == null || dirtyMesh == true)
+					Rebuild();
+			}
 
 			if (generatedMesh == null || material == null)
 				return;

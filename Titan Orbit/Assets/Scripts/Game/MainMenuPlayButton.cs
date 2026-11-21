@@ -9,7 +9,7 @@ namespace TitanOrbit.Game
 {
     /// <summary>
     /// Reliable Play click handler for the main menu. Validates NetCode ClientWorld before starting
-    /// local play or dedicated quick-join, and surfaces errors on the menu status line.
+    /// local play, and surfaces errors on the menu status line. Production hides this button.
     ///
     /// Uses <see cref="Button.onClick"/> only (not <c>IPointerClickHandler</c>) so we never double-fire
     /// with a second listener from <see cref="NceGameFlowController"/>.
@@ -56,11 +56,15 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Primary Play action: Local play / Local client (MPPM) / Quick join dedicated.
+        /// Local-dev Play action: Local play on the main Editor, Local client on an extra MPPM window.
+        /// Production hides this button; dedicated matches start from Join game.
         /// </summary>
         void OnPlayClicked()
         {
             if (_button != null && !_button.interactable)
+                return;
+
+            if (!TitanOrbitMultiplayerConfig.ShowLocalPlayOptions)
                 return;
 
             Debug.Log("[MainMenuPlayButton] Play clicked.");
@@ -87,18 +91,10 @@ namespace TitanOrbit.Game
                 return;
             }
 
-            if (TitanOrbitMultiplayerConfig.ShowLocalPlayOptions)
-            {
-                if (TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance())
-                    TitanOrbitSessionManager.Instance.StartLocalClientForLanTest();
-                else
-                    TitanOrbitSessionManager.Instance.StartLocalPlay();
-            }
+            if (TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance())
+                TitanOrbitSessionManager.Instance.StartLocalClientForLanTest();
             else
-            {
-                ReportMenuStatus("Finding a dedicated match...");
-                _ = TitanOrbitSessionManager.Instance.QuickJoinDedicatedAsync();
-            }
+                TitanOrbitSessionManager.Instance.StartLocalPlay();
         }
 
         /// <summary>Logs and mirrors the error onto the main menu status TMP.</summary>

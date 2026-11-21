@@ -159,6 +159,24 @@ namespace TitanOrbit.UI
             /// <summary>Live B-key / heal bank the ship actually fires.</summary>
             public int FireBankIndex;
 
+            /// <summary>
+            /// Muzzle speed of the weapon this bank fires, before the bullet-type
+            /// speed multiplier. 0 means the card has not resolved a weapon yet.
+            /// </summary>
+            public float WeaponBulletSpeed;
+
+            /// <summary>
+            /// Name of the weapon whose bullet speed replaced the hull sum.
+            /// Empty when the chip is still the hull's own guns.
+            /// </summary>
+            public string SelectedBulletWeaponName;
+
+            /// <summary>
+            /// True when <see cref="WeaponBulletSpeed"/> replaced the hull bullet speed
+            /// (Titan family gun, Titan catalog bullets, or a purchased weapon bank).
+            /// </summary>
+            public bool SelectedBulletReplacesHull;
+
             /// <summary>True when Orbit Menu HEAL is on (EnergySpheres).</summary>
             public bool HealingBulletsActive;
 

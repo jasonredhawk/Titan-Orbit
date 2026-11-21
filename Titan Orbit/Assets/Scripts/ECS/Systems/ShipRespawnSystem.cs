@@ -281,6 +281,10 @@ namespace TitanOrbit.ECS
             ship.OverdriveBurstActive = false;
             kinematics.Velocity = float3.zero;
             kinematics.FormationHeading = float3.zero;
+            float3 origin = spawnPos;
+            origin.y = 0f;
+            kinematics.FormationOrigin = origin;
+            kinematics.FormationCenterSeeded = 1;
             orbit.OrbitPlanetId = 0;
             orbit.InOrbitRing = false;
             orbit.UsingOrbitMotor = false;

@@ -11,13 +11,13 @@ namespace TitanOrbit.Data
     /// </summary>
     public enum ShipComponentScaleChannel
     {
-        /// <summary>Weapon: average |X|+|Y|; non-weapon: average localScale.</summary>
+        /// <summary>Weapon: (average |X| and |Y|) raised to that average. Non-weapon: average localScale.</summary>
         FirePower = 0,
-        /// <summary>Weapon: 1/|Z| (2 is half rate); non-weapon: average localScale.</summary>
+        /// <summary>Weapon: (1/|Z|) raised to the XY average. Non-weapon: average localScale.</summary>
         FireRate = 1,
         /// <summary>Catalog speed on a weapon (prefab scale does not change it). Non-weapons still use average localScale.</summary>
         BulletSpeed = 2,
-        /// <summary>Average localScale, including weapon barrels.</summary>
+        /// <summary>Catalog range on a weapon (prefab scale does not change travel distance). Non-weapons still use average localScale.</summary>
         BulletRange = 3,
         /// <summary>Average localScale (cockpit / hull health fields).</summary>
         Health = 4,
@@ -322,8 +322,8 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Size factor shared by health, gems, move, acceleration, turn, ramming,
-        /// and bullet range: <c>(x + y + z) / 3</c>. Weapon bullet speed does not use it.
+        /// Size factor shared by health, gems, move, acceleration, turn, and ramming:
+        /// <c>(x + y + z) / 3</c>. Weapon bullet speed and bullet range do not use it.
         /// </summary>
         /// <param name="localScale">Authored chassis-prefab child scale (not live mesh grow).</param>
         /// <returns>1 at unit scale. Z is floored at 0.01 so a flat part cannot zero the average.</returns>
@@ -338,15 +338,15 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Fire-power multiplier from a weapon’s authored prefab scale: average of |X| and |Y|.
+        /// Exponent for every weapon axis scale: average of |X| and |Y|.
         /// <para>
-        /// [TITAN-ORBIT] A barrel at <c>(2, 2, z)</c> hits twice as hard. Negative axes
-        /// (mirrored left/right guns) still count as size. Used for Base and PerExtra.
+        /// [TITAN-ORBIT] Mirrored left/right guns store a negative X. Absolute value
+        /// keeps that barrel the same size as its twin. A flat XY (both axes 0) returns 0.
         /// </para>
         /// </summary>
         /// <param name="localScale">Chassis-prefab child <c>localScale</c> (not live mesh grow).</param>
-        /// <returns>Factor to multiply catalog fire power by (1 at unit scale).</returns>
-        public static float GetWeaponFirePowerScale(Vector3 localScale)
+        /// <returns>Average of |X| and |Y|. This is both the fire-power base and the exponent.</returns>
+        public static float GetWeaponXyAverage(Vector3 localScale)
         {
             float x = Mathf.Abs(localScale.x);
             float y = Mathf.Abs(localScale.y);
@@ -354,21 +354,66 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Fire-rate multiplier from a weapon’s authored prefab Z. Z divides the catalog
-        /// rate: a larger barrel on Z fires slower.
+        /// Raises one linear axis factor to the XY average.
         /// <para>
-        /// [TITAN-ORBIT] A barrel at <c>(x, y, 2)</c> fires at half the catalog rate.
-        /// A barrel at <c>(x, y, 0.9)</c> fires faster than unit Z (about 1.11×).
-        /// Negative axes (mirrored left/right guns) still count as size. The 0.01 floor
-        /// keeps a zero Z from sending the rate to infinity (cap is 100×).
+        /// [TITAN-ORBIT] Replaces the old straight multiply. The base is the factor that
+        /// axis used to apply (XY average for damage, 1/|Z| for fire rate). The exponent
+        /// is always <see cref="GetWeaponXyAverage"/>. Uniform scale 2 is 2^2 = 4.
+        /// Uniform scale 0.75 is 0.75^0.75 (about 0.806, not 0.75 × 0.75). Unit scale
+        /// stays ×1 because 1 to any power is 1. A non-positive base stays 0 so a missing
+        /// axis cannot become ×1 through the 0^0 case.
+        /// </para>
+        /// </summary>
+        /// <param name="linearScale">Old straight multiplier for this axis (already positive).</param>
+        /// <param name="xyAverage">Exponent from <see cref="GetWeaponXyAverage"/>.</param>
+        /// <returns><c>linearScale ^ xyAverage</c>, or 0 when the base is ~0.</returns>
+        public static float RaiseWeaponAxisScale(float linearScale, float xyAverage)
+        {
+            // --- Guard the 0^0 case ---
+            // [STANDARD] Mathf.Pow(0, 0) returns 1. A zero-size axis must not grant a free ×1.
+            if (linearScale <= 0.0001f)
+                return 0f;
+            return Mathf.Pow(linearScale, xyAverage);
+        }
+
+        /// <summary>
+        /// Fire-power multiplier from a weapon’s authored prefab scale.
+        /// <para>
+        /// [TITAN-ORBIT] Base and exponent are both the average of |X| and |Y|.
+        /// A barrel at <c>(2, 2, z)</c> hits at 2^2 = 4× catalog fire power (bullet size
+        /// follows that damage). A barrel at <c>(0.75, 0.75, z)</c> hits at 0.75^0.75
+        /// (about 0.806×). Used for Base and PerExtra.
         /// </para>
         /// </summary>
         /// <param name="localScale">Chassis-prefab child <c>localScale</c> (not live mesh grow).</param>
-        /// <returns>Factor to multiply catalog fire rate by (1 at unit Z, 0.5 at Z=2).</returns>
+        /// <returns>Factor to multiply catalog fire power by (1 at unit scale, 4 at XY average 2).</returns>
+        public static float GetWeaponFirePowerScale(Vector3 localScale)
+        {
+            float average = GetWeaponXyAverage(localScale);
+            return RaiseWeaponAxisScale(average, average);
+        }
+
+        /// <summary>
+        /// Fire-rate multiplier from a weapon’s authored prefab Z, raised to the XY average.
+        /// A larger barrel on Z still fires slower; the XY average is the exponent.
+        /// <para>
+        /// [TITAN-ORBIT] The linear factor is 1/|Z|. That factor is then raised to
+        /// <see cref="GetWeaponXyAverage"/>. Uniform scale 2 is (1/2)^2 = 0.25× rate.
+        /// XY average 1 leaves Z linear: Z 2 is half rate, Z 0.9 is about 1.11×.
+        /// Negative Z (a mirrored gun) still counts as size. The 0.01 floor is applied
+        /// before the power so a zero Z cannot divide by zero (linear base caps at 100×,
+        /// then the exponent can push that higher).
+        /// </para>
+        /// </summary>
+        /// <param name="localScale">Chassis-prefab child <c>localScale</c> (not live mesh grow).</param>
+        /// <returns>Factor to multiply catalog fire rate by (1 at unit scale).</returns>
         public static float GetWeaponFireRateScale(Vector3 localScale)
         {
+            // --- Linear Z, then raise it ---
+            // Larger |Z| slows the gun. Floor first so the base of the power stays finite.
             float z = Mathf.Abs(localScale.z);
-            return 1f / Mathf.Max(z, 0.01f);
+            float linear = 1f / Mathf.Max(z, 0.01f);
+            return RaiseWeaponAxisScale(linear, GetWeaponXyAverage(localScale));
         }
 
         public static bool IsWeaponComponent(string componentId)
@@ -441,10 +486,11 @@ namespace TitanOrbit.Data
         /// [TITAN-ORBIT] Starting prefab <c>localScale</c> is an art lever.
         /// A Cockpit at scale 3 contributes <c>3 ×</c> catalog Health, Gems, Troops, and Ramming.
         /// An engine or thruster at scale 2 contributes <c>2 ×</c> Move and Acceleration.
-        /// Weapons still split axes for the shot itself — fire power uses average |X|+|Y|,
-        /// fire rate uses 1/|Z| (2 is half rate, 0.9 is faster than 1). Bullet speed stays
-        /// the catalog value on every barrel. Bullet range uses the same <c>(x+y+z)/3</c>
-        /// average as turn, ramming, move, and accel.
+        /// Weapons still split axes for the shot itself — fire power is (average |X| and |Y|)
+        /// raised to that average, and fire rate is (1/|Z|) raised to the same average
+        /// (uniform 2 is 4× damage and 0.25× rate). Bullet speed and
+        /// bullet range stay the catalog values on every barrel. Turn, ramming, move, and
+        /// accel still use the linear <c>(x+y+z)/3</c> average.
         /// OVERDRIVE on an engine or thruster stays ×1 (a designer fraction, not mesh size).
         /// </para>
         /// Safe with a default <c>(1,1,1)</c> scale (moon-store extras have no prefab child).
@@ -459,16 +505,18 @@ namespace TitanOrbit.Data
             ShipComponentScaleChannel channel)
         {
             // --- Same branches as ScaleStatsByTransform (keep these twins in lockstep) ---
-            // Weapon damage and cadence keep their own axes. Bullet speed stays catalog
-            // (×1) so a bigger barrel does not fly faster. Range and the other fields
-            // on this list still use the part's average size.
+            // Weapon damage and cadence keep their own axes, then raise that linear
+            // factor to the XY average. Bullet speed and range stay catalog (×1) so a
+            // bigger barrel does not fly faster or farther. Move, turn, and ramming on
+            // a barrel still use the part's linear average size.
             if (IsWeaponComponent(componentId))
             {
                 if (channel == ShipComponentScaleChannel.FirePower)
                     return GetWeaponFirePowerScale(localScale);
                 if (channel == ShipComponentScaleChannel.FireRate)
                     return GetWeaponFireRateScale(localScale);
-                if (channel == ShipComponentScaleChannel.BulletSpeed)
+                if (channel == ShipComponentScaleChannel.BulletSpeed
+                    || channel == ShipComponentScaleChannel.BulletRange)
                     return 1f;
                 if (UsesAveragePrefabScale(channel))
                     return GetAveragePrefabScale(localScale);
@@ -485,11 +533,10 @@ namespace TitanOrbit.Data
 
         /// <summary>
         /// True when this field grows with <see cref="GetAveragePrefabScale"/> even on a weapon.
-        /// Fire power and fire rate use XY and 1/Z. Bullet speed stays ×1 on a weapon.
+        /// Fire power and fire rate use the XY-average exponent. Bullet speed and bullet range stay ×1 on a weapon.
         /// </summary>
         static bool UsesAveragePrefabScale(ShipComponentScaleChannel channel) =>
-            channel == ShipComponentScaleChannel.BulletRange
-            || channel == ShipComponentScaleChannel.MoveOrAccel
+            channel == ShipComponentScaleChannel.MoveOrAccel
             || channel == ShipComponentScaleChannel.Turn
             || channel == ShipComponentScaleChannel.Ramming;
 
@@ -507,9 +554,9 @@ namespace TitanOrbit.Data
             if (IsWeaponComponent(componentId))
             {
                 if (channel == ShipComponentScaleChannel.FirePower)
-                    return "prefab XY";
+                    return "XY^avg";
                 if (channel == ShipComponentScaleChannel.FireRate)
-                    return "prefab Z";
+                    return "(1/Z)^avg";
             }
 
             _ = componentId;
@@ -518,10 +565,12 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Scales authored stats by prefab child transform size. Weapons apply XY to
-        /// fire power and 1/|Z| to fire rate (2 is half rate). Weapon bullet speed stays
-        /// the catalog value at every barrel size. Bullet range, move, acceleration, turn,
-        /// and ramming use average <c>(x+y+z)/3</c> on every part, including engines,
+        /// Scales authored stats by prefab child transform size. Weapons raise the old
+        /// axis factor to the XY average: fire power is that average to its own power
+        /// (2^2 = 4), fire rate is (1/|Z|) to that same power (uniform 2 is quarter rate).
+        /// Weapon bullet speed and
+        /// bullet range stay the catalog values at every barrel size. Move, acceleration,
+        /// turn, and ramming use the linear average <c>(x+y+z)/3</c> on every part, including engines,
         /// thrusters, cockpits, and barrels.
         /// <para>
         /// [TITAN-ORBIT] Call only with <b>chassis prefab</b> authored localScale (art lever
@@ -543,13 +592,12 @@ namespace TitanOrbit.Data
             float averageScale = GetAveragePrefabScale(local);
 
             // [TITAN-ORBIT] Weapon prefab scale is the barrel’s combat lever.
-            // Average |X|+|Y| fattens the hit; 1/|Z| scales shots per second
-            // (2 is half the catalog rate, 0.9 is faster than unit scale).
-            // Bullet speed stays the catalog number on every barrel size so a
-            // larger gun does not throw a faster round. Range still grows with
-            // the barrel's average size, same as a cockpit's ram. Energy on a
+            // Fire power is (average |X| and |Y|) ^ that average. Fire rate is
+            // (1/|Z|) ^ that same average (uniform 2 is 4× damage and 0.25× rate).
+            // Bullet speed and bullet range stay the catalog numbers on every barrel
+            // size so a larger gun does not throw a faster or longer round. Energy on a
             // gun stays catalog. Extra Level still evaluates on the scaled
-            // Base / PerExtra. Bullet speed's Base and PerExtra stay catalog.
+            // Base / PerExtra. Bullet speed and range Base and PerExtra stay catalog.
             if (IsWeaponComponent(componentId))
             {
                 float firePowerScale = GetWeaponFirePowerScale(local);
@@ -577,9 +625,9 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Writes average-scale onto turn, ramming, move, acceleration, and bullet range.
-        /// Bullet speed and its per-level step stay the catalog values: weapon scale
-        /// must not change how fast the round travels.
+        /// Writes average-scale onto turn, ramming, move, and acceleration.
+        /// Bullet speed, bullet range, and their per-level steps stay the catalog values:
+        /// weapon scale must not change how fast or how far the round travels.
         /// Used for weapon barrels, which do not run the full <see cref="Multiply"/> path
         /// (that path would also resize fire power and fire rate, which have their own axes).
         /// </summary>
@@ -590,8 +638,8 @@ namespace TitanOrbit.Data
         {
             target.bulletSpeed = catalog.bulletSpeed;
             target.bulletSpeedPerExtraLevel = catalog.bulletSpeedPerExtraLevel;
-            target.bulletRange = catalog.bulletRange * averageScale;
-            target.bulletRangePerExtraLevel = catalog.bulletRangePerExtraLevel * averageScale;
+            target.bulletRange = catalog.bulletRange;
+            target.bulletRangePerExtraLevel = catalog.bulletRangePerExtraLevel;
             target.moveSpeed = catalog.moveSpeed * averageScale;
             target.moveSpeedPerExtraLevel = catalog.moveSpeedPerExtraLevel * averageScale;
             target.accelerationCap = catalog.accelerationCap * averageScale;

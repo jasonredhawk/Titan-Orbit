@@ -9,8 +9,9 @@ namespace TitanOrbit.NetCode
     /// Forces 60 Hz sim + network, never batches ticks into a larger physics dt, and caps catch-up
     /// steps per frame. World: ServerSimulation. Group: InitializationSystemGroup (first).
     /// <para>
-    /// basics17: MaxSteps=4 in Editor Local Host (Client+Server) caused ~2× sim speed when the
-    /// ServerWorld was also double-ticked. Editor dual-world therefore stays at MaxSteps=2.
+    /// basics17: MaxSteps=4 looked like ~2× sim speed while ServerWorld.Update ran twice per
+    /// frame. That second update is gone. A later cap of 4, with one update, still filled
+    /// the editor frame: 4 ticks, 71 ms, 14 FPS. Editor host stays at 2.
     /// basics34 dedicated GCE: clients were stuck at <c>cmdAge≈18–21</c> with <c>simBatchMax≈13</c>
     /// — headless needs MaxSteps≥4 so the server can hold 60 Hz under hitch without starving.
     /// </para>
@@ -34,8 +35,10 @@ namespace TitanOrbit.NetCode
         public const int NetworkHz = 60;
 
         /// <summary>
-        /// Editor Local Host (ClientWorld present): max discrete steps per frame.
-        /// Keeps dual-world Editor from running sim at ~2× (basics17).
+        /// Editor Local Host (ClientWorld present): max discrete 60 Hz steps per frame.
+        /// A cap of 4 measured 4.0 ticks per Unity frame, a 71 ms frame, and 14 FPS —
+        /// three of those ticks were catch-up, so the shove and the rest of the sim
+        /// ran four times. Two is the ceiling again. A 16 ms frame still runs one step.
         /// </summary>
         public const int EditorLocalHostMaxStepsPerFrame = 2;
 
