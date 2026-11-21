@@ -91,6 +91,12 @@ namespace TitanOrbit.ECS
         const float GemStickRadius = 6f;
         const float DepositFill = 0.75f;
         /// <summary>
+        /// Room left in the hold when a mine order is finished. Matches the scoop cutoff:
+        /// closer than this, the tractor will not take another gem, so the ship should
+        /// deposit instead of shooting another rock.
+        /// </summary>
+        const float MineOrderFullGap = 0.5f;
+        /// <summary>
         /// Auto-capture only considers planets inside this toroidal distance.
         /// Homes sit about 90 apart and neutrals clear them by about 40, so this
         /// reaches the next worlds over on a 300–1000 map without a map-wide raid.
@@ -270,7 +276,9 @@ namespace TitanOrbit.ECS
                 int earlyId = em.GetComponentData<GhostOwner>(bots[i]).NetworkId;
                 BotTeamOrder earlyOrder = orders.Get(earlyShip.Team);
                 if (earlyOrder.IsActive(now) && earlyOrder.Includes(earlyId) &&
-                    OrderNeedsRetask(earlyOrder, earlyBrain))
+                    !OrderAlreadyFinished(earlyOrder, earlyBrain) &&
+                    (OrderNeedsRetask(earlyOrder, earlyBrain) ||
+                     CommanderTaskDone(earlyOrder, earlyShip)))
                     anyDecide = true;
             }
 
@@ -361,8 +369,13 @@ namespace TitanOrbit.ECS
                     brain.Goal = tracked;
 
                 BotTeamOrder liveOrder = haveOrders ? orders.Get(ship.Team) : default;
-                bool orderNow = liveOrder.IsActive(now) && liveOrder.Includes(networkId)
-                                && OrderNeedsRetask(liveOrder, brain);
+                bool orderOpen = liveOrder.IsActive(now) && liveOrder.Includes(networkId)
+                                 && !OrderAlreadyFinished(liveOrder, brain);
+                // A finished mine or deposit order must not wait out the half-second
+                // scan. The hold is full, or already empty, on this tick.
+                bool orderNow = orderOpen &&
+                                (OrderNeedsRetask(liveOrder, brain) ||
+                                 CommanderTaskDone(liveOrder, ship));
                 // A hull still short of the level its home planet sells should not finish
                 // a capture that started before the level check. Transport orders are
                 // the exception.
@@ -548,6 +561,18 @@ namespace TitanOrbit.ECS
             float now,
             float claimNow)
         {
+            // A mine order ends when the hold cannot take another gem. A deposit order
+            // ends when the hold is empty. This ship then uses its own program. The
+            // team order stays up so a hull that is not done yet keeps following it.
+            // A new sentence has a new ExpireTime and retasks this ship.
+            if (order.Task != BotTaskKind.None && order.Includes(networkId) &&
+                !OrderAlreadyFinished(order, brain) &&
+                CommanderTaskDone(order, ship))
+            {
+                brain.FinishedOrderExpireTime = order.ExpireTime;
+                brain.FinishedOrderTask = order.Task;
+            }
+
             // Cargo leaves only through GemDepositSystem: one shipLevel × planetLevel
             // chunk per beat, same as a player holding deposit. Stay on this moon until
             // the hold is empty so an order or a nearby enemy cannot cut the metronome.
@@ -562,7 +587,8 @@ namespace TitanOrbit.ECS
                 return;
             }
 
-            if (order.Task != BotTaskKind.None && order.Includes(networkId))
+            if (order.Task != BotTaskKind.None && order.Includes(networkId) &&
+                !OrderAlreadyFinished(order, brain))
             {
                 ApplyOrder(
                     ref brain, ship, networkId, pos, inbound, order, planets, ships, rocks,
@@ -1523,6 +1549,29 @@ namespace TitanOrbit.ECS
                 return false;
             // Scooping the burst is still the Mining order, not a new command.
             return !(order.Task == BotTaskKind.Mine && brain.Task == BotTaskKind.Collect);
+        }
+
+        /// <summary>
+        /// True when this hull already finished <paramref name="order"/> and should
+        /// be on its own program until that sentence is replaced.
+        /// </summary>
+        static bool OrderAlreadyFinished(in BotTeamOrder order, in BotShipBrain brain) =>
+            order.ExpireTime > 0f &&
+            brain.FinishedOrderExpireTime == order.ExpireTime &&
+            brain.FinishedOrderTask == order.Task;
+
+        /// <summary>
+        /// Mine is done when the hold cannot take another scoop. Deposit is done when
+        /// the hold is empty. Other commander tasks stay in force until they expire.
+        /// </summary>
+        static bool CommanderTaskDone(in BotTeamOrder order, in ShipState ship)
+        {
+            if (order.Task == BotTaskKind.Mine)
+                return ship.GemCapacity > 1f &&
+                       ship.CurrentGems >= ship.GemCapacity - MineOrderFullGap;
+            if (order.Task == BotTaskKind.Deposit)
+                return ship.CurrentGems <= 0.05f;
+            return false;
         }
 
         static void SetMine(ref BotShipBrain brain, in RockSnap rock)

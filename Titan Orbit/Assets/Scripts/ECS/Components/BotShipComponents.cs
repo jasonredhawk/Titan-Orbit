@@ -152,6 +152,14 @@ namespace TitanOrbit.ECS
         /// that can still arrive there.
         /// </summary>
         public byte GoalLevel6Branch;
+        /// <summary>
+        /// <see cref="BotTeamOrder.ExpireTime"/> of a commander order this hull has
+        /// already finished. A later sentence has a new time, so it retasks this ship.
+        /// 0 when this hull has not finished the current order.
+        /// </summary>
+        public float FinishedOrderExpireTime;
+        /// <summary>Task that <see cref="FinishedOrderExpireTime"/> finished. Unused when that time is 0.</summary>
+        public BotTaskKind FinishedOrderTask;
 
         /// <summary>
         /// Fresh task memory that still remembers the level-6 hull this ship is unlocking.
