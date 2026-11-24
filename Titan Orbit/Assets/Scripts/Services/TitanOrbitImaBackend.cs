@@ -24,7 +24,27 @@ namespace TitanOrbit.Services
             string callbackObjectName,
             string callbackMethodName,
             string placementName);
+
+        /// <summary>
+        /// [UNITY] Tells the page which GameObject receives the browser click.
+        /// </summary>
+        [DllImport("__Internal")]
+        static extern void TitanOrbitIma_SetGestureHost(string gameObjectName);
 #endif
+
+        /// <summary>
+        /// Publishes the services host name so a canvas click can call back into Unity
+        /// before the browser ends the user gesture.
+        /// </summary>
+        public static void SetGestureHost(string gameObjectName)
+        {
+#if UNITY_WEBGL && !UNITY_EDITOR
+            if (!string.IsNullOrEmpty(gameObjectName))
+                TitanOrbitIma_SetGestureHost(gameObjectName);
+#else
+            _ = gameObjectName;
+#endif
+        }
 
         /// <summary>
         /// Asks the page for one rewarded AdSense placement.

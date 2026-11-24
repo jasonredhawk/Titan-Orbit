@@ -716,6 +716,7 @@ namespace TitanOrbit.Game
                 OnKeepLoadoutClicked,
                 primary: true);
             _keepLabel = _keepButton.GetComponentInChildren<TextMeshProUGUI>();
+            _keepButton.gameObject.AddComponent<TitanOrbitRewardedHotspot>();
 
             _forfeitButton = CreateChoiceButton(
                 card.transform,

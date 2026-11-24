@@ -94,6 +94,39 @@ export async function readBetaTesterOwned(env: Env, playerId: string): Promise<b
   return readFlag(env, token, playerId, BETA_KEY);
 }
 
+/**
+ * One Cloud Save read for the dedicated-server join lookup.
+ * beta_tester and orbit_unlocked are separate keys. Owning the game must not
+ * look like a beta tester, and a beta tester must not open every planet store.
+ * A missing player (404) is both false.
+ */
+export async function readLookupFlags(
+  env: Env,
+  playerId: string,
+): Promise<{ betaTester: boolean; orbitUnlocked: boolean }> {
+  const token = await exchangeServiceAccount(env);
+  const url =
+    `${CLOUD_SAVE_HOST}/v1/data/projects/${env.UNITY_PROJECT_ID}/players/` +
+    `${encodeURIComponent(playerId)}/items?keys=${encodeURIComponent(BETA_KEY)}&keys=${encodeURIComponent(ENTITLEMENT_KEY)}`;
+  const response = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      ProjectId: env.UNITY_PROJECT_ID,
+    },
+  });
+  if (response.status === 404)
+    return { betaTester: false, orbitUnlocked: false };
+  if (!response.ok) {
+    const detail = (await response.text()).slice(0, 300);
+    throw new Error(`Cloud Save read failed: ${response.status} ${detail}`);
+  }
+  const json = await response.text();
+  return {
+    betaTester: cloudSaveKeyIsTrue(json, BETA_KEY),
+    orbitUnlocked: cloudSaveKeyIsTrue(json, ENTITLEMENT_KEY),
+  };
+}
+
 async function readFlag(env: Env, token: string, playerId: string, key: string): Promise<boolean> {
   const url =
     `${CLOUD_SAVE_HOST}/v1/data/projects/${env.UNITY_PROJECT_ID}/players/` +

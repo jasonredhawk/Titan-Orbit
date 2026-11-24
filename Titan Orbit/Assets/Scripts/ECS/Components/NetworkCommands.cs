@@ -407,6 +407,19 @@ namespace TitanOrbit.ECS
     public struct ClaimRewardedBonusSlotCommand : IRpcCommand { }
 
     /// <summary>
+    /// [NETCODE] Client reports a completed rewarded ad for one planet's orbit store.
+    /// Server records <see cref="PlanetId"/> on the connection for this match only,
+    /// and only while that ship is fully docked there. One ad unlocks ships, gear,
+    /// and cards on that planet. A different planet needs its own ad. Adding this
+    /// command changes RPC layout — client and Linux headless must rebuild together.
+    /// </summary>
+    public struct UnlockPlanetStoreCommand : IRpcCommand
+    {
+        /// <summary>[TITAN-ORBIT] Stable <see cref="PlanetState.PlanetId"/> the ad unlocked.</summary>
+        public int PlanetId;
+    }
+
+    /// <summary>
     /// [NETCODE] Server response to resume/abandon rejoin choice. Handled by
     /// <see cref="RejoinShipResultClientSystem"/>.
     /// </summary>

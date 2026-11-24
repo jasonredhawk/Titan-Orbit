@@ -12,7 +12,7 @@ namespace TitanOrbit.UI
     /// <summary>
     /// Client glue for moon-orbit store actions: contributed-gems queries, deposit toggle,
     /// ship upgrade-tree purchases, drones/support items, extra components, card spin/take,
-    /// and loadout remove. UI calls these static helpers; they either write the Local Host
+    /// loadout remove, and the one-ad planet store unlock. UI calls these static helpers; they either write the Local Host
     /// <c>ServerWorld</c> directly or send NetCode RPCs from <c>ClientWorld</c>.
     /// Deposit toggle also updates <see cref="MoonOrbitClientState"/> immediately so local SFX
     /// can metronome without waiting for ghost replication.
@@ -572,6 +572,45 @@ namespace TitanOrbit.UI
             var em = world.EntityManager;
             var entity = em.CreateEntity();
             em.AddComponentData(entity, new ClaimRewardedBonusSlotCommand());
+            em.AddComponentData(entity, new SendRpcCommandRequest { TargetConnection = Entity.Null });
+        }
+
+        /// <summary>
+        /// Asks the server to open one planet's ships, gear, and cards for this match
+        /// after a completed rewarded ad. Local Host writes ServerWorld immediately;
+        /// dedicated clients send <see cref="UnlockPlanetStoreCommand"/>. The server
+        /// still requires the ship to be fully docked on <paramref name="planetId"/>.
+        /// </summary>
+        public static void UnlockPlanetStore(int planetId)
+        {
+            // --- Ignore a menu that has no moon yet ---
+            if (planetId <= 0)
+                return;
+
+            if (EcsGameBridge.IsLocalHost())
+            {
+                var server = EcsGameBridge.ServerWorld;
+                if (server == null || !server.IsCreated)
+                    return;
+
+                int networkId = EcsGameBridge.GetLocalNetworkId();
+                if (networkId <= 0)
+                    return;
+
+                bool ok = MoonOrbitStoreSystem.TryUnlockPlanetStoreForNetworkId(
+                    server.EntityManager, networkId, planetId, out var message);
+                if (!ok)
+                    Debug.LogWarning("[MoonOrbit] Planet store unlock failed: " + message);
+                return;
+            }
+
+            var world = EcsGameBridge.ClientWorld;
+            if (world == null || !world.IsCreated)
+                return;
+
+            var em = world.EntityManager;
+            var entity = em.CreateEntity();
+            em.AddComponentData(entity, new UnlockPlanetStoreCommand { PlanetId = planetId });
             em.AddComponentData(entity, new SendRpcCommandRequest { TargetConnection = Entity.Null });
         }
     }

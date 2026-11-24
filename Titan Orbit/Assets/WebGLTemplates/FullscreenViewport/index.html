@@ -31,17 +31,62 @@
   <script src="<<<TemplateData/profiler.js>>>"></script>
 #endif
     <!--
-      AdSense H5 Games Ads. adBreak must exist before adsbygoogle.js runs.
-      If the library boots first, Watch Ad pushes into a dead queue and no video starts.
+      AdSense H5 Games Ads (Ad Placement API). adBreak and adConfig must exist
+      before adsbygoogle.js runs, or Watch Ad pushes into a dead queue.
+      preloadAdBreaks is set once, here, before the first adBreak.
     -->
     <script>
       window.adsbygoogle = window.adsbygoogle || [];
       window.adBreak = window.adConfig = function (o) { window.adsbygoogle.push(o); };
+      window.TitanOrbitH5AdsReady = false;
+      window.TitanOrbitH5ReadyQueue = [];
       window.adConfig({
         preloadAdBreaks: "on",
         sound: "on",
-        onReady: function () { window.TitanOrbitH5AdsReady = true; }
+        onReady: function () {
+          window.TitanOrbitH5AdsReady = true;
+          if (window.console && console.log)
+            console.log("[TitanOrbitH5] onReady");
+          var waiters = window.TitanOrbitH5ReadyQueue.splice(0);
+          for (var i = 0; i < waiters.length; i++) waiters[i]();
+        }
       });
+
+      // adsbygoogle.js loads the H5 library only after a site-config message.
+      // This publisher's tag never receives that message, so adBreak stays the
+      // stub and onReady never fires. One post starts the real library.
+      function titanOrbitNudgeH5() {
+        if (window.console && console.log)
+          console.log("[TitanOrbitH5] adsbygoogle.js loaded; starting H5 library");
+        try {
+          window.postMessage(JSON.stringify({ googMsgType: "sc-cnf" }), "*");
+        } catch (e) {}
+      }
+
+      function titanOrbitHideAdTap() {
+        var btn = document.getElementById("titan-orbit-ad-tap");
+        if (btn && btn.parentNode) btn.parentNode.removeChild(btn);
+      }
+
+      // Unity's Watch Ad click is no longer a browser gesture when showAdFn arrives.
+      // This DOM button calls showAdFn from a real click so the rewarded video can start.
+      function titanOrbitShowAdTap(showAdFn, onFail) {
+        titanOrbitHideAdTap();
+        var btn = document.createElement("button");
+        btn.id = "titan-orbit-ad-tap";
+        btn.type = "button";
+        btn.textContent = "TAP TO START AD";
+        btn.style.cssText = "position:fixed;inset:0;z-index:100000;margin:0;border:0;background:rgba(2,4,10,0.88);color:#f2d56b;font:700 18px/1 sans-serif;letter-spacing:0.12em;cursor:pointer;";
+        btn.onclick = function (ev) {
+          if (ev && ev.preventDefault) ev.preventDefault();
+          if (ev && ev.stopPropagation) ev.stopPropagation();
+          titanOrbitHideAdTap();
+          try { showAdFn(); }
+          catch (e) { if (typeof onFail === "function") onFail(); }
+        };
+        if (!document.body) return;
+        document.body.appendChild(btn);
+      }
 
       function titanOrbitShowAdNote(text) {
         var note = document.getElementById("titan-orbit-ad-note");
@@ -58,99 +103,98 @@
         note._hide = setTimeout(function () { note.style.display = "none"; }, 2500);
       }
 
-      function titanOrbitHideAdTap() {
-        var btn = document.getElementById("titan-orbit-ad-tap");
-        if (btn && btn.parentNode) btn.parentNode.removeChild(btn);
-      }
-
-      // Unity's click is no longer a browser gesture by the time this runs.
-      // A DOM button calls showAdFn directly so the rewarded video is allowed to play.
-      function titanOrbitShowAdTap(showAdFn, onFail) {
-        titanOrbitHideAdTap();
-        var btn = document.createElement("button");
-        btn.id = "titan-orbit-ad-tap";
-        btn.type = "button";
-        btn.textContent = "TAP TO START AD";
-        btn.style.cssText = "position:fixed;inset:0;z-index:100000;margin:0;border:0;background:rgba(2,4,10,0.88);color:#f2d56b;font:700 18px/1 sans-serif;letter-spacing:0.12em;cursor:pointer;";
-        btn.onclick = function (ev) {
-          if (ev && ev.preventDefault) ev.preventDefault();
-          if (ev && ev.stopPropagation) ev.stopPropagation();
-          titanOrbitHideAdTap();
-          try { showAdFn(); }
-          catch (e) { if (typeof onFail === "function") onFail(); }
-        };
-        document.body.appendChild(btn);
-      }
-
       // Called from TitanOrbitImaBridge.jslib after the player taps Watch Ad.
-      // Status strings: before | after | complete | skipped | error | no-ad | sdk-not-loaded
-      // Grant only on complete.
-      window.TitanOrbitH5RewardedPlay = function (placementName, onStatus) {
+      // Unity strings: before | after | complete | skipped | error | no-ad | no-ad:<breakStatus> | sdk-not-loaded
+      // Grant only on complete. adBreakDone is the last callback and the one that settles the placement.
+      // A real function declaration, not only a window property. Unity's WebGL
+      // bridge looks up this name from its own script, and a missing lookup
+      // is reported to the game as sdk-not-loaded.
+      function TitanOrbitH5RewardedPlay(placementName, onStatus) {
+        function report(status) {
+          if (typeof onStatus === "function") onStatus(status);
+        }
+
         if (typeof window.adBreak !== "function") {
-          if (typeof onStatus === "function") onStatus("sdk-not-loaded");
-          return;
+          window.adsbygoogle = window.adsbygoogle || [];
+          window.adBreak = window.adConfig = function (o) { window.adsbygoogle.push(o); };
         }
 
-        var finished = false;
-        var timer = setTimeout(function () { finish("no-ad"); }, 20000);
+        if (window.console && console.log)
+          console.log("[TitanOrbitH5] play placement=" + (placementName || "reward")
+            + " ready=" + !!window.TitanOrbitH5AdsReady
+            + " adBreak=" + typeof window.adBreak);
 
-        function arm(ms, status) {
-          clearTimeout(timer);
-          timer = setTimeout(function () { finish(status); }, ms);
-        }
+        titanOrbitRunRewardedBreak(placementName, onStatus);
+      }
+      window.TitanOrbitH5RewardedPlay = TitanOrbitH5RewardedPlay;
 
-        function finish(status) {
-          if (finished) return;
-          finished = true;
-          clearTimeout(timer);
+      function titanOrbitRunRewardedBreak(placementName, onStatus) {
+        var settled = false;
+        var rewardEarned = false;
+        var dismissed = false;
+        // Safety net only. A normal miss ends in adBreakDone, which is always last.
+        var hungTimer = setTimeout(function () {
+          settle(rewardEarned ? "complete" : "no-ad:timeout");
+        }, 180000);
+
+        function settle(status) {
+          if (settled) return;
+          settled = true;
+          clearTimeout(hungTimer);
+          clearTimeout(rewardTimer);
           titanOrbitHideAdTap();
-          if (status === "no-ad" || status === "error" || status === "sdk-not-loaded")
+          if (status === "error" || status === "sdk-not-loaded" || status.indexOf("no-ad") === 0)
             titanOrbitShowAdNote("NO AD AVAILABLE");
           if (typeof onStatus === "function") onStatus(status);
         }
+
+        var rewardTimer = setTimeout(function () {
+          if (window.console && console.log)
+            console.log("[TitanOrbitH5] beforeReward was not called. ready=" + !!window.TitanOrbitH5AdsReady);
+          settle("no-ad:notReady");
+        }, 8000);
 
         try {
           window.adBreak({
             type: "reward",
             name: placementName || "reward",
             beforeReward: function (showAdFn) {
-              arm(120000, "error");
-              titanOrbitShowAdTap(showAdFn, function () { finish("error"); });
+              clearTimeout(rewardTimer);
+              if (window.console && console.log)
+                console.log("[TitanOrbitH5] beforeReward — showing TAP TO START AD");
+              titanOrbitShowAdTap(showAdFn, function () { settle("error"); });
             },
             beforeAd: function () {
-              titanOrbitHideAdTap();
-              arm(120000, "error");
               if (typeof onStatus === "function") onStatus("before");
             },
             afterAd: function () {
-              titanOrbitHideAdTap();
               if (typeof onStatus === "function") onStatus("after");
             },
-            adViewed: function () { finish("complete"); },
-            adDismissed: function () { finish("skipped"); },
+            adViewed: function () { rewardEarned = true; },
+            adDismissed: function () { dismissed = true; },
             adBreakDone: function (info) {
-              if (finished) return;
-              var status = info && info.breakStatus;
-              if (status === "viewed") finish("complete");
-              else if (status === "dismissed") finish("skipped");
-              else finish("no-ad");
+              var breakStatus = info && info.breakStatus;
+              if (window.console && console.log)
+                console.log("[TitanOrbitH5] placement=" + (placementName || "reward") + " breakStatus=" + breakStatus);
+              if (rewardEarned || breakStatus === "viewed") settle("complete");
+              else if (dismissed || breakStatus === "dismissed") settle("skipped");
+              else settle(breakStatus ? ("no-ad:" + breakStatus) : "no-ad");
             }
           });
         } catch (e) {
-          finish("error");
+          settle("error");
         }
-      };
+      }
     </script>
     <!--
-      data-adbreak-test="on" forces Google's sample rewarded video.
-      Live AdSense is not filling, so without this flag Watch Ad is answered
-      with silence and ad-locked features stay locked. Remove the attribute
-      for paid ads once AdSense returns a rewarded fill for titanorbit.io.
-      A finished sample still reports adViewed, which the game treats as complete.
+      Live H5 rewarded inventory for ca-pub-6601000494638397.
+      data-adbreak-test is omitted on purpose: that flag plays a sample video and does not earn.
     -->
-    <script async data-adbreak-test="on" data-ad-client="ca-pub-6601000494638397" data-ad-frequency-hint="30s"
+    <script async data-ad-client="ca-pub-6601000494638397" data-ad-frequency-hint="30s"
       src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6601000494638397"
-      crossorigin="anonymous"></script>
+      crossorigin="anonymous"
+      onload="titanOrbitNudgeH5()"
+      onerror="console.log('[TitanOrbitH5] adsbygoogle.js failed to load')"></script>
   </head>
   <body>
     <div id="unity-container" class="unity-desktop">
@@ -168,6 +212,26 @@
     </div>
     <script>
       var canvas = document.querySelector("#unity-canvas");
+
+      // Watch Ad must call showAdFn before this browser click returns.
+      // Unity's button handler runs later, after the gesture has ended, and Google
+      // then refuses to open the video. This listener hit-tests the click in Unity
+      // while the gesture is still active.
+      if (canvas) {
+        canvas.addEventListener("pointerdown", function (ev) {
+          var host = window.TitanOrbitRewardedHost;
+          if (!host || typeof SendMessage !== "function")
+            return;
+          var rect = canvas.getBoundingClientRect();
+          if (rect.width < 1 || rect.height < 1)
+            return;
+          var nx = (ev.clientX - rect.left) / rect.width;
+          var ny = 1 - ((ev.clientY - rect.top) / rect.height);
+          if (nx < 0 || nx > 1 || ny < 0 || ny > 1)
+            return;
+          SendMessage(host, "OnRewardedPointer", nx.toFixed(4) + "," + ny.toFixed(4));
+        }, true);
+      }
 
       // [TITAN-ORBIT] SPACE is hold-to-fire. Stop the browser from scrolling the
       // page; the keydown still reaches the Unity canvas.

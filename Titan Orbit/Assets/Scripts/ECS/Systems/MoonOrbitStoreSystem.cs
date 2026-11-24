@@ -15,7 +15,10 @@ namespace TitanOrbit.ECS
     /// <summary>
     /// Server RPC handlers for moon orbit store: contributed gem balance queries, deposit intent,
     /// ship level upgrades, drones/support items, extra components, card spin/take, loadout remove,
-    /// and the match-only rewarded +1 loadout slot.
+    /// and the match-only rewarded +1 loadout slot. Free players (no Orbit Unlocked
+    /// purchase) may buy ships, gear, and cards only at their team home. Any other
+    /// planet stays locked until <see cref="UnlockPlanetStoreCommand"/> records that
+    /// planet for this connection. The list dies with the match.
     /// Validates team, planet id, and contributed gem balances before mutating ship/planet state.
     /// [TITAN-ORBIT] Drones, extra components, and card spins sell at
     /// <c>min(ship level, docked planet level)</c> — a high-level ship on a low-level moon
@@ -222,6 +225,20 @@ namespace TitanOrbit.ECS
                 ecb.DestroyEntity(entity);
             }
 
+            // --- One ad unlocks this planet's store for the rest of the match ---
+            foreach (var (cmd, req, entity) in SystemAPI
+                         .Query<RefRO<UnlockPlanetStoreCommand>, RefRO<ReceiveRpcCommandRequest>>()
+                         .WithEntityAccess())
+            {
+                int networkId = GetSenderNetworkId(state.EntityManager, req.ValueRO.SourceConnection);
+                TryUnlockPlanetStoreForNetworkId(
+                    state.EntityManager,
+                    networkId,
+                    cmd.ValueRO.PlanetId,
+                    out _);
+                ecb.DestroyEntity(entity);
+            }
+
             ecb.Playback(state.EntityManager);
             ecb.Dispose();
         }
@@ -297,6 +314,107 @@ namespace TitanOrbit.ECS
             return false;
         }
 
+        /// <summary>
+        /// True when this planet's ships, gear, and cards are closed for this player.
+        /// The team spawn capital is open. Orbit Unlocked and a recorded ad for this
+        /// planet id are open. Anything else stays closed. Does not spend gems.
+        /// </summary>
+        static bool PlanetStoreIsLocked(
+            EntityManager em,
+            int networkId,
+            TeamId team,
+            in PlanetState storePlanet)
+        {
+            if (PlanetStoreUnlock.IsTeamSpawnHome(storePlanet, team))
+                return false;
+            return !PlanetStoreUnlock.Allows(em, networkId, storePlanet.PlanetId);
+        }
+
+        /// <summary>
+        /// True when the moon under the ship may sell drones and components.
+        /// Those RPCs only carry the home planet id (the gem bank). The store the
+        /// player is looking at is <see cref="ShipMoonDockState.MoonPlanetId"/>.
+        /// Undocked buys fail closed so a client cannot shop while flying.
+        /// </summary>
+        /// <returns>False when <paramref name="message"/> explains why the buy stops.</returns>
+        static bool TryAllowDockedStore(
+            EntityManager em,
+            int networkId,
+            Entity shipEntity,
+            in ShipState ship,
+            out FixedString128Bytes message)
+        {
+            message = default;
+            if (!em.HasComponent<ShipMoonDockState>(shipEntity))
+            {
+                message = "Not docked.";
+                return false;
+            }
+
+            int dockedId = em.GetComponentData<ShipMoonDockState>(shipEntity).MoonPlanetId;
+            if (dockedId <= 0 || !TryFindPlanetById(em, dockedId, out _, out var docked))
+            {
+                message = "Not docked.";
+                return false;
+            }
+
+            if (PlanetStoreIsLocked(em, networkId, ship.Team, docked))
+            {
+                message = "Watch an ad to unlock this store.";
+                return false;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Records one planet store unlock after the client reports a completed ad.
+        /// The ship must be fully landed on that planet. A second call for the same
+        /// id is a no-op success. The watch itself is client-trusted, same as the
+        /// bonus loadout slot. Orbit Unlocked is not granted here.
+        /// </summary>
+        public static bool TryUnlockPlanetStoreForNetworkId(
+            EntityManager em,
+            int networkId,
+            int planetId,
+            out FixedString128Bytes message)
+        {
+            message = default;
+            if (planetId <= 0)
+            {
+                message = "Planet not found.";
+                return false;
+            }
+
+            if (!TryGetOwnedShip(em, networkId, out var shipEntity))
+            {
+                message = "Ship not found.";
+                return false;
+            }
+
+            if (!em.HasComponent<ShipMoonDockState>(shipEntity))
+            {
+                message = "Not docked.";
+                return false;
+            }
+
+            ShipMoonDockState dock = em.GetComponentData<ShipMoonDockState>(shipEntity);
+            if (!dock.IsFullyLanded || dock.MoonPlanetId != planetId)
+            {
+                message = "Not docked.";
+                return false;
+            }
+
+            if (!PlanetStoreUnlock.RememberPlanet(em, networkId, planetId))
+            {
+                message = "Could not unlock store.";
+                return false;
+            }
+
+            message = "Store unlocked.";
+            return true;
+        }
+
         static float GetContributedGemsForTeam(EntityManager em, int networkId, int homePlanetId)
         {
             if (networkId <= 0)
@@ -369,6 +487,14 @@ namespace TitanOrbit.ECS
             if (storePlanet.Ownership != ship.Team)
             {
                 message = "Planet not owned.";
+                return false;
+            }
+
+            // [TITAN-ORBIT] Free players buy hulls only at their team home, or on a
+            // planet they unlocked with one ad this match. Orbit Unlocked skips this.
+            if (PlanetStoreIsLocked(em, networkId, ship.Team, storePlanet))
+            {
+                message = "Watch an ad to unlock this store.";
                 return false;
             }
 
@@ -728,6 +854,11 @@ namespace TitanOrbit.ECS
                 return false;
             }
 
+            // Gear RPCs name the home bank, not the moon. The lock follows the
+            // moon the ship is actually docked on.
+            if (!TryAllowDockedStore(em, networkId, shipEntity, ship, out message))
+                return false;
+
             if (!TryFindHomePlanet(em, ship.Team, out var homeEntity, out var homeState))
             {
                 message = "Home planet not found.";
@@ -821,6 +952,11 @@ namespace TitanOrbit.ECS
                 message = "No team.";
                 return false;
             }
+
+            // Same dock check as drones: the component grid belongs to the moon
+            // under the ship, not the home id carried on the RPC.
+            if (!TryAllowDockedStore(em, networkId, shipEntity, ship, out message))
+                return false;
 
             if (!TryFindHomePlanet(em, ship.Team, out var homeEntity, out var homeState))
             {
@@ -925,6 +1061,12 @@ namespace TitanOrbit.ECS
             if (storePlanet.Ownership != ship.Team)
             {
                 message = "Planet not owned.";
+                return false;
+            }
+
+            if (PlanetStoreIsLocked(em, networkId, ship.Team, storePlanet))
+            {
+                message = "Watch an ad to unlock this store.";
                 return false;
             }
 
@@ -1033,6 +1175,12 @@ namespace TitanOrbit.ECS
             if (storePlanet.Ownership != ship.Team)
             {
                 message = "Planet not owned.";
+                return false;
+            }
+
+            if (PlanetStoreIsLocked(em, networkId, ship.Team, storePlanet))
+            {
+                message = "Watch an ad to unlock this store.";
                 return false;
             }
 

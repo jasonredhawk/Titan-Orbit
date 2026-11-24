@@ -2985,6 +2985,7 @@ namespace TitanOrbit.UI
             var btn = go.GetComponent<Button>();
             btn.transition = Selectable.Transition.None;
             btn.onClick.AddListener(onClick);
+            go.AddComponent<TitanOrbitRewardedHotspot>();
 
             var accent = CreateIgnoredImage(go.transform, "Accent", TeamChannelColor);
             var accentRt = accent.rectTransform;

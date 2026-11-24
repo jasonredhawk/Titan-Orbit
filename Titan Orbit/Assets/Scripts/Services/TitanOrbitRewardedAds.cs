@@ -1,5 +1,9 @@
 using System;
+using System.Collections.Generic;
+using System.Globalization;
 using UnityEngine;
+using UnityEngine.EventSystems;
+using UnityEngine.UI;
 
 namespace TitanOrbit.Services
 {
@@ -13,7 +17,8 @@ namespace TitanOrbit.Services
     /// Remove-ads IAP owners skip the video and receive <see cref="TitanOrbitRewardedAdResult.Completed"/>.
     /// </para>
     /// Placements: <see cref="PlacementKeepLoadout"/>, <see cref="PlacementBonusSlot"/>,
-    /// <see cref="PlacementCommsSlot"/>, and <see cref="PlacementCommsRecent"/>.
+    /// <see cref="PlacementCommsSlot"/>, <see cref="PlacementCommsRecent"/>, and
+    /// <see cref="PlacementPlanetStore"/>.
     /// </summary>
     public class TitanOrbitRewardedAds : MonoBehaviour
     {
@@ -28,6 +33,12 @@ namespace TitanOrbit.Services
 
         /// <summary>Comms matrix RECENT rows past the free first three (one ad unlocks the rest).</summary>
         public const string PlacementCommsRecent = "comms_recent";
+
+        /// <summary>
+        /// One ad for a non-home planet's orbit store. Unlocks that planet's ships,
+        /// gear, and cards for the rest of the match. Not a per-item placement.
+        /// </summary>
+        public const string PlacementPlanetStore = "planet_store";
 
         /// <summary>Singleton set in Awake so UI can call static <see cref="Show"/>.</summary>
         public static TitanOrbitRewardedAds Instance { get; private set; }
@@ -79,6 +90,7 @@ namespace TitanOrbit.Services
             Instance = this;
             ApplyKeyFallbacks();
             TryInitializeBackends();
+            TitanOrbitImaBackend.SetGestureHost(gameObject.name);
         }
 
         /// <summary>
@@ -255,8 +267,51 @@ namespace TitanOrbit.Services
         }
 
         /// <summary>
+        /// [HYBRID] The page calls this from the canvas pointerdown, still inside the
+        /// browser click. Coordinates are normalized, origin bottom-left.
+        /// A hit on a Watch Ad button runs that button immediately so Google
+        /// accepts <c>showAdFn</c>.
+        /// </summary>
+        public void OnRewardedPointer(string normalizedXY)
+        {
+            if (IsShowing || string.IsNullOrEmpty(normalizedXY))
+                return;
+
+            int comma = normalizedXY.IndexOf(',');
+            if (comma <= 0)
+                return;
+            if (!float.TryParse(normalizedXY.Substring(0, comma), NumberStyles.Float, CultureInfo.InvariantCulture, out float nx)
+                || !float.TryParse(normalizedXY.Substring(comma + 1), NumberStyles.Float, CultureInfo.InvariantCulture, out float ny))
+                return;
+
+            EventSystem events = EventSystem.current;
+            if (events == null || Screen.width < 1 || Screen.height < 1)
+                return;
+
+            var pointer = new PointerEventData(events)
+            {
+                position = new Vector2(nx * Screen.width, ny * Screen.height)
+            };
+            var hits = new List<RaycastResult>(8);
+            events.RaycastAll(pointer, hits);
+            for (int i = 0; i < hits.Count; i++)
+            {
+                Button button = hits[i].gameObject.GetComponentInParent<Button>();
+                if (button == null || !button.isActiveAndEnabled || !button.interactable)
+                    continue;
+                if (!TitanOrbitRewardedHotspot.Live.Contains(button))
+                    continue;
+                button.onClick.Invoke();
+                return;
+            }
+        }
+
+        /// <summary>
         /// [HYBRID] The WebGL page calls this via SendMessage.
         /// "before" / "after" mute and restore audio. Grant only on "complete".
+        /// A miss arrives as "no-ad" or "no-ad:" plus Google's breakStatus
+        /// (frequencyCapped, noAdPreloaded, notReady, and the rest). Those stay
+        /// Unavailable so a death-screen miss can be retried instead of forfeiting gear.
         /// </summary>
         public void OnImaStatus(string status)
         {
@@ -275,13 +330,25 @@ namespace TitanOrbit.Services
             TitanOrbitRewardedAdResult result = TitanOrbitRewardedAdResult.Failed;
             if (string.Equals(status, "complete", StringComparison.OrdinalIgnoreCase))
                 result = TitanOrbitRewardedAdResult.Completed;
-            else if (string.Equals(status, "sdk-not-loaded", StringComparison.OrdinalIgnoreCase)
-                     || string.Equals(status, "error", StringComparison.OrdinalIgnoreCase)
-                     || string.Equals(status, "no-ad", StringComparison.OrdinalIgnoreCase))
+            else if (IsAdUnavailableStatus(status))
                 result = TitanOrbitRewardedAdResult.Unavailable;
 
             Debug.Log("[TitanOrbitRewardedAds] Ad status=" + status + " placement=" + _pendingPlacement);
             Finish(result);
+        }
+
+        /// <summary>
+        /// True when the page reported no fill or a broken tag.
+        /// "no-ad:frequencyCapped" counts; "skipped" does not (the player closed the video).
+        /// </summary>
+        static bool IsAdUnavailableStatus(string status)
+        {
+            if (string.IsNullOrEmpty(status))
+                return true;
+            if (status.StartsWith("no-ad", StringComparison.OrdinalIgnoreCase))
+                return true;
+            return string.Equals(status, "sdk-not-loaded", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(status, "error", StringComparison.OrdinalIgnoreCase);
         }
 
         /// <summary>Mutes Unity audio for the AdSense overlay. Safe to call twice.</summary>

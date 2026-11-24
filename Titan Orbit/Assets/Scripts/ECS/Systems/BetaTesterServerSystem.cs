@@ -151,8 +151,16 @@ namespace TitanOrbit.ECS
             else if (_hostMarked && _inGameConnections.IsEmptyIgnoreFilter)
                 _hostMarked = false;
 
-            if (BetaTesterLookupTransport.TryTakeResult(out int lookupNetworkId, out bool lookupOwned))
+            if (BetaTesterLookupTransport.TryTakeResult(
+                    out int lookupNetworkId,
+                    out bool lookupOwned,
+                    out bool lookupOrbitUnlocked))
+            {
                 ApplyLookup(em, lookupNetworkId, lookupOwned);
+                // Same join lookup. A false answer does not wipe a purchase
+                // already stored on this connection earlier in the match.
+                PlanetStoreUnlock.ApplyOrbitUnlocked(em, lookupNetworkId, lookupOrbitUnlocked);
+            }
             BetaTesterLookupTransport.Pump();
 
             if (BetaTesterGrantTransport.TryTakeResult(out int targetNetworkId, out byte status))
@@ -547,11 +555,17 @@ namespace TitanOrbit.ECS
             return true;
         }
 
-        /// <summary>True on the tick the Worker answers. <paramref name="owned"/> is false on any failure.</summary>
-        public static bool TryTakeResult(out int networkId, out bool owned)
+        /// <summary>
+        /// True on the tick the Worker answers. <paramref name="owned"/> is the
+        /// beta-tester item. <paramref name="orbitUnlocked"/> is the game purchase.
+        /// Both are false on any HTTP failure, so a missing secret cannot open
+        /// non-home stores for everyone.
+        /// </summary>
+        public static bool TryTakeResult(out int networkId, out bool owned, out bool orbitUnlocked)
         {
             networkId = 0;
             owned = false;
+            orbitUnlocked = false;
             if (!_busy || _request == null || !_request.isDone)
                 return false;
 
@@ -559,6 +573,9 @@ namespace TitanOrbit.ECS
             string text = _request.downloadHandler != null ? _request.downloadHandler.text : "";
             bool httpOk = _request.result == UnityWebRequest.Result.Success;
             owned = httpOk && (Contains(text, "\"owned\":true") || Contains(text, "\"owned\": true"));
+            orbitUnlocked = httpOk && (
+                Contains(text, "\"orbitUnlocked\":true") ||
+                Contains(text, "\"orbitUnlocked\": true"));
             if (!httpOk)
             {
                 Debug.LogWarning(
