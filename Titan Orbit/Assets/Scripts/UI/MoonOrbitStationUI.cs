@@ -285,6 +285,7 @@ namespace TitanOrbit.UI
             if (_mainPanelRt != null)
                 LayoutRebuilder.ForceRebuildLayoutImmediate(_mainPanelRt);
             RefreshShipTree();
+            ShipPowerBarStatHoverRelay.NotifyMenuShown();
         }
 
         public void Hide()
@@ -294,6 +295,9 @@ namespace TitanOrbit.UI
             MoonOrbitRpcClient.SetWantDepositGems(false);
             if (_rootPanel != null)
                 _rootPanel.SetActive(false);
+            // Same rollover card as the live dock. Awake calls Hide before play;
+            // closing the gate then is correct (menu is not on screen).
+            ShipPowerBarStatHoverRelay.NotifyMenuHidden();
         }
 
         public void OnContributedGemsReceived(float amount)

@@ -35,7 +35,10 @@ namespace TitanOrbit.ECS
         /// including a glide). This bit does not change that.
         /// MEGA hulls: no overdrive. This bit locks heading and aims all MEGA
         /// guns at the mouse world point (<see cref="AimPlanarDir"/> ×
-        /// <see cref="AimDistance"/>). Fire is still required to shoot.
+        /// <see cref="AimDistance"/>), including behind the nose. With this bit
+        /// up, releasing the move button uses the regular-ship rule: guns track
+        /// that same point while it is in front of the nose, and park forward
+        /// when it is behind. Fire is still required to shoot.
         /// </summary>
         [GhostField]
         public bool Overdrive;

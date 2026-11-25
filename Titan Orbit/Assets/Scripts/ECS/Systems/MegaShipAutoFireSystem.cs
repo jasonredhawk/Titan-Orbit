@@ -54,7 +54,10 @@ namespace TitanOrbit.ECS
     /// locks hull heading and points every gun and cannon at the mouse
     /// world point (<see cref="ShipInput.AimPlanarDir"/> × <see cref="ShipInput.AimDistance"/>).
     /// Cannons in that cone use the same hysteresis as free aim.
-    /// Fire is still required to spend energy.
+    /// With Shift up, releasing the move button uses the regular-ship rule:
+    /// every barrel tracks that point while it is in front of the nose (a glide
+    /// still counts) and parks forward when the cursor is behind. Auto-aim
+    /// runs only while the move button is held. Fire is still required to shoot.
     /// </para>
     /// Map size comes from <see cref="MapStateSingleton"/>. Distances use
     /// <see cref="ToroidalMapEcs.ToroidalDistance"/>.
@@ -137,10 +140,12 @@ namespace TitanOrbit.ECS
                     continue;
 
                 // Shift = heading lock + mouse-aim all MEGA guns (no overdrive on MEGAs).
-                // Keep barrels tracking the cursor even before Fire is held.
+                // Move-button release tracks the cursor in front of the nose, same
+                // as a regular ship, even before Fire is held.
                 bool ownerShift = IsOwnerShiftHeld(megas[i]);
                 bool wantsFire = OwnerWantsFire(megas[i]);
-                if (!wantsFire && !ownerShift)
+                bool idleMouseAim = IsIdleMouseAim(megas[i]);
+                if (!wantsFire && !ownerShift && !idleMouseAim)
                 {
                     ClearAimSlots(megas[i]);
                     continue;
@@ -233,6 +238,33 @@ namespace TitanOrbit.ECS
                 {
                     ClearProjectileAimSlots(mega);
                     AimUnoccupiedMountsAtMouse(mega, xf, mounts, gunners, in arm, mapW, mapH, dt);
+                }
+                else if (IsIdleMouseAim(mega))
+                {
+                    // Same gate as regular ships: cursor in front converges every
+                    // muzzle on that point. Behind the nose, barrels park forward
+                    // and auto-aim stays off until the move button is held again.
+                    ClearAimSlots(mega);
+                    mounts = EntityManager.GetBuffer<ShipWeaponMountElement>(mega);
+                    gunners = EntityManager.HasBuffer<MegaShipGunnerSlotElement>(mega)
+                        ? EntityManager.GetBuffer<MegaShipGunnerSlotElement>(mega)
+                        : default;
+                    if (EntityManager.HasComponent<ShipInput>(mega)
+                        && MegaShipWeaponAim.TryGetIdleMouseAimPoint(
+                            in xf,
+                            EntityManager.GetComponentData<ShipInput>(mega),
+                            mapW,
+                            mapH,
+                            out _))
+                    {
+                        AimUnoccupiedMountsAtMouse(mega, xf, mounts, gunners, in arm, mapW, mapH, dt);
+                    }
+                    else
+                    {
+                        ParkMountsHullForward(xf, mounts, gunners, dt);
+                    }
+
+                    continue;
                 }
 
                 if (!ownerWantsFire)
@@ -1354,6 +1386,43 @@ namespace TitanOrbit.ECS
         {
             return EntityManager.HasComponent<ShipInput>(mega)
                 && EntityManager.GetComponentData<ShipInput>(mega).Overdrive;
+        }
+
+        /// <summary>
+        /// True when Shift is up and the move button is released. The cursor may
+        /// still be behind the nose — callers park in that case.
+        /// </summary>
+        bool IsIdleMouseAim(Entity mega)
+        {
+            if (!EntityManager.HasComponent<ShipInput>(mega))
+                return false;
+            var input = EntityManager.GetComponentData<ShipInput>(mega);
+            return !input.Overdrive && MegaShipWeaponAim.AllowsPointWeaponAim(input.Thrust);
+        }
+
+        /// <summary>
+        /// Snaps projectile mounts, and slews cannons, back onto hull forward.
+        /// Used when the Titan is not thrusting and the cursor is behind the nose.
+        /// </summary>
+        static void ParkMountsHullForward(
+            in LocalTransform xf,
+            DynamicBuffer<ShipWeaponMountElement> mounts,
+            DynamicBuffer<MegaShipGunnerSlotElement> gunners,
+            float dt)
+        {
+            float3 hullForward = math.rotate(xf.Rotation, new float3(0f, 0f, 1f));
+            hullForward.y = 0f;
+            hullForward = math.normalizesafe(hullForward, new float3(0f, 0f, 1f));
+            for (int m = 0; m < mounts.Length; m++)
+            {
+                var mount = mounts[m];
+                bool cannon = ShipWeaponKind.IsCannonLaser(mount, gunners, m);
+                MegaShipWeaponAim.RotateMountTowardWorldDir(
+                    in xf, ref mount, hullForward, dt,
+                    cannon ? CannonLaserMath.SlewDegPerSec : 0f);
+                mounts[m] = mount;
+                MegaShipWeaponAim.WriteGhostedYaw(gunners, m, in mount);
+            }
         }
 
         /// <summary>

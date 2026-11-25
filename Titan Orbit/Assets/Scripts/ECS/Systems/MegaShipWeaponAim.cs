@@ -197,6 +197,28 @@ namespace TitanOrbit.ECS
         public static bool AllowsPointWeaponAim(bool thrustHeld) => !thrustHeld;
 
         /// <summary>
+        /// Titan guns use the regular-ship point rule when Shift is up: the move
+        /// button is released, the cursor sample is usable, and that point sits
+        /// in front of the nose. A glide still counts. Holding the move button
+        /// stays on the nose (or on auto-aim). Shift heading-lock is a separate
+        /// path and returns false here so it can still aim behind the hull.
+        /// </summary>
+        public static bool TryGetIdleMouseAimPoint(
+            in LocalTransform hull,
+            in ShipInput input,
+            float mapW,
+            float mapH,
+            out float3 aimPoint)
+        {
+            aimPoint = default;
+            if (input.Overdrive || !AllowsPointWeaponAim(input.Thrust))
+                return false;
+            if (!TryGetOwnerMouseAimPoint(in hull, in input, out aimPoint))
+                return false;
+            return IsInFrontOfHull(in hull, aimPoint, mapW, mapH);
+        }
+
+        /// <summary>
         /// True when <paramref name="aimPoint"/> is in the forward half-plane of the hull.
         /// Dot of hull forward and the toroidal offset is at least 0, so a barrel can
         /// aim up to straight off the beam and no further. A missing map size uses a

@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Vibe Code a Unity game with Jason — Titan Orbit</title>
+  <meta name="description" content="Jason teaches you to vibe code a Unity game on a live Zoom call. A 3-hour starter session is $450. After that, $150 an hour. Titan Orbit is the game he built this way.">
+  <link rel="preload" as="image" href="/vibe-code-media/field.jpg">
+  <style>
+    :root {
+      --bg: #070b12;
+      --panel: #0c1420;
+      --line: #23415f;
+      --text: #d7e3ef;
+      --muted: #8ea3b8;
+      --ice: #9ec4ef;
+      --white: #f4f8fc;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); font: 17px/1.6 "Segoe UI", "Helvetica Neue", sans-serif; }
+    a { color: var(--ice); }
+    img { max-width: 100%; display: block; }
+    .wrap { max-width: 68rem; margin: 0 auto; padding: 0 1.4rem; }
+    .hero {
+      background:
+        linear-gradient(105deg, rgba(7,11,18,0.97) 0%, rgba(7,11,18,0.9) 36%, rgba(7,11,18,0.42) 70%, rgba(7,11,18,0.55) 100%),
+        url("/vibe-code-media/field.jpg") center right / cover no-repeat;
+      border-bottom: 1px solid #15283c;
+    }
+    .top {
+      display: flex; justify-content: space-between; align-items: center; gap: 1rem;
+      padding: 1.15rem 0 0.4rem; font-size: 0.92rem;
+    }
+    .brand { color: var(--white); text-decoration: none; font-weight: 650; letter-spacing: 0.04em; }
+    .top nav { display: flex; gap: 1.1rem; }
+    .top nav a { color: var(--ice); text-decoration: none; }
+    .hero-copy { max-width: 38rem; padding: 2.6rem 0 3.2rem; }
+    .kicker { margin: 0 0 0.7rem; font-size: 0.75rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ice); }
+    h1 { margin: 0 0 0.9rem; font-size: 2.7rem; line-height: 1.12; letter-spacing: -0.02em; color: var(--white); font-weight: 650; }
+    .lead { margin: 0; font-size: 1.12rem; color: #e4edf6; }
+    .prices { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; margin: 1.6rem 0 1.2rem; }
+    .price {
+      background: rgba(12, 20, 32, 0.88);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 1rem 1.05rem 0.95rem;
+    }
+    .price.featured { border-color: #3d6f9e; box-shadow: inset 0 2px 0 #7eb6e8; }
+    .price .kicker { margin-bottom: 0.35rem; }
+    .amount { margin: 0; font-size: 2.15rem; line-height: 1; color: var(--white); font-weight: 650; }
+    .price p { margin: 0.4rem 0 0; color: var(--muted); font-size: 0.95rem; }
+    .actions { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-top: 0.3rem; }
+    .play, .book {
+      display: inline-block; padding: 0.7rem 1rem; border-radius: 6px;
+      text-decoration: none; font-weight: 600;
+    }
+    .play { background: #1a4f7a; color: var(--white); }
+    .play:hover { background: #22608f; }
+    .book { background: #121a26; color: var(--muted); border: 1px solid #2a3d52; cursor: default; }
+    section { padding: 3.2rem 0; }
+    section + section { border-top: 1px solid #142433; }
+    h2 { margin: 0 0 0.7rem; font-size: 1.7rem; line-height: 1.2; color: var(--white); font-weight: 650; }
+    .intro { max-width: 40rem; margin-top: 0; }
+    .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.85rem; margin-top: 1.4rem; }
+    .step { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 1.05rem 1rem 1.1rem; }
+    .num { display: block; margin-bottom: 0.45rem; color: var(--ice); font-size: 0.8rem; letter-spacing: 0.12em; }
+    .step h3 { margin: 0 0 0.35rem; color: var(--white); font-size: 1.05rem; }
+    .step p { margin: 0; color: var(--text); font-size: 0.98rem; }
+    .gallery { display: grid; grid-template-columns: 1.2fr 1fr; gap: 0.75rem; margin-top: 1.4rem; }
+    .shot { margin: 0; background: #05080e; border: 1px solid #1b3146; border-radius: 8px; overflow: hidden; }
+    .shot.wide { grid-column: 1 / -1; }
+    .shot img { width: 100%; height: auto; aspect-ratio: 1600 / 780; object-fit: cover; }
+    figcaption { padding: 0.55rem 0.75rem 0.7rem; color: var(--muted); font-size: 0.88rem; }
+    .ships { display: grid; grid-template-columns: repeat(6, 1fr); gap: 0.65rem; margin-top: 0.75rem; }
+    .ship { margin: 0; background: #0a1018; border: 1px solid #1b3146; border-radius: 8px; overflow: hidden; }
+    .ship img { width: 100%; height: auto; aspect-ratio: 1; object-fit: cover; background: #0a1018; }
+    .ship figcaption { text-align: center; padding: 0.4rem 0.3rem 0.6rem; font-size: 0.78rem; }
+    .closing { display: flex; justify-content: space-between; gap: 1.5rem; align-items: end; }
+    .foot { padding: 0.2rem 0 2.4rem; color: var(--muted); font-size: 0.92rem; }
+    .foot nav { display: flex; gap: 1rem; flex-wrap: wrap; }
+    @media (max-width: 860px) {
+      h1 { font-size: 2.05rem; }
+      .hero {
+        background:
+          linear-gradient(180deg, rgba(7,11,18,0.72) 0%, rgba(7,11,18,0.94) 58%),
+          url("/vibe-code-media/field.jpg") center 30% / cover no-repeat;
+      }
+      .prices, .steps, .gallery, .ships { grid-template-columns: 1fr 1fr; }
+      .ships { grid-template-columns: repeat(3, 1fr); }
+      .closing { flex-direction: column; align-items: start; }
+      .top { flex-direction: column; align-items: flex-start; }
+    }
+    @media (max-width: 560px) {
+      .prices, .steps, .gallery { grid-template-columns: 1fr; }
+      .shot.wide { grid-column: auto; }
+    }
+  </style>
+</head>
+<body>
+  <!-- BOOKING_URL: when the scheduler is ready, replace span.book with
+       <a class="play" href="https://...">Book the starter session</a> -->
+  <header class="hero">
+    <div class="wrap">
+      <div class="top">
+        <a class="brand" href="https://titanorbit.io/">TITAN ORBIT</a>
+        <nav>
+          <a href="#session">Starter session</a>
+          <a href="#game">The game</a>
+          <a href="https://titanorbit.io/home">About</a>
+        </nav>
+      </div>
+      <div class="hero-copy">
+        <p class="kicker">Live on Zoom · Unity · Cursor</p>
+        <h1>Learn to vibe code a Unity game you can keep building yourself.</h1>
+        <p class="lead">I am Jason. I built Titan Orbit this way: a real multiplayer game, in Unity, with Cursor beside me. I will sit with you on a Zoom call, set up your tools, and teach you the same working habit so the next stretch of the game is yours.</p>
+        <div class="prices">
+          <article class="price featured">
+            <p class="kicker">First session</p>
+            <p class="amount">$450</p>
+            <p>3 hours on Zoom. We install the software, plan your game, and get something playable running while I am with you.</p>
+          </article>
+          <article class="price">
+            <p class="kicker">After that</p>
+            <p class="amount">$150</p>
+            <p>per hour. The starter is three hours at this rate. Book an hour when you want help through a roadblock, then go back to building on your own.</p>
+          </article>
+        </div>
+        <div class="actions">
+          <span class="book">Booking link coming soon</span>
+          <a class="play" href="https://titanorbit.io/">Play Titan Orbit</a>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <section id="session">
+    <div class="wrap">
+      <p class="kicker">The 3-hour start</p>
+      <h2>You leave able to continue without me in the room.</h2>
+      <p class="intro">This is a working session, you and me on Zoom the whole time. I hold the plan with you. You drive the tools. By the end of the three hours, the project is on your machine and you know the next move.</p>
+      <div class="steps">
+        <article class="step">
+          <span class="num">01</span>
+          <h3>The machine is ready</h3>
+          <p>We install Unity, GitHub, and Cursor together, plus Google Cloud when your game needs a server. You see each account and each folder get created, so setup is not a mystery later.</p>
+        </article>
+        <article class="step">
+          <span class="num">02</span>
+          <h3>The game has a plan</h3>
+          <p>We decide what the player does, what we build in this session, and what you build next. A small plan you can follow beats a giant idea you cannot start.</p>
+        </article>
+        <article class="step">
+          <span class="num">03</span>
+          <h3>A first piece is playable</h3>
+          <p>You describe what you want. Cursor writes with you. I stay on the call until that first piece runs and you can ask for the change after it yourself.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <p class="kicker">How the hours work</p>
+      <h2>You build it. I am there when the work gets stuck.</h2>
+      <p class="intro">After the starter session, the game is your project. You keep vibe coding on your own. When a wall shows up — a Unity error, a Cursor change that went sideways, a deploy you have not done before — book an hour at $150. We clear that wall on Zoom, and you take the next stretch alone again.</p>
+    </div>
+  </section>
+
+  <section id="game">
+    <div class="wrap">
+      <p class="kicker">The standard</p>
+      <h2>Titan Orbit is the game I built this way.</h2>
+      <p class="intro">Open it and play. You fly a ship, mine, upgrade, fight, and take planets on a map that wraps around itself. It runs in the browser. A dedicated server on Google Cloud runs the match. That is the level of work I will help you learn to make. You remain the one who builds yours.</p>
+      <div class="gallery">
+        <figure class="shot wide">
+          <img src="/vibe-code-media/territory.jpg" width="1600" height="780" alt="A ship flying along a red territory line beside an asteroid field in Titan Orbit">
+          <figcaption>Territory lines, asteroids, and a ship in the same match.</figcaption>
+        </figure>
+        <figure class="shot">
+          <img src="/vibe-code-media/flight.jpg" width="1600" height="780" alt="A red player ship flying near a large asteroid in Titan Orbit">
+          <figcaption>Your ship, up close, in flight.</figcaption>
+        </figure>
+        <figure class="shot">
+          <img src="/vibe-code-media/rings.jpg" width="1600" height="780" alt="A ship approaching a ringed planet in Titan Orbit">
+          <figcaption>Planets, rings, and the orbit around them.</figcaption>
+        </figure>
+        <figure class="shot wide">
+          <img src="/vibe-code-media/upgrades.jpg" width="1800" height="878" alt="The Titan Orbit ship upgrade tree, from a level 1 Hawk through later hulls">
+          <figcaption>The ship upgrade tree: a full progression, built in the same project.</figcaption>
+        </figure>
+      </div>
+      <div class="ships">
+        <figure class="ship">
+          <img src="/vibe-code-media/astro-eagle.jpg" width="480" height="480" alt="Astro Eagle, a red Titan Orbit ship">
+          <figcaption>Astro Eagle</figcaption>
+        </figure>
+        <figure class="ship">
+          <img src="/vibe-code-media/hyper-falcon.jpg" width="480" height="480" alt="Hyper Falcon, a red and grey Titan Orbit ship">
+          <figcaption>Hyper Falcon</figcaption>
+        </figure>
+        <figure class="ship">
+          <img src="/vibe-code-media/galaxy-raptor.jpg" width="480" height="480" alt="Galaxy Raptor, a Titan Orbit ship">
+          <figcaption>Galaxy Raptor</figcaption>
+        </figure>
+        <figure class="ship">
+          <img src="/vibe-code-media/night-aye.jpg" width="480" height="480" alt="Night Aye, a Titan Orbit ship">
+          <figcaption>Night Aye</figcaption>
+        </figure>
+        <figure class="ship">
+          <img src="/vibe-code-media/cosmic-shark.jpg" width="480" height="480" alt="Cosmic Shark, a Titan Orbit ship">
+          <figcaption>Cosmic Shark</figcaption>
+        </figure>
+        <figure class="ship">
+          <img src="/vibe-code-media/meteor-mantis.jpg" width="480" height="480" alt="Meteor Mantis, a Titan Orbit ship">
+          <figcaption>Meteor Mantis</figcaption>
+        </figure>
+      </div>
+      <div class="actions" style="margin-top:1.4rem;">
+        <a class="play" href="https://titanorbit.io/">Play the live game</a>
+      </div>
+    </div>
+  </section>
+
+  <footer class="foot">
+    <div class="wrap closing">
+      <div>
+        <p class="kicker">Book when you are ready</p>
+        <p>The first session is 3 hours for $450. After that, time is $150 an hour. The booking link will go here when the scheduler is ready.</p>
+      </div>
+      <nav>
+        <a href="https://titanorbit.io/">Play</a>
+        <a href="https://titanorbit.io/home">About</a>
+        <a href="https://titanorbit.io/privacy">Privacy</a>
+        <a href="https://titanorbit.io/terms">Terms</a>
+      </nav>
+    </div>
+  </footer>
+</body>
+</html>

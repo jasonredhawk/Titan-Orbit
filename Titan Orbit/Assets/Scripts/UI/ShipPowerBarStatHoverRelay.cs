@@ -34,8 +34,38 @@ namespace TitanOrbit.UI
         /// <summary>Live pads. The probe walks this once per frame — not 24 LateUpdates.</summary>
         static readonly List<ShipPowerBarStatHoverRelay> s_Live = new List<ShipPowerBarStatHoverRelay>(32);
 
+        /// <summary>
+        /// [UNITY] Domain Reload can be off, so a previous Play Mode would leave
+        /// <see cref="s_MenuOpen"/> true and the next session's hidden warmup would
+        /// treat power bars as hoverable. This runs before any scene object awakens.
+        /// The old probe is a DontDestroyOnLoad object; drop it if it survived so
+        /// we do not tick hover twice.
+        /// </summary>
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetStaticsOnLoad()
+        {
+            s_MenuOpen = false;
+            if (s_Probe != null)
+            {
+                Object.Destroy(s_Probe.gameObject);
+                s_Probe = null;
+            }
+
+            s_Live.Clear();
+        }
+
         /// <summary>One hidden runner. Created on first enable; destroyed with play mode.</summary>
         static Probe s_Probe;
+
+        /// <summary>
+        /// True only while the Orbit Menu overlay is on screen.
+        /// Join warmup keeps the ship tree active so layout can measure, and closing
+        /// the menu disables the dock canvas without disabling these pads. Neither
+        /// of those may open STAT TELEMETRY. <see cref="MoonOrbitClientState.IsOrbitMenuVisible"/>
+        /// is the wrong signal here — it has been false during a visible dock and true
+        /// after the × button — so show/hide of the overlay sets this flag directly.
+        /// </summary>
+        static bool s_MenuOpen;
 
         /// <summary>Bar that owns the ten slot rects and the last painted breakdown.</summary>
         public ShipUpgradeTreePowerBarUI Owner;
@@ -60,12 +90,16 @@ namespace TitanOrbit.UI
         /// Call when the Orbit Menu becomes visible. Recreates the LateUpdate probe and
         /// the STAT TELEMETRY overlay so a leftover Unity 6 canvas from the last dock
         /// cannot stay invisible. Also rebuilds every live tray rect.
+        /// Arms hover. <see cref="NotifyMenuHidden"/> is the matching dismiss.
         /// </summary>
         public static void NotifyMenuShown()
         {
             // --- Fresh probe + overlay ---
             // [UNITY] HideAndDontSave / a disabled nested canvas survived the first
             // close and left second-open hover with pads but no painted card.
+            // The flag is armed before the probe's next LateUpdate so the first
+            // hover frame after open can paint the card.
+            s_MenuOpen = true;
             if (s_Probe != null)
             {
                 Object.Destroy(s_Probe.gameObject);
@@ -85,6 +119,23 @@ namespace TitanOrbit.UI
                 relay._hoverSlot = -1;
                 relay.Owner.ForceRebuildHoverTray();
             }
+        }
+
+        /// <summary>
+        /// Call when the Orbit Menu overlay is dismissed (×, Escape, or undock).
+        /// Hides STAT TELEMETRY immediately. The probe will not open it again until
+        /// <see cref="NotifyMenuShown"/>.
+        /// </summary>
+        public static void NotifyMenuHidden()
+        {
+            // --- Drop the card ---
+            // [TITAN-ORBIT] The warmed dock stays active: we only turn its canvas off
+            // and fade the CanvasGroup. These pads never get OnDisable, and their
+            // last on-screen rects still contain the pointer. Without this gate the
+            // rollover card (its own overlay, sort 260) stayed up over the match.
+            s_MenuOpen = false;
+            ClearSlots();
+            ShipPowerBarStatTooltip.Hide();
         }
 
         /// <summary>
@@ -128,9 +179,19 @@ namespace TitanOrbit.UI
         /// </summary>
         public static void TickAll()
         {
+            // --- Menu closed or still warming up ---
+            // [TITAN-ORBIT] Pads stay enabled after × (canvas off, objects on) so the
+            // next land does not pay Activate on every card. Their world corners still
+            // sit where the dock was. Hit-testing them re-opens STAT TELEMETRY over
+            // the match. Hide once, then leave the card alone until the menu is shown.
+            if (!s_MenuOpen)
+            {
+                if (ShipPowerBarStatTooltip.IsShowing || ShipPowerBarStatTooltip.ActiveSlot >= 0)
+                    ShipPowerBarStatTooltip.Hide();
+                return;
+            }
+
             // --- Pointer vs tray ---
-            // Do not gate on IsOrbitMenuVisible. That flag has been wrong during
-            // warmup / close, and it would keep the STAT TELEMETRY card dead.
             // Inactive parents already drop us from s_Live via OnDisable.
             // [TITAN-ORBIT] First-in-list used to win. Warmup leftovers, GEAR tiles, and
             // a stale full-card track can all "contain" the same screen point. The player
@@ -202,8 +263,13 @@ namespace TitanOrbit.UI
                 return;
             }
 
+            // Same lane as last frame. Skip the text rebuild — unless the card was
+            // faded out from under us (HUD suppressor used to zero this overlay).
+            // A stale ActiveSlot with alpha 0 looked like hover was dead until the
+            // pointer moved to a different lane.
             if (slot == hit._hoverSlot && ShipPowerBarStatTooltip.ActiveSlot == slot
-                && ReferenceEquals(ShipPowerBarStatTooltip.ActiveOwner, hit))
+                && ReferenceEquals(ShipPowerBarStatTooltip.ActiveOwner, hit)
+                && ShipPowerBarStatTooltip.IsShowing)
                 return;
 
             hit._hoverSlot = slot;
@@ -232,6 +298,12 @@ namespace TitanOrbit.UI
                 // [UNITY] GetComponent on a miss builds an error string in the Editor.
                 // This walk runs for every power bar every frame the orbit menu is up,
                 // and that string was ~170KB plus a later GC pause. TryGetComponent does not.
+                // [UNITY] Closing the Orbit Menu sets this nested canvas off and leaves
+                // the GameObjects active. World corners stay on the last screen rect.
+                // Alpha can also be 0; either one means the player cannot see the bar.
+                if (walk.TryGetComponent(out Canvas canvas) && !canvas.enabled)
+                    return false;
+
                 if (walk.TryGetComponent(out CanvasGroup group))
                 {
                     if (group.ignoreParentGroups)

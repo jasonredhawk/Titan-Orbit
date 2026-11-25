@@ -7,7 +7,8 @@ namespace TitanOrbit.Editor.Build
     /// <summary>
     /// [EDITOR] Post-process step for WebGL production builds — copies Cloudflare Pages
     /// <c>_headers</c> (CSP, caching), <c>ads.txt</c> (Google Ad Manager / IAB), and the
-    /// public <c>/home</c>, <c>/privacy</c>, and <c>/terms</c> pages into the build output folder.
+    /// public <c>/home</c>, <c>/privacy</c>, <c>/terms</c>, and <c>/vibe-code</c> pages into the build output folder.
+    /// Gameplay stills for <c>/vibe-code</c> live in <c>media~</c> (Unity ignores that folder) and are copied to <c>vibe-code-media/</c>.
     /// Required for browser security headers, rewarded-ad fill, and Google sign-in branding
     /// when deploying to Cloudflare Pages. Safe to skip if a source file is missing (logs warning).
     /// </summary>
@@ -45,6 +46,8 @@ namespace TitanOrbit.Editor.Build
             CopySitePage(pathToBuiltProject, "home");
             CopySitePage(pathToBuiltProject, "privacy");
             CopySitePage(pathToBuiltProject, "terms");
+            CopySitePage(pathToBuiltProject, "vibe-code");
+            CopyVibeCodeMedia(pathToBuiltProject);
         }
 
         /// <summary>Copies <c>ads.txt</c> next to index.html so Cloudflare serves it at the origin root.</summary>
@@ -80,6 +83,33 @@ namespace TitanOrbit.Editor.Build
             if (Directory.Exists(dest))
                 Directory.Delete(dest, recursive: true);
             File.Copy(source, dest, overwrite: true);
+        }
+
+        /// <summary>
+        /// Copies compressed Titan Orbit stills next to the WebGL build so <c>/vibe-code-media/*</c>
+        /// survives the next GCS rsync. The source folder name ends in <c>~</c> so Unity does not
+        /// import the jpegs as game textures.
+        /// </summary>
+        static void CopyVibeCodeMedia(string pathToBuiltProject)
+        {
+            string source = Path.Combine("Assets", "CloudflarePages", "vibe-code", "media~");
+            if (!Directory.Exists(source))
+            {
+                UnityEngine.Debug.LogWarning("[CloudflarePagesPostBuild] Missing vibe-code media: " + source);
+                return;
+            }
+
+            string dest = Path.Combine(pathToBuiltProject, "vibe-code-media");
+            if (Directory.Exists(dest))
+                Directory.Delete(dest, recursive: true);
+            Directory.CreateDirectory(dest);
+            foreach (string file in Directory.GetFiles(source))
+            {
+                string name = Path.GetFileName(file);
+                if (name.EndsWith(".meta", System.StringComparison.OrdinalIgnoreCase))
+                    continue;
+                File.Copy(file, Path.Combine(dest, name), overwrite: true);
+            }
         }
     }
 }

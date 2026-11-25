@@ -50,6 +50,30 @@ namespace TitanOrbit.ECS
         NativeParallelMultiHashMap<int, int> _bins;
         int _binCapacity;
 
+        /// <summary>
+        /// Client-only. Tick when a killing ram already bled this rock's resistance.
+        /// Later predicted ticks must not bleed it again. The server destroys the rock
+        /// in the same ram, but the client rock stays until HitRpc, so without this
+        /// the client keeps slowing and the snapshot yanks the hull back.
+        /// Cleared when prediction rewinds so the replay can land the one blow again.
+        /// </summary>
+        NativeHashMap<Entity, uint> _clientBrokenRocks;
+
+        /// <summary>Reuse list for pruning despawned rocks. No per-tick allocation.</summary>
+        NativeList<Entity> _clientBrokenDrop;
+
+        /// <summary>Last predicted tick seen. A step backward is a rollback.</summary>
+        uint _lastPredictTick;
+
+        /// <summary>False until <see cref="_lastPredictTick"/> holds a real tick.</summary>
+        bool _hasPredictTick;
+
+        /// <summary>True for this client tick when break-tracking is active.</summary>
+        bool _clientBreaksActive;
+
+        /// <summary>Server tick being simulated this call. 0 on the server.</summary>
+        uint _simTick;
+
         public void OnCreate(ref SystemState state)
         {
             state.RequireForUpdate<ShipTag>();
@@ -66,6 +90,8 @@ namespace TitanOrbit.ECS
             _asteroidOrder = new NativeList<int>(32, Allocator.Persistent);
             _bins = new NativeParallelMultiHashMap<int, int>(128, Allocator.Persistent);
             _binCapacity = 128;
+            _clientBrokenRocks = new NativeHashMap<Entity, uint>(32, Allocator.Persistent);
+            _clientBrokenDrop = new NativeList<Entity>(8, Allocator.Persistent);
 
             Entity motion;
             if (!SystemAPI.TryGetSingletonEntity<ShipTickMotionTag>(out motion))
@@ -109,6 +135,10 @@ namespace TitanOrbit.ECS
                 _asteroidOrder.Dispose();
             if (_bins.IsCreated)
                 _bins.Dispose();
+            if (_clientBrokenRocks.IsCreated)
+                _clientBrokenRocks.Dispose();
+            if (_clientBrokenDrop.IsCreated)
+                _clientBrokenDrop.Dispose();
         }
 
         public void OnUpdate(ref SystemState state)
@@ -150,6 +180,11 @@ namespace TitanOrbit.ECS
                 forwardTick = predictTime.IsFirstTimeFullyPredictingTick;
                 simTick = predictTime.ServerTick.TickIndexForValidTick;
             }
+
+            _simTick = simTick;
+            _clientBreaksActive = isClient;
+            if (isClient)
+                TrackClientAsteroidBreaks(state.EntityManager, simTick);
 
             ShipCargoMobilitySettings mobility = ShipCargoMobilitySettingsCache.ResolveOrDefault();
             var transformLookup = SystemAPI.GetComponentLookup<LocalTransform>(false);
@@ -732,6 +767,12 @@ namespace TitanOrbit.ECS
             if (distSq >= reach * reach || reach <= 0f)
                 return;
 
+            // This rock's resistance was already taken on an earlier tick. The server
+            // destroys it in that ram. The client copy lives until HitRpc, so a second
+            // bleed here is the jerk back onto the server velocity.
+            if (_clientBreaksActive && ClientRockBrokenOnEarlierTick(rock.Entity))
+                return;
+
             float dist = math.sqrt(distSq);
             float3 normal = dist > 1e-4f ? offset / dist : new float3(1f, 0f, 0f);
             // A remote punch-through that has not cleared the rock yet must not reflect.
@@ -771,6 +812,15 @@ namespace TitanOrbit.ECS
                         contact.PunchThrough = 1;
                         contacts[ship.Entity] = contact;
                     }
+
+                    // The server ram measures speed after this bleed. Consume the rock on the
+                    // client only when that slower hit still destroys it, so the one
+                    // health/damage slowdown is the whole resistance on both sides.
+                    if (_clientBreaksActive
+                        && TryAsteroidOverkill(
+                            ship.Entity, rock.Health, math.length(reduced),
+                            motors, ships, loadouts, territory, out _))
+                        NoteClientAsteroidBreak(rock.Entity, _simTick);
                 }
                 else
                 {
@@ -791,6 +841,64 @@ namespace TitanOrbit.ECS
                 NormalShipFromOther = normal,
                 ClosingSpeed = closing,
             });
+        }
+
+        /// <summary>
+        /// Drops break records when prediction rewinds, and forgets rocks that despawned.
+        /// A rewind must replay the killing tick; records from the discarded future would
+        /// skip that blow.
+        /// </summary>
+        void TrackClientAsteroidBreaks(EntityManager em, uint simTick)
+        {
+            if (_hasPredictTick)
+            {
+                int since = new NetworkTick(simTick).TicksSince(new NetworkTick(_lastPredictTick));
+                if (since < 0)
+                    _clientBrokenRocks.Clear();
+            }
+
+            _lastPredictTick = simTick;
+            _hasPredictTick = true;
+            if (_clientBrokenRocks.Count == 0)
+                return;
+
+            _clientBrokenDrop.Clear();
+            foreach (var kv in _clientBrokenRocks)
+            {
+                if (!em.Exists(kv.Key))
+                    _clientBrokenDrop.Add(kv.Key);
+            }
+
+            for (int i = 0; i < _clientBrokenDrop.Length; i++)
+                _clientBrokenRocks.Remove(_clientBrokenDrop[i]);
+        }
+
+        /// <summary>True when this rock's killing ram was already applied on an earlier tick.</summary>
+        bool ClientRockBrokenOnEarlierTick(Entity rock)
+        {
+            if (!_clientBrokenRocks.TryGetValue(rock, out uint brokenTick))
+                return false;
+            return new NetworkTick(_simTick).TicksSince(new NetworkTick(brokenTick)) > 0;
+        }
+
+        /// <summary>Remembers the earliest tick that bled this rock. A later replay keeps that tick.</summary>
+        void NoteClientAsteroidBreak(Entity rock, uint tick)
+        {
+            if (_clientBrokenRocks.TryGetValue(rock, out uint existing)
+                && new NetworkTick(tick).TicksSince(new NetworkTick(existing)) >= 0)
+                return;
+
+            if (_clientBrokenRocks.Count + 1 > _clientBrokenRocks.Capacity)
+            {
+                var grown = new NativeHashMap<Entity, uint>(
+                    math.max(8, _clientBrokenRocks.Capacity * 2), Allocator.Persistent);
+                foreach (var kv in _clientBrokenRocks)
+                    grown.TryAdd(kv.Key, kv.Value);
+                _clientBrokenRocks.Dispose();
+                _clientBrokenRocks = grown;
+            }
+
+            _clientBrokenRocks[rock] = tick;
         }
 
         /// <summary>

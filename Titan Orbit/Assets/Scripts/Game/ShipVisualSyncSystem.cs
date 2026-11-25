@@ -26,7 +26,9 @@ namespace TitanOrbit.Game
     /// stays on the wreck — a one-frame LocalTransform hop to the home-ring spawn (asteroid
     /// death) must not drag the camera there and back. <see cref="CameraFollowEcs"/> copies
     /// this pose on a bounce the same way it does in free flight.
-    /// GhostPredictionSmoothing stays off so this copy is the only presentation pose.
+    /// Online reconcile steps that pose in
+    /// <see cref="ShipLocalTransformPredictionSmoothing"/> before this copy. This
+    /// system still does not add a second blend.
     /// </para>
     /// <para>
     /// [TITAN-ORBIT] Asteroid destroy / Join Team eye-blink (2026-07-20 Editor.log): any miss from

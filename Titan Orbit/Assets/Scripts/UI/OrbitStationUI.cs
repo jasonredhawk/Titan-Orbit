@@ -1661,7 +1661,9 @@ namespace TitanOrbit.UI
                 _moonDockBackdropGroup.blocksRaycasts = false;
                 _moonDockBackdropGroup.interactable = false;
             }
-            ShipPowerBarStatTooltip.Hide();
+            // Pads stay active with the warmed tree. Tell the probe the menu is gone
+            // so STAT TELEMETRY cannot stay up on the last hovered lane.
+            ShipPowerBarStatHoverRelay.NotifyMenuHidden();
         }
 
         /// <summary>Nested canvas so the dock can stay active without redrawing during flight.</summary>
@@ -9196,6 +9198,11 @@ namespace TitanOrbit.UI
             // [TITAN-ORBIT] OrbitMenuHudSuppressor, rockets, brakes, fire-type HUD, and fire input all
             // key off this flag. Closing the × button must clear it even while still docked.
             MoonOrbitClientState.SetOrbitMenuVisible(show);
+
+            // × / Escape dismiss. The warmed tree stays active, so power-bar pads do not
+            // get OnDisable — drop the rollover card here or it stays on the last lane.
+            if (!show)
+                ShipPowerBarStatHoverRelay.NotifyMenuHidden();
 
             if (moonDockCenterBackdrop == null) return;
 
