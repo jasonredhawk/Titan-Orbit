@@ -24,8 +24,8 @@ namespace TitanOrbit.Game
     /// separation stays inside that tick. This system does not blend, coast, or ease a
     /// contact. A ±map-size jump is the wrapped motor pose in one frame. While dead, display
     /// stays on the wreck — a one-frame LocalTransform hop to the home-ring spawn (asteroid
-    /// death) must not drag the camera there and back. <see cref="CameraFollowEcs"/> trails
-    /// the published pose while <see cref="ShipDisplayPose.LocalHullContact"/> is set.
+    /// death) must not drag the camera there and back. <see cref="CameraFollowEcs"/> copies
+    /// this pose on a bounce the same way it does in free flight.
     /// GhostPredictionSmoothing stays off so this copy is the only presentation pose.
     /// </para>
     /// <para>
@@ -230,16 +230,6 @@ namespace TitanOrbit.Game
 
             bool shipChanged = _smoothInitialized && _smoothShipEntity != Entity.Null && localShip != _smoothShipEntity;
             _smoothShipEntity = localShip;
-
-            // Contact is for the camera trail only. The hull pose is the motor tick.
-            bool liveContact = false;
-            if (EntityManager.HasComponent<ShipAsteroidContactState>(localShip))
-            {
-                var contact = EntityManager.GetComponentData<ShipAsteroidContactState>(localShip);
-                liveContact = contact.InContact != 0 || contact.InContactHull != 0;
-            }
-
-            ShipDisplayPose.SetLocalHullContact(liveContact);
 
             // --- Death / respawn edge ---
             // [TITAN-ORBIT] Respawn teleports LocalTransform to the home orbit ring. Display

@@ -11,8 +11,8 @@ namespace TitanOrbit.ECS
     /// <para>
     /// [TITAN-ORBIT] Not ghosted — local predicted / server sim only. Cleared every physics tick
     /// before events run; stays zero when the hull is free of asteroid contacts. Ship↔ship
-    /// contacts set <see cref="InContactHull"/> so the camera can trail. Drive still treats
-    /// hull contacts as Unity Physics.
+    /// contacts set <see cref="InContactHull"/>. The camera does not read it — a bounce stays
+    /// on the motor pose. Drive still treats hull contacts as Unity Physics.
     /// </para>
     /// </summary>
     public struct ShipAsteroidContactState : IComponentData
@@ -24,8 +24,8 @@ namespace TitanOrbit.ECS
         public byte InContact;
 
         /// <summary>
-        /// 1 when a ship↔ship collision event fired this physics step. Presentation only —
-        /// drive still treats hull contacts as Unity Physics.
+        /// 1 when a ship↔ship collision event fired this physics step. Drive does not
+        /// reject velocity on this flag, and the camera does not ease on it.
         /// </summary>
         public byte InContactHull;
 
