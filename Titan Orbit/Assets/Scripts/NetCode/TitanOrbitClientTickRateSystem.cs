@@ -11,8 +11,9 @@ namespace TitanOrbit.NetCode
     /// <para>
     /// <see cref="ExperimentalForcedInputLatencyTicks"/> is 0 (package default). The
     /// 1-tick experiment fought Relay <c>TargetCommandSlack=2</c> and added dedicated
-    /// reconcile snaps. Do not also register <c>GhostPredictionSmoothing</c> — that
-    /// blends poses and fights authority/display coast.
+    /// reconcile snaps. Ship reconcile smoothing lives in
+    /// <see cref="TitanOrbit.ECS.TitanOrbitShipPredictionSmoothingBootstrap"/> and only
+    /// rate-limits a snapshot correction. It is not a second flight model.
     /// </para>
     /// <para>
     /// basics34 (dedicated GCE): MaxSteps must stay high (8) for join catch-up.

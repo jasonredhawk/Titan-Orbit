@@ -32,6 +32,8 @@ namespace TitanOrbit.UI
     /// <see cref="GameManager.DebugFreeCards"/>) paint Free prices and skip gem afford checks.
     /// <see cref="GameManager.ShowOrbitMenuCardsPanel"/> (default off) hides the CARDS center
     /// panel so the menu only offers ship upgrades and gear.
+    /// Free players see one WATCH AD plate over every non-home store. One completed
+    /// ad opens that planet's ships, gear, and cards until the match ends.
     /// </summary>
     public partial class OrbitStationUI : MonoBehaviour, IOrbitStationHost
     {
@@ -437,6 +439,12 @@ namespace TitanOrbit.UI
         private RectTransform moonDockSplitRow;
         private RectTransform moonDockSidebarHost;
         private RectTransform moonDockMainHost;
+        /// <summary>Dark plate over SHIPS / GEAR / CARDS until this planet's one ad completes.</summary>
+        GameObject _planetStoreLockRoot;
+        /// <summary>WATCH AD on the lock plate. Disabled while a video is already playing.</summary>
+        Button _planetStoreAdButton;
+        /// <summary>Short line under the button after a failed or missing ad.</summary>
+        TextMeshProUGUI _planetStoreLockStatus;
         private OrbitDockSidebarPanelUI orbitDockSidebar;
         private RectTransform moonDockCenterCardsHost;
         private ScrollRect moonDockCardsScroll;
@@ -576,6 +584,7 @@ namespace TitanOrbit.UI
             // Bank GEM DEPOSITS ticks with deposit metronome (not only the 1s contributed-gems poll).
             MoonOrbitClientState.LocalDepositBeat += OnLocalDepositBeatForBank;
             GameManager.ShowOrbitMenuCardsPanelChanged += OnShowOrbitMenuCardsPanelChanged;
+            TitanOrbitEntitlements.OrbitUnlockedOwnershipChanged += OnOrbitUnlockedForPlanetStore;
             ApplyOrbitMenuCardsPanelVisibility();
         }
 
@@ -585,6 +594,7 @@ namespace TitanOrbit.UI
             CardShopSystem.ClientSpinOfferConsumed -= OnClientSpinOfferConsumed;
             MoonOrbitClientState.LocalDepositBeat -= OnLocalDepositBeatForBank;
             GameManager.ShowOrbitMenuCardsPanelChanged -= OnShowOrbitMenuCardsPanelChanged;
+            TitanOrbitEntitlements.OrbitUnlockedOwnershipChanged -= OnOrbitUnlockedForPlanetStore;
         }
 
         /// <summary>
@@ -1634,6 +1644,8 @@ namespace TitanOrbit.UI
             _landPrepareRearmed = false;
             _sidebarShipPaintValid = false;
             _storeRefreshLoadoutFingerprint = int.MinValue;
+            if (_planetStoreLockRoot != null)
+                _planetStoreLockRoot.SetActive(false);
             if (moonDockCenterBackdrop != null)
             {
                 // Keep the warmed tree active. SetActive(false) made the next land
@@ -1649,7 +1661,9 @@ namespace TitanOrbit.UI
                 _moonDockBackdropGroup.blocksRaycasts = false;
                 _moonDockBackdropGroup.interactable = false;
             }
-            ShipPowerBarStatTooltip.Hide();
+            // Pads stay active with the warmed tree. Tell the probe the menu is gone
+            // so STAT TELEMETRY cannot stay up on the last hovered lane.
+            ShipPowerBarStatHoverRelay.NotifyMenuHidden();
         }
 
         /// <summary>Nested canvas so the dock can stay active without redrawing during flight.</summary>
@@ -6593,6 +6607,8 @@ namespace TitanOrbit.UI
 
         private void OnBuySupportItem(StoreItemType item)
         {
+            if (IsPlanetStoreLocked())
+                return;
             if (currentShip == null || currentHomePlanet == null || HomePlanetStoreSystem.Instance == null)
                 return;
             if (StoreItemData.IsShipComponent(item))
@@ -6614,6 +6630,8 @@ namespace TitanOrbit.UI
 
         private void OnBuyComponent(string componentId)
         {
+            if (IsPlanetStoreLocked())
+                return;
             if (currentShip == null || currentHomePlanet == null || HomePlanetStoreSystem.Instance == null)
                 return;
             if (string.IsNullOrWhiteSpace(componentId))
@@ -7734,6 +7752,7 @@ namespace TitanOrbit.UI
             var btn = go.AddComponent<Button>();
             btn.targetGraphic = img;
             btn.onClick.AddListener(OnBonusLoadoutSlotAdClicked);
+            go.AddComponent<TitanOrbitRewardedHotspot>();
 
             var labelGo = new GameObject("Label");
             labelGo.transform.SetParent(go.transform, false);
@@ -8272,6 +8291,8 @@ namespace TitanOrbit.UI
 
         private void OnCardSpinClick()
         {
+            if (IsPlanetStoreLocked())
+                return;
             if (currentShip == null || currentPlanet == null || CardShopSystem.Instance == null) return;
             // [TITAN-ORBIT] ECS path — skip NGO NetworkObject gates (stubs always fail IsSpawned).
             if (OrbitStationEcsContext.UseEcsStoreRpc)
@@ -8293,6 +8314,8 @@ namespace TitanOrbit.UI
 
         private void OnTakeSpinOffer(int index)
         {
+            if (IsPlanetStoreLocked())
+                return;
             if (currentShip == null || currentPlanet == null || CardShopSystem.Instance == null) return;
             if (cardEntries == null || index < 0 || index >= cardEntries.Length) return;
             CardData card = cardEntries[index];
@@ -8959,6 +8982,200 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
+        /// Purchase clicked while the lock plate is up. The plate also eats the raycast.
+        /// This is the backup so a tree node under the plate cannot send an RPC.
+        /// Home and Orbit Unlocked return false. A remembered ad for this planet returns false.
+        /// </summary>
+        bool IsPlanetStoreLocked()
+        {
+            // Bought the game: every planet's store is open, no video.
+            if (!TitanOrbitAdsGate.ShouldShowAds)
+                return false;
+
+            int storeId = OrbitStationEcsContext.IsActive
+                ? OrbitStationEcsContext.StorePlanetId
+                : (currentPlanet != null ? currentPlanet.PlanetId : 0);
+            if (storeId <= 0)
+                return false;
+
+            int homeId = OrbitStationEcsContext.IsActive
+                ? OrbitStationEcsContext.HomePlanetId
+                : (currentHomePlanet != null ? currentHomePlanet.PlanetId : 0);
+            // Known home id wins. If the menu opened before that id arrived, the
+            // spawn capital is still the team number (Team A is planet 1).
+            bool teamHome = homeId > 0
+                ? storeId == homeId
+                : currentShip != null && storeId == (int)currentShip.ShipTeam;
+            if (teamHome)
+                return false;
+
+            PlanetStoreAdUnlocks.SyncMatch();
+            return !PlanetStoreAdUnlocks.Contains(storeId);
+        }
+
+        /// <summary>
+        /// Shows or hides the one-ad plate over the center store. Called when the
+        /// menu opens, closes, or the purchase entitlement flips. Does not rebuild
+        /// the plate every time — the widgets are created once.
+        /// </summary>
+        void RefreshPlanetStoreLock()
+        {
+            if (moonDockMainHost == null)
+                return;
+
+            bool menuOpen = _moonDockCenterView != MoonDockCenterView.None;
+            bool locked = menuOpen && IsPlanetStoreLocked();
+            if (locked)
+                EnsurePlanetStoreLockPlate();
+            if (_planetStoreLockRoot == null)
+                return;
+
+            _planetStoreLockRoot.SetActive(locked);
+            if (!locked)
+                return;
+
+            // Gear and ship hosts are reparented on tab change. Stay above them.
+            _planetStoreLockRoot.transform.SetAsLastSibling();
+            if (_planetStoreAdButton != null)
+                _planetStoreAdButton.interactable = !TitanOrbitRewardedAds.IsShowing;
+        }
+
+        /// <summary>
+        /// Orbit Unlocked just changed. A purchase removes the plate on the open menu.
+        /// An Editor revoke puts it back on a non-home moon.
+        /// </summary>
+        void OnOrbitUnlockedForPlanetStore()
+        {
+            RefreshPlanetStoreLock();
+        }
+
+        /// <summary>
+        /// Builds the dark lock plate once, as a child of the center column.
+        /// The sidebar and the close button stay outside this host, so the player
+        /// can still leave orbit. Clicks on the plate do not reach the tree or gear.
+        /// </summary>
+        void EnsurePlanetStoreLockPlate()
+        {
+            if (_planetStoreLockRoot != null || moonDockMainHost == null)
+                return;
+
+            // --- Full-column glass ---
+            var root = new GameObject("PlanetStoreLock");
+            root.transform.SetParent(moonDockMainHost, false);
+            var rt = root.AddComponent<RectTransform>();
+            rt.anchorMin = Vector2.zero;
+            rt.anchorMax = Vector2.one;
+            rt.offsetMin = Vector2.zero;
+            rt.offsetMax = Vector2.zero;
+            var bg = root.AddComponent<Image>();
+            bg.color = new Color(0.012f, 0.016f, 0.028f, 0.94f);
+            bg.raycastTarget = true;
+
+            var column = new GameObject("LockColumn").AddComponent<RectTransform>();
+            column.SetParent(root.transform, false);
+            column.anchorMin = new Vector2(0.12f, 0.2f);
+            column.anchorMax = new Vector2(0.88f, 0.8f);
+            column.offsetMin = Vector2.zero;
+            column.offsetMax = Vector2.zero;
+            var layout = column.gameObject.AddComponent<VerticalLayoutGroup>();
+            layout.childAlignment = TextAnchor.MiddleCenter;
+            layout.spacing = 12f;
+            layout.childControlWidth = true;
+            layout.childControlHeight = true;
+            layout.childForceExpandWidth = true;
+            layout.childForceExpandHeight = false;
+
+            var title = CreatePlanetStoreLockLabel(column, "STORE LOCKED", 28f, new Color(0.62f, 0.78f, 0.95f, 1f));
+            title.fontStyle = FontStyles.Bold;
+            CreatePlanetStoreLockLabel(
+                column,
+                "WATCH ONE AD TO UNLOCK THIS PLANET'S SHIPS AND GEAR.",
+                16f,
+                new Color(0.88f, 0.92f, 0.98f, 1f));
+
+            // --- One ad for the whole planet ---
+            var buttonGo = new GameObject("WatchAdButton");
+            buttonGo.transform.SetParent(column, false);
+            var buttonLe = buttonGo.AddComponent<LayoutElement>();
+            buttonLe.preferredHeight = 48f;
+            buttonLe.preferredWidth = 240f;
+            buttonLe.flexibleWidth = 0f;
+            var buttonImage = buttonGo.AddComponent<Image>();
+            buttonImage.color = new Color(0.08f, 0.16f, 0.28f, 1f);
+            _planetStoreAdButton = buttonGo.AddComponent<Button>();
+            _planetStoreAdButton.targetGraphic = buttonImage;
+            _planetStoreAdButton.onClick.AddListener(OnWatchPlanetStoreAd);
+            _planetStoreAdButton.gameObject.AddComponent<TitanOrbitRewardedHotspot>();
+            var buttonLabel = CreatePlanetStoreLockLabel(buttonGo.transform, "WATCH AD", 18f, new Color(0.88f, 0.95f, 1f, 1f));
+            var buttonLabelRt = buttonLabel.rectTransform;
+            buttonLabelRt.anchorMin = Vector2.zero;
+            buttonLabelRt.anchorMax = Vector2.one;
+            buttonLabelRt.offsetMin = Vector2.zero;
+            buttonLabelRt.offsetMax = Vector2.zero;
+
+            _planetStoreLockStatus = CreatePlanetStoreLockLabel(column, string.Empty, 14f, new Color(0.95f, 0.55f, 0.35f, 1f));
+            _planetStoreLockRoot = root;
+        }
+
+        /// <summary>
+        /// One TMP line on the lock plate. Raycasts stay off so the plate and the
+        /// button own the clicks.
+        /// </summary>
+        TextMeshProUGUI CreatePlanetStoreLockLabel(Transform parent, string text, float size, Color color)
+        {
+            var go = new GameObject("Label");
+            go.transform.SetParent(parent, false);
+            var tmp = go.AddComponent<TextMeshProUGUI>();
+            tmp.text = text;
+            tmp.fontSize = size;
+            tmp.alignment = TextAlignmentOptions.Center;
+            tmp.color = color;
+            tmp.raycastTarget = false;
+            EnsureMoonDockTmpFont(tmp);
+            var le = go.AddComponent<LayoutElement>();
+            le.preferredHeight = size + 10f;
+            return tmp;
+        }
+
+        /// <summary>
+        /// WATCH AD clicked. Plays the planet_store placement. Completed records the
+        /// planet locally and asks the server to allow buys. Failed or unavailable
+        /// leaves the plate up.
+        /// </summary>
+        void OnWatchPlanetStoreAd()
+        {
+            int planetId = OrbitStationEcsContext.IsActive
+                ? OrbitStationEcsContext.StorePlanetId
+                : (currentPlanet != null ? currentPlanet.PlanetId : 0);
+            if (planetId <= 0 || TitanOrbitRewardedAds.IsShowing)
+                return;
+
+            if (_planetStoreAdButton != null)
+                _planetStoreAdButton.interactable = false;
+            if (_planetStoreLockStatus != null)
+                _planetStoreLockStatus.text = string.Empty;
+
+            TitanOrbitRewardedAds.Show(TitanOrbitRewardedAds.PlacementPlanetStore, result =>
+            {
+                if (_planetStoreAdButton != null)
+                    _planetStoreAdButton.interactable = !TitanOrbitRewardedAds.IsShowing;
+                if (result != TitanOrbitRewardedAdResult.Completed)
+                {
+                    if (_planetStoreLockStatus != null)
+                        _planetStoreLockStatus.text = result == TitanOrbitRewardedAdResult.Unavailable
+                            ? "AD UNAVAILABLE"
+                            : "AD DID NOT FINISH";
+                    return;
+                }
+
+                // Server is the buy gate. The local set only removes this plate.
+                PlanetStoreAdUnlocks.Remember(planetId);
+                MoonOrbitRpcClient.UnlockPlanetStore(planetId);
+                RefreshPlanetStoreLock();
+            });
+        }
+
+        /// <summary>
         /// Shows or hides the full-screen Orbit Menu (sidebar + SHIPS / GEAR / CARDS).
         /// <paramref name="view"/> <see cref="MoonDockCenterView.None"/> is a dismiss:
         /// the ship can stay on the moon, and gameplay HUD must return.
@@ -8982,6 +9199,11 @@ namespace TitanOrbit.UI
             // key off this flag. Closing the × button must clear it even while still docked.
             MoonOrbitClientState.SetOrbitMenuVisible(show);
 
+            // × / Escape dismiss. The warmed tree stays active, so power-bar pads do not
+            // get OnDisable — drop the rollover card here or it stays on the last lane.
+            if (!show)
+                ShipPowerBarStatHoverRelay.NotifyMenuHidden();
+
             if (moonDockCenterBackdrop == null) return;
 
             EnsureMoonDockBackdropGroup();
@@ -9004,6 +9226,7 @@ namespace TitanOrbit.UI
             if (!show)
             {
                 ApplyShipTreeHudObscuring(false);
+                RefreshPlanetStoreLock();
                 return;
             }
 
@@ -9092,6 +9315,7 @@ namespace TitanOrbit.UI
             if (!warmedLayout)
                 RebuildMoonDockBackdropLayout();
             ShipPowerBarStatHoverRelay.NotifyMenuShown();
+            RefreshPlanetStoreLock();
         }
 
         /// <summary>

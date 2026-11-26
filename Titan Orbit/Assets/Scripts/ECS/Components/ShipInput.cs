@@ -33,9 +33,12 @@ namespace TitanOrbit.ECS
         /// aim is Game Manager Forward (nose) or Point (this mouse point while
         /// <see cref="Thrust"/> is released and the point is in front of the hull,
         /// including a glide). This bit does not change that.
-        /// MEGA hulls: no overdrive. This bit locks heading and aims all MEGA
-        /// guns at the mouse world point (<see cref="AimPlanarDir"/> ×
-        /// <see cref="AimDistance"/>). Fire is still required to shoot.
+        /// MEGA hulls: no overdrive. This bit locks heading and aims every gun,
+        /// including lasers, at the mouse world point (<see cref="AimPlanarDir"/> ×
+        /// <see cref="AimDistance"/>), including behind the nose. With this bit
+        /// up, releasing the move button uses the regular-ship rule for projectile
+        /// guns only. Lasers keep auto-aim until this bit is held. Fire is still
+        /// required to shoot.
         /// </summary>
         [GhostField]
         public bool Overdrive;

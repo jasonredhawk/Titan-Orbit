@@ -89,6 +89,14 @@ namespace TitanOrbit.UI
                 if (canvas.GetComponentInParent<InGameEscapeMenuController>() != null)
                     continue;
 
+                // STAT TELEMETRY is its own overlay, not gameplay HUD. Folding it into
+                // this hide list saved whatever alpha it had on open (often 1, if the
+                // pointer was already on a power bar) and restored that alpha when the
+                // menu closed — the rollover card stayed up over the match.
+                if (ShipPowerBarStatTooltip.OverlayCanvas != null
+                    && canvas == ShipPowerBarStatTooltip.OverlayCanvas)
+                    continue;
+
                 if (ShouldKeepOrbitCanvas(canvas.transform, keepA, keepB))
                     continue;
 

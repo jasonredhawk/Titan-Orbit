@@ -19,7 +19,7 @@ MonoBehaviour:
     width: 2560
     height: 1349
   m_ShowMode: 4
-  m_Title: Hierarchy
+  m_Title: Game
   m_RootView: {fileID: 2}
   m_MinSize: {x: 875, y: 300}
   m_MaxSize: {x: 10000, y: 10000}
@@ -118,7 +118,7 @@ MonoBehaviour:
   m_MinSize: {x: 300, y: 112}
   m_MaxSize: {x: 24288, y: 16192}
   vertical: 1
-  controlID: 185
+  controlID: 395
   draggingID: 0
 --- !u!114 &6
 MonoBehaviour:
@@ -144,7 +144,7 @@ MonoBehaviour:
   m_MinSize: {x: 300, y: 112}
   m_MaxSize: {x: 24288, y: 16192}
   vertical: 0
-  controlID: 186
+  controlID: 396
   draggingID: 0
 --- !u!114 &7
 MonoBehaviour:
@@ -170,7 +170,7 @@ MonoBehaviour:
   m_MinSize: {x: 200, y: 112}
   m_MaxSize: {x: 16192, y: 16192}
   vertical: 1
-  controlID: 187
+  controlID: 371
   draggingID: 0
 --- !u!114 &8
 MonoBehaviour:
@@ -196,7 +196,7 @@ MonoBehaviour:
   m_MinSize: {x: 200, y: 56}
   m_MaxSize: {x: 16192, y: 8096}
   vertical: 0
-  controlID: 188
+  controlID: 372
   draggingID: 0
 --- !u!114 &9
 MonoBehaviour:
@@ -306,7 +306,7 @@ MonoBehaviour:
   m_MinSize: {x: 100, y: 112}
   m_MaxSize: {x: 8096, y: 16192}
   vertical: 1
-  controlID: 274
+  controlID: 397
   draggingID: 0
 --- !u!114 &13
 MonoBehaviour:
@@ -698,7 +698,7 @@ MonoBehaviour:
   m_UseMipMap: 0
   m_VSyncEnabled: 0
   m_Gizmos: 0
-  m_Stats: 1
+  m_Stats: 0
   m_SelectedSizes: 00000000000000000000000000000000000000000000000000000000000000000000000000000000
   m_ZoomArea:
     m_HRangeLocked: 0
@@ -794,15 +794,48 @@ MonoBehaviour:
       m_LastClickedID:
         m_Data: 0
       m_ExpandedIDs:
-      - m_Data: -460534
-      - m_Data: -460156
-      - m_Data: -460038
-      - m_Data: -442964
-      - m_Data: -442586
-      - m_Data: -442468
-      - m_Data: -14472
-      - m_Data: -14094
-      - m_Data: -13964
+      - m_Data: -824656
+      - m_Data: -824280
+      - m_Data: -824162
+      - m_Data: -807382
+      - m_Data: -807004
+      - m_Data: -806886
+      - m_Data: -798306
+      - m_Data: -797930
+      - m_Data: -797812
+      - m_Data: -781032
+      - m_Data: -780654
+      - m_Data: -780536
+      - m_Data: -771974
+      - m_Data: -771598
+      - m_Data: -771480
+      - m_Data: -754688
+      - m_Data: -754310
+      - m_Data: -754192
+      - m_Data: -744926
+      - m_Data: -744558
+      - m_Data: -744440
+      - m_Data: -727500
+      - m_Data: -727130
+      - m_Data: -727002
+      - m_Data: -717726
+      - m_Data: -717358
+      - m_Data: -717240
+      - m_Data: -406316
+      - m_Data: -405948
+      - m_Data: -405830
+      - m_Data: -391974
+      - m_Data: -391606
+      - m_Data: -391488
+      - m_Data: -377662
+      - m_Data: -377294
+      - m_Data: -377176
+      - m_Data: -363338
+      - m_Data: -362970
+      - m_Data: -362852
+      - m_Data: -347346
+      - m_Data: -346978
+      - m_Data: -346848
       - m_Data: -1386
       m_RenameOverlay:
         m_UserAcceptedRename: 0
@@ -1612,9 +1645,9 @@ MonoBehaviour:
   m_Pos:
     serializedVersion: 2
     x: 0
-    y: 1129
+    y: 1090
     width: 2055
-    height: 265
+    height: 256
   m_SerializedDataModeController:
     m_DataMode: 0
     m_PreferredDataMode: 0
@@ -1639,7 +1672,7 @@ MonoBehaviour:
     m_SkipHidden: 0
     m_SearchArea: 0
     m_Folders:
-    - Assets/Resources
+    - Assets/Scripts/ECS/Systems
     m_Globs: []
     m_ProductIds: 
     m_AnyWithAssetOrigin: 0
@@ -1649,31 +1682,21 @@ MonoBehaviour:
   m_ViewMode: 1
   m_StartGridSize: 16
   m_LastFolders:
-  - Assets/Resources
+  - Assets/Scripts/ECS/Systems
   m_LastFoldersGridSize: 16
   m_LastProjectPath: C:\Users\jason\Documents\repo\Titan-Orbit\Titan Orbit
   m_LockTracker:
     m_IsLocked: 0
   m_LastLocalAssetsSearchArea: 0
   m_FolderTreeState:
-    scrollPos: {x: 0, y: 618}
+    scrollPos: {x: 0, y: 900}
     m_SelectedIDs:
-    - m_Data: 104506
+    - m_Data: 364140
     m_LastClickedID:
-      m_Data: 104506
+      m_Data: 364140
     m_ExpandedIDs:
     - m_Data: 0
-    - m_Data: 82996
-    - m_Data: 104468
-    - m_Data: 104470
-    - m_Data: 104472
-    - m_Data: 104474
-    - m_Data: 104476
-    - m_Data: 104478
-    - m_Data: 104480
-    - m_Data: 104482
-    - m_Data: 104484
-    - m_Data: 104486
+    - m_Data: 83006
     - m_Data: 104488
     - m_Data: 104490
     - m_Data: 104492
@@ -1725,6 +1748,16 @@ MonoBehaviour:
     - m_Data: 104584
     - m_Data: 104586
     - m_Data: 104588
+    - m_Data: 104590
+    - m_Data: 104592
+    - m_Data: 104594
+    - m_Data: 104596
+    - m_Data: 104598
+    - m_Data: 104600
+    - m_Data: 104602
+    - m_Data: 104604
+    - m_Data: 104606
+    - m_Data: 104608
     m_RenameOverlay:
       m_UserAcceptedRename: 0
       m_Name: 
@@ -1758,17 +1791,7 @@ MonoBehaviour:
       m_Data: 0
     m_ExpandedIDs:
     - m_Data: 0
-    - m_Data: 82996
-    - m_Data: 104468
-    - m_Data: 104470
-    - m_Data: 104472
-    - m_Data: 104474
-    - m_Data: 104476
-    - m_Data: 104478
-    - m_Data: 104480
-    - m_Data: 104482
-    - m_Data: 104484
-    - m_Data: 104486
+    - m_Data: 83006
     - m_Data: 104488
     - m_Data: 104490
     - m_Data: 104492
@@ -1820,6 +1843,16 @@ MonoBehaviour:
     - m_Data: 104584
     - m_Data: 104586
     - m_Data: 104588
+    - m_Data: 104590
+    - m_Data: 104592
+    - m_Data: 104594
+    - m_Data: 104596
+    - m_Data: 104598
+    - m_Data: 104600
+    - m_Data: 104602
+    - m_Data: 104604
+    - m_Data: 104606
+    - m_Data: 104608
     m_RenameOverlay:
       m_UserAcceptedRename: 0
       m_Name: 
@@ -1847,10 +1880,9 @@ MonoBehaviour:
       m_Icon: {fileID: 0}
       m_ResourceFile: 
   m_ListAreaState:
-    m_SelectedInstanceIDs:
-    - m_Data: 83522
+    m_SelectedInstanceIDs: []
     m_LastClickedEntityId:
-      m_Data: 83522
+      m_Data: 0
     m_HadKeyboardFocusLastEvent: 0
     m_ExpandedInstanceIDs:
     - m_Data: 54664
@@ -1907,7 +1939,7 @@ MonoBehaviour:
       m_Icon: {fileID: 0}
       m_ResourceFile: 
     m_NewAssetIndexInList: -1
-    m_ScrollPosition: {x: 0, y: 774}
+    m_ScrollPosition: {x: 0, y: 135.5}
     m_GridSize: 16
   m_SkipHiddenPackages: 0
   m_DirectoriesAreaWidth: 240

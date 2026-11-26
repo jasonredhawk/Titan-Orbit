@@ -303,10 +303,16 @@ namespace TitanOrbit.Game
             // Fully landed and the Game Manager checkbox is on: barrels stay on
             // the nose. Mouse and combat locks would spin the guns in the portrait.
             bool landed = ShipWeaponManualAimVisual.ShouldParkLandedWeapons(em, shipEntity);
-            bool ownerFiring = em.HasComponent<LocalPlayerShipTag>(shipEntity)
-                && em.HasComponent<ShipInput>(shipEntity)
-                && em.GetComponentData<ShipInput>(shipEntity).Fire.IsSet;
             bool localOwner = em.HasComponent<LocalPlayerShipTag>(shipEntity);
+            bool ownerFiring = false;
+            bool localIdle = false;
+            if (localOwner && em.HasComponent<ShipInput>(shipEntity))
+            {
+                var localInput = em.GetComponentData<ShipInput>(shipEntity);
+                ownerFiring = localInput.Fire.IsSet;
+                localIdle = !localInput.Overdrive
+                    && MegaShipWeaponAim.AllowsPointWeaponAim(localInput.Thrust);
+            }
             var arm = ShipWeaponArmState.Resolve(em, shipEntity);
             if (localOwner && hasMounts)
                 arm = WeaponArmSelection.Overlay(in arm, mounts);
@@ -350,10 +356,19 @@ namespace TitanOrbit.Game
                     desiredBarrelWorld = shipHeading;
                 }
                 else if (TryGetLocalOwnerMouseWorldDir(
-                        em, shipEntity, yawRoot.position, out Vector3 ownerMouseDir))
+                        em, shipEntity, yawRoot.position, out Vector3 ownerMouseDir)
+                    && (!isCannon || !localIdle))
                 {
+                    // Projectile guns track the cursor while stopped. Lasers do
+                    // that only while Shift is held (localIdle is false then).
                     desiredBarrelWorld = Quaternion.LookRotation(ownerMouseDir, Vector3.up);
                     binding.RememberWorldYaw(i, PlanarYaw(ownerMouseDir));
+                }
+                else if (localIdle && !isCannon)
+                {
+                    // Cursor behind the nose, or no aim sample: projectile guns
+                    // stay on the hull. Lasers fall through to their auto-lock.
+                    desiredBarrelWorld = shipHeading;
                 }
                 else if (isCannon
                     && TryGetCannonPlanetDir(
@@ -388,7 +403,15 @@ namespace TitanOrbit.Game
                     // Hold the last LookAt / world yaw while Fire is still down —
                     // except cannon lasers whose lock is gone: park so they can
                     // pick up the next in-range target instead of staring at a corpse.
-                    if (liveTracking)
+                    // Mouse aim ghosts a world heading and a cursor point, not an
+                    // entity. Asteroid locks that are still alive already took the
+                    // LookAt branch above.
+                    bool mouseWorldYaw = ghostTracking
+                        && !liveTracking
+                        && gunners[i].TargetGhostId == 0
+                        && (math.abs(gunners[i].AimWorldX) > 0.05f
+                            || math.abs(gunners[i].AimWorldZ) > 0.05f);
+                    if (liveTracking || mouseWorldYaw)
                     {
                         desiredBarrelWorld = Quaternion.AngleAxis(yawDeg, Vector3.up);
                         binding.RememberWorldYaw(i, yawDeg);
@@ -537,8 +560,12 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Local MEGA owner holding Shift: direction from this muzzle to the mouse
-        /// world point so barrels converge. A shared hull-center dir fires parallel.
+        /// Local MEGA owner: direction from this muzzle to the mouse world point
+        /// so barrels converge. Shift aims even behind the nose, including lasers.
+        /// With Shift up, projectile guns use this only while the move button is
+        /// released and the point is in front. Callers keep lasers off this path
+        /// unless Shift is held. A shared hull-center dir is only the Shift
+        /// fallback when distance is missing.
         /// </summary>
         static bool TryGetLocalOwnerMouseWorldDir(
             EntityManager em,
@@ -553,14 +580,21 @@ namespace TitanOrbit.Game
                 return false;
 
             var input = em.GetComponentData<ShipInput>(shipEntity);
-            if (!input.Overdrive)
+            bool shiftAim = input.Overdrive;
+            if (!shiftAim && !MegaShipWeaponAim.AllowsPointWeaponAim(input.Thrust))
                 return false;
 
             var hull = em.GetComponentData<LocalTransform>(shipEntity);
+            float mapW = 0f;
+            float mapH = 0f;
+            ToroidalMapEcs.TryGetMapSize(out mapW, out mapH);
             if (MegaShipWeaponAim.TryGetOwnerMouseAimPoint(in hull, in input, out float3 aimPoint)
                 && MegaShipWeaponVisualTargets.TryGetTiledPoint(
                     aimPoint.x, aimPoint.z, muzzleDisplay, out Vector3 tiled))
             {
+                if (!shiftAim && !MegaShipWeaponAim.IsInFrontOfHull(in hull, aimPoint, mapW, mapH))
+                    return false;
+
                 Vector3 toPoint = Flatten(tiled - muzzleDisplay);
                 if (toPoint.sqrMagnitude > 1e-6f)
                 {
@@ -568,6 +602,9 @@ namespace TitanOrbit.Game
                     return true;
                 }
             }
+
+            if (!shiftAim)
+                return false;
 
             Vector3 dir = Flatten(new Vector3(input.AimPlanarDir.x, 0f, input.AimPlanarDir.y));
             if (dir.sqrMagnitude < 1e-4f)

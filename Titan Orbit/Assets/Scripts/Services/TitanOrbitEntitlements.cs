@@ -128,6 +128,9 @@ namespace TitanOrbit.Services
 #else
             IsOrbitUnlockedOwned = false;
 #endif
+            // Local-host purchases read this bit. Dedicated servers stay false
+            // until the Worker lookup writes the connection component.
+            PlanetStoreUnlockFlags.SetLocalAccountOwned(IsOrbitUnlockedOwned);
         }
 
         /// <summary>
@@ -382,6 +385,10 @@ namespace TitanOrbit.Services
 
         static void ApplySessionOwned(bool owned)
         {
+            // Always republish. A domain-reload reset clears the host bit even
+            // when this session flag was already the same value.
+            PlanetStoreUnlockFlags.SetLocalAccountOwned(owned);
+
             // --- Session flag ---
             if (IsOrbitUnlockedOwned == owned)
                 return;

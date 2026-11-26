@@ -200,6 +200,21 @@ namespace TitanOrbit.UI
         /// <summary>Slot currently shown, or -1 when hidden. Hover relays use this to skip rebuilds.</summary>
         public static int ActiveSlot => s_ActiveSlot;
 
+        /// <summary>
+        /// True when the card is faded in. A slot index alone is not enough — the HUD
+        /// suppressor used to zero this overlay's alpha without clearing <see cref="ActiveSlot"/>,
+        /// and the hover probe then skipped the repaint.
+        /// </summary>
+        public static bool IsShowing => s_OverlayGroup != null && s_OverlayGroup.alpha > 0.01f;
+
+        /// <summary>
+        /// The DontDestroyOnLoad canvas that draws this card, or null before the first open.
+        /// <see cref="OrbitMenuHudSuppressor"/> must not alpha-hide it with the gameplay HUD.
+        /// That pass saved alpha 1 and wrote it back when the Orbit Menu closed, which
+        /// turned the power-bar rollover on again after the dock was gone.
+        /// </summary>
+        public static Canvas OverlayCanvas => s_OverlayCanvas;
+
         /// <summary>Relay that opened the card, or null when hidden.</summary>
         public static object ActiveOwner => s_ActiveOwner;
 

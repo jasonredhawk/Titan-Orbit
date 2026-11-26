@@ -15,7 +15,7 @@ namespace TitanOrbit.ECS
     /// reject inward motor velocity into asteroids. An overkill punch-through
     /// (<see cref="ShipAsteroidContactState.PunchThrough"/>) skips that stick so the next
     /// drive does not cancel the remaining into-rock speed. Ship↔ship sets
-    /// <see cref="ShipAsteroidContactState.InContactHull"/> for presentation coast.
+    /// <see cref="ShipAsteroidContactState.InContactHull"/>. Presentation copies the motor pose.
     /// </item>
     /// <item>
     /// Bleeds ship tangential (slide) velocity using <see cref="AsteroidSettings.Friction"/>.

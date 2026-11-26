@@ -564,8 +564,10 @@ namespace TitanOrbit.ECS
         /// as regular hulls (barrel origin + barrel forward). Only the MEGA owner may fire.
         /// Owner Shift aims each muzzle at the mouse point here — not only in
         /// <see cref="MegaShipAutoFireSystem"/> — so tracers and damage stay on the
-        /// same ray when auto-aim is isolated. The mouse yaw is applied to a spawn
-        /// copy only (mount pose stays independent). A full pool walks gun,
+        /// same ray when auto-aim is isolated. Releasing the move button does the
+        /// same when the cursor is in front of the nose (regular-ship point rule);
+        /// a shot that would leave backward falls back to the mount. The mouse yaw
+        /// is applied to a spawn copy only (mount pose stays independent). A full pool walks gun,
         /// laser, missile, sniper and fires every ready projectile on its own
         /// rate. A short pool still burns lasers, but only the cursor
         /// projectile may shoot, then the cursor steps.
@@ -730,6 +732,10 @@ namespace TitanOrbit.ECS
 
             int megaOwnerNet = ghostOwner.NetworkId;
             bool shiftMouseAim = input.Overdrive;
+            bool idleMouseAim = !shiftMouseAim
+                && MegaShipWeaponAim.TryGetIdleMouseAimPoint(
+                    in transform, in input, mapW, mapH, out _);
+            bool mouseAimShots = shiftMouseAim || idleMouseAim;
 
             var aims = state.EntityManager.HasBuffer<MegaShipAutoAimSlotElement>(mega)
                 ? state.EntityManager.GetBuffer<MegaShipAutoAimSlotElement>(mega)
@@ -775,18 +781,29 @@ namespace TitanOrbit.ECS
                     if (titanFamilyBulletRange > 0.5f)
                         fireMount.BulletRange = titanFamilyBulletRange;
                 }
-                if (shiftMouseAim
+                var noseMount = fireMount;
+                bool aimedAtCursor = false;
+                if (mouseAimShots
                     && MegaShipWeaponAim.TryGetMuzzleDirToMousePoint(
                         in transform, in fireMount, in input, mapW, mapH, out float3 toCursor))
                 {
                     MegaShipWeaponAim.RotateMountTowardWorldDir(
                         in transform, ref fireMount, toCursor, 0f);
+                    aimedAtCursor = true;
                 }
 
                 ResolveFirePose(transform, in fireMount, out float3 fireOrigin, out float3 fireForward);
+                // Idle point-aim matches regular ships: a barrel that would shoot
+                // behind the nose stays on the mount. Shift may still fire backward.
+                if (aimedAtCursor && idleMouseAim && !ShotLeavesForward(in transform, fireForward))
+                {
+                    fireMount = noseMount;
+                    aimedAtCursor = false;
+                    ResolveFirePose(transform, in fireMount, out fireOrigin, out fireForward);
+                }
 
                 float interceptDistance = 0f;
-                if (shiftMouseAim
+                if ((shiftMouseAim || aimedAtCursor)
                     && MegaShipWeaponAim.TryGetOwnerMouseAimPoint(
                         in transform, in input, out float3 mousePoint))
                 {

@@ -12,11 +12,17 @@ mergeInto(LibraryManager.library, {
       SendMessage(callbackObjectName, callbackMethodName, status);
     }
 
-    if (typeof TitanOrbitH5RewardedPlay !== "function") {
+    var play = (typeof window !== "undefined" && window.TitanOrbitH5RewardedPlay)
+      || (typeof TitanOrbitH5RewardedPlay === "function" ? TitanOrbitH5RewardedPlay : null);
+    if (typeof play !== "function") {
       send("sdk-not-loaded");
       return;
     }
 
-    TitanOrbitH5RewardedPlay(placement, send);
+    play(placement, send);
+  },
+
+  TitanOrbitIma_SetGestureHost: function (gameObjectNamePtr) {
+    window.TitanOrbitRewardedHost = UTF8ToString(gameObjectNamePtr);
   }
 });

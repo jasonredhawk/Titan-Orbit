@@ -337,6 +337,8 @@ namespace TitanOrbit.Game
                 ? em.GetComponentData<ShipInput>(binding.ShipEntity)
                 : default;
             bool localFiring = localOwner && localInput.Fire.IsSet;
+            // Lasers follow a lock unless Shift is held. Stopping the hull does
+            // not switch them to the cursor.
             bool localMouseAim = localFiring && localInput.Overdrive && !energyLockout;
             // Local Fire release / energy lockout must cut the beam and hum
             // immediately. Ghosted TargetDistance can stay > 0 for a snapshot.
@@ -837,6 +839,7 @@ namespace TitanOrbit.Game
         /// <summary>
         /// Local Shift mouse-aim: beam follows the cursor (clamped to cannon range)
         /// so it matches the projectile guns without waiting on a ghost snapshot.
+        /// Stopping the hull does not use this path — lasers keep auto-aim.
         /// </summary>
         static bool TryGetLocalMouseBeamEnd(
             EntityManager em,

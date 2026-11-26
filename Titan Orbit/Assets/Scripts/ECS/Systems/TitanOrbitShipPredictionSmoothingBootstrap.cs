@@ -1,45 +1,43 @@
 using Unity.Entities;
 using Unity.NetCode;
+using Unity.Transforms;
 
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// One-shot client bootstrap for NetCode <see cref="GhostPredictionSmoothing"/>.
-    /// <para>
-    /// [TITAN-ORBIT] Do <b>not</b> register LocalTransform smoothing — it fought
-    /// <c>ShipVisualSyncSystem</c> display coast and looked like blurry jitter (worse on P2).
-    /// Display-only velocity chase owns local presentation; remotes keep NetCode interpolation.
-    /// </para>
+    /// Registers ship reconcile smoothing once the NetCode singleton exists.
+    /// Host worlds never roll a predicted hull back, so they skip registration.
+    /// A remote client does: after each snapshot the resim pose is stepped toward
+    /// from the pose already on screen, instead of replacing it.
+    /// Bullets share <see cref="LocalTransform"/> but have no <see cref="ShipTag"/>,
+    /// and the callbacks leave those ghosts on the resim result.
     /// World: ClientSimulation. Group: InitializationSystemGroup (last).
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation)]
     [UpdateInGroup(typeof(InitializationSystemGroup), OrderLast = true)]
     public partial struct TitanOrbitShipPredictionSmoothingBootstrap : ISystem
     {
-        /// <summary>True after we successfully register (or decide we cannot).</summary>
-        bool _done;
-
         /// <summary>
-        /// Confirms we leave GhostPredictionSmoothing unregistered once the NetCode singleton exists.
+        /// Registers pose and velocity smoothing for ship ghosts, then disables this system.
         /// </summary>
         public void OnUpdate(ref SystemState state)
         {
-            if (_done)
+            // The host simulates the authority pose. There is no snapshot to snap back to.
+            if (state.WorldUnmanaged.IsHost())
             {
                 state.Enabled = false;
                 return;
             }
 
-            // [TITAN-ORBIT] Registering GhostPredictionSmoothing (blend 0.92) while
-            // ShipVisualSyncSystem also smooths display caused blurry micro-jitter on the local
-            // predicted ship (P2 especially). Remotes stay on NetCode interpolation only.
-            // Display-only velocity chase owns presentation; leave LocalTransform unsmoothed.
-            _done = true;
-            state.Enabled = false;
-
-            // Keep singleton lookup so we do not spin if NetCode creates it late.
-            if (!SystemAPI.TryGetSingletonRW<GhostPredictionSmoothing>(out _))
+            if (!SystemAPI.TryGetSingletonRW<GhostPredictionSmoothing>(out var smoothing))
                 return;
+
+            var em = state.EntityManager;
+            smoothing.ValueRW.RegisterSmoothingAction<LocalTransform, ShipTag>(
+                em, ShipLocalTransformPredictionSmoothing.Action);
+            smoothing.ValueRW.RegisterSmoothingAction<ShipKinematics, ShipTag>(
+                em, ShipKinematicsPredictionSmoothing.Action);
+            state.Enabled = false;
         }
     }
 }

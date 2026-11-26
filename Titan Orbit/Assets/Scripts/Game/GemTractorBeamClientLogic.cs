@@ -156,7 +156,7 @@ namespace TitanOrbit.Game
                 // A committed suck-in keeps the beam until the local gem is destroyed.
                 if (!captureCommitted &&
                     IsInsideCargoAbsorbZone(
-                        shipTransforms[si], wings, gem.Transform, gem.State, mapW, mapH))
+                        em, ships[si], shipTransforms[si], wings, gem.Transform, gem.State, mapW, mapH))
                     continue;
 
                 int shipIndex = ships[si].Index;
@@ -330,7 +330,8 @@ namespace TitanOrbit.Game
                 return false;
             if (em.HasComponent<GemState>(gemEntity) &&
                 IsInsideCargoAbsorbZone(
-                    shipTransform, wings, gemTransform, em.GetComponentData<GemState>(gemEntity), mapW, mapH))
+                    em, shipEntity, shipTransform, wings, gemTransform,
+                    em.GetComponentData<GemState>(gemEntity), mapW, mapH))
                 return false;
 
             return true;
@@ -459,12 +460,14 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// True when the gem center is inside this ship's cargo absorb sphere(s) — the same
-        /// wing-tip / hull test as <c>GemPickupSystem</c>.
+        /// True when the gem center is inside this ship's cargo absorb zone — the same
+        /// wing-tip sphere / hull collider test as <c>GemPickupSystem</c>.
         /// [TITAN-ORBIT] Tractor VFX must stop here: the gem is being scooped. A 15% slack
         /// covers interpolation so the beam does not linger a frame after consume.
         /// </summary>
         public static bool IsInsideCargoAbsorbZone(
+            EntityManager em,
+            Entity shipEntity,
             in LocalTransform shipTransform,
             DynamicBuffer<ShipWingTractorBeamElement> wings,
             in LocalTransform gemTransform,
@@ -492,10 +495,13 @@ namespace TitanOrbit.Game
                     return false;
             }
 
-            float hullRange = GemCollectMath.ResolveHullCollectRadius(
-                settings, gemState.Value, gemState.Size, shipTransform.Scale) * slack;
-            return GemTractorBeamMath.ToroidalDistance(gemPos, shipTransform.Position, mapW, mapH) <=
-                   hullRange;
+            var footprint = ShipHullColliderLogic.ResolveCollectFootprint(
+                em, shipEntity, shipTransform.Scale).Scaled(slack);
+            float pad = GemCollectMath.ResolveHullSurfacePad(
+                settings, gemState.Value, gemState.Size) * slack;
+            return GemCollectMath.HullReachesGem(
+                gemPos, shipTransform.Position, shipTransform.Position, shipTransform.Rotation,
+                footprint, pad, mapW, mapH);
         }
 
         /// <summary>

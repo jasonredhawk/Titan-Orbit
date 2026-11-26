@@ -91,8 +91,10 @@ namespace TitanOrbit
 
         /// <summary>
         /// When true, Titan gun, missile, and sniper mounts auto-aim while Fire is held.
-        /// When false, those barrels stay on the nose and shots leave along the hull.
-        /// Cannon lasers always auto-aim. Shift mouse-aim is unchanged.
+        /// When false, those barrels stay on the nose while the move button is held
+        /// and shots leave along the hull. Releasing the move button still aims
+        /// projectile guns at the cursor in front of the nose. Cannon lasers always
+        /// auto-aim, including while stopped, and mouse-aim only while Shift is held.
         /// Written by GameManager (<c>Mega Ships — Guns</c>). Honored on the dedicated server.
         /// </summary>
         public static bool MegaShipProjectileAutoAim;

@@ -684,6 +684,11 @@ namespace TitanOrbit.ECS
             DynamicBuffer<ShipWingTractorBeamElement> wings = default;
             if (hasWings)
                 wings = em.GetBuffer<ShipWingTractorBeamElement>(shipEntity);
+            float3 shipMove = float3.zero;
+            if (em.HasComponent<ShipKinematics>(shipEntity))
+                shipMove = em.GetComponentData<ShipKinematics>(shipEntity).Velocity * dt;
+            var hullFootprint = ShipHullColliderLogic.ResolveCollectFootprint(
+                em, shipEntity, shipTransform.Scale);
 
             var hide = new NativeList<int>(4, Allocator.Temp);
             var seen = new NativeHashSet<int>(16, Allocator.Temp);
@@ -715,6 +720,8 @@ namespace TitanOrbit.ECS
                         hasWings,
                         wings,
                         pickupSettings,
+                        hullFootprint,
+                        shipMove,
                         mapW,
                         mapH))
                 {
@@ -783,6 +790,8 @@ namespace TitanOrbit.ECS
             bool hasWings,
             DynamicBuffer<ShipWingTractorBeamElement> wings,
             TractorBeamSettings pickupSettings,
+            in GemCollectMath.HullCollectFootprint hullFootprint,
+            float3 shipMove,
             float mapW,
             float mapH)
         {
@@ -802,11 +811,14 @@ namespace TitanOrbit.ECS
                     return false;
             }
 
-            float hullRange = GemCollectMath.ResolveHullCollectRadius(
-                pickupSettings, gemState.Value, gemState.Size, shipTransform.Scale)
+            float pad = GemCollectMath.ResolveHullSurfacePad(
+                    pickupSettings, gemState.Value, gemState.Size)
                 + CardEffectQuery.GetValue(em, shipEntity, CardEffectKind.GemPickupRadiusAdd);
-            return GemTractorBeamMath.ToroidalDistance(gemPos, shipTransform.Position, mapW, mapH) <=
-                   hullRange;
+            float3 hullPos = shipTransform.Position;
+            float3 prevHull = ToroidalMapEcs.Wrap(hullPos - shipMove, mapW, mapH);
+            return GemCollectMath.HullReachesGem(
+                gemPos, hullPos, prevHull, shipTransform.Rotation,
+                hullFootprint, pad, mapW, mapH);
         }
     }
 

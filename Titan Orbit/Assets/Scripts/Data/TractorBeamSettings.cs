@@ -15,8 +15,9 @@ namespace TitanOrbit.Data
     /// Pipeline: ship wings search for gems using per-wing stats × <see cref="RangeMultiplier"/> /
     /// <see cref="PowerMultiplier"/>. Matching uses <c>GemTractorBeamAssignment</c> (sticky primary,
     /// unique gems first, then optional assists capped by <see cref="MaxCooperatingBeams"/>).
-    /// Gems absorb into cargo when inside the wing (and optional hull) pickup radii below —
+    /// Gems absorb into cargo when inside a wing-tip radius or the ship's covering collider —
     /// tractor pull only moves gems into that zone; flying over gems uses the same pickup math.
+    /// Hull auto-collect follows the collider (long / oval hulls included), not a fixed radius.
     /// </para>
     /// </summary>
     [CreateAssetMenu(
@@ -94,15 +95,14 @@ namespace TitanOrbit.Data
         public float GemSizeCollectFactor = 0.25f;
 
         [Tooltip(
-            "Instant cargo absorb radius from the hull center (world units). " +
-            "Same rule as Wing Collect Radius: no tractor lock needed — distance alone consumes. " +
-            "Used when the ship has no wing buffers, and also when AlsoUseHullPickupWithWings is ON. " +
-            "Legacy no-wing default 2.5.")]
+            "Legacy fixed radius from the hull center. Not used. Hull auto-collect matches the " +
+            "ship's covering collider (a long oval collects along that oval). Wing Collect Radius " +
+            "is unchanged. Kept so existing TractorBeamSettings assets still load.")]
         [Min(0.01f)]
         public float HullPickupRange = 2.5f;
 
         [Tooltip(
-            "ON: ships with wings also absorb gems within HullPickupRange of the hull center " +
+            "ON: ships with wings also absorb gems inside the covering collider " +
             "(in addition to wing-tip WingCollectRadius zones). Both zones are instant pickup — " +
             "no tractor lock required. " +
             "OFF: only wing-tip collect radii absorb (hull fly-over ignored); tip pickup still " +
@@ -159,11 +159,11 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Effective hull-center collect radius for one gem (base + size pad).
-        /// Same fly-over rule as <see cref="ResolveWingCollectRadius"/> — no tractor lock.
+        /// Legacy hull-center radius (base + size pad). Live hull scoop uses the covering
+        /// collider in <c>GemCollectMath</c> and does not call this.
         /// </summary>
         /// <param name="gemSize">Gem visual/collision size from <c>GemState.Size</c>.</param>
-        /// <returns>Toroidal distance threshold from hull center to gem center.</returns>
+        /// <returns>Old toroidal distance threshold from hull center to gem center.</returns>
         public float ResolveHullPickupRange(float gemSize)
         {
             ClampValues();

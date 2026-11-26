@@ -77,7 +77,7 @@ namespace TitanOrbit.ECS
         Acquire = 1,
         /// <summary>Thrust along a side offset until the range closes or the window expires.</summary>
         Approach = 2,
-        /// <summary>In range. Leave any orbit ring, then shoot.</summary>
+        /// <summary>In range. Leave any orbit ring, then move, stop, and dodge while shooting.</summary>
         Commit = 3,
         /// <summary>Missed the window. Thrust off the ring, then a new side or a new target.</summary>
         Reevaluate = 4,
@@ -106,7 +106,11 @@ namespace TitanOrbit.ECS
         /// on. Cleared when that hull leaves secondary range. 0 when unused.
         /// </summary>
         public int GoalNetworkId;
-        /// <summary>1 after this landing already bought one attribute. Cleared on takeoff.</summary>
+        /// <summary>
+        /// 1 after this landing already bought one helpful ability (gem capacity,
+        /// firepower, move speed, or energy regen). Cleared on takeoff so the next
+        /// haul can skim a different stat. The rest of the hold still deposits.
+        /// </summary>
         public byte AttributeBoughtWhileLanded;
         /// <summary>
         /// 1 after a hull purchase at the home moon failed because the bank could not pay
@@ -116,9 +120,17 @@ namespace TitanOrbit.ECS
         public byte LevelBuyBlocked;
         /// <summary>1 while this hull is gathering or delivering troops to capture a planet.</summary>
         public byte SeekTroops;
+        /// <summary>
+        /// 1 after this hull has left to unload on <see cref="CapturePlanetId"/>.
+        /// Stays set if a fight retasks the ship, so the drop resumes with whoever is still aboard.
+        /// </summary>
+        public byte DeliverTroops;
         /// <summary>Planet <see cref="SeekTroops"/> is trying to take. 0 when capture is not the task.</summary>
         public int CapturePlanetId;
-        /// <summary>People required to zero <see cref="CapturePlanetId"/> on the last refresh.</summary>
+        /// <summary>
+        /// People this hull boards before it leaves for <see cref="CapturePlanetId"/>.
+        /// A shared capture fills this hold; teammates carry the rest of the garrison.
+        /// </summary>
         public int CapturePeopleNeeded;
         /// <summary>World time when <see cref="Task"/> or the people count last changed.</summary>
         public float TaskClock;

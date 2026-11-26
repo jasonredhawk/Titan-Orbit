@@ -885,6 +885,8 @@ namespace TitanOrbit.UI
         {
             Planet storePlanet = GetShipUpgradeStorePlanet();
             if (currentShip == null || storePlanet == null || CardShopSystem.Instance == null) return;
+            if (IsPlanetStoreLocked())
+                return;
 
             var shipNo = currentShip.GetComponent<Unity.Netcode.NetworkObject>();
             var planetNo = storePlanet.GetComponent<Unity.Netcode.NetworkObject>();

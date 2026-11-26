@@ -4,7 +4,7 @@ import { allowedOrigin, corsHeaders, json } from "./http.ts";
 import { logError, logInfo } from "./log.ts";
 import { activePriceId, checkoutMode } from "./mode.ts";
 import { readDisplayPrice } from "./price.ts";
-import { grantBetaTesterFromAdmin, grantOrbitUnlockedFromAdmin, readBetaTesterOwned, UnityAuthError } from "./unity.ts";
+import { grantBetaTesterFromAdmin, grantOrbitUnlockedFromAdmin, readBetaTesterOwned, readLookupFlags, UnityAuthError } from "./unity.ts";
 import { handleWebhook } from "./webhook.ts";
 
 const MAX_CHECKOUT_BODY = 16_384;
@@ -113,7 +113,7 @@ async function postAdminGrantBeta(request: Request, env: Env): Promise<Response>
   return json({ ok: true, alreadyOwned: granted.alreadyOwned }, 200);
 }
 
-/** Dedicated server asks once per join. Owned is false when the key was never written. */
+/** Dedicated server asks once per join. Both flags are false when the key was never written. */
 async function postAdminLookup(request: Request, env: Env): Promise<Response> {
   const body = await readAdminGrantBody(request);
   if (!body)
@@ -128,8 +128,8 @@ async function postAdminLookup(request: Request, env: Env): Promise<Response> {
   if (!decision.ok)
     return json({ error: decision.error }, decision.status);
 
-  const owned = await readBetaTesterOwned(env, decision.playerId);
-  return json({ ok: true, owned }, 200);
+  const flags = await readLookupFlags(env, decision.playerId);
+  return json({ ok: true, owned: flags.betaTester, orbitUnlocked: flags.orbitUnlocked }, 200);
 }
 
 async function postCheckout(request: Request, env: Env, origin: string | null): Promise<Response> {
