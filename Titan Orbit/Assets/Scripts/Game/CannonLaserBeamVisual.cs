@@ -337,12 +337,9 @@ namespace TitanOrbit.Game
                 ? em.GetComponentData<ShipInput>(binding.ShipEntity)
                 : default;
             bool localFiring = localOwner && localInput.Fire.IsSet;
-            // Shift aims the beam even behind the nose. Move-button release uses
-            // the regular-ship rule and must not fall through to auto-lock.
-            bool localIdle = localOwner
-                && !localInput.Overdrive
-                && MegaShipWeaponAim.AllowsPointWeaponAim(localInput.Thrust);
-            bool localMouseAim = localFiring && !energyLockout && (localInput.Overdrive || localIdle);
+            // Lasers follow a lock unless Shift is held. Stopping the hull does
+            // not switch them to the cursor.
+            bool localMouseAim = localFiring && localInput.Overdrive && !energyLockout;
             // Local Fire release / energy lockout must cut the beam and hum
             // immediately. Ghosted TargetDistance can stay > 0 for a snapshot.
             if (localOwner && !localFiring)
@@ -840,10 +837,9 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Local mouse-aim: beam follows the cursor (clamped to cannon range)
+        /// Local Shift mouse-aim: beam follows the cursor (clamped to cannon range)
         /// so it matches the projectile guns without waiting on a ghost snapshot.
-        /// Shift aims even behind the nose. With Shift up, the move button must
-        /// be released and the point must be in front of the hull.
+        /// Stopping the hull does not use this path — lasers keep auto-aim.
         /// </summary>
         static bool TryGetLocalMouseBeamEnd(
             EntityManager em,
@@ -862,12 +858,7 @@ namespace TitanOrbit.Game
                 return false;
 
             var input = em.GetComponentData<ShipInput>(binding.ShipEntity);
-            if (!input.Fire.IsSet)
-                return false;
-            bool shiftAim = input.Overdrive;
-            if (!shiftAim
-                && !MegaShipWeaponAim.TryGetIdleMouseAimPoint(
-                    in hull, in input, mapW, mapH, out _))
+            if (!input.Overdrive || !input.Fire.IsSet)
                 return false;
             if (!MegaShipWeaponAim.TryGetOwnerMouseAimPoint(in hull, in input, out float3 mouse))
                 return false;

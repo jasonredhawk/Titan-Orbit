@@ -197,11 +197,12 @@ namespace TitanOrbit.ECS
         public static bool AllowsPointWeaponAim(bool thrustHeld) => !thrustHeld;
 
         /// <summary>
-        /// Titan guns use the regular-ship point rule when Shift is up: the move
-        /// button is released, the cursor sample is usable, and that point sits
-        /// in front of the nose. A glide still counts. Holding the move button
-        /// stays on the nose (or on auto-aim). Shift heading-lock is a separate
-        /// path and returns false here so it can still aim behind the hull.
+        /// Titan projectile guns use the regular-ship point rule when Shift is up:
+        /// the move button is released, the cursor sample is usable, and that
+        /// point sits in front of the nose. A glide still counts. Cannon lasers
+        /// do not use this — they auto-aim until Shift is held. Holding the move
+        /// button stays on the nose (or on auto-aim). Shift heading-lock returns
+        /// false here so it can still aim behind the hull.
         /// </summary>
         public static bool TryGetIdleMouseAimPoint(
             in LocalTransform hull,

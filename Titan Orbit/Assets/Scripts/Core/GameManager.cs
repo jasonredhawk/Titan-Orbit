@@ -195,16 +195,16 @@ namespace TitanOrbit.Core
         // only in the forward half. Titans use that same release rule on their
         // own guns. Their projectile auto-aim is the checkbox below.
         [Header("Regular Ships — Guns")]
-        [Tooltip("Forward: regular-ship guns stay on the nose and every shot leaves along the ship. Point: while the move button is held, guns stay on the nose. When it is released, guns and shots aim at the cursor (or an AI ship's target) if that point is in front of the ship, even while the hull is still gliding with the brakes off. A point behind the nose keeps the guns and the shot forward. Titans always use that release rule.")]
+        [Tooltip("Forward: regular-ship guns stay on the nose and every shot leaves along the ship. Point: while the move button is held, guns stay on the nose. When it is released, guns and shots aim at the cursor (or an AI ship's target) if that point is in front of the ship, even while the hull is still gliding with the brakes off. A point behind the nose keeps the guns and the shot forward. Titan projectile guns use that release rule. Titan lasers do not.")]
         [SerializeField] RegularShipWeaponAim regularShipWeaponAim = RegularShipWeaponAim.Point;
 
-        // [TITAN-ORBIT] Titan projectile mounts. Lasers auto-aim while the move
-        // button is held. This switch only brings back sticky auto-aim on gun,
-        // missile, and sniper in that same case. Releasing the move button aims
-        // every barrel at the cursor in front of the nose. Shift still aims
-        // every barrel at the cursor, including behind the nose.
+        // [TITAN-ORBIT] Titan projectile mounts. Lasers always auto-aim while Fire
+        // is held, including when the hull is stopped. This switch only brings
+        // back sticky auto-aim on gun, missile, and sniper while the move button
+        // is held. Releasing it aims those projectile guns at the cursor in front
+        // of the nose. Shift aims every barrel, lasers included, at the cursor.
         [Header("Mega Ships — Guns")]
-        [Tooltip("ON: while the move button is held, gun, missile, and sniper mounts auto-aim the nearest valid target when Fire is held. OFF: those mounts stay on the nose and fire forward while moving. Releasing the move button aims every barrel at the cursor when it is in front of the nose, same as regular ships. Shift still aims every barrel at the cursor. Cannon lasers auto-aim while moving. Honored on the dedicated server.")]
+        [Tooltip("ON: while the move button is held, gun, missile, and sniper mounts auto-aim the nearest valid target when Fire is held. OFF: those mounts stay on the nose and fire forward while moving. Releasing the move button aims those projectile guns at the cursor when it is in front of the nose. Cannon lasers always auto-aim, stopped or moving, and aim at the cursor only while Shift is held. Honored on the dedicated server.")]
         [SerializeField] bool megaShipProjectileAutoAim;
 
         /// <summary>
@@ -367,9 +367,9 @@ namespace TitanOrbit.Core
         /// <summary>
         /// True when Titan gun, missile, and sniper mounts auto-aim while Fire is held.
         /// Off keeps those barrels on the nose while the move button is held.
-        /// Cannon lasers always auto-aim while moving. Releasing the move button
-        /// aims every barrel at the cursor when it is in front of the nose, same
-        /// as regular ships. Shift still aims every barrel at the cursor.
+        /// Cannon lasers always auto-aim, including while the hull is stopped,
+        /// and aim at the cursor only while Shift is held. Releasing the move
+        /// button aims projectile guns at the cursor when it is in front of the nose.
         /// </summary>
         public bool MegaShipProjectileAutoAim => megaShipProjectileAutoAim;
 

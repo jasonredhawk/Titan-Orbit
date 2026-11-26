@@ -125,6 +125,13 @@ namespace TitanOrbit.ECS
         /// </summary>
         public const int HullMaterialRevision = 10;
 
+        /// <summary>
+        /// Fraction of the shortest covering half-extent used as <see cref="BoxGeometry.BevelRadius"/>.
+        /// 0.9 rounds a long hull into the oval the physics box actually collides with.
+        /// Gem auto-collect uses the same fraction so the scoop matches that collider.
+        /// </summary>
+        public const float CoveringBoxBevelFraction = 0.9f;
+
         struct CoveringBakeKey : System.IEquatable<CoveringBakeKey>
         {
             public int PrefabId;
@@ -692,7 +699,7 @@ namespace TitanOrbit.ECS
             CollisionFilter filter)
         {
             float3 size = extents * 2f;
-            float bevel = math.max(0f, math.cmin(extents) * 0.9f);
+            float bevel = math.max(0f, math.cmin(extents) * CoveringBoxBevelFraction);
             return Unity.Physics.BoxCollider.Create(
                 new BoxGeometry
                 {
@@ -841,6 +848,36 @@ namespace TitanOrbit.ECS
         /// <summary>Cached covering ellipsoid center from the last bake.</summary>
         public static float3 GetCachedCoveringCenter(in ShipHullColliderState applied) =>
             new float3(applied.AppliedCoveringCenterX, applied.AppliedCoveringCenterY, applied.AppliedCoveringCenterZ);
+
+        /// <summary>
+        /// World XZ scoop matching the covering collider (presentation extents ×
+        /// <c>LocalTransform.Scale</c>, same bevel as <see cref="CreateCoveringBox"/>).
+        /// Until extents are baked, falls back to the uniform hull sphere.
+        /// Callers pass map width/height from <c>MapStateSingleton</c> into
+        /// <see cref="GemCollectMath.HullReachesGem"/>.
+        /// </summary>
+        public static GemCollectMath.HullCollectFootprint ResolveCollectFootprint(
+            EntityManager em,
+            Entity ship,
+            float transformScale)
+        {
+            if (em.Exists(ship) && em.HasComponent<ShipHullColliderState>(ship))
+            {
+                var hull = em.GetComponentData<ShipHullColliderState>(ship);
+                if (GemCollectMath.TryMakeHullFootprint(
+                        hull.AppliedCoveringExtentX,
+                        hull.AppliedCoveringExtentY,
+                        hull.AppliedCoveringExtentZ,
+                        hull.AppliedCoveringCenterX,
+                        hull.AppliedCoveringCenterZ,
+                        transformScale,
+                        CoveringBoxBevelFraction,
+                        out var footprint))
+                    return footprint;
+            }
+
+            return GemCollectMath.CircleHullFootprint(transformScale);
+        }
 
         /// <summary>Cached covering ellipsoid radii (X/Y/Z). Falls back to uniform radius.</summary>
         public static float3 GetCachedCoveringExtents(in ShipHullColliderState applied)

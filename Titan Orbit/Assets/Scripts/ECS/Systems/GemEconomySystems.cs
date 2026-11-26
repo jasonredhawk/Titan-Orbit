@@ -31,8 +31,8 @@ namespace TitanOrbit.ECS
         public const float MiningRate = 5f;
 
         /// <summary>
-        /// Hull-center pickup radius when ship has no wing tractor buffers.
-        /// Runtime override: <see cref="TractorBeamSettings.HullPickupRange"/> (asset default 2.5).
+        /// Legacy hull-center radius. Live auto-collect uses the covering collider footprint
+        /// (<see cref="GemCollectMath.HullReachesGem"/>), not this constant.
         /// </summary>
         public const float GemPickupRange = 2.5f;
 
@@ -666,10 +666,12 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
-    /// Server: collects gems into ship cargo when a gem center is inside a wing-tip or hull
-    /// absorb sphere. A tractor lock already consumed its gem in <see cref="GemTractorBeamSystem"/>.
+    /// Server: collects gems into ship cargo when a gem center is inside a wing-tip sphere
+    /// or the hull covering collider. A tractor lock already consumed its gem in
+    /// <see cref="GemTractorBeamSystem"/>.
     /// No tractor lock is required — flying a wing tip or the hull over a gem is enough.
-    /// Radii come from <see cref="TractorBeamSettings"/> (Wing Collect Radius / Hull Pickup Range).
+    /// Wing radius comes from <see cref="TractorBeamSettings"/>. Hull scoop is the covering
+    /// collider (long / oval), not a fixed radius from the ship center.
     /// Candidates come from <see cref="GemSpatialHash"/> around the hull, each wing, and gems
     /// already pinned to this ship's tractor (a lock on an outer wing sits outside a hull-only
     /// gather). Colour / <c>IsBonusGem</c> is ignored — yellow extra-yield gems scoop like red.
@@ -690,9 +692,16 @@ namespace TitanOrbit.ECS
         /// Query radius around the hull <b>and each wing tip</b> when gathering pickup candidates.
         /// Tractor search is ~3–4.5u from the wing; high-level hulls put those tips well outside a
         /// hull-only 12u ball. Distance filter in <see cref="IsWithinPickupRange"/> is the real
-        /// consume test — this radius only builds the candidate set.
+        /// consume test — this radius only builds the candidate set. Long colliders raise the
+        /// hull gather to the footprint radius plus <see cref="HullGatherGemPad"/>.
         /// </summary>
         const float PickupSpatialQueryRadius = 16f;
+
+        /// <summary>
+        /// Extra gather past the collider so a large crystal just outside the oval still
+        /// reaches the footprint test. The test itself applies the gem's visual radius.
+        /// </summary>
+        const float HullGatherGemPad = 6f;
 
         /// <summary>
         /// [ECS/DOTS] Cached gem query so we snapshot once per tick instead of nesting
@@ -717,7 +726,7 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Each server tick: snapshot gems, then for every living ship with cargo space absorb
-        /// any gem whose center is inside a wing-tip or hull pickup sphere (toroidal XZ).
+        /// any gem inside a wing-tip sphere or the hull covering collider (toroidal XZ).
         /// </summary>
         public void OnUpdate(ref SystemState state)
         {
@@ -802,8 +811,13 @@ namespace TitanOrbit.ECS
                     hasWings = wings.Length > 0;
                 }
 
+                var hullFootprint = ShipHullColliderLogic.ResolveCollectFootprint(
+                    state.EntityManager, shipEntity, shipTransform.ValueRO.Scale);
+                float hullGather = math.max(
+                    PickupSpatialQueryRadius,
+                    hullFootprint.BroadphaseRadius() + HullGatherGemPad);
                 hash.GatherNearby(
-                    shipTransform.ValueRO.Position, PickupSpatialQueryRadius, nearby, seenScratch);
+                    shipTransform.ValueRO.Position, hullGather, nearby, seenScratch);
                 if (hasWings)
                 {
                     for (int wi = 0; wi < wings.Length; wi++)
@@ -861,6 +875,7 @@ namespace TitanOrbit.ECS
                             gemState,
                             hasWings,
                             pickupSettings,
+                            hullFootprint,
                             mapW,
                             mapH,
                             shipMove);
@@ -918,9 +933,9 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// True when the gem is inside a cargo absorb zone for this ship.
-        /// Uses <see cref="TractorBeamSettings"/> wing-tip and optional hull radii so designers
-        /// can widen fly-over scoop without changing tractor search reach.
-        /// No tractor lock is required — distance alone consumes.
+        /// Wing tips use <see cref="TractorBeamSettings"/>. The hull uses the covering collider
+        /// footprint (oval / long hulls), not a fixed radius from the center.
+        /// No tractor lock is required — overlap alone consumes.
         /// </summary>
         static bool IsWithinPickupRange(
             EntityManager em,
@@ -930,6 +945,7 @@ namespace TitanOrbit.ECS
             in GemState gemState,
             bool hasWings,
             TractorBeamSettings pickupSettings,
+            in GemCollectMath.HullCollectFootprint hullFootprint,
             float mapW,
             float mapH,
             float3 shipMove)
@@ -960,19 +976,22 @@ namespace TitanOrbit.ECS
                 // for a wing tip / tractor lock. When OFF, only tip zones collect (tight old feel).
                 if (pickupSettings.AlsoUseHullPickupWithWings)
                     return IsWithinHullPickupRange(
-                        em, shipEntity, shipTransform, gemPos, gemState, pickupSettings, mapW, mapH, shipMove);
+                        em, shipEntity, shipTransform, gemPos, gemState, pickupSettings,
+                        hullFootprint, mapW, mapH, shipMove);
 
                 return false;
             }
 
-            // --- No wings: hull-center only ---
+            // --- No wings: covering collider only ---
             return IsWithinHullPickupRange(
-                em, shipEntity, shipTransform, gemPos, gemState, pickupSettings, mapW, mapH, shipMove);
+                em, shipEntity, shipTransform, gemPos, gemState, pickupSettings,
+                hullFootprint, mapW, mapH, shipMove);
         }
 
         /// <summary>
-        /// Hull-center absorb test. Designer hull range, collider floor, and visible crystal
-        /// radius (see <see cref="GemCollectMath"/>) — overlapping the mesh the player sees counts.
+        /// Hull absorb test against the covering collider (rounded box on XZ).
+        /// Surface pad is the visible crystal plus any scoop-halo card — overlapping
+        /// the mesh the player sees counts. Map size is the caller's <c>MapStateSingleton</c>.
         /// </summary>
         static bool IsWithinHullPickupRange(
             EntityManager em,
@@ -981,17 +1000,19 @@ namespace TitanOrbit.ECS
             float3 gemPos,
             in GemState gemState,
             TractorBeamSettings pickupSettings,
+            in GemCollectMath.HullCollectFootprint hullFootprint,
             float mapW,
             float mapH,
             float3 shipMove)
         {
-            float hullRange = GemCollectMath.ResolveHullCollectRadius(
-                pickupSettings, gemState.Value, gemState.Size, shipTransform.Scale)
+            float pad = GemCollectMath.ResolveHullSurfacePad(
+                    pickupSettings, gemState.Value, gemState.Size)
                 + CardEffectQuery.GetValue(em, shipEntity, CardEffectKind.GemPickupRadiusAdd);
             float3 hullPos = shipTransform.Position;
             float3 prevHull = ToroidalMapEcs.Wrap(hullPos - shipMove, mapW, mapH);
-            return GemCollectMath.SegmentReachesPoint(
-                gemPos, prevHull, hullPos, hullRange, mapW, mapH);
+            return GemCollectMath.HullReachesGem(
+                gemPos, hullPos, prevHull, shipTransform.Rotation,
+                hullFootprint, pad, mapW, mapH);
         }
     }
 

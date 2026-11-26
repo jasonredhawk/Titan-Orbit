@@ -16,10 +16,15 @@ namespace TitanOrbit.ECS
     /// deposit, and troop systems do the work. Home-planet mining stays the goal until
     /// this hull matches the highest level that planet can sell right now (its planet
     /// level, and never past <see cref="MaxShipLevel"/>). Gems deposited there fill the
-    /// bank that buys the next hull. Each bot rolls one level-6 branch once and only
-    /// buys a tree step that can still reach it, so the fleet does not pile onto the
-    /// cheap side of the ladder. A nearby capture starts only after that hull is
-    /// reached. Ready teammates add their troop holds together, so a planet one ship
+    /// bank that buys the next hull, and that purchase stays ahead of the ability bar.
+    /// A haul that is already being banked may spend one rank on a stat that makes the
+    /// next haul faster — gem capacity, firepower, move speed, or energy regen — and
+    /// then deposits the rest. It does not fill the other abilities, and it does not
+    /// wait on those ranks before buying the hull. Each bot rolls one level-6 branch
+    /// once and only buys a tree step that can still reach it, so the fleet does not
+    /// pile onto the cheap side of the ladder. A nearby capture starts only after that
+    /// hull is reached. Ready teammates add their troop
+    /// holds together, so a planet one ship
     /// cannot zero is still taken when the fleet can carry the garrison in one wave.
     /// An enemy inside this hull's bullet range retasks immediately, ahead of mining,
     /// capture, and commander orders. With nobody in range the previous job resumes.
@@ -367,6 +372,7 @@ namespace TitanOrbit.ECS
                 }
                 if (!landed)
                     brain.AttributeBoughtWhileLanded = 0;
+                int levelBeforeBuy = ship.ShipLevel;
 
                 bool inOrbit = false;
                 int orbitPlanetId = 0;
@@ -425,6 +431,7 @@ namespace TitanOrbit.ECS
                 bool decide = combat || lostAttack ||
                               brain.NextDecisionTime <= now || orderNow ||
                               (originGrind && captureTask && !transportOrder);
+                bool attemptedHullBuy = false;
                 if (combat)
                 {
                     int taskBefore = (int)brain.Task;
@@ -465,6 +472,7 @@ namespace TitanOrbit.ECS
                                           TryHome(planets.AsArray(), ship.Team, out PlanetSnap buyHome) &&
                                           buyHome.PlanetId == dockedPlanetId;
                         TryBuy(em, shipEntity, ref ship, ref brain, originDock);
+                        attemptedHullBuy = true;
                     }
                     if (!orderNow)
                         brain.NextDecisionTime = now + DecisionInterval;
@@ -536,6 +544,17 @@ namespace TitanOrbit.ECS
                     liveBullets = em.GetBuffer<BulletElement>(bulletEntity, true);
                     hasBullets = true;
                 }
+
+                // One helpful ability per landing, after any hull attempt. A hull that
+                // was just bought cleared the bar, so this tick banks the rest instead
+                // of spending a rank that would have been wiped. While a higher hull is
+                // still for sale, wait for the decision that tries to buy it.
+                bool boughtHull = ship.ShipLevel != levelBeforeBuy;
+                bool hullForSale = !boughtHull &&
+                                   brain.LevelBuyBlocked == 0 &&
+                                   HullBelowOriginCap(ship, planets.AsArray(), out _);
+                if (landed && !boughtHull && (!hullForSale || attemptedHullBuy))
+                    TrySpendHelpfulAbility(em, shipEntity, ref ship, ref brain);
 
                 var input = BuildInput(
                     ref brain, ship, networkId, pos, rotation, velocity, landed, docking, inOrbit,
@@ -609,6 +628,11 @@ namespace TitanOrbit.ECS
             }
         }
 
+        /// <summary>
+        /// Picks the next job for one AI ship. Combat, a live commander order, and a
+        /// deposit already in progress win. Otherwise the ship buys the next hull the
+        /// home moon can sell before it looks for a capture.
+        /// </summary>
         static void Choose(
             ref BotShipBrain brain,
             in ShipState ship,
@@ -767,6 +791,7 @@ namespace TitanOrbit.ECS
         /// the next hull <paramref name="origin"/> already sells. A deposit fills the
         /// bank that purchase spends. When that hull is unlocked and the last landing
         /// did not refuse it, the ship goes home before it starts another rock.
+        /// One helpful ability may be skimmed from the hold on the way into the bank.
         /// </summary>
         static bool ContinueOriginGrind(
             ref BotShipBrain brain,
@@ -956,6 +981,12 @@ namespace TitanOrbit.ECS
             }
         }
 
+        /// <summary>
+        /// Buys the next hull from the home moon's gem bank when this ship is docked
+        /// there. This stays ahead of ability ranks. A successful buy clears the bar,
+        /// so <see cref="TrySpendHelpfulAbility"/> runs after it and skips the tick
+        /// the hull was just purchased.
+        /// </summary>
         static void TryBuy(
             EntityManager em,
             Entity shipEntity,
@@ -987,7 +1018,6 @@ namespace TitanOrbit.ECS
                         out FixedString128Bytes message))
                 {
                     ship = em.GetComponentData<ShipState>(shipEntity);
-                    brain.AttributeBoughtWhileLanded = 0;
                     brain.LevelBuyBlocked = 0;
                 }
                 else if (ship.CurrentGems <= 0.05f &&
@@ -1000,21 +1030,36 @@ namespace TitanOrbit.ECS
                     brain.LevelBuyBlocked = 1;
                 }
             }
+        }
 
+        /// <summary>
+        /// Buys one rank of a stat that speeds the next gem haul, then leaves the
+        /// rest of the hold for the planet bank. Only gem capacity, firepower,
+        /// move speed, and energy regen qualify, and only while that stat is still
+        /// at 0. One landing buys one rank. The next hull is not delayed for this.
+        /// </summary>
+        static void TrySpendHelpfulAbility(
+            EntityManager em,
+            Entity shipEntity,
+            ref ShipState ship,
+            ref BotShipBrain brain)
+        {
             if (brain.AttributeBoughtWhileLanded != 0)
                 return;
-            // Attribute buys spend cargo in one lump. Leave the hold for the deposit beat.
-            if (ship.CurrentGems > 0.05f)
+            if (ship.IsDead || ship.AwaitingTeamSelection || ship.Team == TeamId.None)
                 return;
-            if (!em.HasComponent<ShipAttributeUpgradeState>(shipEntity))
-                return;
-
-            var attrs = em.GetComponentData<ShipAttributeUpgradeState>(shipEntity);
-            if (!TryPickAttribute(attrs, ship.ShipLevel, ship.CurrentGems, out int attribute))
+            // Titans do not use the bottom bar. TryPurchase would refuse them anyway.
+            if (em.HasComponent<MegaShipState>(shipEntity) &&
+                em.GetComponentData<MegaShipState>(shipEntity).IsMega)
                 return;
 
-            int networkId = em.GetComponentData<GhostOwner>(shipEntity).NetworkId;
-            if (!ShipAttributeUpgradeLogic.TryPurchaseForNetworkId(em, networkId, attribute, out _))
+            ShipAttributeUpgradeState attrs = em.HasComponent<ShipAttributeUpgradeState>(shipEntity)
+                ? em.GetComponentData<ShipAttributeUpgradeState>(shipEntity)
+                : default;
+            if (!TryPickHelpfulAbility(attrs, ship.ShipLevel, ship.CurrentGems, out int attribute))
+                return;
+
+            if (!ShipAttributeUpgradeLogic.TryPurchase(em, shipEntity, attribute))
                 return;
 
             brain.AttributeBoughtWhileLanded = 1;
@@ -1127,26 +1172,40 @@ namespace TitanOrbit.ECS
             return x;
         }
 
-        static bool TryPickAttribute(in ShipAttributeUpgradeState attrs, int shipLevel, float gems, out int index)
+        /// <summary>
+        /// Next helpful ability that is still at 0 and affordable from cargo.
+        /// Gem capacity first (larger hauls), then firepower (faster rocks),
+        /// move speed (shorter trips), then energy regen (stay under thrust).
+        /// One rank is enough. Further ranks would compete with the next hull.
+        /// </summary>
+        static bool TryPickHelpfulAbility(in ShipAttributeUpgradeState attrs, int shipLevel, float gems, out int index)
         {
             index = -1;
-            int max = ShipAttributeUpgradeLogic.GetMaxUpgrades(shipLevel);
+            if (shipLevel < 1)
+                return false;
             int cost = ShipAttributeUpgradeLogic.GetUpgradeCost(shipLevel);
             if (gems < cost - 0.01f)
                 return false;
 
-            for (int i = 0; i < 10; i++)
-            {
-                if (ShipAttributeUpgradeLogic.GetAttributeLevel(attrs, i) < max)
-                {
-                    index = i;
-                    return true;
-                }
-            }
+            // Indices match ShipAttributeUpgradeLogic: 8 gem cap, 0 firepower,
+            // 6 move speed, 5 energy regen.
+            if (attrs.GemCapacity < 1)
+                index = 8;
+            else if (attrs.FirePower < 1)
+                index = 0;
+            else if (attrs.MovementSpeed < 1)
+                index = 6;
+            else if (attrs.EnergyRegen < 1)
+                index = 5;
+            else
+                return false;
 
-            return false;
+            return true;
         }
 
+        /// <summary>
+        /// Turns the current task into thrust, aim, fire, and deposit for this tick.
+        /// </summary>
         static ShipInput BuildInput(
             ref BotShipBrain brain,
             in ShipState ship,

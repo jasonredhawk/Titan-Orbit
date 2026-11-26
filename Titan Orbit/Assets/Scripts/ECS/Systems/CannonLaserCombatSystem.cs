@@ -300,13 +300,10 @@ namespace TitanOrbit.ECS
                             && TryValidateLock(
                                 mega, target, ship.Team, heal, muzzle, acquireRange,
                                 mapW, mapH, moonElapsed, focusHint, preferredAim, out aimPoint);
-            // Move-button release tracks the cursor in front of the nose and
-            // does not keep a combat lock. Shift still uses the cone lock.
-            bool idleMouse = !ownerShift
-                && MegaShipWeaponAim.TryGetIdleMouseAimPoint(
-                    in xf, in input, mapW, mapH, out _);
-            bool canBurn = haveLock && !idleMouse;
-            bool mouseStream = ownerShift || idleMouse;
+            // Lasers auto-aim whether or not the hull is moving. The cursor
+            // only steers a laser while Shift is held.
+            bool canBurn = haveLock;
+            bool mouseStream = ownerShift;
             if (!canBurn && !mouseStream)
             {
                 WriteLaserOff(gunners, mountIndex, in mount);

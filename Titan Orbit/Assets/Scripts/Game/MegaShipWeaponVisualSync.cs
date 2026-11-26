@@ -356,15 +356,18 @@ namespace TitanOrbit.Game
                     desiredBarrelWorld = shipHeading;
                 }
                 else if (TryGetLocalOwnerMouseWorldDir(
-                        em, shipEntity, yawRoot.position, out Vector3 ownerMouseDir))
+                        em, shipEntity, yawRoot.position, out Vector3 ownerMouseDir)
+                    && (!isCannon || !localIdle))
                 {
+                    // Projectile guns track the cursor while stopped. Lasers do
+                    // that only while Shift is held (localIdle is false then).
                     desiredBarrelWorld = Quaternion.LookRotation(ownerMouseDir, Vector3.up);
                     binding.RememberWorldYaw(i, PlanarYaw(ownerMouseDir));
                 }
-                else if (localIdle)
+                else if (localIdle && !isCannon)
                 {
-                    // Cursor behind the nose, or no aim sample: stay on the hull.
-                    // Do not keep an auto-lock while the move button is released.
+                    // Cursor behind the nose, or no aim sample: projectile guns
+                    // stay on the hull. Lasers fall through to their auto-lock.
                     desiredBarrelWorld = shipHeading;
                 }
                 else if (isCannon
@@ -558,10 +561,11 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Local MEGA owner: direction from this muzzle to the mouse world point
-        /// so barrels converge. Shift aims even behind the nose. With Shift up,
-        /// the move button must be released and the point must be in front —
-        /// the same rule as a regular ship. A shared hull-center dir is only
-        /// the Shift fallback when distance is missing.
+        /// so barrels converge. Shift aims even behind the nose, including lasers.
+        /// With Shift up, projectile guns use this only while the move button is
+        /// released and the point is in front. Callers keep lasers off this path
+        /// unless Shift is held. A shared hull-center dir is only the Shift
+        /// fallback when distance is missing.
         /// </summary>
         static bool TryGetLocalOwnerMouseWorldDir(
             EntityManager em,

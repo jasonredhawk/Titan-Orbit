@@ -191,7 +191,7 @@ namespace TitanOrbit.Game
                         bool captureCommitted = gem.Motion.Phase == GemMotionState.PhaseCommitted;
                         if (!captureCommitted &&
                             GemTractorBeamClientLogic.IsInsideCargoAbsorbZone(
-                                shipTransforms[si], wings, gem.Transform, gem.State, mapW, mapH))
+                                em, ships[si], shipTransforms[si], wings, gem.Transform, gem.State, mapW, mapH))
                             continue;
                         if (!captureCommitted &&
                             !GemTractorBeamClientLogic.IsWithinMagneticPullRange(

@@ -106,7 +106,11 @@ namespace TitanOrbit.ECS
         /// on. Cleared when that hull leaves secondary range. 0 when unused.
         /// </summary>
         public int GoalNetworkId;
-        /// <summary>1 after this landing already bought one attribute. Cleared on takeoff.</summary>
+        /// <summary>
+        /// 1 after this landing already bought one helpful ability (gem capacity,
+        /// firepower, move speed, or energy regen). Cleared on takeoff so the next
+        /// haul can skim a different stat. The rest of the hold still deposits.
+        /// </summary>
         public byte AttributeBoughtWhileLanded;
         /// <summary>
         /// 1 after a hull purchase at the home moon failed because the bank could not pay
