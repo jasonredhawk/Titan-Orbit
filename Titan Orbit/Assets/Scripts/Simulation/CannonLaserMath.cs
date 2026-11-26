@@ -90,7 +90,10 @@ namespace TitanOrbit.Simulation
         /// <summary>Minimum planar length before a direction can be normalized.</summary>
         const float MinDirectionSq = 0.0001f;
 
-        /// <summary>Authored damage (and energy) per second while locked: firePower × fireRate.</summary>
+        /// <summary>
+        /// Authored energy per second while the beam is on: firePower × fireRate.
+        /// Damage multiplies this by <see cref="ComputeRampMultiplier"/>.
+        /// </summary>
         public static float ComputeDps(float firePower, float fireRate)
         {
             float power = math.max(0f, firePower);
@@ -100,7 +103,7 @@ namespace TitanOrbit.Simulation
 
         /// <summary>
         /// Linear 50% → 300% over <see cref="RampDurationSeconds"/>. Caps at the max.
-        /// Damage and energy both use this: a thin beam spends half, a full burn spends 3×.
+        /// Damage uses this. Energy stays at <see cref="ComputeDps"/> for the whole burn.
         /// </summary>
         public static float ComputeRampMultiplier(float rampSeconds)
         {

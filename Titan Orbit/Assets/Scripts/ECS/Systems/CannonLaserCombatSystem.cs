@@ -14,7 +14,7 @@ namespace TitanOrbit.ECS
     /// <summary>
     /// Server: MEGA cannon barrels burn a continuous hitscan at
     /// firePower × fireRate DPS, ramped 50%→300% on the same burn subject.
-    /// Energy drains with that ramp (half at the start, 3× at full power).
+    /// Energy stays at that authored rate for the whole burn.
     /// After the pool is empty, lasers stay off until it rises
     /// strictly above 10%. <see cref="BulletSimulationSystem"/> calls
     /// <see cref="TryContinuousBurn"/> in strip order after the guns.
@@ -328,16 +328,19 @@ namespace TitanOrbit.ECS
                     canBurn: true, cycleActive: true, gunners, out restarted);
             }
 
-            // Locked burns spend the same 50%–300% ramp they deal. A retarget
-            // is thin again. Shift mouse-aim with no lock stays at authored DPS.
-            float drainMul = canBurn ? CannonLaserMath.ComputeRampMultiplier(rampSeconds) : 1f;
-            float dps = CannonLaserMath.ComputeDps(mount.FirePower, mount.FireRate) * drainMul;
-            float slice = dps * math.max(0f, dt);
-            if (energy + 0.001f < slice)
+            // Energy is firePower × fireRate per second for the whole burn.
+            // Damage still ramps 50%→300% on a locked subject (a retarget is
+            // thin again). Shift mouse-aim with no lock spends the same flat
+            // rate and deals no hitscan. A partial last tick scales damage by
+            // the fraction of that flat slice the pool could pay.
+            float energyPerSec = CannonLaserMath.ComputeDps(mount.FirePower, mount.FireRate);
+            float energySlice = energyPerSec * math.max(0f, dt);
+            float paid = energySlice;
+            if (energy + 0.001f < energySlice)
             {
                 if (energy > 0.0001f)
                 {
-                    slice = energy;
+                    paid = energy;
                     energy = 0f;
                 }
                 else
@@ -351,8 +354,11 @@ namespace TitanOrbit.ECS
             }
             else
             {
-                energy = math.max(0f, energy - slice);
+                energy = math.max(0f, energy - energySlice);
             }
+
+            float damageMul = canBurn ? CannonLaserMath.ComputeRampMultiplier(rampSeconds) : 1f;
+            float slice = paid * damageMul;
 
             _passWantedBurn = true;
             _reservedMounts.Add(mountIndex);
